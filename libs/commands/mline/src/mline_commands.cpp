@@ -218,9 +218,13 @@ public:
     cmd::Task run(cmd::CommandContext& ctx) override {
         using cmd::Status;
         cmd::KeywordOptions ko;
-        ko.keywords = {"List", "New", "Delete", "Offsets", "Caps", "Current"};
+        ko.keywords = {"List",      "New",  "Delete", "Offsets",     "Caps",   "Colors",
+                       "Linetypes", "Fill", "Joints", "Description", "Current"};
         ko.defaultKeyword = "List";
-        auto k = co_await ctx.getKeyword("Style option [List/New/Delete/Offsets/Caps/Current]", ko);
+        auto k = co_await ctx.getKeyword(
+            "Style option [List/New/Delete/Offsets/Caps/Colors/Linetypes/Fill/Joints/Description/"
+            "Current]",
+            ko);
         if (!k.ok())
             co_return;
 
@@ -236,6 +240,20 @@ public:
                     line += ", start cap";
                 if (s && s->endCap)
                     line += ", end cap";
+                if (s && s->joints)
+                    line += ", joints";
+                if (s && s->fill >= 0)
+                    line += ", fill " + std::to_string(s->fill);
+                if (s && !s->colors.empty()) {
+                    line += ", colors";
+                    for (int c : s->colors)
+                        line += " " + std::to_string(c);
+                }
+                if (s && !s->linetypes.empty()) {
+                    line += ", linetypes";
+                    for (const std::string& l : s->linetypes)
+                        line += " " + (l.empty() ? std::string("-") : l);
+                }
                 ctx.message(line);
             }
             co_return;
@@ -311,6 +329,10 @@ public:
                 ctx.message("Offsets are numbers separated by spaces or commas.");
                 co_return;
             }
+            if (offs->size() != style.offsets.size()) {  // per-line colours/linetypes no longer fit
+                style.colors.clear();
+                style.linetypes.clear();
+            }
             style.offsets = *offs;
         }
         if (k.keyword == "New" || k.keyword == "Caps") {
@@ -322,6 +344,96 @@ public:
                 co_return;
             style.startCap = c.keyword == "Start" || c.keyword == "Both";
             style.endCap = c.keyword == "End" || c.keyword == "Both";
+        }
+        if (k.keyword == "Colors") {
+            std::string def;
+            for (std::size_t i = 0; i < style.offsets.size(); ++i)
+                def += (def.empty() ? "" : " ") + std::to_string(style.colorOf(i));
+            cmd::StringOptions oo;
+            oo.defaultValue = def;
+            auto t = co_await ctx.getString(
+                "Colors, one per line in offset order (1-255, 0 ByBlock, 256 as the multiline) <" +
+                    def + ">",
+                oo);
+            if (!t.ok())
+                co_return;
+            auto vals = parseOffsets(t.text);
+            if (!vals || vals->size() != style.offsets.size()) {
+                ctx.message("Give one colour number for each of the " +
+                            std::to_string(style.offsets.size()) + " lines.");
+                co_return;
+            }
+            style.colors.clear();
+            for (double v : *vals) {
+                if (v < 0 || v > 256 || v != std::floor(v)) {
+                    ctx.message("Colours are whole numbers from 0 to 256.");
+                    co_return;
+                }
+                style.colors.push_back(static_cast<int>(v));
+            }
+            if (std::all_of(style.colors.begin(), style.colors.end(),
+                            [](int c) { return c == 256; }))
+                style.colors.clear();
+        } else if (k.keyword == "Linetypes") {
+            cmd::StringOptions oo;
+            auto t = co_await ctx.getString(
+                "Linetype names, one per line in offset order, - for the multiline's own", oo);
+            if (!t.ok())
+                co_return;
+            std::vector<std::string> names;
+            std::istringstream in(t.text);
+            for (std::string w; in >> w;)
+                names.push_back(w == "-" ? std::string() : w);
+            if (names.size() != style.offsets.size()) {
+                ctx.message("Give one linetype for each of the " +
+                            std::to_string(style.offsets.size()) + " lines.");
+                co_return;
+            }
+            for (const std::string& n : names)
+                if (!n.empty() && !ctx.doc().linetypeByName(n)) {
+                    ctx.message("No linetype named \"" + n + "\" is loaded.");
+                    co_return;
+                }
+            style.linetypes = std::all_of(names.begin(), names.end(),
+                                          [](const std::string& n) { return n.empty(); })
+                                  ? std::vector<std::string>{}
+                                  : names;
+        } else if (k.keyword == "Fill") {
+            cmd::StringOptions oo;
+            oo.defaultValue = "None";
+            auto t =
+                co_await ctx.getString("Fill colour (1-255, 256 as the multiline) or None", oo);
+            if (!t.ok())
+                co_return;
+            const std::string v = lower(cmd::trim(t.text));
+            if (v == "none" || v.empty()) {
+                style.fill = -1;
+            } else {
+                auto vals = parseOffsets(v);
+                if (!vals || vals->size() != 1 || (*vals)[0] < 0 || (*vals)[0] > 256) {
+                    ctx.message("Give a colour number from 0 to 256, or None.");
+                    co_return;
+                }
+                style.fill = static_cast<int>((*vals)[0]);
+            }
+        } else if (k.keyword == "Joints") {
+            cmd::KeywordOptions jo;
+            jo.keywords = {"On", "Off"};
+            jo.defaultKeyword = style.joints ? "Off" : "On";
+            auto j = co_await ctx.getKeyword("Show joints at the corners [On/Off]", jo);
+            if (!j.ok())
+                co_return;
+            style.joints = j.keyword == "On";
+        } else if (k.keyword == "Description") {
+            cmd::StringOptions oo;
+            oo.defaultValue = style.description;
+            auto t = co_await ctx.getString("Description", oo);
+            if (!t.ok())
+                co_return;
+            style.description = cmd::trim(t.text);
+            for (char& c : style.description)
+                if (c == '\n' || c == '\r')
+                    c = ' ';
         }
         ctx.setUndoLabel("MLSTYLE");
         (void)ctx.tx().modifyHeader([&](Header& h) { mline::storeStyle(h, style); });

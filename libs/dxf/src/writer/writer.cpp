@@ -1260,18 +1260,26 @@ std::string Writer::objectsSection() {
             o.raw(2, name);
         else
             o.str(2, st.name);
-        o.i(70, (st.startCap ? 16 : 0) | (st.endCap ? 256 : 0));
+        o.i(70, (st.startCap ? 16 : 0) | (st.endCap ? 256 : 0) | (st.joints ? 2 : 0) |
+                    (st.fill >= 0 ? 1 : 0));
         o.str(3, st.description);
-        o.i(62, 256);
+        o.i(62, st.fill >= 0 ? st.fill : 256);
         o.d(51, 90);
         o.d(52, 90);
-        std::vector<double> offs = st.offsets;
-        std::sort(offs.begin(), offs.end(), std::greater<>());
-        o.i(71, static_cast<int>(offs.size()));
-        for (double off : offs) {
-            o.d(49, off);
-            o.i(62, 256);
-            o.raw(6, "BYLAYER");
+        std::vector<std::size_t> idx(st.offsets.size());
+        for (std::size_t i = 0; i < idx.size(); ++i)
+            idx[i] = i;
+        std::stable_sort(idx.begin(), idx.end(), [&](std::size_t a, std::size_t b) {
+            return st.offsets[a] > st.offsets[b];
+        });
+        o.i(71, static_cast<int>(idx.size()));
+        for (std::size_t i : idx) {
+            o.d(49, st.offsets[i]);
+            o.i(62, st.colorOf(i));
+            if (st.linetypeOf(i).empty())
+                o.raw(6, "BYLAYER");
+            else
+                o.str(6, st.linetypeOf(i));
         }
     };
     writeStyle(standard, mlineStyle, "Standard");

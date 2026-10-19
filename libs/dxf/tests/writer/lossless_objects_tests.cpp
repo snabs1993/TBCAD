@@ -56,6 +56,9 @@ TEST_CASE("groups, multiline styles and multilines survive the .tbcad and DXF ro
     CHECK(style->startCap);
     REQUIRE(style->offsets.size() == 2);
     CHECK(style->offsets[0] == doctest::Approx(0.5));
+    REQUIRE(style->colors.size() == 2);  // each line has its own colour
+    CHECK(style->colors[0] == 1);
+    CHECK(style->colors[1] == 2);
     const auto groups = readGroups(d1);
     REQUIRE(groups.size() == 1);
     CHECK(groups[0].name == "MYGROUP");
@@ -81,6 +84,8 @@ TEST_CASE("groups, multiline styles and multilines survive the .tbcad and DXF ro
     REQUIRE(style3.has_value());
     CHECK(style3->description == "Double line");
     CHECK(style3->offsets.size() == 2);
+    REQUIRE(style3->colors.size() == 2);
+    CHECK(style3->colors[1] == 2);
     const auto groups3 = readGroups(d3);
     REQUIRE(groups3.size() == 1);
     CHECK(groups3[0].name == "MYGROUP");
