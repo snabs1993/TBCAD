@@ -468,6 +468,9 @@ struct HatchData {
 struct AttribValue {
     std::string tag{};
     std::string value{};
+    // Where the value is drawn, relative to its attribute definition (block coordinates); moved
+    // by the attribute's grip.
+    Vec2 offset{};
 };
 
 // An associative array: the Insert's block holds the source objects and the Insert is shown once

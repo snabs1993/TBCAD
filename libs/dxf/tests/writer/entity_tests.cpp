@@ -775,6 +775,40 @@ TEST_CASE("exported ATTRIB records sit at the inserted position, scaled and turn
     CHECK(rec.find("\n50\n90") != std::string::npos);
 }
 
+TEST_CASE("a moved attribute keeps its offset through DXF") {
+    Document doc;
+    BlockId b;
+    {
+        auto tx = doc.begin("attributes");
+        b = tx.addBlock(BlockDef{.name = "B", .base = {1, 1}}).value();
+        TextData def;
+        def.position = {1, 0};
+        def.height = 1;
+        def.utf8 = "T";
+        def.attdef = AttDefInfo{"T", "", "d", false, false, false, false};
+        REQUIRE(tx.add(make(def), b).ok());
+        InsertData ins{b, {10, 0}, {2, 3}, kPi / 3};
+        ins.attribs = {{"T", "v", {1.5, -2}}};
+        REQUIRE(tx.add(make(ins)).ok());
+        InsertData home{b, {30, 0}, {1, 1}, 0};
+        home.attribs = {{"T", "w", {}}};
+        REQUIRE(tx.add(make(home)).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    int seen = 0;
+    rt.back->forEachEntity([&](const Entity& e) {
+        const auto* i = entityAs<InsertData>(e);
+        if (!i || i->attribs.size() != 1)
+            return;
+        ++seen;
+        const Vec2 want = i->attribs[0].value == "v" ? Vec2{1.5, -2} : Vec2{};
+        CHECK(i->attribs[0].offset.x == doctest::Approx(want.x).epsilon(1e-6));
+        CHECK(i->attribs[0].offset.y == doctest::Approx(want.y).epsilon(1e-6));
+    });
+    CHECK(seen == 2);
+}
+
 TEST_CASE("a dimension is exported with a drawn *D block that other programs can show") {
     Document doc;
     {

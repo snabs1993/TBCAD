@@ -290,6 +290,19 @@ struct PayloadWriter {
         }
         if (d.joinOff)
             w.u8(6);
+        // 7 = attribute offsets (format 1.14): (tag, offset) of the attributes that were moved.
+        std::size_t moved = 0;
+        for (const AttribValue& a : d.attribs)
+            moved += a.offset != Vec2{} ? 1 : 0;
+        if (moved > 0) {
+            w.u8(7);
+            w.varint(moved);
+            for (const AttribValue& a : d.attribs)
+                if (a.offset != Vec2{}) {
+                    str(a.tag);
+                    w.vec2(a.offset);
+                }
+        }
     }
     void operator()(const DimensionData& d) {
         w.u8(static_cast<std::uint8_t>(d.kind));
@@ -750,6 +763,17 @@ struct PayloadReader {
                     }
                     if (tag == 6) {
                         d.joinOff = true;
+                        continue;
+                    }
+                    if (tag == 7) {
+                        std::size_t n = r.count(17);
+                        for (std::size_t i = 0; i < n; ++i) {
+                            std::string t = str();
+                            const Vec2 off = r.vec2();
+                            for (AttribValue& a : d.attribs)
+                                if (a.tag == t)
+                                    a.offset = off;
+                        }
                         continue;
                     }
                     if (tag != 1)

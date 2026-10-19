@@ -221,6 +221,8 @@ struct DataDumper {
             o.quoted(a.tag);
             o << "=";
             o.quoted(a.value);
+            if (a.offset != Vec2{})
+                o << " off" << a.offset;
         }
         if (d.array) {
             const ArrayInfo& a = *d.array;
