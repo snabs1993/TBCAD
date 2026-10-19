@@ -325,6 +325,20 @@ TEST_CASE("a MESH entity is kept for saving and drawn from its cage edges") {
     CHECK(proxies[0]->graphics.items.size() == 8);     // 4 base edges and 4 to the apex
 }
 
+TEST_CASE("an OLE2FRAME is kept for saving and shows its frame") {
+    Pairs p;
+    p.section("ENTITIES");
+    p.g(0, "OLE2FRAME").g(8, "0").g(100, "AcDbEntity").g(100, "AcDbOle2Frame").g(70, 2);
+    p.g(3, "Microsoft Excel Worksheet").g(10, 0.0).g(20, 50.0).g(30, 0.0).g(11, 80.0).g(21, 0.0);
+    p.g(31, 0.0).g(71, 2).g(72, 0).g(90, 4).g(310, "00000000").g(1, "OLE");
+    Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
+    const auto proxies = modelEntities<ProxyData>(l.doc());
+    REQUIRE(proxies.size() == 1);
+    CHECK(proxies[0]->originalType == "OLE2FRAME");
+    CHECK_FALSE(proxies[0]->graphics.items.empty());
+    CHECK_FALSE(proxyDxfGroups(*proxies[0]).empty());
+}
+
 TEST_CASE("extrusion: a slightly tilted plane is drawn as seen from above") {
     // A normal about 4 degrees off the Z axis (real drawings carry such planes): the arbitrary axis
     // algorithm turns the object x axis to -X, so object (10, 5) lies at world (-10, -5).

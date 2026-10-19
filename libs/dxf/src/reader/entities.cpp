@@ -7,6 +7,7 @@
 #include "importer.h"
 #include "keep.h"
 #include "tbcad/gdt/gdt.h"
+#include "tbcad/geom/entity.h"
 #include "tbcad/geom/spline.h"
 #include "tbcad/mline/mline.h"
 #include "tbcad/table/table.h"
@@ -2478,6 +2479,20 @@ bool Importer::convForeign(const Record& r, std::vector<Entity>& out) {
         unknown = decodeProxyGraphics(gfx, commonOf(r), d, texts, problem);
     if (d.graphics.items.empty() && r.type == "MESH")
         meshEdges(r, commonOf(r), d);
+    if (d.graphics.items.empty() && r.type == "OLE2FRAME" && r.has(11)) {
+        // The embedded object (often a pasted spreadsheet) cannot be drawn; its frame shows
+        // where it sits. Corners: 10/20 upper left, 11/21 lower right.
+        const Vec2 a = P(r, 10, 20), b = P(r, 11, 21);
+        if (std::abs(a.x - b.x) > 0 && std::abs(a.y - b.y) > 0) {
+            PolylineData frame;
+            frame.closed = true;
+            for (const Vec2 p : {a, Vec2{b.x, a.y}, b, Vec2{a.x, b.y}})
+                frame.v.push_back({p, 0, 0, 0});
+            Entity e = makeEntity(std::move(frame));
+            e.common = commonOf(r);
+            geom::buildDisplay(*doc_, e, geom::DisplayContext{}, d.graphics);
+        }
+    }
 
     // The record itself, to be written back unchanged.
     const std::string kept = keptRecord(r);
