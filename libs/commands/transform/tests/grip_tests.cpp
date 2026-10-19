@@ -517,3 +517,31 @@ TEST_CASE("TEXT grips sit at the anchor and aligned text has both ends") {
     CHECK(near(entityAs<TextData>(end.value())->position, {0, 0}));
     CHECK_FALSE(tbcad::geom::moveGrip(*f.doc.find(aid), 2, {1, 1}).ok());
 }
+
+TEST_CASE("a picture offers four corner grips and a corner scales it") {
+    Fixture f;
+    BlockId block;
+    {
+        auto tx = f.doc.begin("picture");
+        block = tx.addBlock(BlockDef{.name = "IMG", .xrefPath = "a.png"}).value();
+        PolylineData frame;
+        frame.closed = true;
+        for (Vec2 p : {Vec2{0, 0}, Vec2{200, 0}, Vec2{200, 100}, Vec2{0, 100}})
+            frame.v.push_back({p, 0, 0, 0});
+        Entity e;
+        e.data = std::move(frame);
+        REQUIRE(tx.add(std::move(e), block).ok());
+        tx.commit();
+    }
+    auto ins = add(f.doc, InsertData{block, {0, 0}, {1, 1}, 0});
+    std::vector<EntityId> ids{ins};
+    auto grips = tf::collectGrips(f.doc, ids);
+    REQUIRE(grips.size() == 5);  // the position and four corners
+    CHECK(grips[3].index == tf::kPicGripBase + 2);
+    CHECK(near(grips[3].pos, {200, 100}));
+    f.host.setSelection(ids);
+    f.host.run("GRIPEDIT", {"200,100", "400,200"});
+    CHECK(near(get<InsertData>(f.doc, ins).scale, {2, 2}));
+    f.host.undo();
+    CHECK(near(get<InsertData>(f.doc, ins).scale, {1, 1}));
+}
