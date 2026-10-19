@@ -1051,6 +1051,28 @@ std::string Writer::objectsSection() {
         if (it != custom.end() && !it->second.empty())
             sketchRec[k] = newHandle();
     }
+    // Every other TBCAD setting kept in the header (multileader and table styles, layer states and
+    // filters, view names, ...): one XRECORD of "K<key>" / "V<escaped value chunk>" lines.
+    // (Only families no other part of the file carries: header variables, groups, layouts,
+    // constraints, UCS and the like have their own places.)
+    static const char* const kSettingFamilies[] = {
+        "tbcad.mleaderstyle.",  "tbcad.mleadercurrent", "tbcad.layerstate.", "tbcad.tablestyle.",
+        "tbcad.layiso",         "tbcad.layerfilter.",   "tbcad.layergroup.", "tbcad.layerp.",
+        "tbcad.view.",          "tbcad.prop.",          "tbcad.textlayer",   "tbcad.hatchlayer",
+        "tbcad.dimlayer",       "tbcad.insbase",        "tbcad.link.",       "tbcad.lintypes",
+        "tbcad.selannodisplay", "tbcad.spell.words",    "tbcad.annonew",     "tbcad.pdfosnap"};
+    std::vector<std::pair<std::string, std::string>> settings;
+    if (!r12_)
+        for (const auto& [key, value] : custom) {
+            if (value.empty() || value.size() >= (8u << 20))
+                continue;
+            for (const char* family : kSettingFamilies)
+                if (key.rfind(family, 0) == 0) {
+                    settings.emplace_back(key, value);
+                    break;
+                }
+        }
+    const std::uint64_t settingsRec = settings.empty() ? 0 : newHandle();
     std::vector<double> scaleList = annotationScaleList(doc_.header());
     std::vector<std::uint64_t> scaleHandles;
     for (std::size_t i = 0; scaleObjects && i < scaleList.size(); ++i)
@@ -1068,6 +1090,10 @@ std::string Writer::objectsSection() {
     if (hasScales) {
         o.raw(3, "TBCAD_ANNOSCALE");
         o.h(350, scaleRec);
+    }
+    if (settingsRec) {
+        o.raw(3, "TBCAD_SETTINGS");
+        o.h(350, settingsRec);
     }
     for (int k = 0; k < 2; ++k) {
         if (!sketchRec[k])
@@ -1193,6 +1219,38 @@ std::string Writer::objectsSection() {
             if (nl > at)
                 o.str(1, std::string_view(body).substr(at, nl - at));
             at = nl + 1;
+        }
+    }
+
+    if (settingsRec) {
+        o.zero("XRECORD");
+        o.h(5, settingsRec);
+        o.h(330, rootDict_);
+        o.raw(100, "AcDbXrecord");
+        o.i(280, 1);
+        o.str(1, "tbcad.settings");
+        for (const auto& [key, value] : settings) {
+            o.str(1, "K" + key);
+            std::string esc;
+            for (char c : value) {
+                if (c == '\\')
+                    esc += "\\\\";
+                else if (c == '\n')
+                    esc += "\\n";
+                else if (c == '\r')
+                    esc += "\\r";
+                else
+                    esc.push_back(c);
+            }
+            // Cut at UTF-8 boundaries: a group holds about 2000 bytes.
+            for (std::size_t at = 0; at < esc.size();) {
+                std::size_t n = std::min<std::size_t>(1000, esc.size() - at);
+                while (at + n < esc.size() &&
+                       (static_cast<unsigned char>(esc[at + n]) & 0xC0) == 0x80)
+                    --n;
+                o.str(1, "V" + esc.substr(at, n));
+                at += n;
+            }
         }
     }
 
