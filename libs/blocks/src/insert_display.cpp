@@ -35,7 +35,10 @@ double quantizeTolerance(double tol) {
 }
 
 void transformList(const DisplayList& in, const Transform2& t, DisplayList& out) {
-    out.items.reserve(out.items.size() + in.items.size());
+    // Grows by doubling: reserving the exact size on every call (once per array item or nested
+    // reference) moved the whole list each time, quadratic in the number of items.
+    if (out.items.capacity() < out.items.size() + in.items.size())
+        out.items.reserve(std::max(out.items.size() + in.items.size(), out.items.capacity() * 2));
     for (const DisplayItem& item : in.items) {
         std::visit(
             [&](const auto& src) {

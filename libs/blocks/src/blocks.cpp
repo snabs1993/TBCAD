@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -221,7 +223,12 @@ struct Local {
     BBox2 box{};  // everything but its own attribute definitions, in block space
     std::size_t leaves = 0;  // drawn objects below it, counting nested ones (capped)
 };
-using Memo = std::unordered_map<BlockId, Local>;
+struct Memo {
+    std::unordered_map<BlockId, Local> blocks;
+    // Exact boxes of plain blocks seen turned (or slanted), by block and the transform without
+    // its move: every item of an array, every copy at the same angle, shares one.
+    std::map<std::tuple<std::uint64_t, double, double, double, double>, BBox2> turned;
+};
 
 thread_local Memo* g_memo = nullptr;
 
@@ -239,9 +246,9 @@ BBox2 contentBounds(const Document& doc, const BlockDef& def, const Transform2& 
 
 // Fills the memo entry of `def` (and of the blocks below it).
 Local localOf(const Document& doc, const BlockDef& def, Memo& memo, int depth) {
-    if (auto it = memo.find(def.id); it != memo.end())
+    if (auto it = memo.blocks.find(def.id); it != memo.blocks.end())
         return it->second;
-    memo[def.id] = {};  // (a block that contains itself stays "not plain")
+    memo.blocks[def.id] = {};  // (a block that contains itself stays "not plain")
     Local loc;
     if (def.assembly || def.dynamic || depth > kMaxNesting)
         return loc;
@@ -274,7 +281,7 @@ Local localOf(const Document& doc, const BlockDef& def, Memo& memo, int depth) {
     loc.leaves = leaves;
     if (plain)  // measured without a reference: its own attribute definitions are left out
         loc.box = contentBounds(doc, def, Transform2::identity(), depth, nullptr, memo, true);
-    memo[def.id] = loc;
+    memo.blocks[def.id] = loc;
     return loc;
 }
 
@@ -286,9 +293,27 @@ BBox2 contentBounds(const Document& doc, const BlockDef& def, const Transform2& 
     if (!bypass) {
         const Local loc = localOf(doc, def, memo, depth);
         // Moved into place: exact when the transform keeps the axes; for a turned view of a block
-        // with very many objects the box of the turned box is used (a little larger, but cheap).
-        if (loc.plain && (axisAligned(t) || loc.leaves > kLooseAbove)) {
-            box = t.applyToBox(loc.box);
+        // with very many objects the box of the turned box is used (a little larger, but cheap);
+        // other turned views are measured once per angle and moved.
+        if (loc.plain) {
+            if (axisAligned(t) || loc.leaves > kLooseAbove) {
+                box = t.applyToBox(loc.box);
+            } else {
+                Transform2 turn = t;
+                turn.tx = 0;
+                turn.ty = 0;
+                const auto key = std::make_tuple(def.id.value, t.m00, t.m01, t.m10, t.m11);
+                auto it = memo.turned.find(key);
+                if (it == memo.turned.end())
+                    it = memo.turned
+                             .emplace(key, contentBounds(doc, def, turn, depth, nullptr, memo, true))
+                             .first;
+                box = it->second;
+                if (!box.empty()) {
+                    box.min += Vec2{t.tx, t.ty};
+                    box.max += Vec2{t.tx, t.ty};
+                }
+            }
             if (loc.attdefs && owner)
                 for (EntityId id : def.entities) {
                     const Entity* e = doc.find(id);
