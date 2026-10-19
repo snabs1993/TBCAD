@@ -394,3 +394,25 @@ TEST_CASE("polyline offset with the grid equals the offset comparing every pair"
     }
     CHECK(pieces > 40);
 }
+
+TEST_CASE("offset keeps the widths of a wide polyline, interpolated where a corner is cut back") {
+    PolylineData pl;
+    pl.v = {{{0, 0}, 0, 2, 4}, {{10, 0}, 0, 4, 1}, {{10, 10}, 0, 1, 1}, {{0, 10}, 0, 0, 0}};
+    auto r = offsetEntity(make(pl), 1.0);
+    REQUIRE(r.ok());
+    const auto& v = as<PolylineData>(r.value()[0]).v;
+    REQUIRE(v.size() >= 3);
+    CHECK(near(v[0].startWidth, 2.0, 1e-6));
+    CHECK(near(v[0].endWidth, 3.8, 1e-6));  // the corner is cut back to x = 9, 90% along the segment
+    CHECK(near(v[1].startWidth, 3.7, 1e-6));
+    CHECK(near(v[1].endWidth, 1.3, 1e-6));
+    // A polyline without widths stays without.
+    PolylineData thin;
+    thin.v = {{{0, 0}, 0}, {{10, 0}, 0}, {{10, 10}, 0}};
+    auto t = offsetEntity(make(thin), 1.0);
+    REQUIRE(t.ok());
+    for (const auto& vv : as<PolylineData>(t.value()[0]).v) {
+        CHECK(vv.startWidth == 0.0);
+        CHECK(vv.endWidth == 0.0);
+    }
+}
