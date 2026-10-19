@@ -75,7 +75,8 @@ struct ImportSummary {
     std::size_t layouts = 0;          // paper space layouts imported
     std::size_t outsideWorkArea = 0;  // entities kept but beyond the working area
     std::size_t beyondHardCap = 0;    // entities dropped because of the hard coordinate cap
-    std::vector<PlotSetupRecord> plotSetups{};  // named page setups
+    std::vector<PlotSetupRecord> plotSetups{};    // named page setups
+    std::vector<PlotSetupRecord> layoutSetups{};  // the plot settings each layout carries
 
     // Full JSON report: {"input":..,"units":..,"entities":..,"summary":..,"report":{...}}.
     std::string toJson(const Report& report) const;

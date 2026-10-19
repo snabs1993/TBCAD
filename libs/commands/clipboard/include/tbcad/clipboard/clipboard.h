@@ -30,6 +30,10 @@ struct Clip {
     std::map<TextStyleId, TextStyle> textStyles{};
     std::map<DimStyleId, DimStyle> dimStyles{};
     std::map<BlockId, BlockCopy> blocks{};
+    // Named plot styles (.stb): the own style name of each copied entity (parallel to `entities`,
+    // empty = follows its layer) and of the layers copied with them.
+    std::vector<std::string> plotStyles{};
+    std::map<LayerId, std::string> layerPlotStyles{};
 
     bool empty() const { return entities.empty(); }
     // Bounding box of the copied entities (their own extents, without the table rows).
@@ -44,6 +48,7 @@ Clip capture(const Document& doc, std::span<const EntityId> ids,
 struct PasteOptions {
     Vec2 target{};         // where `clip.base` lands
     bool asBlock = false;  // one Insert of a new block instead of loose entities
+    LayerId layer{};       // when set, everything pasted goes on this layer
 };
 
 // Adds the clip to the transaction's document. Returns the ids of the new entities (a single

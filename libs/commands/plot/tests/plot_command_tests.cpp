@@ -418,10 +418,12 @@ TEST_CASE("PAGESETUP Import reads the named page setups of a DXF file") {
                "  0\nPLOTSETTINGS\n  5\n2B\n100\nAcDbPlotSettings\n  1\nSmall\n"
                " 44\n210.0\n 45\n297.0\n 73\n1\n 75\n0\n"
                "  0\nPLOTSETTINGS\n  5\n2C\n100\nAcDbPlotSettings\n  1\n*None*\n"
+               "  0\nLAYOUT\n  5\n2D\n100\nAcDbPlotSettings\n 44\n420.0\n 45\n297.0\n 70\n4\n"
+               " 74\n1\n 75\n0\n100\nAcDbLayout\n  1\nSheet 1\n 70\n1\n 71\n1\n"
                "  0\nENDSEC\n  0\nEOF\n";
     }
     CHECK(f.host->run("PAGESETUP", {"Import", f.path("setups.dxf")}).finished);
-    CHECK(f.host->logContains("2 page setups imported"));
+    CHECK(f.host->logContains("3 page setups imported"));
     auto site = layout::findPageSetup(f.doc, "Site plan");
     REQUIRE(site);
     CHECK(site->settings.paperName == "A1");
@@ -435,6 +437,10 @@ TEST_CASE("PAGESETUP Import reads the named page setups of a DXF file") {
     CHECK(small->settings.paperName == "A4");
     CHECK(small->settings.landscape);  // portrait paper turned a quarter
     CHECK(small->settings.fitToPaper);
+    auto sheet = layout::findPageSetup(f.doc, "Sheet 1");
+    REQUIRE(sheet);
+    CHECK(sheet->settings.paperName == "A3");
+    CHECK(sheet->settings.landscape);
 }
 
 TEST_CASE("PLOTSET / PUBLISH plot a sheet list to a PDF, or say printing is unavailable") {

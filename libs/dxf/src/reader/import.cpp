@@ -366,10 +366,15 @@ std::string upperHandle(std::string_view h) {
 // A named page setup (PLOTSETTINGS). Layouts carry the same data inside their own record; only the
 // named ones are collected here.
 void Importer::readPlotSettings(const Record& r) {
-    PlotSetupRecord p;
-    p.name = dec(r.raw(1));
-    if (p.name.empty() || p.name.front() == '*')
+    const std::string name = dec(r.raw(1));
+    if (name.empty() || name.front() == '*')
         return;
+    sum_.plotSetups.push_back(plotSetupOf(r, name));
+}
+
+PlotSetupRecord Importer::plotSetupOf(const Record& r, const std::string& name) {
+    PlotSetupRecord p;
+    p.name = name;
     p.paperSize = dec(r.raw(4));
     p.styleSheet = dec(r.raw(7));
     const int flags = static_cast<int>(r.integer(70, 0));
@@ -390,7 +395,7 @@ void Importer::readPlotSettings(const Record& r) {
     p.windowMinY = r.num(49);
     p.windowMaxX = r.num(140);
     p.windowMaxY = r.num(141);
-    sum_.plotSetups.push_back(std::move(p));
+    return p;
 }
 
 void Importer::processObjects(RecordReader& rr) {
@@ -1761,6 +1766,7 @@ void Importer::readLayoutObject(const Record& r) {
     }
     if (row.name.empty())
         return;
+    sum_.layoutSetups.push_back(plotSetupOf(r, row.name));
     // The page setup (the AcDbPlotSettings part: device, paper, plot style table, scale, origin)
     // is kept as read, to be written back with the layout while the paper size is unchanged.
     {

@@ -78,7 +78,7 @@ private:
 
 class PasteCommand final : public cmd::Command {
 public:
-    enum class Mode { Normal, Block, Original };
+    enum class Mode { Normal, Block, Original, Special };
     PasteCommand(std::string name, Mode mode) : name_(std::move(name)), mode_(mode) {}
 
     std::string_view name() const override { return name_; }
@@ -88,6 +88,9 @@ public:
                 return "Paste the clipboard as one block";
             case Mode::Original:
                 return "Paste the clipboard at its original coordinates";
+            case Mode::Special:
+                return "Paste the clipboard as objects, a block, at the original place or on the "
+                       "current layer";
             default:
                 return "Paste the clipboard";
         }
@@ -99,8 +102,23 @@ public:
             ctx.message("The clipboard is empty.");
             co_return;
         }
+        Mode mode = mode_;
+        bool onCurrentLayer = false;
+        if (mode == Mode::Special) {
+            cmd::KeywordOptions ko;
+            ko.keywords = {"Objects", "Block", "Original", "CurrentLayer"};
+            ko.defaultKeyword = "Objects";
+            auto how = co_await ctx.getKeyword(
+                "Paste as [Objects/Block/Original coordinates/CurrentLayer] <Objects>", ko);
+            if (!how.ok())
+                co_return;
+            mode = how.keyword == "Block"      ? Mode::Block
+                   : how.keyword == "Original" ? Mode::Original
+                                               : Mode::Normal;
+            onCurrentLayer = how.keyword == "CurrentLayer";
+        }
         Vec2 target = clip.base;
-        if (mode_ != Mode::Original) {
+        if (mode != Mode::Original) {
             cmd::PointOptions po;
             po.base = clip.base;
             po.preview = [&clip](Vec2 c, DisplayList& out) {
@@ -122,7 +140,9 @@ public:
         }
         PasteOptions opts;
         opts.target = target;
-        opts.asBlock = mode_ == Mode::Block;
+        opts.asBlock = mode == Mode::Block;
+        if (onCurrentLayer)
+            opts.layer = ctx.doc().header().currentLayer;
         auto ids = paste(ctx.tx(), clip, opts);
         if (!ids) {
             ctx.message(ids.error().message);
@@ -200,6 +220,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<PasteCommand>("PASTECLIP", PasteCommand::Mode::Normal));
     (void)registry.add(std::make_unique<PasteCommand>("PASTEBLOCK", PasteCommand::Mode::Block));
     (void)registry.add(std::make_unique<PasteCommand>("PASTEORIG", PasteCommand::Mode::Original));
+    (void)registry.add(std::make_unique<PasteCommand>("PASTESPEC", PasteCommand::Mode::Special));
     (void)registry.add(std::make_unique<WBlockCommand>());
 }
 
@@ -210,6 +231,7 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Edit/Paste", "PASTECLIP", "edit.paste", "Ctrl+V");
     ui.addMenuItem("Edit/Paste as Block", "PASTEBLOCK", "edit.pasteblock", "Ctrl+Shift+V");
     ui.addMenuItem("Edit/Paste to Original Coordinates", "PASTEORIG", "edit.pasteorig", "");
+    ui.addMenuItem("Edit/Paste Special...", "PASTESPEC", "edit.pastespec", "");
 }
 
 }  // namespace tbcad::clipboard

@@ -43,4 +43,5 @@ have plots as drawn.
 ## Page setups from a DXF file
 
 PAGESETUP Import also reads `.dxf` files: every named PLOTSETTINGS object becomes a page setup (paper, orientation,
-plot area, scale, centring, lineweights, plot style table). Layout-owned settings and `*None*` are skipped.
+plot area, scale, centring, lineweights, plot style table). The settings a layout carries become a setup named after the layout (a named setup of the same name wins);
+`*None*` setups are skipped.
