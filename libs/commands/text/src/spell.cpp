@@ -1,7 +1,9 @@
 // SPELL: checks the English words in the selected text and mtext. Words with any non-ASCII letter
 // (Thai, accents), digits, or all capitals are skipped, so a Thai drawing is never flagged. Words
 // added with the Add keyword live in the drawing (Header::custom "tbcad.spell.words").
+#include <algorithm>
 #include <cctype>
+#include <cstring>
 #include <set>
 #include <sstream>
 
@@ -83,11 +85,15 @@ std::vector<Span> candidates(const std::string& text, bool markup) {
         const unsigned char c = static_cast<unsigned char>(text[i]);
         if (markup && c == '\\' && i + 1 < n) {
             const unsigned char k = static_cast<unsigned char>(text[i + 1]);
-            if (isLetter(k) && k != 'P' && k != 'N') {
+            // Codes with an argument run to the ';'; \L \O \P \N \~ \\ and friends are two bytes.
+            if (std::strchr("HCbiSpfFWTQA", k) != nullptr && k != 0) {
                 while (i < n && text[i] != ';')
                     ++i;
+                if (i < n)
+                    ++i;
+            } else {
+                i += 2;
             }
-            i += 2;
             continue;
         }
         if (!(c >= 0x80 || std::isalnum(c) || c == '_' || c == '\'')) {
@@ -150,6 +156,57 @@ bool known(const std::string& word, const std::set<std::string>& user) {
            strip("ed", "e") || strip("ing", "") || strip("ing", "e") || strip("ies", "y");
 }
 
+// Edit distance with adjacent swaps (a typo such as "teh" is one step from "the").
+int editDistance(const std::string& a, const std::string& b) {
+    const std::size_t n = a.size(), m = b.size();
+    std::vector<std::vector<int>> d(n + 1, std::vector<int>(m + 1));
+    for (std::size_t i = 0; i <= n; ++i)
+        d[i][0] = static_cast<int>(i);
+    for (std::size_t j = 0; j <= m; ++j)
+        d[0][j] = static_cast<int>(j);
+    for (std::size_t i = 1; i <= n; ++i)
+        for (std::size_t j = 1; j <= m; ++j) {
+            const int cost = a[i - 1] == b[j - 1] ? 0 : 1;
+            d[i][j] = std::min({d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost});
+            if (i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1])
+                d[i][j] = std::min(d[i][j], d[i - 2][j - 2] + 1);
+        }
+    return d[n][m];
+}
+
+// Up to three known words within two edits of `word`, nearest first, in the case of `word`
+// (Capitalised stays Capitalised).
+std::vector<std::string> suggestions(const std::string& word, const std::set<std::string>& user) {
+    const std::string w = lower(word);
+    std::vector<std::pair<int, std::string>> best;
+    auto consider = [&](const std::string& cand) {
+        if (cand.size() + 2 < w.size() || w.size() + 2 < cand.size())
+            return;
+        const int d = editDistance(w, cand);
+        if (d > (w.size() <= 4 ? 1 : 2))
+            return;
+        // Same letters in another order ("teh" for "the") is the likeliest slip.
+        std::string x = w, y = cand;
+        std::sort(x.begin(), x.end());
+        std::sort(y.begin(), y.end());
+        best.emplace_back(2 * d - (x == y ? 1 : 0), cand);
+    };
+    for (const std::string& c : builtinWords())
+        consider(c);
+    for (const std::string& c : user)
+        consider(c);
+    std::sort(best.begin(), best.end());
+    std::vector<std::string> out;
+    for (auto& [d, c] : best) {
+        if (out.size() == 3)
+            break;
+        if (!word.empty() && std::isupper(static_cast<unsigned char>(word[0])) && !c.empty())
+            c[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(c[0])));
+        out.push_back(c);
+    }
+    return out;
+}
+
 class SpellCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "SPELL"; }
@@ -193,10 +250,18 @@ public:
                     continue;
                 ++found;
                 cmd::KeywordOptions ko;
+                const std::vector<std::string> sugg = suggestions(sp.word, user);
                 ko.keywords = {"Ignore", "Change", "Add", "All"};
+                std::string prompt = "Not in dictionary: \"" + sp.word + "\"";
+                if (!sugg.empty()) {
+                    ko.keywords.push_back("Suggest");
+                    prompt += " (did you mean \"" + sugg.front() + "\"?)";
+                }
                 ko.defaultKeyword = "Ignore";
                 auto a = co_await ctx.getKeyword(
-                    "Not in dictionary: \"" + sp.word + "\" [Ignore/Change/Add/All]", ko);
+                    prompt + (sugg.empty() ? " [Ignore/Change/Add/All]"
+                                           : " [Ignore/Change/Add/All/Suggest]"),
+                    ko);
                 if (a.status == cmd::Status::Cancel)
                     co_return;
                 if (!a.ok() || a.keyword == "Ignore") {
@@ -209,6 +274,10 @@ public:
                     for (const std::string& w : user)
                         all += (all.empty() ? "" : " ") + w;
                     (void)ctx.tx().modifyHeader([&](Header& h) { h.custom[kUserWords] = all; });
+                } else if (a.keyword == "Suggest" && !sugg.empty()) {
+                    text.replace(sp.begin, sp.end - sp.begin, sugg.front());
+                    edited = true;
+                    ++changed;
                 } else {
                     auto repl = co_await ctx.getString("Replace \"" + sp.word + "\" with");
                     if (!repl.ok())

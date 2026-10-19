@@ -26,4 +26,5 @@ tbcad_add_tests(text
     tests/engine_tests.cpp
     tests/font_style_tests.cpp
     tests/paragraph_tests.cpp
-    tests/background_tests.cpp)
+    tests/background_tests.cpp
+    tests/fit_tests.cpp)

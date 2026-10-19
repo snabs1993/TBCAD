@@ -699,7 +699,16 @@ static TextLayout layoutMTextRaw(const Document& doc, const MTextData& d) {
     bool any = false;
     for (const Piece& p : pieces) {
         if (p.para) {
-            builder.setParagraph(*p.para);  // holds until the next \p
+            // Horizontal lengths are drawing units; the layout is later stretched by the width
+            // factor, so they are divided by it here.
+            ParaProps pp = *p.para;
+            const double inv = 1.0 / (wf > 0 ? wf : 1.0);
+            pp.firstIndent *= inv;
+            pp.leftIndent *= inv;
+            pp.rightIndent *= inv;
+            for (double& t : pp.tabs)
+                t *= inv;
+            builder.setParagraph(pp);  // holds until the next \p
         } else if (p.columnBreak) {
             endParagraph(p.attr);
             builder.breakColumn();

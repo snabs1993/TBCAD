@@ -157,3 +157,29 @@ TEST_CASE("a column break starts the next column") {
     // The second column starts at the top of the frame.
     CHECK(l.lines[2].baseline == doctest::Approx(l.lines[0].baseline));
 }
+
+TEST_CASE("style width factor: wrapping, indents and tabs are in drawing units") {
+    Document doc;
+    auto tx = doc.begin("style");
+    auto id = tx.addTextStyle(TextStyle{{}, "Narrow", "", "", 0.5, 0.0});
+    REQUIRE(id.ok());
+    tx.commit();
+    const std::string words = "alpha bravo charlie delta echo foxtrot golf hotel india juliet";
+    MTextData plain = mtext(words, 200);
+    MTextData narrow = mtext(words, 100);
+    narrow.style = id.value();
+    TextLayout a = layoutMText(doc, plain);
+    TextLayout b = layoutMText(doc, narrow);
+    REQUIRE(a.lines.size() >= 2);
+    CHECK(b.lines.size() == a.lines.size());
+    for (const LayoutLine& l : b.lines)
+        CHECK(l.width * 0.5 <= 100 + 1e-6);  // never wider than the frame on the drawing
+
+    MTextData ind = mtext("\\pl10,t30;A\tB", 0);
+    ind.style = id.value();
+    TextLayout c = layoutMText(doc, ind);
+    REQUIRE(c.glyphs.size() >= 2);
+    CHECK(c.toWorld.apply({c.glyphs[0].origin.x, 0}).x ==
+          doctest::Approx(10).epsilon(0.05));  // the indent is 10 mm on the drawing
+    CHECK(c.toWorld.apply({c.glyphs[1].origin.x, 0}).x == doctest::Approx(30));  // the tab stop
+}

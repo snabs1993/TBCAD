@@ -360,6 +360,33 @@ TEST_CASE("SPELL flags English typos, skips Thai, and Add remembers a word") {
     CHECK(f.host.run("SPELL", {cmd::ScriptItem::select(ids), cmd::ScriptItem::enter()}).finished);
 }
 
+TEST_CASE("SPELL suggests the nearest word and does not read MTEXT codes as words") {
+    Fixture f;
+    std::vector<EntityId> ids;
+    for (const char* s :
+         {"Kichen \\Lwall\\l and teh floor", "{\\fArial|b1;thikness} \\S1/2;\\Pdoor"}) {
+        MTextData m;
+        m.utf8 = s;
+        Transaction tx = f.doc.begin("setup");
+        Entity e;
+        e.data = Indirect<MTextData>(std::move(m));
+        ids.push_back(tx.add(std::move(e)).value());
+        tx.commit();
+    }
+    // Three typos in all: Kichen, teh, thikness. Codes (\L \l \f..; \S..; \P) are never asked
+    // about.
+    REQUIRE(f.host
+                .run("SPELL", {cmd::ScriptItem::select(ids), cmd::ScriptItem::enter(), "Suggest",
+                               "Suggest", "Suggest"})
+                .finished);
+    // Words are replaced from the end of each text, so the typos may be asked in either order, but
+    // each text ends up corrected and keeps its markup.
+    const std::string a = entityAs<MTextData>(*f.doc.find(ids[0]))->utf8;
+    CHECK(a == "Kitchen \\Lwall\\l and the floor");
+    CHECK(entityAs<MTextData>(*f.doc.find(ids[1]))->utf8 ==
+          "{\\fArial|b1;thickness} \\S1/2;\\Pdoor");
+}
+
 TEST_CASE("MTEXT and TEXT from far away default to a height that can be read") {
     Fixture f;
     f.host.setView({{0, 0}, 10.0, {900, 600}});  // 10 mm per pixel: a plan in millimetres
