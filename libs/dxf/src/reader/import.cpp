@@ -1989,8 +1989,12 @@ void Importer::processBlocks(RecordReader& rr) {
             // are kept only when the caller asks for the graphics.
             if (!opts_.dimensionGraphics && f.size() > 2 && f[0] == '*' && f[1] == 'd')
                 skipBlock_ = true;
-            // Table graphics (*T<n>) are regenerated from the table kept in extended data.
-            if (f.size() > 2 && f[0] == '*' && (f[1] == 't' || f[1] == 'm'))
+            // Table graphics of ours (*TB<n>) are regenerated from the table kept in extended
+            // data. An AutoCAD table's block (*T<n>) is kept, for its TABLE to insert; those left
+            // unused are dropped in finish().
+            if (f.size() > 3 && f[0] == '*' && f[1] == 't' && f[2] == 'b')
+                skipBlock_ = true;
+            if (f.size() > 2 && f[0] == '*' && f[1] == 'm')
                 skipBlock_ = true;
             if (!skipBlock_) {
                 BlockId id = blockFor(rawName);
@@ -2386,6 +2390,10 @@ void Importer::finishLayouts() {
 void Importer::finish() {
     finishLayouts();
     resolveImages();
+    // Anonymous table blocks that no TABLE inserted (erasing fails while an INSERT uses one).
+    for (const auto& [f, id] : blockByFold_)
+        if (f.size() > 2 && f[0] == '*' && f[1] == 't' && blockDefined_.count(id))
+            (void)tx_->eraseBlock(id);
     for (const auto& [f, id] : blockByFold_) {
         if (!blockDefined_.count(id)) {
             const BlockDef* b = doc_->block(id);
