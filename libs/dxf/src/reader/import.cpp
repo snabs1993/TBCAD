@@ -2487,6 +2487,12 @@ void Importer::finish() {
         report_.warn(code::kPaperSpace,
                      std::to_string(paperSpace_) + " paper space entities skipped");
     }
+    if (acadTables_ > 0) {
+        report_.info(code::kTableCells,
+                     std::to_string(acadTables_) +
+                         " AutoCAD table(s) read as editable tables; cell borders, colours and "
+                         "fills follow the TBCAD table style");
+    }
     if (flattened_ > 0) {
         report_.info(code::kFlattened,
                      std::to_string(flattened_) + " entities had a non-zero Z; Z was dropped",

@@ -1731,8 +1731,174 @@ bool Importer::convProxy(const Record& r, std::vector<Entity>& out) {
 // AutoCAD keeps the lines and text of a TABLE in the anonymous block named by group 2 (*T1, ...),
 // in world coordinates, so an INSERT of that block at the origin draws the table as it was. The
 // cell data (groups 91, 92, 301...) is not read: the table is no longer editable as a table.
+// The cells of an AutoCAD table, read into an editable TBCAD table: row heights (141), column
+// widths (142), then one run of groups per cell, row by row, each starting with 171 (cell type).
+// A cell has its text in 1 (after 2/3 pieces) or, in newer files, in the 302 of its CELL_VALUE;
+// 175/176 are the columns and rows a merged cell spans; 170 is its alignment (1..9, TL..BR) and
+// 140 its text height. Anything that does not add up returns nothing, and the table is shown
+// from its block instead.
+std::optional<TableData> Importer::acadTableData(const Record& r, const Frame& f) {
+    if (f.mirror)
+        return std::nullopt;
+    std::size_t at = 0;
+    while (at < r.g.size() && !(r.g[at].code == 100 && r.g[at].str() == "AcDbTable"))
+        ++at;
+    if (at == r.g.size())
+        return std::nullopt;
+    TableData t;
+    std::int64_t rows = -1, cols = -1;
+    Vec2 dir{1, 0};
+    std::size_t i = at + 1;
+    for (; i < r.g.size() && r.g[i].code != 171; ++i) {
+        const Group& g = r.g[i];
+        switch (g.code) {
+            case 91:
+                if (rows < 0)
+                    rows = g.integer();
+                break;
+            case 92:
+                if (cols < 0)
+                    cols = g.integer();
+                break;
+            case 11:
+                dir.x = g.number();
+                break;
+            case 21:
+                dir.y = g.number();
+                break;
+            case 141:
+                t.rowHeights.push_back(g.number() * k_);
+                break;
+            case 142:
+                t.colWidths.push_back(g.number() * k_);
+                break;
+            default:
+                break;
+        }
+    }
+    if (rows < 1 || cols < 1 || rows * cols > 100000 ||
+        t.rowHeights.size() != static_cast<std::size_t>(rows) ||
+        t.colWidths.size() != static_cast<std::size_t>(cols))
+        return std::nullopt;
+    for (double v : t.rowHeights)
+        if (!(v > 0) || !std::isfinite(v))
+            return std::nullopt;
+    for (double v : t.colWidths)
+        if (!(v > 0) || !std::isfinite(v))
+            return std::nullopt;
+
+    struct Cell {
+        std::string text{};
+        std::string value{};  // the first 302 of a CELL_VALUE
+        int colSpan = 1, rowSpan = 1;
+        int align = 0;
+        double height = 0;
+        std::string style{};  // group 7
+    };
+    std::vector<Cell> cells;
+    for (; i < r.g.size(); ++i) {
+        const Group& g = r.g[i];
+        if (g.code == 171) {
+            cells.emplace_back();
+            continue;
+        }
+        if (cells.empty())
+            continue;
+        Cell& c = cells.back();
+        switch (g.code) {
+            case 1:
+            case 2:
+            case 3:
+                c.text += dec(g.str());
+                break;
+            case 302:
+                if (c.value.empty())
+                    c.value = dec(g.str());
+                break;
+            case 175:
+                c.colSpan = static_cast<int>(std::clamp<std::int64_t>(g.integer(), 1, cols));
+                break;
+            case 176:
+                c.rowSpan = static_cast<int>(std::clamp<std::int64_t>(g.integer(), 1, rows));
+                break;
+            case 170:
+                if (c.align == 0)
+                    c.align = static_cast<int>(g.integer());
+                break;
+            case 140:
+                if (c.height == 0 && std::isfinite(g.number()) && g.number() > 0)
+                    c.height = g.number() * k_;
+                break;
+            case 7:
+                if (c.style.empty())
+                    c.style = std::string(g.str());
+                break;
+            default:
+                break;
+        }
+    }
+    if (cells.size() != static_cast<std::size_t>(rows * cols))
+        return std::nullopt;
+
+    t.cells.resize(cells.size());
+    std::vector<double> heights;
+    std::map<int, int> dataAlign;
+    for (std::int64_t row = 0; row < rows; ++row) {
+        for (std::int64_t col = 0; col < cols; ++col) {
+            const std::size_t k = static_cast<std::size_t>(row * cols + col);
+            const Cell& c = cells[k];
+            TableCell& tc = t.cells[k];
+            if (tc.covered)
+                continue;
+            tc.utf8 = c.text.empty() ? c.value : c.text;
+            const int cs = static_cast<int>(std::min<std::int64_t>(c.colSpan, cols - col));
+            const int rs = static_cast<int>(std::min<std::int64_t>(c.rowSpan, rows - row));
+            tc.colSpan = static_cast<std::uint16_t>(cs);
+            tc.rowSpan = static_cast<std::uint16_t>(rs);
+            for (int dr = 0; dr < rs; ++dr)
+                for (int dc = 0; dc < cs; ++dc)
+                    if (dr || dc) {
+                        TableCell& cov = t.cells[k + dr * cols + dc];
+                        cov.covered = true;
+                        cov.utf8.clear();
+                    }
+            if (c.height > 0)
+                heights.push_back(c.height);
+            if (row > 0 && c.align >= 1 && c.align <= 9)
+                ++dataAlign[(c.align - 1) % 3];
+        }
+    }
+    if (!heights.empty()) {
+        std::nth_element(heights.begin(), heights.begin() + heights.size() / 2, heights.end());
+        t.textHeight = heights[heights.size() / 2];
+    }
+    // A first row that is one cell across the whole table is a title.
+    t.titleRow = rows > 1 && cols > 1 && t.cells[0].colSpan == cols;
+    if (t.titleRow && cells[0].height > 0 && std::abs(cells[0].height - t.textHeight) > 1e-9)
+        t.titleStyle.textHeight = cells[0].height;
+    if (!dataAlign.empty()) {
+        auto best = std::max_element(dataAlign.begin(), dataAlign.end(),
+                                     [](auto& a, auto& b) { return a.second < b.second; });
+        t.dataStyle.align = best->first;
+    }
+    t.margin = std::clamp(t.textHeight * 0.4, 0.0, 10.0);
+    for (const Cell& c : cells)
+        if (!c.style.empty()) {
+            t.style = textStyleFor(c.style);
+            break;
+        }
+    t.origin = f.p(P(r, 10, 20));
+    t.rotation = f.angle(std::atan2(dir.y, dir.x));
+    return t;
+}
+
 bool Importer::convAcadTable(const Record& r, RecordReader& rr, const Frame& f,
                              std::vector<Entity>& out) {
+    if (auto t = acadTableData(r, f)) {
+        out.push_back(makeEntity(std::move(*t)));
+        ++acadTables_;
+        return true;
+    }
     if (r.raw(2).empty())
         return false;
     Record ins;
