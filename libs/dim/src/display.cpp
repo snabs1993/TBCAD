@@ -45,12 +45,14 @@ EntityCommon commonFor(const Entity& e, const DimStyle& st, Role role) {
 Entity textEntity(const Entity& e, const DimStyle& st, const Layout::Text& t, TextStyleId style) {
     Entity out;
     out.common = commonFor(e, st, Role::Text);
-    if (t.mtext) {
+    if (t.mtext || t.stacked) {
         MTextData m;
         m.position = t.center;
         m.height = t.height;
         m.rotation = t.rotation;
-        m.attach = t.attachRight ? Attachment::MiddleRight : Attachment::MiddleLeft;
+        m.attach = t.stacked       ? Attachment::MiddleCenter
+                   : t.attachRight ? Attachment::MiddleRight
+                                   : Attachment::MiddleLeft;
         m.style = style;
         m.utf8 = t.utf8;
         out.data = Indirect<MTextData>(std::move(m));
