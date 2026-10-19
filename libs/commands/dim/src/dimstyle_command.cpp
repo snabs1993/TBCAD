@@ -90,7 +90,7 @@ const std::vector<std::string> kProps = {
     "TextInside",   "ArrowsOutside",   "LineInside",    "ExtLine1",    "ExtLine2",
     "DimLine1",     "DimLine2",        "Justify",       "AngleFormat", "AngularPrecision",
     "DecimalMark",  "BaselineSpacing", "CenterMark",    "TextFill",    "TextFillColor",
-    "TextFrame"};
+    "TextFrame",    "LengthFormat"};
 
 std::string num(double v) {
     char buf[40];
@@ -169,6 +169,9 @@ std::vector<std::pair<std::string, std::string>> describe(const Document& doc, c
         {"Justify", s.textJustify == 1   ? "Ext1"
                     : s.textJustify == 2 ? "Ext2"
                                          : "Centered"},
+        {"LengthFormat", s.linearFormat == DimLinearFormat::Architectural ? "Architectural"
+                         : s.linearFormat == DimLinearFormat::Fractional  ? "Fractional"
+                                                                          : "Decimal"},
         {"AngleFormat", angleFormat[static_cast<int>(s.angleFormat)]},
         {"AngularPrecision", s.angularPrecision < 0 ? "Same" : std::to_string(s.angularPrecision)},
         {"DecimalMark", s.commaDecimal ? "Comma" : "Point"},
@@ -309,6 +312,17 @@ std::string applyProperty(const Document& doc, DimStyle& s, std::string_view key
             s.*fl.field = false;
         else
             return std::string(fl.key) + " is " + fl.on + " or " + fl.off + ".";
+        return {};
+    }
+    if (same(key, "LengthFormat")) {
+        if (same(value, "Decimal"))
+            s.linearFormat = DimLinearFormat::Decimal;
+        else if (same(value, "Architectural"))
+            s.linearFormat = DimLinearFormat::Architectural;
+        else if (same(value, "Fractional"))
+            s.linearFormat = DimLinearFormat::Fractional;
+        else
+            return "LengthFormat is Decimal, Architectural or Fractional.";
         return {};
     }
     if (same(key, "AngleFormat")) {

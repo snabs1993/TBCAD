@@ -1785,3 +1785,36 @@ TEST_CASE("JOIN fuses rays and construction lines on one line") {
         CHECK(f.count(EntityKind::Ray) == 2);
     }
 }
+
+TEST_CASE("FILLET and CHAMFER of two segments with an arc between them remove the arc") {
+    auto make = [](Fixture& f) {
+        return f.add(PolylineData{{{{0, 0}, 0, 0, 0},
+                                   {{10, 0}, 0.4142135623730951, 0, 0},
+                                   {{12, 2}, 0, 0, 0},
+                                   {{12, 10}, 0, 0, 0}},
+                                  false, 0});
+    };
+    {
+        Fixture f;
+        EntityId p = make(f);
+        f.host.run("FILLET", {"R", "1", ScriptItem::pick(p, {3, 0}), ScriptItem::pick(p, {12, 8})});
+        const auto* pl = entityAs<PolylineData>(f.get(p));
+        REQUIRE(pl != nullptr);
+        CHECK(pl->v.size() == 4);  // line, rounded corner, line
+        CHECK(f.host.undoStack().undoLabel() == "FILLET");
+        f.host.undo();
+        CHECK(entityAs<PolylineData>(f.get(p))->v.size() == 4);
+        CHECK(near(entityAs<PolylineData>(f.get(p))->v[1].p, {10, 0}));
+    }
+    {
+        Fixture f;
+        EntityId p = make(f);
+        f.host.run("CHAMFER", {"Distance", "1", "1", ScriptItem::pick(p, {3, 0}),
+                               ScriptItem::pick(p, {12, 8})});
+        const auto* pl = entityAs<PolylineData>(f.get(p));
+        REQUIRE(pl != nullptr);
+        REQUIRE(pl->v.size() == 4);
+        CHECK(near(pl->v[1].p, {11, 0}));
+        CHECK(near(pl->v[2].p, {12, 1}));
+    }
+}

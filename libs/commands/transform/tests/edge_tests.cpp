@@ -2,6 +2,7 @@
 #include <doctest/doctest.h>
 
 #include "common.h"
+#include "tbcad/blocks/attributes.h"
 #include "tbcad/core/dump.h"
 
 using namespace tbtest;
@@ -248,4 +249,120 @@ TEST_CASE("ROTATE and SCALE: Copy together with Reference, one undo step, origin
         CHECK(f.host.undo());
         CHECK(canonicalDump(f.doc) == before);
     }
+}
+
+namespace {
+EntityId linearDim(Fixture& f) {
+    f.host.run("DIMLINEAR", {"0,0", "10,0", "5,5"});
+    EntityId id{};
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (entityAs<DimensionData>(e))
+            id = e.common.id;
+    });
+    return id;
+}
+}  // namespace
+
+TEST_CASE("SCALE by reference and ALIGN with scale keep a dimension measuring what it shows") {
+    {
+        Fixture f;
+        const EntityId d = linearDim(f);
+        REQUIRE(d);
+        f.host.setSelection({d});
+        f.host.run("SCALE", {"0,0", "Reference", "10", "25"});
+        CHECK(get<DimensionData>(f.doc, d).measurement == doctest::Approx(25));
+        CHECK(near(get<DimensionData>(f.doc, d).defPts[1], {25, 0}));
+        CHECK(f.host.undo());
+        CHECK(get<DimensionData>(f.doc, d).measurement == doctest::Approx(10));
+    }
+    {
+        // ALIGN 0,0-10,0 onto 0,0-0,30 with scaling: rotated a quarter turn, three times longer.
+        Fixture f;
+        const EntityId d = linearDim(f);
+        REQUIRE(d);
+        f.host.setSelection({d});
+        f.host.run("ALIGN", {"0,0", "0,0", "10,0", "0,30", "Y"});
+        CHECK(get<DimensionData>(f.doc, d).measurement == doctest::Approx(30));
+        CHECK(near(get<DimensionData>(f.doc, d).defPts[1], {0, 30}));
+    }
+}
+
+TEST_CASE("ROTATE by reference turns a dimension and a multileader without changing sizes") {
+    Fixture f;
+    const EntityId d = linearDim(f);
+    REQUIRE(d);
+    MLeaderData ml;
+    ml.lines = {{{0, 20}, {10, 30}}};
+    ml.landing = {10, 30};
+    ml.contentPos = {15, 30};
+    ml.utf8 = "A";
+    const EntityId m = add(f.doc, Indirect<MLeaderData>(ml));
+    f.host.setSelection({d, m});
+    // Reference 0 degrees, new 90 degrees: a quarter turn about the origin.
+    f.host.run("ROTATE", {"0,0", "Reference", "0", "90"});
+    const auto& dd = get<DimensionData>(f.doc, d);
+    CHECK(dd.measurement == doctest::Approx(10));
+    CHECK(near(dd.defPts[1], {0, 10}, 1e-9));
+    CHECK(dd.rotation == doctest::Approx(1.5707963267948966));
+    const auto& mm = get<MLeaderData>(f.doc, m);
+    CHECK(near(mm.landing, {-30, 10}, 1e-9));
+    CHECK(near(mm.contentPos, {-30, 15}, 1e-9));
+    CHECK(near(mm.lines[0][0], {-20, 0}, 1e-9));
+}
+
+TEST_CASE("ROTATE and SCALE turn a block with attributes and its attribute offsets together") {
+    Fixture f;
+    auto t = f.doc.begin("block");
+    BlockId b = t.addBlock(BlockDef{.name = "Tagged"}).value();
+    TextData def;
+    def.position = {4, 2};
+    def.alignPoint = def.position;
+    def.height = 1;
+    def.utf8 = "NAME";
+    def.attdef = AttDefInfo{"NAME", "", "x", false, false, false, false};
+    Entity de;
+    de.data = Indirect<TextData>(def);
+    REQUIRE(t.add(std::move(de), b).ok());
+    t.commit();
+    InsertData in{b, {10, 0}, {1, 1}, 0};
+    in.attribs = blocks::defaultAttribs(f.doc, b);
+    const EntityId id = add(f.doc, in);
+    f.host.setSelection({id});
+    auto anchor = [&] { return blocks::attribHandles(f.doc, *f.doc.find(id)).at(0).world; };
+    const Vec2 a0 = anchor();
+    // Quarter turn about the insert point: the attribute anchor turns with it.
+    f.host.run("ROTATE", {"10,0", "90"});
+    CHECK(near(anchor(), {10 - (a0.y - 0), (a0.x - 10)}, 1e-9));
+    CHECK(get<InsertData>(f.doc, id).rotation == doctest::Approx(1.5707963267948966));
+    // Scale by reference about the insert point: the anchor distance doubles.
+    const Vec2 a1 = anchor();
+    f.host.run("SCALE", {"10,0", "Reference", "5", "10"});
+    CHECK(near(anchor(), {10 + 2 * (a1.x - 10), 2 * a1.y}, 1e-9));
+    CHECK(get<InsertData>(f.doc, id).scale.x == doctest::Approx(2));
+    CHECK(f.host.undo());
+    CHECK(f.host.undo());
+    CHECK(near(anchor(), a0, 1e-9));
+}
+
+TEST_CASE("STRETCH of one end of a dimension updates its measurement") {
+    Fixture f;
+    const EntityId d = linearDim(f);
+    REQUIRE(d);
+    // Crossing window around the second extension origin only.
+    f.host.run("STRETCH", {"8,-2", "12,2", "10,0", "16,0"});
+    CHECK(get<DimensionData>(f.doc, d).measurement == doctest::Approx(16));
+    CHECK(near(get<DimensionData>(f.doc, d).defPts[0], {0, 0}));
+    CHECK(f.host.undo());
+    CHECK(get<DimensionData>(f.doc, d).measurement == doctest::Approx(10));
+}
+
+TEST_CASE("STRETCH with a whole dimension in the window moves it, text included") {
+    Fixture f;
+    const EntityId d = linearDim(f);
+    REQUIRE(d);
+    const Vec2 text0 = get<DimensionData>(f.doc, d).textPos;
+    f.host.run("STRETCH", {"-5,-5", "40,20", "0,0", "0,7"});
+    CHECK(get<DimensionData>(f.doc, d).measurement == doctest::Approx(10));
+    CHECK(near(get<DimensionData>(f.doc, d).defPts[0], {0, 7}));
+    CHECK(near(get<DimensionData>(f.doc, d).textPos, text0 + Vec2{0, 7}, 1e-6));
 }

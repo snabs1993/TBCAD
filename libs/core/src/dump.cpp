@@ -500,6 +500,8 @@ std::string canonicalDump(const Document& doc) {
             o << " rules" << static_cast<int>(packDimRules(r)) << "/" << r.textJustify;
         if (r.hasTextBox())
             o << " textbox" << r.textFill << "/" << r.textFillColor << "/" << (r.textFrame ? 1 : 0);
+        if (r.hasLinearFormat())
+            o << " linfmt" << static_cast<int>(r.linearFormat);
         if (r.hasNumberFormat())
             o << " numfmt" << static_cast<int>(r.angleFormat) << "/" << r.angularPrecision << "/"
               << (r.commaDecimal ? 1 : 0) << "/" << r.baselineSpacing << "/" << r.centerMark;

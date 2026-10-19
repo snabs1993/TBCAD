@@ -189,7 +189,7 @@ Result<std::vector<Entity>> explodeDimension(const Document& doc, const Entity& 
         n.data = std::move(data);
         out.push_back(std::move(n));
     };
-    for (const Layout::Line& l : L.lines) {
+    auto makeLine = [&](const Layout::Line& l) {
         if (l.pts.size() == 2) {
             make(l.role, LineData{l.pts[0], l.pts[1]});
         } else {
@@ -198,7 +198,11 @@ Result<std::vector<Entity>> explodeDimension(const Document& doc, const Entity& 
                 pl.v.push_back({p, 0, 0, 0});
             make(l.role, std::move(pl));
         }
-    }
+    };
+    // The text frame is the last line; it is drawn after the fill box so the box does not hide it.
+    const std::size_t plainLines = L.lines.size() - (st.textFrame && !L.lines.empty() ? 1 : 0);
+    for (std::size_t i = 0; i < plainLines; ++i)
+        makeLine(L.lines[i]);
     for (const Layout::Arc& a : L.arcs)
         make(a.role, ArcData{a.center, a.radius, a.startAngle, a.endAngle});
     for (const Layout::Arrow& a : L.arrows) {
@@ -213,6 +217,45 @@ Result<std::vector<Entity>> explodeDimension(const Document& doc, const Entity& 
         h.solid = true;
         make(Role::DimLine, Indirect<HatchData>(std::move(h)));
     }
+    // DIMTFILL: the box behind the text. The drawing background becomes a wipeout, a chosen
+    // colour a solid fill.
+    if (st.textFill != 0 && L.text.valid() && L.text.width > 0 && !L.text.mtext) {
+        const Vec2 ux{std::cos(L.text.rotation), std::sin(L.text.rotation)};
+        const Vec2 uy{-ux.y, ux.x};
+        const double k = std::max(0.0, st.textGap * (st.overallScale > 0 ? st.overallScale : 1.0));
+        const double hw = L.text.width / 2 + k, hh = L.text.height / 2 + k;
+        const Vec2 m = L.text.center;
+        const Vec2 corners[4] = {m - ux * hw - uy * hh, m + ux * hw - uy * hh,
+                                 m + ux * hw + uy * hh, m - ux * hw + uy * hh};
+        if (st.textFill == 2 && st.textFillColor >= 1 && st.textFillColor <= 255) {
+            HatchData h;
+            HatchLoop loop;
+            HatchPolylineEdge edge;
+            for (const Vec2& c : corners)
+                edge.v.push_back({c, 0, 0, 0});
+            edge.closed = true;
+            loop.edges.push_back(std::move(edge));
+            h.loops.push_back(std::move(loop));
+            h.solid = true;
+            Entity n;
+            n.common = commonFor(e, st, Role::Text);
+            n.common.color = Color::index(static_cast<std::uint8_t>(st.textFillColor));
+            n.data = Indirect<HatchData>(std::move(h));
+            out.push_back(std::move(n));
+        } else {
+            PolylineData pl;
+            pl.closed = true;
+            for (const Vec2& c : corners)
+                pl.v.push_back({c, 0, 0, 0});
+            Entity n;
+            n.common = commonFor(e, st, Role::Text);
+            n.common.wipeout = true;
+            n.data = std::move(pl);
+            out.push_back(std::move(n));
+        }
+    }
+    if (plainLines < L.lines.size())
+        makeLine(L.lines.back());
     if (L.text.valid()) {
         Entity t = textEntity(e, st, L.text, textStyleOf(st));
         out.push_back(std::move(t));

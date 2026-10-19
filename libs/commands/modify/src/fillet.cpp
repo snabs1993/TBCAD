@@ -89,14 +89,25 @@ void cornerOp(cmd::CommandContext& ctx, Corner what, const cmd::EntityResult& fi
             ctx.message("Select two different objects.");
             return;
         }
-        auto v = modify::sharedVertex(*pl, modify::nearestSegmentIndex(*pl, first.pickPoint),
-                                      modify::nearestSegmentIndex(*pl, second.pickPoint));
+        const std::size_t sa = modify::nearestSegmentIndex(*pl, first.pickPoint);
+        const std::size_t sb = modify::nearestSegmentIndex(*pl, second.pickPoint);
+        auto v = modify::sharedVertex(*pl, sa, sb);
+        Entity reduced;
         if (!v) {
-            ctx.message("Those two segments do not share a corner.");
-            return;
+            // Two lines with one arc between them: the arc goes, the lines meet, the corner is made.
+            auto gone = modify::removeArcBetween(*a, sa, sb);
+            if (!gone) {
+                ctx.message("Those two segments do not share a corner.");
+                return;
+            }
+            reduced = std::move(gone.value().polyline);
+            v = gone.value().vertex;
+            a = &reduced;
         }
-        auto res = fillet ? modify::filletPolylineVertex(*a, *v, radius)
-                          : modify::chamferPolylineVertex(*a, *v, co);
+        const bool sharp = fillet ? radius <= 0 : (co.distance1 <= 0 && co.distance2 <= 0 && !co.byAngle);
+        auto res = sharp && &reduced == a ? Result<Entity>(reduced)
+                   : fillet               ? modify::filletPolylineVertex(*a, *v, radius)
+                                          : modify::chamferPolylineVertex(*a, *v, co);
         if (!res) {
             ctx.message(res.error().message);
             return;

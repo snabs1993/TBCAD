@@ -206,3 +206,18 @@ TEST_CASE("DIMDSEP: a decimal comma in lengths and angles") {
     s.precision = 0;
     CHECK(formatNumber(s, 12.6, false) == "13");
 }
+
+TEST_CASE("DIMLUNIT: architectural and fractional lengths") {
+    DimStyle s;
+    s.precision = 3;  // eighths
+    s.linearFormat = DimLinearFormat::Architectural;
+    CHECK(formatNumber(s, 12 * 304.8 + 6.5 * 25.4, false) == "12'-6 1/2\"");
+    CHECK(formatNumber(s, 304.8, false) == "1'-0\"");
+    CHECK(formatNumber(s, 25.4 * 3.125, false) == "0'-3 1/8\"");
+    s.linearFormat = DimLinearFormat::Fractional;
+    CHECK(formatNumber(s, 25.4 * 150.5, false) == "150 1/2\"");
+    CHECK(formatNumber(s, 25.4 * 0.75, false) == "3/4\"");
+    CHECK(formatNumber(s, 0, false) == "0\"");
+    s.precision = 0;
+    CHECK(formatNumber(s, 25.4 * 2.6, false) == "3\"");
+}

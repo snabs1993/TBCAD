@@ -15,7 +15,7 @@ namespace {
 
 constexpr std::uint8_t kDeltaMagic[4] = {'T', 'B', 'D', 'L'};
 // 3: text style rows carry the fixed height. Version 2 records are still read.
-constexpr std::uint8_t kDeltaVersion = 10;
+constexpr std::uint8_t kDeltaVersion = 11;
 
 [[noreturn]] void bad(const char* msg) {
     throw FormatError(msg);
@@ -129,6 +129,8 @@ void putRow(ByteWriter& w, StringTable& st, const DimStyle& r) {
     w.u8(static_cast<std::uint8_t>(r.textFill));
     w.u8(static_cast<std::uint8_t>(r.textFillColor));
     w.u8(r.textFrame ? 1 : 0);
+    // (version 11) length format
+    w.u8(static_cast<std::uint8_t>(r.linearFormat));
 }
 
 void putRow(ByteWriter& w, StringTable& st, const BlockDef& r) {
@@ -335,6 +337,8 @@ struct Reader {
             d.textFillColor = r.u8();
             d.textFrame = r.u8() != 0;
         }
+        if (version >= 11)
+            d.linearFormat = enumeration(DimLinearFormat::Fractional);
     }
     void row(BlockDef& b) {
         b.name = str();
