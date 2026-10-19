@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 #include "internal.h"
 #include "tbcad/geom/entity.h"
@@ -111,6 +112,112 @@ bool moveHatchCorner(HatchData& h, Vec2 from, Vec2 to) {
     return moved;
 }
 
+// ---- associative arrays ------------------------------------------------------------------------
+// As AutoCAD, an array insert has grips besides its base (index 0) that change its parameters.
+// Rectangular: 1 column count (at the last column), 2 column spacing (second column), 3 row count,
+// 4 row spacing. Polar: 1 angle between items (at the second item), 2 fill angle (at the last
+// item). Grips sit where the block's origin lands in that item: array blocks have their base at
+// the origin, so a grip is the insert's position plus the item offset turned and scaled with it.
+
+Vec2 insertVector(const InsertData& d, Vec2 v) {
+    const Vec2 s{v.x * d.scale.x, v.y * d.scale.y};
+    const double c = std::cos(d.rotation), sn = std::sin(d.rotation);
+    return {s.x * c - s.y * sn, s.x * sn + s.y * c};
+}
+
+std::optional<Vec2> blockVector(const InsertData& d, Vec2 w) {
+    if (d.scale.x == 0 || d.scale.y == 0)
+        return std::nullopt;
+    const double c = std::cos(d.rotation), sn = std::sin(d.rotation);
+    const Vec2 r{w.x * c + w.y * sn, -w.x * sn + w.y * c};
+    return Vec2{r.x / d.scale.x, r.y / d.scale.y};
+}
+
+double polarStep(const ArrayInfo& a) {
+    const bool full = std::abs(std::abs(a.fillAngle) - kTwoPi) < 1e-9;
+    const int cnt = std::max(a.count, 1);
+    return cnt < 2 ? 0 : (full ? a.fillAngle / cnt : a.fillAngle / (cnt - 1));
+}
+
+void arrayGrips(const InsertData& d, std::vector<Vec2>& g) {
+    const ArrayInfo& a = *d.array;
+    auto at = [&](Vec2 blockOffset) { return d.position + insertVector(d, blockOffset); };
+    if (a.kind == ArrayInfo::Kind::Rectangular) {
+        const Vec2 ex{std::cos(a.angle), std::sin(a.angle)};
+        const Vec2 ey = perp(ex);
+        g.push_back(at(ex * (a.columnSpacing * (std::max(a.columns, 1) - 1))));
+        g.push_back(at(ex * a.columnSpacing));
+        g.push_back(at(ey * (a.rowSpacing * (std::max(a.rows, 1) - 1))));
+        g.push_back(at(ey * a.rowSpacing));
+    } else if (a.kind == ArrayInfo::Kind::Polar) {
+        // the item's copy of the reference point (where the source sits) around the centre
+        const double step = polarStep(a);
+        auto item = [&](double ang) {
+            const Vec2 r = a.reference - a.center;
+            const double c = std::cos(ang), sn = std::sin(ang);
+            return at(a.center + Vec2{r.x * c - r.y * sn, r.x * sn + r.y * c});
+        };
+        g.push_back(item(step));
+        g.push_back(item(step * (std::max(a.count, 1) - 1)));
+    }
+}
+
+// Moves array grip `index` (1 and up) of `d` to `to`.
+Result<void> moveArrayGrip(InsertData& d, int index, Vec2 to) {
+    ArrayInfo a = *d.array;
+    const auto v = blockVector(d, to - d.position);
+    if (!v)
+        return makeError(ErrorCode::InvalidArgument, "the array is scaled to nothing");
+    constexpr long long kMaxItems = 100000;
+    if (a.kind == ArrayInfo::Kind::Rectangular && index >= 1 && index <= 4) {
+        const Vec2 ex{std::cos(a.angle), std::sin(a.angle)};
+        const Vec2 ey = perp(ex);
+        const bool cols = index <= 2;
+        const double along = dot(*v, cols ? ex : ey);
+        double& spacing = cols ? a.columnSpacing : a.rowSpacing;
+        int& count = cols ? a.columns : a.rows;
+        if (index == 2 || index == 4) {  // spacing
+            if (std::abs(along) < tol::kLinear)
+                return makeError(ErrorCode::InvalidArgument, "the spacing would be zero");
+            spacing = along;
+        } else {  // count: as many items as fit up to the grip
+            if (std::abs(spacing) < tol::kLinear)
+                return makeError(ErrorCode::InvalidArgument, "the spacing is zero");
+            const double n = std::floor(along / spacing + 0.5) + 1;
+            count = static_cast<int>(std::clamp(n, 1.0, static_cast<double>(kMaxItems)));
+        }
+        if (static_cast<long long>(std::max(a.rows, 1)) * std::max(a.columns, 1) > kMaxItems)
+            return makeError(ErrorCode::InvalidArgument, "that array would have too many items");
+    } else if (a.kind == ArrayInfo::Kind::Polar && (index == 1 || index == 2)) {
+        const Vec2 r = a.reference - a.center, q = *v - a.center;
+        if (tol::isZeroLength(r) || tol::isZeroLength(q))
+            return makeError(ErrorCode::InvalidArgument, "the grip is on the centre");
+        // counter-clockwise angle from the source to the grip, in (0, 2 pi]
+        double ang = std::atan2(cross(r, q), dot(r, q));
+        if (ang <= 1e-12)
+            ang += kTwoPi;
+        const bool full = std::abs(std::abs(a.fillAngle) - kTwoPi) < 1e-9;
+        const int cnt = std::max(a.count, 1);
+        if (index == 1) {  // angle between items
+            if (full) {
+                // the items stay spread round the circle: as many as the new angle allows
+                a.count = static_cast<int>(std::clamp(std::floor(kTwoPi / ang + 0.5), 2.0,
+                                                      static_cast<double>(kMaxItems)));
+            } else {
+                a.fillAngle = std::min(ang * (cnt - 1), kTwoPi);
+            }
+        } else {  // fill angle: the last item goes to the grip
+            if (cnt < 2)
+                return makeError(ErrorCode::InvalidArgument, "a single item has no fill angle");
+            a.fillAngle = ang;
+        }
+    } else {
+        return badGrip();
+    }
+    d.array = a;
+    return {};
+}
+
 }  // namespace
 
 std::vector<Vec2> gripPoints(const Entity& e) {
@@ -198,9 +305,13 @@ std::vector<Vec2> gripPoints(const Entity& e) {
             }
             break;
         }
-        case EntityKind::Insert:
-            g = {entityAs<InsertData>(e)->position};
+        case EntityKind::Insert: {
+            const auto& d = *entityAs<InsertData>(e);
+            g = {d.position};
+            if (d.array)
+                arrayGrips(d, g);
             break;
+        }
         case EntityKind::Dimension: {
             const auto& d = *entityAs<DimensionData>(e);
             g.assign(d.defPts.begin(), d.defPts.end());
@@ -462,11 +573,18 @@ Result<Entity> moveGrip(const Entity& e, int index, Vec2 to) {
             d.position = to;
             return out;
         }
-        case EntityKind::Insert:
-            if (index != 0)
+        case EntityKind::Insert: {
+            auto& d = *entityAs<InsertData>(out);
+            if (index == 0) {
+                d.position = to;
+                return out;
+            }
+            if (!d.array)
                 return badGrip();
-            entityAs<InsertData>(out)->position = to;
+            if (auto r = moveArrayGrip(d, index, to); !r)
+                return r.error();
             return out;
+        }
         case EntityKind::Dimension: {
             auto& d = *entityAs<DimensionData>(out);
             if (index < 4) {

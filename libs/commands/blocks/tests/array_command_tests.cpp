@@ -165,7 +165,7 @@ TEST_CASE("ARRAYEDIT changes the rows and spacing of an associative array") {
     f.host->setSelection({c});
     f.host->run("ARRAY", {"R", "Rows", "2", "Columns", "2", "Spacing", "5", "5", ""});
     EntityId arr = f.modelSpace()[0];
-    f.host->run("ARRAYEDIT", {cmd::ScriptItem::pick(arr), "4", "", "7", ""});
+    f.host->run("ARRAYEDIT", {cmd::ScriptItem::pick(arr), "Rows", "4", "7", "X"});
     const InsertData* ins = onlyInsert(f);
     REQUIRE(ins);
     REQUIRE(ins->array);
@@ -214,7 +214,8 @@ TEST_CASE("ARRAYEDIT changes count, fill angle and rotation of a polar array, wi
     f.host->setSelection({c});
     f.host->run("ARRAYPOLAR", {"0,0", "Items", "4", ""});
     EntityId arr = f.modelSpace()[0];
-    f.host->run("ARRAYEDIT", {cmd::ScriptItem::pick(arr), "6", "180", "No"});
+    f.host->run("ARRAYEDIT",
+                {cmd::ScriptItem::pick(arr), "Items", "6", "F", "180", "ROT", "No", ""});
     const InsertData* ins = onlyInsert(f);
     REQUIRE(ins);
     REQUIRE(ins->array);
@@ -236,7 +237,7 @@ TEST_CASE("ARRAYEDIT changes the count and alignment of a path array") {
     for (EntityId id : f.modelSpace())
         if (entityAs<InsertData>(*f.doc.find(id)))
             arr = id;
-    f.host->run("ARRAYEDIT", {cmd::ScriptItem::pick(arr), "3", "", "Yes"});
+    f.host->run("ARRAYEDIT", {cmd::ScriptItem::pick(arr), "I", "3", "Align", "Yes", ""});
     const InsertData* ins = nullptr;
     f.doc.forEachEntity([&](const Entity& e) {
         if (const auto* i = entityAs<InsertData>(e))
@@ -303,5 +304,117 @@ TEST_CASE("ARRAYPATH follows an ellipse and a spline, items on the curve") {
         const double x = entityAs<CircleData>(e)->center.x;
         CHECK(x > lastX);
         lastX = x;
+    }
+}
+
+TEST_CASE("ARRAYEDIT options: Columns with Total, Angle between, Divide and Measure, one undo") {
+    {
+        Fixture f;
+        EntityId c = f.addCircle(0, 0, 1);
+        f.host->setSelection({c});
+        f.host->run("ARRAY", {"R", "Rows", "2", "Columns", "2", "Spacing", "5", "5", ""});
+        EntityId arr = f.modelSpace()[0];
+        const std::size_t steps = f.host->undoStack().undoCount();
+        REQUIRE(f.host->run("ARRAYEDIT", {cmd::ScriptItem::pick(arr), "C", "5", "Total", "100",
+                                          "R", "3", "", ""})
+                    .finished);
+        const ArrayInfo& a = *onlyInsert(f)->array;
+        CHECK(a.columns == 5);
+        CHECK(a.columnSpacing == doctest::Approx(25));
+        CHECK(a.rows == 3);
+        CHECK(a.rowSpacing == doctest::Approx(5));
+        CHECK(f.host->undoStack().undoCount() == steps + 1);
+        CHECK(f.host->undo());
+        CHECK(onlyInsert(f)->array->columns == 2);
+        CHECK(onlyInsert(f)->array->rows == 2);
+    }
+    {
+        Fixture f;
+        EntityId c = f.addCircle(10, 0, 1);
+        f.host->setSelection({c});
+        f.host->run("ARRAYPOLAR", {"0,0", "Items", "4", "Angle", "90", ""});
+        EntityId arr = f.modelSpace()[0];
+        // 30 degrees between 4 items fills 90; too wide an angle is refused
+        REQUIRE(f.host->run("ARRAYEDIT", {cmd::ScriptItem::pick(arr), "A", "20", "A", "200", ""})
+                    .finished);
+        CHECK(onlyInsert(f)->array->fillAngle == doctest::Approx(60 * kPi / 180));
+        CHECK(f.host->logContains("more than once"));
+    }
+    {
+        Fixture f;
+        EntityId c = f.addCircle(0, 0, 1);
+        EntityId path = f.addLine(0, 0, 20, 0);
+        f.host->setSelection({c});
+        f.host->run("ARRAYPATH", {cmd::ScriptItem::pick(path), "", "", "5", "N"});
+        EntityId arr;
+        for (EntityId id : f.modelSpace())
+            if (entityAs<InsertData>(*f.doc.find(id)))
+                arr = id;
+        // Measure keeps the spacing Divide gave (20 / 4 = 5), then Items asks for it
+        REQUIRE(f.host->run("ARRAYEDIT", {cmd::ScriptItem::pick(arr), "M", "Measure", "I", "2",
+                                          "3", ""})
+                    .finished);
+        const InsertData* ins = nullptr;
+        f.doc.forEachEntity([&](const Entity& e) {
+            if (const auto* i = entityAs<InsertData>(e))
+                ins = i;
+        });
+        REQUIRE(ins);
+        CHECK(ins->array->pathSpacing == doctest::Approx(2));
+        CHECK(ins->array->count == 3);
+        REQUIRE(f.host->run("ARRAYEDIT", {cmd::ScriptItem::pick(arr), "M", "D", ""}).finished);
+        f.doc.forEachEntity([&](const Entity& e) {
+            if (const auto* i = entityAs<InsertData>(e))
+                ins = i;
+        });
+        CHECK(ins->array->pathSpacing == 0);
+    }
+}
+
+TEST_CASE("array grips change the count and spacing of rectangular and polar arrays") {
+    {
+        Fixture f;
+        EntityId c = f.addCircle(0, 0, 1);
+        f.host->setSelection({c});
+        f.host->run("ARRAY", {"R", "Rows", "2", "Columns", "3", "Spacing", "10", "5", ""});
+        Entity e = *f.doc.find(f.modelSpace()[0]);
+        const auto g = geom::gripPoints(e);
+        REQUIRE(g.size() == 5);
+        CHECK(near(g[1], {20, 0}));  // last column (columns 10 apart, the base at the origin)
+        CHECK(near(g[2], {10, 0}));  // second column
+        CHECK(near(g[3], {0, 5}));   // last row (rows 5 apart)
+        CHECK(near(g[4], {0, 5}));   // second row (two rows: the same place)
+        auto more = geom::moveGrip(e, 1, {52, 2});  // columns up to x = 50 at 10 apart: 6
+        REQUIRE(more.ok());
+        CHECK(entityAs<InsertData>(more.value())->array->columns == 6);
+        auto wider = geom::moveGrip(e, 2, {8, 0});
+        REQUIRE(wider.ok());
+        CHECK(entityAs<InsertData>(wider.value())->array->columnSpacing == doctest::Approx(8));
+        CHECK_FALSE(geom::moveGrip(e, 4, {3, 0}).ok());  // zero row spacing is refused
+        // a moved and turned array keeps its grips on the items
+        InsertData& d = *entityAs<InsertData>(e);
+        d.position = {100, 0};
+        d.rotation = kPi / 2;
+        CHECK(near(geom::gripPoints(e)[2], {100, 10}));
+        auto rows = geom::moveGrip(e, 3, {70, 0});  // rows run along -x after the turn: 30 / 5
+        REQUIRE(rows.ok());
+        CHECK(entityAs<InsertData>(rows.value())->array->rows == 7);
+    }
+    {
+        Fixture f;
+        EntityId c = f.addCircle(10, 0, 1);
+        f.host->setSelection({c});
+        f.host->run("ARRAYPOLAR", {"0,0", "Items", "4", "Angle", "90", ""});
+        Entity e = *f.doc.find(f.modelSpace()[0]);
+        const auto g = geom::gripPoints(e);
+        REQUIRE(g.size() == 3);
+        CHECK(near(g[2], {0, 10}));  // the last item at 90 degrees
+        auto fill = geom::moveGrip(e, 2, {-10, 0});
+        REQUIRE(fill.ok());
+        CHECK(entityAs<InsertData>(fill.value())->array->fillAngle == doctest::Approx(kPi));
+        auto step = geom::moveGrip(e, 1, {0, 10});  // 90 between 4 items: 270 filled
+        REQUIRE(step.ok());
+        CHECK(entityAs<InsertData>(step.value())->array->fillAngle ==
+              doctest::Approx(3 * kPi / 2));
     }
 }

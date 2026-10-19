@@ -5,6 +5,7 @@
 
 #include "tbcad/transform/apply.h"
 #include "commands.h"
+#include "tbcad/transform/apply.h"
 #include "tbcad/blocks/tbcad_blocks.h"
 #include "util.h"
 
@@ -425,14 +426,36 @@ public:
                 co_return;
             src2 = s2.point;
             dst2 = d2.point;
-            cmd::KeywordOptions ko;
-            ko.keywords = {"Yes", "No"};
-            ko.defaultKeyword = "No";
-            auto k = co_await ctx.getKeyword(
-                "Scale objects based on alignment points? [Yes/No] <No>", ko);
-            if (k.status == cmd::Status::Cancel)
+            // As AutoCAD: a third pair (which only matters in 3D) or Enter to continue. Yes or No
+            // here answers the scale question at once.
+            cmd::PointOptions po4;
+            po4.allowNone = true;
+            po4.keywords = {"Yes", "No"};
+            auto s3 = co_await ctx.getPoint("Specify third source point or <continue>", po4);
+            if (s3.status == cmd::Status::Cancel)
                 co_return;
-            scale = k.keyword == "Yes";
+            std::string answer;
+            if (s3.status == cmd::Status::Keyword) {
+                answer = s3.keyword;
+            } else if (s3.ok()) {
+                cmd::PointOptions po5;
+                po5.base = s3.point;
+                auto d3 = co_await ctx.getPoint("Specify third destination point", po5);
+                if (!d3.ok())
+                    co_return;
+                ctx.message("A drawing is flat: the third pair of points is not needed.");
+            }
+            if (answer.empty()) {
+                cmd::KeywordOptions ko;
+                ko.keywords = {"Yes", "No"};
+                ko.defaultKeyword = "No";
+                auto k = co_await ctx.getKeyword(
+                    "Scale objects based on alignment points? [Yes/No] <No>", ko);
+                if (k.status == cmd::Status::Cancel)
+                    co_return;
+                answer = k.keyword;
+            }
+            scale = answer == "Yes";
         } else if (s2.status == cmd::Status::Cancel) {
             co_return;
         }
@@ -441,20 +464,11 @@ public:
             ctx.message(t.error().message);
             co_return;
         }
-        std::size_t done = 0;
-        for (EntityId id : sel.ids) {
-            const Entity* e = ctx.doc().find(id);
-            if (!e)
-                continue;
-            auto moved = geom::transformed(*e, t.value());
-            if (!moved) {
-                ctx.message(moved.error().message);
-                continue;
-            }
-            Entity v = std::move(moved).value();
-            if (ctx.tx().modify(id, [&](Entity& x) { x.data = std::move(v.data); }))
-                ++done;
-        }
+        const transform::ApplyReport rep =
+            transform::applyTransform(ctx, sel.ids, t.value(), false);
+        if (!rep.firstError.empty())
+            ctx.message(rep.firstError);
+        const std::size_t done = rep.applied;
         ctx.message(plural(done, "object", "objects") + " aligned.");
     }
 };
