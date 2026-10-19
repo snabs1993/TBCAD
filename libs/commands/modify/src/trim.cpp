@@ -23,8 +23,8 @@ struct EdgeSet {
 
 // One candidate edge: skips the target and what cannot cut; inserts give their curves, kept alive
 // in `owned`.
-void considerEdge(const Document& doc, EntityId id, EntityId target, std::vector<const Entity*>& out,
-                  std::deque<Entity>& owned) {
+void considerEdge(const Document& doc, EntityId id, EntityId target,
+                  std::vector<const Entity*>& out, std::deque<Entity>& owned) {
     if (id == target)
         return;
     const Entity* e = doc.find(id);
@@ -152,7 +152,8 @@ std::optional<std::vector<EntityId>> doOne(cmd::CommandContext& ctx, EntityId id
         if (ray && !world.empty()) {
             const BBox2 own = geom::bounds(*target, ctx.doc());
             const double size = std::max({own.width(), own.height(), 1.0});
-            const double maxT = length(world.max - world.min) + distance(ray->origin, world.center());
+            const double maxT =
+                length(world.max - world.min) + distance(ray->origin, world.center());
             std::unordered_set<EntityId> seen;
             std::vector<const Entity*> edges;
             double t0 = 0;
@@ -163,7 +164,8 @@ std::optional<std::vector<EntityId>> doOne(cmd::CommandContext& ctx, EntityId id
                 for (double t = t0; t < t1 && indexed; t += q) {
                     const Vec2 c = ray->origin + ray->dir * (t + q * 0.5);
                     const double r = q * 0.75;
-                    const auto ids = ctx.host().entitiesInWindow(BBox2{{c.x - r, c.y - r}, {c.x + r, c.y + r}});
+                    const auto ids =
+                        ctx.host().entitiesInWindow(BBox2{{c.x - r, c.y - r}, {c.x + r, c.y + r}});
                     if (!ids) {
                         indexed = false;
                         break;
@@ -276,6 +278,17 @@ void batch(cmd::CommandContext& ctx, std::vector<std::pair<EntityId, Vec2>> pick
     ctx.message(std::to_string(done) + (trimming ? " trimmed." : " extended."));
 }
 
+// Model-space objects whose box meets `box`, from the spatial index when the host has one, so
+// Fence and Crossing do not walk a whole large drawing. Sorted by id for a stable order.
+std::vector<EntityId> objectsNear(cmd::CommandContext& ctx, const BBox2& box) {
+    if (auto near = ctx.host().entitiesInWindow(box)) {
+        std::sort(near->begin(), near->end(),
+                  [](EntityId a, EntityId b) { return a.value < b.value; });
+        return std::move(*near);
+    }
+    return ctx.doc().modelSpace();
+}
+
 cmd::Task trimExtendLoop(cmd::CommandContext& ctx, bool trimMode) {
     ctx.commitOnCancel();
     EdgeSet set;
@@ -374,7 +387,10 @@ cmd::Task trimExtendLoop(cmd::CommandContext& ctx, bool trimMode) {
                 if (!ok)
                     continue;
                 std::vector<std::pair<EntityId, Vec2>> picks;
-                for (EntityId id : ctx.doc().modelSpace()) {
+                BBox2 fenceBox;
+                for (Vec2 p : fence)
+                    fenceBox.expand(p);
+                for (EntityId id : objectsNear(ctx, fenceBox)) {
                     const Entity* e = ctx.doc().find(id);
                     if (!e || !isEditable(ctx.doc(), *e))
                         continue;
@@ -400,7 +416,7 @@ cmd::Task trimExtendLoop(cmd::CommandContext& ctx, bool trimMode) {
                 window.expand(corners[0]);
                 window.expand(corners[1]);
                 std::vector<std::pair<EntityId, Vec2>> picks;
-                for (EntityId id : ctx.doc().modelSpace()) {
+                for (EntityId id : objectsNear(ctx, window)) {
                     const Entity* e = ctx.doc().find(id);
                     if (!e || !isEditable(ctx.doc(), *e) ||
                         !geom::crossesWindow(*e, window, &ctx.doc()))

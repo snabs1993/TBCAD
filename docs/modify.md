@@ -9,7 +9,7 @@ Two modules (W5-2):
 
 | Command | Alias | Function |
 | --- | --- | --- |
-| `OFFSET` | `O` | `offsetEntity`, `offsetToward`, `offsetThrough` |
+| `OFFSET` | `O` | `offsetEntity`, `offsetToward`, `offsetThrough`; reports Erase/Layer/Corners, `Exit` and `Undo` (last offset) at both prompts, Enter on the side ends unless Multiple |
 | `TRIM` | `TR` | `trimEntity` |
 | `EXTEND` | `EX` | `extendEntity` |
 | `FILLET` | `F` | `filletEntities` (also rays and construction lines: the kept side becomes a ray, or a line towards a ray's start), `filletPolylineVertex`, `filletPolyline`; reports the current mode and radius, `Undo` takes back the last corner |
