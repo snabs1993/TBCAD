@@ -135,6 +135,9 @@ TEST_CASE("DIMTEDIT moves the text and Home puts it back") {
     REQUIRE(d.size() == 1);
     CHECK(d[0]->textPosUser);
     CHECK(d[0]->textPos.x == doctest::Approx(80));
+    // DIMTMOVE 0: the dimension line follows the text, which sits above it, as in AutoCAD.
+    CHECK(d[0]->defPts[2].y == doctest::Approx(-50 - 1.875));
+    CHECK(dim::layoutDimension(f.doc, *d[0]).text.center.y == doctest::Approx(-50));
     REQUIRE(f.host->run("DIMTEDIT", {ScriptItem::pick(id, {50, -30}), "Home"}).finished);
     CHECK_FALSE(f.dims()[0]->textPosUser);
     CHECK(f.dims()[0]->textPos.x == doctest::Approx(50));
@@ -308,9 +311,52 @@ TEST_CASE("DIMEDIT New replaces the text and Home restores it") {
     CHECK(f.dims()[0]->textOverride == "TYP");
     REQUIRE(
         f.host->run("DIMEDIT", {"Home", ScriptItem::select({id}), ScriptItem::enter()}).finished);
+    // Home puts the text back in its place and angle; the replaced text stays, as in AutoCAD.
+    CHECK(f.dims()[0]->textOverride == "TYP");
+    REQUIRE(f.host->run("DIMEDIT", {"New", "<>", ScriptItem::select({id}), ScriptItem::enter()})
+                .finished);
     CHECK(f.dims()[0]->textOverride.empty());
     CHECK(f.host->undo());
     CHECK(f.dims()[0]->textOverride == "TYP");
+}
+
+TEST_CASE("DIMTEDIT Left, Right and Center line the text up along the dimension line") {
+    Chain f;
+    REQUIRE(f.host->run("DIMLINEAR", {"0,0", "100,0", "50,-30"}).finished);
+    EntityId id{};
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (kind(e) == EntityKind::Dimension)
+            id = e.common.id;
+    });
+    auto dimNow = [&] { return entityAs<DimensionData>(*f.doc.find(id)); };
+    auto layout = [&] { return dim::layoutDimension(f.doc, *dimNow()); };
+    REQUIRE(f.host->run("DIMTEDIT", {ScriptItem::pick(id, {50, -30}), "Left"}).finished);
+    CHECK(dimNow()->textPosUser);
+    CHECK(dimNow()->textPos.y == doctest::Approx(-30));
+    const double w = layout().text.width;
+    // Two arrow lengths and a gap from the first extension line to the edge of the text.
+    CHECK(layout().text.center.x == doctest::Approx(2 * 2.5 + 0.625 + w / 2));
+    REQUIRE(f.host->run("DIMTEDIT", {ScriptItem::pick(id, {50, -30}), "Right"}).finished);
+    CHECK(layout().text.center.x == doctest::Approx(100 - (2 * 2.5 + 0.625 + w / 2)));
+    REQUIRE(f.host->run("DIMTEDIT", {ScriptItem::pick(id, {50, -30}), "Center"}).finished);
+    CHECK(layout().text.center.x == doctest::Approx(50));
+    // Angle turns the text; 0 puts it back along the line.
+    REQUIRE(f.host->run("DIMTEDIT", {ScriptItem::pick(id, {50, -30}), "Angle", "45"}).finished);
+    CHECK(dimNow()->textRotated);
+    CHECK(layout().text.rotation == doctest::Approx(kPi / 4));
+    REQUIRE(f.host->run("DIMTEDIT", {ScriptItem::pick(id, {50, -30}), "Angle", "0"}).finished);
+    CHECK_FALSE(dimNow()->textRotated);
+    // Left on a vertical dimension is the bottom end (the text reads bottom to top).
+    REQUIRE(f.host->run("DIMLINEAR", {"200,0", "200,100", "230,50"}).finished);
+    EntityId v{};
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (kind(e) == EntityKind::Dimension && e.common.id != id)
+            v = e.common.id;
+    });
+    REQUIRE(f.host->run("DIMTEDIT", {ScriptItem::pick(v, {230, 50}), "Left"}).finished);
+    CHECK(entityAs<DimensionData>(*f.doc.find(v))->textPos.y < 50);
+    CHECK(f.host->undo());
+    CHECK_FALSE(entityAs<DimensionData>(*f.doc.find(v))->textPosUser);
 }
 
 TEST_CASE("DIMEDIT Rotate turns the text and Oblique leans the extension lines") {
