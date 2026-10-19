@@ -59,9 +59,9 @@ void withFlattened(const Document& doc, const Entity& insert, F&& use) {
 void registerSnapProvider(drafting::SnapGeometryRegistry& registry) {
     registry.set(EntityKind::Insert,
                  [](const Document& doc, const Entity& insert, drafting::SnapGeometry& out) {
-                     // An underlay (PDF page) is only a picture to look at: no snapping to it.
+                     // An underlay (PDF page) is only a picture to look at, unless PDFOSNAP is on.
                      if (const auto* data = entityAs<InsertData>(insert);
-                         data && xref::isUnderlay(doc, data->block))
+                         data && xref::isUnderlay(doc, data->block) && !pdfOsnap(doc.header()))
                          return;
                      withFlattened(doc, insert, [&](const drafting::SnapGeometry& g) {
                          auto append = [](auto& dst, const auto& src) {

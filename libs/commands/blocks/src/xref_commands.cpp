@@ -972,7 +972,36 @@ public:
     }
 };
 
+// PDFOSNAP: 1 lets object snap pick up the lines and corners of PDF underlays (0 = off, default).
+class PdfOsnapCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "PDFOSNAP"; }
+    std::string_view description() const override {
+        return "Snap to the geometry of PDF underlays (0 off, 1 on)";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        const int now = pdfOsnap(ctx.doc().header()) ? 1 : 0;
+        cmd::IntOptions io;
+        io.defaultValue = now;
+        io.min = 0;
+        io.max = 1;
+        auto v = co_await ctx.getInteger(
+            "PDFOSNAP 0 ignore PDF underlays, 1 snap to them <" + std::to_string(now) + ">", io);
+        if (!v.ok())
+            co_return;
+        const std::string value = v.value ? "1" : "0";
+        (void)ctx.tx().modifyHeader([&](Header& h) { h.custom[kPdfOsnapKey] = value; });
+        ctx.setUndoLabel("PDFOSNAP");
+        ctx.message("PDFOSNAP = " + value);
+    }
+};
+
 }  // namespace
+
+std::unique_ptr<cmd::Command> makePdfOsnapCommand() {
+    return std::make_unique<PdfOsnapCommand>();
+}
 
 std::unique_ptr<cmd::Command> makeImageTransparencyCommand() {
     return std::make_unique<ImageTransparencyCommand>();
