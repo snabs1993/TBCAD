@@ -7,6 +7,7 @@
 #include <functional>
 #include <map>
 #include <set>
+#include <thread>
 #include <unordered_set>
 
 #include "importer.h"
@@ -2359,6 +2360,14 @@ Result<ImportResult> Importer::run() {
     layerByRaw_["0"] = kLayerZero;
 
     RecordReader rr(lexer);
+    // A big file is split into records on a second thread while this one builds the drawing (a
+    // small one is not worth the thread; asking for threads in the options forces it).
+    constexpr std::size_t kReadAheadBytes = std::size_t{1} << 20;
+    const bool readAhead = !groups_ && (opts_.maxThreads ? opts_.maxThreads >= 2
+                                                         : bytes_.size() >= kReadAheadBytes &&
+                                                               std::thread::hardware_concurrency() >= 2);
+    if (readAhead)
+        rr.readAhead(report_);
     Record rec;
     bool sawSection = false;
     while (rr.next(rec)) {
