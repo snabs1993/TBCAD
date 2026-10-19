@@ -2043,7 +2043,11 @@ void AppCore::hideViewportFrozenLayers() {
                 for (const auto& [id, l] : session_->doc.layers())
                     if (layout::frozenInViewport(session_->doc, *vp, id))
                         hidden.insert(id);
+    const bool changed = hidden != session_->doc.viewHiddenLayers();
+    session_->doc.setViewHiddenLayers(hidden);
     session_->sync->setExtraHiddenLayers(std::move(hidden));
+    if (changed)
+        pruneSelection();
 }
 
 // ZOOM nXP: sets the scale of the viewport on the sheet (the selected one, else the only one) or
@@ -2676,7 +2680,8 @@ void AppCore::selectAll() {
             continue;
         if (!haveLast || e->common.layer != lastLayer || e->common.level != lastLevel) {
             const EffectiveLayer layer = doc.effective(e->common);
-            lastOk = layer.visible() && !layer.locked;
+            lastOk = layer.visible() && !layer.locked &&
+                     !doc.viewHiddenLayers().contains(e->common.layer);
             lastLayer = e->common.layer;
             lastLevel = e->common.level;
             haveLast = true;
