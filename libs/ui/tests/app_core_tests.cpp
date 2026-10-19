@@ -443,6 +443,7 @@ TEST_CASE("opening a missing or corrupt file reports and keeps the current drawi
     Fixture f("badopen");
     f.line("0,0", "100,0");
     CHECK_FALSE(f.core->openFile(f.dir / "nope.tbcad").ok());
+    CHECK(f.core->history().back().find("File not found") != std::string::npos);
     { std::ofstream(f.dir / "junk.tbcad") << "this is not a drawing"; }
     CHECK_FALSE(f.core->openFile(f.dir / "junk.tbcad").ok());
     CHECK(f.core->document().modelSpaceCount() == 1);
@@ -451,6 +452,7 @@ TEST_CASE("opening a missing or corrupt file reports and keeps the current drawi
     fs::create_directories(f.dir / "folder.dxf");
     fs::create_directories(f.dir / "folder.tbcad");
     CHECK_FALSE(f.core->openFile(f.dir / "folder.dxf").ok());
+    CHECK(f.core->history().back().find("is a folder") != std::string::npos);
     CHECK_FALSE(f.core->openFile(f.dir / "folder.tbcad").ok());
     CHECK(f.core->document().modelSpaceCount() == 1);
 }

@@ -365,6 +365,65 @@ void Scene::removeMany(std::span<const EntityId> ids) {
             remove(id);
         return;
     }
+    // Compacts every touched batch once, leaving out the ranges of dropped objects.
+    auto compact = [&](const std::set<std::pair<TileKey, BatchKey>>& touched, auto&& dropped) {
+        for (const auto& [tk, bk] : touched) {
+            auto tit = tiles_.find(tk);
+            if (tit == tiles_.end())
+                continue;
+            Tile& tile = tit->second;
+            auto bit = tile.batches.find(bk);
+            if (bit == tile.batches.end())
+                continue;
+            Batch& batch = bit->second;
+            std::vector<BatchRange> ranges;
+            std::vector<GpuVertex> verts;
+            ranges.reserve(batch.ranges.size());
+            verts.reserve(batch.verts.size());
+            for (BatchRange r : batch.ranges) {
+                if (dropped(r.entity))
+                    continue;
+                const std::uint32_t from = r.begin;
+                r.begin = static_cast<std::uint32_t>(verts.size());
+                verts.insert(verts.end(), batch.verts.begin() + from,
+                             batch.verts.begin() + from + r.count);
+                ranges.push_back(r);
+            }
+            batch.ranges = std::move(ranges);
+            batch.verts = std::move(verts);
+            ++batch.version;
+            if (batch.ranges.empty()) {
+                deleted_.push_back(batch.id);
+                tile.batches.erase(bit);
+            } else {
+                batch.minDrawOrder = batch.ranges[0].drawOrder;
+                for (const BatchRange& r : batch.ranges)
+                    batch.minDrawOrder = std::min(batch.minDrawOrder, r.drawOrder);
+            }
+            if (tile.batches.empty())
+                tiles_.erase(tit);
+            else
+                tile.boundsDirty = true;
+        }
+    };
+    // Fewer ids than drawn objects: take them out of the scene's map one by one (what is not drawn
+    // is skipped) and drop every range whose object is no longer there.
+    if (ids.size() < entities_.size()) {
+        std::set<std::pair<TileKey, BatchKey>> touched;
+        for (EntityId id : ids) {
+            auto it = entities_.find(id);
+            if (it == entities_.end())
+                continue;
+            for (std::uint32_t ref : it->second.refs)
+                touched.insert(refPair(ref));
+            if (it->second.mask)
+                masks_.erase(id);
+            entities_.erase(it);
+        }
+        compact(touched, [&](EntityId e) { return entities_.count(e) == 0; });
+        ++changeCounter_;
+        return;
+    }
     // Most ids of a big change are often not in the scene at all (objects that were only queued):
     // look at the scene's side first instead of hashing every id into a set.
     std::vector<EntityId> present;
@@ -377,7 +436,9 @@ void Scene::removeMany(std::span<const EntityId> ids) {
             cap <<= 1;
         std::vector<std::uint64_t> table(cap, 0);
         const std::size_t mask = cap - 1;
-        auto slot = [&](std::uint64_t v) { return static_cast<std::size_t>(v * 0x9E3779B97F4A7C15ull >> 20) & mask; };
+        auto slot = [&](std::uint64_t v) {
+            return static_cast<std::size_t>(v * 0x9E3779B97F4A7C15ull >> 20) & mask;
+        };
         for (EntityId id : ids)
             if (id.value) {
                 std::size_t i = slot(id.value);
@@ -433,44 +494,7 @@ void Scene::removeMany(std::span<const EntityId> ids) {
             masks_.erase(id);
         entities_.erase(it);
     }
-    for (const auto& [tk, bk] : touched) {
-        auto tit = tiles_.find(tk);
-        if (tit == tiles_.end())
-            continue;
-        Tile& tile = tit->second;
-        auto bit = tile.batches.find(bk);
-        if (bit == tile.batches.end())
-            continue;
-        Batch& batch = bit->second;
-        std::vector<BatchRange> ranges;
-        std::vector<GpuVertex> verts;
-        ranges.reserve(batch.ranges.size());
-        verts.reserve(batch.verts.size());
-        for (BatchRange r : batch.ranges) {
-            if (drop.count(r.entity))
-                continue;
-            const std::uint32_t from = r.begin;
-            r.begin = static_cast<std::uint32_t>(verts.size());
-            verts.insert(verts.end(), batch.verts.begin() + from,
-                         batch.verts.begin() + from + r.count);
-            ranges.push_back(r);
-        }
-        batch.ranges = std::move(ranges);
-        batch.verts = std::move(verts);
-        ++batch.version;
-        if (batch.ranges.empty()) {
-            deleted_.push_back(batch.id);
-            tile.batches.erase(bit);
-        } else {
-            batch.minDrawOrder = batch.ranges[0].drawOrder;
-            for (const BatchRange& r : batch.ranges)
-                batch.minDrawOrder = std::min(batch.minDrawOrder, r.drawOrder);
-        }
-        if (tile.batches.empty())
-            tiles_.erase(tit);
-        else
-            tile.boundsDirty = true;
-    }
+    compact(touched, [&](EntityId e) { return drop.count(e) != 0; });
     ++changeCounter_;
 }
 

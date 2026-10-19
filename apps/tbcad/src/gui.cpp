@@ -2591,6 +2591,26 @@ void Gui::startPage(const ViewportRect& rect) {
         if (ImGui::Button("Import DXF", ImVec2(110, 0)))
             doImportDxf();
 
+        const std::vector<std::string> templates = core_.templateNames();
+        if (!templates.empty()) {
+            ImGui::Spacing();
+            ImGui::TextDisabled("Start from a template");
+            int shown = 0;
+            for (const std::string& name : templates) {
+                if (++shown > 6)
+                    break;
+                if (shown > 1 && (shown - 1) % 3 != 0)
+                    ImGui::SameLine();
+                if (ImGui::Button((name + "##tmpl").c_str(), ImVec2(110, 0))) {
+                    const std::string err = core_.newFromTemplate(name);
+                    if (err.empty())
+                        startPage_ = false;
+                    else
+                        lastError_ = err;
+                }
+            }
+        }
+
         const auto recent = core_.recentFiles();
         if (!recent.empty()) {
             ImGui::Spacing();
