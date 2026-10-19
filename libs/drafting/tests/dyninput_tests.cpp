@@ -215,3 +215,36 @@ TEST_CASE("without a lock ORTHO and an endpoint snap still agree: the snap wins"
     w.line({100, 0}, {100, 50});
     CHECK(near(w.hover({99, 1}, Vec2{0, 0}), {100, 0}));
 }
+
+TEST_CASE("a whole coordinate typed into a field fixes the point: relative after the first") {
+    World w;
+    cmd::FilterFeedback fb;
+    // first point: absolute
+    w.hover({1, 1}, std::nullopt, 1, &fb);
+    REQUIRE(w.dyn.edit(0, "10,5"));
+    w.hover({1, 1}, std::nullopt, 1, &fb);
+    REQUIRE(w.dyn.lockedPoint(fb));
+    CHECK(near(*w.dyn.lockedPoint(fb), {10, 5}));
+    w.dyn.reset();
+
+    // after the first point: relative to the base
+    const Vec2 base{100, 50};
+    w.hover({120, 60}, base, 1, &fb);
+    REQUIRE(w.dyn.edit(0, "10,5"));
+    CHECK(near(w.hover({0, 0}, base, 1, &fb), {110, 55}, 1e-9));
+    REQUIRE(w.dyn.lockedPoint(fb));
+    CHECK(near(*w.dyn.lockedPoint(fb), {110, 55}, 1e-9));
+    // # makes it absolute, @ and polar forms work
+    REQUIRE(w.dyn.edit(1, "#10,5"));
+    CHECK(near(w.hover({0, 0}, base, 1, &fb), {10, 5}, 1e-9));
+    REQUIRE(w.dyn.edit(0, "20<90"));
+    CHECK(near(w.hover({0, 0}, base, 1, &fb), {100, 70}, 1e-9));
+    REQUIRE(w.dyn.edit(0, "@-3,0"));
+    CHECK(near(w.hover({0, 0}, base, 1, &fb), {97, 50}, 1e-9));
+    // the absolute setting makes plain x,y absolute
+    w.set(keys::dynInputAbsolute, "1");
+    REQUIRE(w.dyn.edit(0, "10,5"));
+    CHECK(near(w.hover({0, 0}, base, 1, &fb), {10, 5}, 1e-9));
+    // nonsense is refused
+    CHECK_FALSE(w.dyn.edit(0, "a,b"));
+}

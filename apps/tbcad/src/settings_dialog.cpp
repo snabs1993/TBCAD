@@ -362,6 +362,9 @@ void SettingsDialog::drafting(ui::AppCore& core) {
         ImGui::TextDisabled(
             "Distance and angle (or X and Y) next to the cursor; Tab moves "
             "between the fields.");
+        toggle("Typed x,y after the first point is absolute", drafting::keys::dynInputAbsolute);
+        ImGui::TextDisabled(
+            "Off (default): 10,5 is relative to the last point, #10,5 is absolute.");
         ImGui::EndTabItem();
     }
     if (ImGui::BeginTabItem("Selection")) {
