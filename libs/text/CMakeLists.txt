@@ -28,4 +28,5 @@ tbcad_add_tests(text
     tests/paragraph_tests.cpp
     tests/background_tests.cpp
     tests/fit_tests.cpp
-    tests/markup_codes_tests.cpp)
+    tests/markup_codes_tests.cpp
+    tests/golden_tests.cpp)
