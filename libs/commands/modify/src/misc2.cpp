@@ -356,18 +356,77 @@ public:
         auto pick = co_await ctx.getEntity("Select spline", eo);
         if (!pick.ok())
             co_return;
+        std::vector<EntityId> undoIds;  // the spline's id before each option, for Undo
         for (;;) {
             cmd::KeywordOptions ko;
-            ko.keywords = {"Add",   "Delete",   "Move",    "Weight",    "Close", "Open",
-                           "Purge", "Polyline", "Reverse", "Tolerance", "Exit"};
+            ko.keywords = {"Add",  "Delete", "Move",     "Weight",  "ELevate",   "Join", "Close",
+                           "Open", "Purge",  "Polyline", "Reverse", "Tolerance", "Undo", "Exit"};
             ko.defaultKeyword = "Exit";
             auto k = co_await ctx.getKeyword(
                 "Enter an option "
-                "[Add/Delete/Move/Weight/Close/Open/Purge/Polyline/Reverse/Tolerance/Exit] "
-                "<Exit>",
+                "[Add/Delete/Move/Weight/ELevate/Join/Close/Open/Purge/Polyline/Reverse/"
+                "Tolerance/Undo/Exit] <Exit>",
                 ko);
             if (!k.ok() || k.keyword == "Exit")
                 co_return;
+            if (k.keyword == "Undo") {
+                if (undoIds.empty() || !ctx.rollbackToCheckpoint()) {
+                    ctx.message("Nothing to undo.");
+                } else {
+                    pick.id = undoIds.back();
+                    undoIds.pop_back();
+                }
+                continue;
+            }
+            ctx.checkpoint();
+            undoIds.push_back(pick.id);
+            if (k.keyword == "Join") {
+                // Curves touching an end of the spline become part of it.
+                cmd::SelectionOptions so;
+                so.filter = [&doc = ctx.doc(), id = pick.id](const Entity& x) {
+                    if (x.common.id == id || !isEditable(doc, x))
+                        return false;
+                    const auto kk = kind(x);
+                    return kk == EntityKind::Line || kk == EntityKind::Arc ||
+                           kk == EntityKind::Polyline || kk == EntityKind::Spline ||
+                           kk == EntityKind::Ellipse;
+                };
+                auto more = co_await ctx.getSelection("Select curves to join to the spline", so);
+                if (!more.ok())
+                    continue;
+                std::vector<EntityId> ids{pick.id};
+                for (EntityId m : more.ids)
+                    if (m != pick.id)
+                        ids.push_back(m);
+                std::vector<const Entity*> es;
+                for (EntityId m : ids)
+                    es.push_back(ctx.doc().find(m));
+                auto res = modify::joinEntities(es, getSetting(ctx.host(), "join.tolerance", 1e-3));
+                bool splineUsed = false;
+                for (std::size_t c : res.consumed)
+                    splineUsed = splineUsed || c == 0;
+                if (!splineUsed) {
+                    ctx.message("Nothing touches an end of the spline.");
+                    continue;
+                }
+                std::vector<Entity> created = std::move(res.created);
+                for (std::size_t c : res.consumed)
+                    (void)ctx.tx().erase(ids[c]);
+                bool found = false;
+                for (Entity& n : created) {
+                    const bool isSpline = kind(n) == EntityKind::Spline;
+                    auto added = ctx.tx().add(std::move(n));
+                    if (added && isSpline && !found) {
+                        pick.id = added.value();
+                        found = true;
+                    }
+                }
+                ctx.message(std::to_string(res.consumed.size() - 1) +
+                            " objects joined to the spline.");
+                if (!found)
+                    co_return;  // it is no longer a spline
+                continue;
+            }
             const Entity* e0 = ctx.doc().find(pick.id);
             if (!e0)
                 co_return;
@@ -380,7 +439,19 @@ public:
             const bool byFit = sd->fit.size() >= 2;
             Result<modify::EntityEdit> edit = Error{ErrorCode::InvalidArgument, "Unsupported"};
             bool endAfter = false;
-            if (k.keyword == "Reverse") {
+            if (k.keyword == "ELevate") {
+                cmd::RealOptions ro;
+                ro.defaultValue = sd->degree + 2;
+                ro.min = 2;
+                auto o = co_await ctx.getReal(
+                    "Enter new order <" + std::to_string(sd->degree + 2) + ">", ro);
+                if (!o.ok())
+                    continue;
+                e0 = ctx.doc().find(pick.id);
+                if (!e0)
+                    co_return;
+                edit = modify::editSplineCv(*e0, modify::SplineCvOp::Elevate, {}, {}, o.value);
+            } else if (k.keyword == "Reverse") {
                 edit = modify::reverseEntity(*e0);
             } else if (k.keyword == "Tolerance") {
                 cmd::RealOptions ro;

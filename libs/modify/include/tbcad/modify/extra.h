@@ -132,14 +132,15 @@ Result<EntityEdit> editSplineFit(const Entity& e, SplineFitOp op, Vec2 a = {}, V
 // that is not positive.
 Result<EntityEdit> refitSpline(const Entity& e, double tolerance);
 
-enum class SplineCvOp { Add, Delete, Move, Weight, Close, Open, Purge, ToPolyline };
+enum class SplineCvOp { Add, Delete, Move, Weight, Close, Open, Purge, ToPolyline, Elevate };
 // Edits the control vertices of a spline. Add: a vertex is inserted at the curve point closest to
 // `a` without changing the curve (open splines); Delete: the vertex nearest to `a` goes and the
 // curve is redrawn through the rest; Move: the vertex nearest to `a` goes to `b`; Weight: sets the
 // weight of the vertex nearest to `a` to `value`; Close / Open make the control polygon wrap or
 // not; Purge forgets the fit points (the curve stays); ToPolyline replaces the spline with a
-// polyline within `value` mm (default 0.1) of it. Fit points are dropped by every edit that moves
-// the curve. A closed spline keeps its wrapped vertices consistent.
+// polyline within `value` mm (default 0.1) of it; Elevate raises the order (degree + 1) to `value`
+// without changing the curve (open splines, order up to 26). Fit points are dropped by every edit
+// that moves the curve. A closed spline keeps its wrapped vertices consistent.
 Result<EntityEdit> editSplineCv(const Entity& e, SplineCvOp op, Vec2 a = {}, Vec2 b = {},
                                 double value = 0);
 

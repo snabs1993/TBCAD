@@ -12,11 +12,14 @@
 #include <hb.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <map>
 #include <mutex>
+#include <thread>
 #include <unordered_map>
 
 namespace tbcad::font {
@@ -171,13 +174,53 @@ int ftCubicTo(const FT_Vector* c1, const FT_Vector* c2, const FT_Vector* to, voi
     return 0;
 }
 
-struct SystemEntry {
-    std::filesystem::path path;
-    int index;
-    std::string family;  // lower-case
-    bool bold;
-    bool italic;
+using SystemEntry = FontLibrary::SystemFace;
+
+// Where the list of installed fonts is kept between runs: TBCAD_CACHE_DIR, else the user's
+// local application data (Windows) or cache folder.
+std::filesystem::path systemFontCacheFile() {
+    namespace fs = std::filesystem;
+    fs::path dir;
+    if (const char* env = std::getenv("TBCAD_CACHE_DIR"); env && *env)
+        dir = env;
+#ifdef _WIN32
+    else if (const char* local = std::getenv("LOCALAPPDATA"); local && *local)
+        dir = fs::path(local) / "TBCAD";
+#else
+    else if (const char* xdg = std::getenv("XDG_CACHE_HOME"); xdg && *xdg)
+        dir = fs::path(xdg) / "tbcad";
+    else if (const char* home = std::getenv("HOME"); home && *home)
+        dir = fs::path(home) / ".cache" / "tbcad";
+#endif
+    if (dir.empty())
+        return {};
+    return dir / "system-fonts.txt";
+}
+
+// The installed fonts, read once per process and shared by every library. Never destroyed: the
+// background reader may still be running when the program exits.
+struct SystemFontIndex {
+    std::once_flag once;
+    std::vector<SystemEntry> faces;
 };
+SystemFontIndex& systemFontIndex() {
+    static SystemFontIndex* index = new SystemFontIndex;
+    return *index;
+}
+const std::vector<SystemEntry>& systemFaces() {
+    SystemFontIndex& index = systemFontIndex();
+    std::call_once(index.once, [&] {
+        std::vector<std::filesystem::path> roots;
+#ifdef _WIN32
+        roots.emplace_back("C:\\Windows\\Fonts");
+#else
+        roots.emplace_back("/usr/share/fonts");
+        roots.emplace_back("/usr/local/share/fonts");
+#endif
+        index.faces = FontLibrary::scanFontFolders(roots, systemFontCacheFile());
+    });
+    return index.faces;
+}
 
 }  // namespace
 
@@ -219,8 +262,6 @@ struct FontLibrary::Impl {
     std::filesystem::path bundledDir;
     std::optional<FontId> thai, latin;
     bool thaiTried = false, latinTried = false;
-    std::vector<SystemEntry> systemFonts;
-    bool systemScanned = false;
 
     Impl() {
         if (FT_Init_FreeType(&ftLib) != 0) {
@@ -395,57 +436,6 @@ struct FontLibrary::Impl {
             return f->stroke->has(cp);
         return f && FT_Get_Char_Index(f->ft, static_cast<FT_ULong>(cp)) != 0;
     }
-
-    void scanSystemFonts() {
-        if (systemScanned)
-            return;
-        systemScanned = true;
-        if (!ftLib)
-            return;
-        std::vector<std::filesystem::path> roots;
-#ifdef _WIN32
-        roots.emplace_back("C:\\Windows\\Fonts");
-#else
-        roots.emplace_back("/usr/share/fonts");
-        roots.emplace_back("/usr/local/share/fonts");
-#endif
-        for (const auto& root : roots) {
-            std::error_code ec;
-            std::filesystem::recursive_directory_iterator it(
-                root, std::filesystem::directory_options::skip_permission_denied, ec);
-            for (; !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
-                std::error_code fec;
-                if (!it->is_regular_file(fec))
-                    continue;
-                const std::string ext = lower(it->path().extension().string());
-                if (ext != ".ttf" && ext != ".otf" && ext != ".ttc" && ext != ".otc")
-                    continue;
-                FT_Face face = nullptr;
-                if (FT_New_Face(ftLib, it->path().string().c_str(), 0, &face) != 0 || !face) {
-                    continue;
-                }
-                const FT_Long count = std::min<FT_Long>(face->num_faces, 16);
-                for (FT_Long i = 0; i < count; ++i) {
-                    if (i > 0) {
-                        FT_Done_Face(face);
-                        face = nullptr;
-                        if (FT_New_Face(ftLib, it->path().string().c_str(), i, &face) != 0 ||
-                            !face) {
-                            break;
-                        }
-                    }
-                    if (!face->family_name || !FT_IS_SCALABLE(face))
-                        continue;
-                    systemFonts.push_back({it->path(), static_cast<int>(i),
-                                           lower(face->family_name),
-                                           (face->style_flags & FT_STYLE_FLAG_BOLD) != 0,
-                                           (face->style_flags & FT_STYLE_FLAG_ITALIC) != 0});
-                }
-                if (face)
-                    FT_Done_Face(face);
-            }
-        }
-    }
 };
 
 namespace {
@@ -521,13 +511,161 @@ void FontLibrary::setBundledDirectory(std::filesystem::path dir) {
     impl_->latin.reset();
 }
 
+std::vector<FontLibrary::SystemFace> FontLibrary::scanFontFolders(
+    const std::vector<std::filesystem::path>& roots, const std::filesystem::path& cacheFile) {
+    namespace fs = std::filesystem;
+    // The cache: one line per face, "size<TAB>time<TAB>index<TAB>bold<TAB>italic<TAB>family<TAB>
+    // path" (a file with no usable face has one line with index -1).
+    struct Known {
+        std::uintmax_t size = 0;
+        long long time = 0;
+        std::vector<SystemFace> faces;
+    };
+    std::map<std::string, Known> cached;
+    if (!cacheFile.empty()) {
+        std::ifstream in(cacheFile, std::ios::binary);
+        std::string line;
+        while (std::getline(in, line)) {
+            std::vector<std::string> f;
+            std::size_t from = 0;
+            for (int i = 0; i < 6; ++i) {
+                const std::size_t tab = line.find('\t', from);
+                if (tab == std::string::npos)
+                    break;
+                f.push_back(line.substr(from, tab - from));
+                from = tab + 1;
+            }
+            if (f.size() != 6 || from >= line.size())
+                continue;
+            const std::string path = line.substr(from);
+            Known& k = cached[path];
+            k.size = std::strtoull(f[0].c_str(), nullptr, 10);
+            k.time = std::strtoll(f[1].c_str(), nullptr, 10);
+            const int index = std::atoi(f[2].c_str());
+            if (index >= 0)
+                k.faces.push_back({fs::path(std::u8string(path.begin(), path.end())), index, f[5],
+                                   f[3] == "1", f[4] == "1"});
+        }
+    }
+    // Files in folder order; those not in the cache are read afterwards, on several threads
+    // (opening a font file is what is slow on Windows, not FreeType).
+    std::vector<std::string> order;
+    std::map<std::string, Known> seen;
+    std::vector<std::pair<std::string, fs::path>> toRead;
+    for (const auto& root : roots) {
+        std::error_code ec;
+        fs::recursive_directory_iterator it(root, fs::directory_options::skip_permission_denied,
+                                            ec);
+        for (; !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
+            std::error_code fec;
+            if (!it->is_regular_file(fec))
+                continue;
+            const std::string ext = lower(it->path().extension().string());
+            if (ext != ".ttf" && ext != ".otf" && ext != ".ttc" && ext != ".otc")
+                continue;
+            const std::u8string u8 = it->path().u8string();
+            const std::string key(u8.begin(), u8.end());
+            if (seen.count(key))
+                continue;
+            const std::uintmax_t size = it->file_size(fec);
+            const long long time =
+                static_cast<long long>(it->last_write_time(fec).time_since_epoch().count());
+            order.push_back(key);
+            if (auto c = cached.find(key);
+                c != cached.end() && c->second.size == size && c->second.time == time) {
+                seen[key] = std::move(c->second);
+                cached.erase(c);
+                continue;
+            }
+            Known& k = seen[key];
+            k.size = size;
+            k.time = time;
+            toRead.emplace_back(key, it->path());
+        }
+    }
+    const bool changed = !toRead.empty();
+    if (changed) {
+        std::vector<std::vector<SystemFace>> read(toRead.size());
+        std::atomic<std::size_t> next{0};
+        auto work = [&] {
+            FT_Library ft = nullptr;
+            if (FT_Init_FreeType(&ft) != 0)
+                return;
+            for (std::size_t n; (n = next.fetch_add(1)) < toRead.size();) {
+                const fs::path& path = toRead[n].second;
+                const std::string file = path.string();
+                FT_Face face = nullptr;
+                if (FT_New_Face(ft, file.c_str(), 0, &face) != 0 || !face)
+                    continue;
+                const FT_Long count = std::min<FT_Long>(face->num_faces, 16);
+                for (FT_Long i = 0; i < count; ++i) {
+                    if (i > 0) {
+                        FT_Done_Face(face);
+                        face = nullptr;
+                        if (FT_New_Face(ft, file.c_str(), i, &face) != 0 || !face)
+                            break;
+                    }
+                    if (!face->family_name || !FT_IS_SCALABLE(face))
+                        continue;
+                    read[n].push_back({path, static_cast<int>(i), lower(face->family_name),
+                                       (face->style_flags & FT_STYLE_FLAG_BOLD) != 0,
+                                       (face->style_flags & FT_STYLE_FLAG_ITALIC) != 0});
+                }
+                if (face)
+                    FT_Done_Face(face);
+            }
+            FT_Done_FreeType(ft);
+        };
+        const std::size_t threads = std::min<std::size_t>(
+            toRead.size(), std::clamp<std::size_t>(std::thread::hardware_concurrency(), 1, 8));
+        std::vector<std::thread> pool;
+        for (std::size_t t = 1; t < threads; ++t)
+            pool.emplace_back(work);
+        work();
+        for (std::thread& t : pool)
+            t.join();
+        for (std::size_t n = 0; n < toRead.size(); ++n)
+            seen[toRead[n].first].faces = std::move(read[n]);
+    }
+    std::vector<SystemFace> out;
+    for (const std::string& key : order) {
+        const auto& faces = seen[key].faces;
+        out.insert(out.end(), faces.begin(), faces.end());
+    }
+    // Files that are gone change the cache too.
+    if (!cacheFile.empty() && (changed || !cached.empty())) {
+        std::error_code ec;
+        fs::create_directories(cacheFile.parent_path(), ec);
+        const fs::path temp = cacheFile.string() + ".tmp";
+        {
+            std::ofstream o(temp, std::ios::binary | std::ios::trunc);
+            for (const auto& [path, k] : seen) {
+                if (k.faces.empty())
+                    o << k.size << '\t' << k.time << "\t-1\t0\t0\t\t" << path << '\n';
+                for (const SystemFace& f : k.faces)
+                    o << k.size << '\t' << k.time << '\t' << f.index << '\t' << (f.bold ? 1 : 0)
+                      << '\t' << (f.italic ? 1 : 0) << '\t' << f.family << '\t' << path << '\n';
+            }
+        }
+        fs::rename(temp, cacheFile, ec);
+        if (ec)
+            fs::remove(temp, ec);
+    }
+    return out;
+}
+
+void FontLibrary::warmSystemFonts() {
+    static std::once_flag started;
+    std::call_once(started, [] { std::thread([] { (void)systemFaces(); }).detach(); });
+}
+
 std::optional<FontId> FontLibrary::findSystem(std::string_view family, bool bold, bool italic) {
+    const std::vector<SystemEntry>& faces = systemFaces();  // before the lock: it can take a while
     std::lock_guard lock(impl_->mutex);
-    impl_->scanSystemFonts();
     const std::string want = lower(family);
     const SystemEntry* best = nullptr;
     int bestScore = -1;
-    for (const auto& e : impl_->systemFonts) {
+    for (const auto& e : faces) {
         if (e.family != want)
             continue;
         const int score = (e.bold == bold ? 2 : 0) + (e.italic == italic ? 1 : 0);

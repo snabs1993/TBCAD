@@ -1571,6 +1571,86 @@ TEST_CASE("SPLINEDIT edits the control vertices of a CV spline and converts it t
     CHECK(f.count(EntityKind::Spline) == 0);
 }
 
+TEST_CASE("SPLINEDIT ELevate raises the order without moving the curve, also rational") {
+    for (bool rational : {false, true}) {
+        Fixture f;
+        SplineData sp;
+        sp.degree = 3;
+        sp.knots = {0, 0, 0, 0, 0.4, 1, 1, 1, 1};
+        sp.control = {{0, 0}, {10, 20}, {30, -20}, {40, 0}, {55, 10}};
+        if (rational)
+            sp.weights = {1, 2, 0.5, 1, 1.5};
+        EntityId id = f.add(Indirect<SplineData>(sp));
+        auto before = geom::CurveRef::spline(sp);
+        REQUIRE(before);
+        f.host.run("SPLINEDIT", {ScriptItem::pick(id, {10, 20}), "EL", "6", "Exit"});
+        const auto* d = entityAs<SplineData>(f.get(id));
+        REQUIRE(d);
+        CHECK(d->degree == 5);
+        CHECK(d->knots.size() == d->control.size() + 6);
+        CHECK(d->weights.empty() == !rational);
+        auto after = geom::CurveRef::spline(*d);
+        REQUIRE(after);
+        for (int i = 0; i <= 20; ++i) {
+            const double t0 =
+                before.value().t0() + (before.value().t1() - before.value().t0()) * i / 20.0;
+            const double t1 =
+                after.value().t0() + (after.value().t1() - after.value().t0()) * i / 20.0;
+            CHECK(near(before.value().pointAt(t0), after.value().pointAt(t1), 1e-7));
+        }
+        // the order must go up
+        f.host.run("SPLINEDIT", {ScriptItem::pick(id, {10, 20}), "EL", "4", "Exit"});
+        CHECK(entityAs<SplineData>(f.get(id))->degree == 5);
+        CHECK(f.host.logContains("The new order must be higher than 6."));
+    }
+}
+
+TEST_CASE("SPLINEDIT Join takes in a touching line, Undo puts it back") {
+    Fixture f;
+    SplineData sp;
+    sp.degree = 3;
+    sp.knots = {0, 0, 0, 0, 1, 1, 1, 1};
+    sp.control = {{0, 0}, {10, 20}, {30, -20}, {40, 0}};
+    EntityId id = f.add(Indirect<SplineData>(sp));
+    EntityId l = f.add(LineData{{40, 0}, {60, 0}});
+    f.host.run("SPLINEDIT", {ScriptItem::pick(id, {10, 20}), "Join", ScriptItem::select({l}),
+                             ScriptItem::enter(), "Exit"});
+    CHECK(f.count(EntityKind::Line) == 0);
+    CHECK(f.count(EntityKind::Spline) == 1);
+    Vec2 end{};
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* d = entityAs<SplineData>(e))
+            end = d->control.back();
+    });
+    CHECK(near(end, {60, 0}));
+    f.host.undo();
+    CHECK(f.count(EntityKind::Line) == 1);
+
+    // Undo inside the command
+    f.host.run("SPLINEDIT", {ScriptItem::pick(id, {10, 20}), "Join", ScriptItem::select({l}),
+                             ScriptItem::enter(), "Undo", "Exit"});
+    CHECK(f.count(EntityKind::Line) == 1);
+    CHECK(entityAs<SplineData>(f.get(id))->control.size() == 4);
+}
+
+TEST_CASE("JOIN cLose turns one arc into a circle and one elliptical arc into an ellipse") {
+    Fixture f;
+    EntityId a = f.add(ArcData{{0, 0}, 5, 0, kPi / 2});
+    f.host.run("JOIN", {ScriptItem::select({a}), ScriptItem::enter(), "L"});
+    CHECK(f.count(EntityKind::Arc) == 0);
+    CHECK(f.count(EntityKind::Circle) == 1);
+    EntityId e = f.add(EllipseData{{0, 0}, {10, 0}, 0.5, 0, kPi});
+    f.host.run("JOIN", {ScriptItem::select({e}), ScriptItem::enter(), "L"});
+    CHECK(entityAs<EllipseData>(f.get(e))->endParam == doctest::Approx(kTwoPi));
+    // eXit leaves it alone; one line cannot be joined on its own
+    EntityId b = f.add(ArcData{{0, 0}, 5, 0, kPi / 2});
+    f.host.run("JOIN", {ScriptItem::select({b}), ScriptItem::enter(), "X"});
+    CHECK(f.count(EntityKind::Arc) == 1);
+    EntityId l = f.add(LineData{{0, 0}, {1, 0}});
+    f.host.run("JOIN", {ScriptItem::select({l}), ScriptItem::enter()});
+    CHECK(f.host.logContains("Select at least two objects to join."));
+}
+
 TEST_CASE("SPLINEDIT and PEDIT Tolerance refit a spline through fewer fit points") {
     Fixture f;
     SplineData sp;
@@ -2318,4 +2398,64 @@ TEST_CASE("MATCHPROP passes text height and style between text and MText, and ta
                {ScriptItem::pick(x, {1, -1}), ScriptItem::pick(y, {1, 49}), ScriptItem::esc()});
     CHECK(entityAs<TableData>(f.get(y))->textHeight == doctest::Approx(4));
     CHECK(entityAs<TableData>(f.get(y))->margin == doctest::Approx(2));
+}
+
+TEST_CASE("FILLET and CHAMFER report the current settings and Undo takes back the last corner") {
+    Fixture f;
+    EntityId a = f.add(LineData{{0, 0}, {10, 0}});
+    EntityId b = f.add(LineData{{0, 0}, {0, 10}});
+    EntityId c = f.add(LineData{{30, 0}, {40, 0}});
+    EntityId d = f.add(LineData{{30, 0}, {30, 10}});
+    auto r = f.host.run("FILLET", {"R", "2", "M", ScriptItem::pick(a, {8, 0}),
+                                   ScriptItem::pick(b, {0, 8}), ScriptItem::pick(c, {38, 0}),
+                                   ScriptItem::pick(d, {30, 8}), "U", ScriptItem::enter()});
+    CHECK(r.finished);
+    CHECK(f.count(EntityKind::Arc) == 1);  // the second corner was taken back
+    bool reported = false;
+    for (const auto& m : f.host.log())
+        reported |= m.find("Current settings: Mode = TRIM, Radius = 0.0000") != std::string::npos;
+    CHECK(reported);
+    f.host.undo();
+    CHECK(f.count(EntityKind::Arc) == 0);
+
+    // CHAMFER: M is Multiple, E is the method; Undo with nothing made says so.
+    Fixture g;
+    EntityId p = g.add(LineData{{0, 0}, {10, 0}});
+    EntityId q = g.add(LineData{{0, 0}, {0, 10}});
+    r = g.host.run("CHAMFER", {"U", "D", "2", "2", "E", "D", "M", ScriptItem::pick(p, {8, 0}),
+                               ScriptItem::pick(q, {0, 8}), ScriptItem::enter()});
+    CHECK(r.finished);
+    CHECK(g.count(EntityKind::Line) == 3);
+    bool dist = false, undone = false;
+    for (const auto& m : g.host.log()) {
+        dist |= m.find("(TRIM mode) Current chamfer Dist1 = 1.0000, Dist2 = 1.0000") !=
+                std::string::npos;
+        undone |= m.find("Everything has been undone.") != std::string::npos;
+    }
+    CHECK(dist);
+    CHECK(undone);
+}
+
+TEST_CASE("OFFSET reports its settings, Undo takes back the last offset, Enter ends") {
+    Fixture f;
+    EntityId a = f.add(LineData{{0, 0}, {10, 0}});
+    // Multiple: two offsets, Undo takes the second back, Enter for the next object, Exit.
+    auto r = f.host.run("OFFSET", {"2", ScriptItem::pick(a, {5, 0}), "M", "5,1", "5,10", "U",
+                                   ScriptItem::enter(), "E"});
+    CHECK(r.finished);
+    CHECK(f.count(EntityKind::Line) == 2);
+    bool reported = false;
+    for (const auto& m : f.host.log())
+        reported |= m.find("Current settings: Erase source=No  Layer=Source") != std::string::npos;
+    CHECK(reported);
+    f.host.undo();
+    CHECK(f.count(EntityKind::Line) == 1);
+
+    // Undo at the object prompt takes back the offset made before; Enter on the side ends.
+    r = f.host.run("OFFSET", {"2", ScriptItem::pick(a, {5, 0}), "5,1", "U", ScriptItem::enter()});
+    CHECK(r.finished);
+    CHECK(f.count(EntityKind::Line) == 1);
+    r = f.host.run("OFFSET", {"2", ScriptItem::pick(a, {5, 0}), ScriptItem::enter()});
+    CHECK(r.finished);
+    CHECK(f.count(EntityKind::Line) == 1);
 }

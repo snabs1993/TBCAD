@@ -9,14 +9,14 @@ Two modules (W5-2):
 
 | Command | Alias | Function |
 | --- | --- | --- |
-| `OFFSET` | `O` | `offsetEntity`, `offsetToward`, `offsetThrough` |
+| `OFFSET` | `O` | `offsetEntity`, `offsetToward`, `offsetThrough`; reports Erase/Layer/Corners, `Exit` and `Undo` (last offset) at both prompts, Enter on the side ends unless Multiple |
 | `TRIM` | `TR` | `trimEntity` |
 | `EXTEND` | `EX` | `extendEntity` |
-| `FILLET` | `F` | `filletEntities` (also rays and construction lines: the kept side becomes a ray, or a line towards a ray's start), `filletPolylineVertex`, `filletPolyline` |
-| `CHAMFER` | `CHA` | `chamferEntities` (rays and construction lines as for FILLET), `chamferPolylineVertex`, `chamferPolyline` |
+| `FILLET` | `F` | `filletEntities` (also rays and construction lines: the kept side becomes a ray, or a line towards a ray's start), `filletPolylineVertex`, `filletPolyline`; reports the current mode and radius, `Undo` takes back the last corner |
+| `CHAMFER` | `CHA` | `chamferEntities` (rays and construction lines as for FILLET), `chamferPolylineVertex`, `chamferPolyline`; reports the current mode and distances, `Undo` takes back the last corner, `mEthod` (E) since M is Multiple |
 | `BREAK` | `BR` | `breakEntity` (a construction line becomes two rays, a ray a line plus a new ray) |
 | `BREAKATPOINT` | `BAP` | `breakAtPoint` |
-| `JOIN` | `J` | `joinEntities` |
+| `JOIN` | `J` | `joinEntities`. A single arc or elliptical arc asks `[cLose/eXit]`: cLose makes it a full circle or ellipse. |
 | `ERASE` | `E` | (only registered when nobody else did) |
 | `OOPS` | | puts back the objects the last ERASE removed, even after other commands (kept per drawing, for the session only). |
 
@@ -126,7 +126,7 @@ ALIGN, MATCHPROP, SETBYLAYER and SCALETEXT accept every entity kind on an editab
 
 | Command | Alias | What it does |
 | --- | --- | --- |
-| `SPLINEDIT` | `SPE` | Add, Delete or Move fit points (the spline is fitted again), Tolerance (fits the spline again through as few fit points as keep it within a distance of the old curve), Close, Open, Reverse. Needs a spline that has fit points. |
+| `SPLINEDIT` | `SPE` | Add, Delete or Move fit points (the spline is fitted again), Tolerance (fits the spline again through as few fit points as keep it within a distance of the old curve), Close, Open, Reverse. On control-vertex splines Add/Delete/Move/Weight edit the vertices, `ELevate` raises the order (degree + 1, up to 26) without changing the curve, `Purge` drops fit points and `Polyline` converts. `Join` takes in lines, arcs, polylines and splines touching an end; `Undo` takes back the last option. |
 | `JUSTIFYTEXT` | | Changes the justification of Text (Left, Align, Fit, Center, Middle, Right, TL..BR) or the attachment of MText without moving it. Align and Fit span the text between where it now starts and ends; Aligned or Fit text turned into another justification keeps its size (its height or width factor takes the stretch). The Justify row of the Properties panel works the same way. |
 | `PEDIT` > Vertices | | Insert (splits a straight or arc segment), Remove (neighbours joined by a straight segment) and Move a vertex. Per-vertex widths are not preserved when inserting. |
 
