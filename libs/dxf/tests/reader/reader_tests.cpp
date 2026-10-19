@@ -339,6 +339,23 @@ TEST_CASE("an OLE2FRAME is kept for saving and shows its frame") {
     CHECK_FALSE(proxyDxfGroups(*proxies[0]).empty());
 }
 
+TEST_CASE("a spline with too few control points for its degree is drawn with a lower degree") {
+    Pairs p;
+    p.section("ENTITIES");
+    p.g(0, "SPLINE").g(8, "0").g(70, 8).g(71, 3).g(72, 8).g(73, 3);
+    for (int i = 0; i < 8; ++i)
+        p.g(40, i < 4 ? 0.0 : 1.0);
+    p.g(10, 0.0).g(20, 0.0).g(30, 0.0).g(10, 5.0).g(20, 5.0).g(30, 0.0).g(10, 10.0).g(20, 0.0);
+    p.g(30, 0.0);
+    p.g(0, "SPLINE").g(8, "0").g(70, 8).g(71, 3).g(72, 0).g(73, 1).g(10, 1.0).g(20, 1.0);
+    Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
+    const auto splines = modelEntities<SplineData>(l.doc());
+    REQUIRE(splines.size() == 1);
+    CHECK(splines[0]->degree == 2);
+    CHECK(splines[0]->control.size() == 3);
+    CHECK(l.report.countCode(code::kBadEntity) == 2);  // one lowered, one dropped
+}
+
 TEST_CASE("extrusion: a slightly tilted plane is drawn as seen from above") {
     // A normal about 4 degrees off the Z axis (real drawings carry such planes): the arbitrary axis
     // algorithm turns the object x axis to -X, so object (10, 5) lies at world (-10, -5).

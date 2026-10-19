@@ -1323,8 +1323,17 @@ bool Importer::convSpline(const Record& r, std::vector<Entity>& out) {
         return true;
     }
     if (sp.control.size() < static_cast<std::size_t>(sp.degree) + 1) {
-        bad(r, "SPLINE", "too few control points for its degree; skipped");
-        return false;
+        if (sp.control.size() < 2) {
+            bad(r, "SPLINE", "fewer than two control points; skipped");
+            return false;
+        }
+        // Drawn with the highest degree its points allow (two points: a straight line).
+        bad(r, "SPLINE",
+            "too few control points for degree " + std::to_string(sp.degree) + "; drawn with degree " +
+                std::to_string(sp.control.size() - 1));
+        sp.degree = static_cast<int>(sp.control.size()) - 1;
+        sp.knots.clear();
+        sp.periodic = false;
     }
     if (!sp.knots.empty() &&
         (sp.knots.size() != sp.control.size() + static_cast<std::size_t>(sp.degree) + 1 ||
