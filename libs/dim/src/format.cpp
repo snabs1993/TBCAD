@@ -129,7 +129,8 @@ std::string toleranceNumber(const DimStyle& style, double value, bool angular) {
 
 std::string dimensionText(const DimStyle& style, const DimensionData& d) {
     const bool angular = isAngular(d.kind);
-    const double m = measurement(d);
+    // DIMLFAC scales lengths, never angles.
+    const double m = angular ? measurement(d) : measurement(d) * style.linearFactor;
     std::string num;
     if (style.tolerance == DimTolerance::Limits) {
         // The two limits replace the measurement: the larger, then the smaller.

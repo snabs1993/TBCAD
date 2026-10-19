@@ -56,6 +56,17 @@ older programs skip; DXF writes DIMTOL/DIMLIM/DIMTP/DIMTM/DIMTDEC and DIMALT/DIM
 them (also in a dimension's own DSTYLE overrides). DXF cannot say "inches" for the alternate value, so it comes
 back as millimetres times a factor with the same text.
 
+### Other style variables
+
+`LinearFactor` (DIMLFAC, DXF 144) multiplies the measurement of every length dimension before it is
+shown (alternate units, tolerance limits and the `<>` of a text override follow); angles are never
+scaled. `Fit` (DIMATFIT, DXF 289) is Best, ArrowsFirst, TextFirst or BothOutside: when text and
+arrows do not fit together, Best and ArrowsFirst move the arrows outside first (the default rules
+below), TextFirst moves the text outside first, BothOutside moves both. `TextMove` (DIMTMOVE,
+DXF 279) is WithLine, Leader or Free: text dragged outside the extension lines (or the circle of a
+radius / diameter dimension) gets a leader line, except with Free. All three are edited with
+DIMSTYLE, undo with the style, and are kept in `.tbcad` (DSTX), the change journal and DXF.
+
 ## Fit rules (linear and aligned)
 
 `L` is the distance between the extension lines, `tw` the text width, `g` the text gap and `a`

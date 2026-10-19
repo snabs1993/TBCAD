@@ -13,6 +13,8 @@ tbcad_add_tests(e2e
     tests/undo_stress_tests.cpp
     tests/table_ops_tests.cpp
     tests/dimstyle_tests.cpp
+    tests/dimstyle_overrides_tests.cpp
+    tests/dim_chain_scale_tests.cpp
     tests/dim_assoc_tests.cpp
     tests/dim_hard_geometry_tests.cpp
     tests/dim_perf_tests.cpp

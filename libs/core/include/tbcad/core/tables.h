@@ -95,6 +95,14 @@ enum class DimTextAlign { WithDimLine, Horizontal };
 // limits "100.05 / 99.98".
 enum class DimTolerance : std::uint8_t { None, Symmetrical, Deviation, Limits };
 
+// What a dimension does when the text and arrows do not both fit between the extension lines
+// (DIMATFIT): Best and ArrowsFirst move the arrows out first, then the text; TextFirst moves the
+// text out first; BothOutside moves both as soon as they do not fit together.
+enum class DimFit : std::uint8_t { Best, ArrowsFirst, TextFirst, BothOutside };
+// DIMTMOVE: where text goes when it is dragged away. Outside the extension lines it keeps a
+// leader (WithLine, Leader) or none (Free).
+enum class DimTextMove : std::uint8_t { WithLine, Leader, Free };
+
 struct DimStyle {
     DimStyleId id{};
     std::string name{};
@@ -136,6 +144,10 @@ struct DimStyle {
     double tolUpper = 0;
     double tolLower = 0;
     Precision tolPrecision = 2;
+    // DIMLFAC: multiplies the measurement of every length dimension before it is shown.
+    double linearFactor = 1;
+    DimFit fit = DimFit::Best;
+    DimTextMove textMove = DimTextMove::WithLine;
 };
 
 // ---- Dynamic blocks --------------------------------------------------------------------------

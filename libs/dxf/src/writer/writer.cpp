@@ -649,6 +649,8 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
             if (!ds.altPrefix.empty() || !ds.altSuffix.empty())
                 o.str(4, ds.altPrefix + "[]" + ds.altSuffix);
         }
+        if (ds.linearFactor != 1)
+            o.d(144, ds.linearFactor);  // DIMLFAC
         o.i(73, ds.textAlign == DimTextAlign::Horizontal ? 1 : 0);
         o.i(74, ds.textAlign == DimTextAlign::Horizontal ? 1 : 0);
         o.i(77, ds.textPlacement == DimTextPlacement::AboveLine ? 1 : 0);
@@ -660,6 +662,12 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
         o.i(178, clr(ds.textColor));
         if (!r12_) {
             o.i(271, std::clamp(ds.precision, 0, 16));
+            // DIMTMOVE (279) and DIMATFIT (289); 0 and 3 are the AutoCAD defaults.
+            o.i(279, static_cast<int>(ds.textMove));
+            o.i(289, ds.fit == DimFit::BothOutside   ? 0
+                     : ds.fit == DimFit::ArrowsFirst ? 1
+                     : ds.fit == DimFit::TextFirst   ? 2
+                                                     : 3);
             if (ds.tolerance != DimTolerance::None)
                 o.i(272, std::clamp(ds.tolPrecision, 0, 16));
         }

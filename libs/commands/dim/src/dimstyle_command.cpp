@@ -85,7 +85,7 @@ const std::vector<std::string> kProps = {
     "Prefix",       "Suffix",        "RoundOff",  "Scale",     "LeadingZeros", "TrailingZeros",
     "LineColor",    "ExtColor",      "TextColor", "AltUnits",  "AltScale",     "AltUnit",
     "AltPrecision", "AltPrefix",     "AltSuffix", "Tolerance", "TolUpper",     "TolLower",
-    "TolPrecision"};
+    "TolPrecision", "LinearFactor",  "Fit",       "TextMove"};
 
 std::string num(double v) {
     char buf[40];
@@ -112,6 +112,8 @@ std::vector<std::pair<std::string, std::string>> describe(const Document& doc, c
     const char* arrow[] = {"Filled", "Open", "Tick", "Dot", "None"};
     const char* unit[] = {"mm", "cm", "m", "in", "ft"};
     const char* tol[] = {"None", "Symmetrical", "Deviation", "Limits"};
+    const char* fit[] = {"Best", "ArrowsFirst", "TextFirst", "BothOutside"};
+    const char* move[] = {"WithLine", "Leader", "Free"};
     return {
         {"TextHeight", num(s.textHeight)},
         {"TextGap", num(s.textGap)},
@@ -144,6 +146,9 @@ std::vector<std::pair<std::string, std::string>> describe(const Document& doc, c
         {"TolUpper", num(s.tolUpper)},
         {"TolLower", num(s.tolLower)},
         {"TolPrecision", std::to_string(s.tolPrecision)},
+        {"LinearFactor", num(s.linearFactor)},
+        {"Fit", fit[static_cast<int>(s.fit)]},
+        {"TextMove", move[static_cast<int>(s.textMove)]},
     };
 }
 
@@ -291,6 +296,32 @@ std::string applyProperty(const Document& doc, DimStyle& s, std::string_view key
             s.tolerance = DimTolerance::Limits;
         else
             return "Tolerance is None, Symmetrical, Deviation or Limits.";
+        return {};
+    }
+    if (same(key, "LinearFactor"))
+        return real(s.linearFactor, true);
+    if (same(key, "Fit")) {
+        if (same(value, "Best"))
+            s.fit = DimFit::Best;
+        else if (same(value, "ArrowsFirst"))
+            s.fit = DimFit::ArrowsFirst;
+        else if (same(value, "TextFirst"))
+            s.fit = DimFit::TextFirst;
+        else if (same(value, "BothOutside"))
+            s.fit = DimFit::BothOutside;
+        else
+            return "Fit is Best, ArrowsFirst, TextFirst or BothOutside.";
+        return {};
+    }
+    if (same(key, "TextMove")) {
+        if (same(value, "WithLine"))
+            s.textMove = DimTextMove::WithLine;
+        else if (same(value, "Leader"))
+            s.textMove = DimTextMove::Leader;
+        else if (same(value, "Free"))
+            s.textMove = DimTextMove::Free;
+        else
+            return "TextMove is WithLine, Leader or Free.";
         return {};
     }
     if (same(key, "TolUpper"))
