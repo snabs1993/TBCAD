@@ -188,7 +188,8 @@ TEST_CASE("MediaBox matches page size") {
     doc.setCompression(false);
     doc.addPage(210, 297);
     std::string s = bytes(doc);
-    CHECK(s.find("/MediaBox [0 0 595.2756 841.8898]") != std::string::npos);
+    // Whole points, as AutoCAD writes them.
+    CHECK(s.find("/MediaBox [0 0 595 842]") != std::string::npos);
 }
 
 TEST_CASE("xref entries are exactly 20 bytes and offsets are exact") {

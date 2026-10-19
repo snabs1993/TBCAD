@@ -159,9 +159,12 @@ struct Builder {
             } else if (s.styleTable && aci) {
                 const auto& e = s.styleTable->forIndex(aci);
                 char eb[96];
-                std::snprintf(eb, sizeof eb, "pen %s screen %d%s",
+                char lw[24] = "object";
+                if (e.lineweightMm)
+                    std::snprintf(lw, sizeof lw, "%.3g mm", *e.lineweightMm);
+                std::snprintf(eb, sizeof eb, "pen %s screen %d%s lineweight %s",
                               e.color ? "set" : "object colour", e.screen,
-                              e.grayscale ? " grey" : "");
+                              e.grayscale ? " grey" : "", lw);
                 entry = eb;
             }
             std::snprintf(buf, sizeof buf,
@@ -242,6 +245,7 @@ struct Builder {
             PlotFill fill;
             fill.layer = layer;
             fill.color = color(f->style.color);
+            fill.outline = !f->glyph && !isBackgroundColor(f->style.color);
             for (const auto& ring : f->rings) {
                 if (ring.size() < 3)
                     continue;

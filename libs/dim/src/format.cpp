@@ -3,6 +3,7 @@
 #include <cstdio>
 
 #include "tbcad/dim/dim.h"
+#include "tbcad/text/text.h"
 
 namespace tbcad::dim {
 
@@ -239,10 +240,19 @@ std::string toleranceNumber(const DimStyle& style, double value, bool angular) {
 
 }  // namespace
 
-std::string dimensionText(const DimStyle& style, const DimensionData& d) {
+namespace {
+
+// The text of a dimension in three parts: what comes before the tolerance stack, the stack
+// itself (empty when the tolerance is not stacked) and what follows it.
+struct TextParts {
+    std::string before{}, up{}, down{}, after{};
+};
+
+TextParts dimensionParts(const DimStyle& style, const DimensionData& d, bool stack) {
     const bool angular = isAngular(d.kind);
     // DIMLFAC scales lengths, never angles.
     const double m = angular ? measurement(d) : measurement(d) * style.linearFactor;
+    TextParts t;
     std::string num;
     if (style.tolerance == DimTolerance::Limits) {
         // The two limits replace the measurement: the larger, then the smaller.
@@ -251,18 +261,33 @@ std::string dimensionText(const DimStyle& style, const DimensionData& d) {
         const double lo = m - style.tolLower * toMeasure;
         DimStyle limitStyle = style;
         limitStyle.precision = style.tolPrecision;
-        num = formatNumber(limitStyle, hi, angular) + " / " + formatNumber(limitStyle, lo, angular);
+        if (stack) {
+            t.up = formatNumber(limitStyle, hi, angular);
+            t.down = formatNumber(limitStyle, lo, angular);
+        } else {
+            num = formatNumber(limitStyle, hi, angular) + " / " +
+                  formatNumber(limitStyle, lo, angular);
+        }
     } else {
         num = formatNumber(style, m, angular);
     }
-    num = std::string(kindPrefix(d.kind)) + style.prefix + num + style.suffix;
+    std::string head = std::string(kindPrefix(d.kind)) + style.prefix + num;
+    std::string tail = style.suffix;
     switch (style.tolerance) {
         case DimTolerance::Symmetrical:
-            num += " \xC2\xB1" + toleranceNumber(style, style.tolUpper, angular);
+            tail += " \xC2\xB1" + toleranceNumber(style, style.tolUpper, angular);
             break;
         case DimTolerance::Deviation:
-            num += " +" + toleranceNumber(style, style.tolUpper, angular) + " -" +
-                   toleranceNumber(style, style.tolLower, angular);
+            if (stack) {
+                // Upper over lower, after a small space, like AutoCAD stacks them.
+                head += tail + " ";
+                tail.clear();
+                t.up = "+" + toleranceNumber(style, style.tolUpper, angular);
+                t.down = "-" + toleranceNumber(style, style.tolLower, angular);
+            } else {
+                tail += " +" + toleranceNumber(style, style.tolUpper, angular) + " -" +
+                        toleranceNumber(style, style.tolLower, angular);
+            }
             break;
         case DimTolerance::Limits:
         case DimTolerance::None:
@@ -273,16 +298,64 @@ std::string dimensionText(const DimStyle& style, const DimensionData& d) {
         f.unit = style.altUnit;
         std::string alt = formatLength(m * style.altScale, style.altPrecision, f);
         suppressZeros(alt, style);
-        num += " [" + style.altPrefix + alt + style.altSuffix + "]";
+        tail += " [" + style.altPrefix + alt + style.altSuffix + "]";
     }
+    t.before = std::move(head);
+    t.after = std::move(tail);
     if (d.textOverride.empty())
-        return num;
-    std::string out = d.textOverride;
-    std::size_t at = out.find("<>");
+        return t;
+    const std::size_t at = d.textOverride.find("<>");
     if (at == std::string::npos)
-        return out;
-    out.replace(at, 2, num);
-    return out;
+        return {d.textOverride, {}, {}, {}};
+    t.before = d.textOverride.substr(0, at) + t.before;
+    t.after += d.textOverride.substr(at + 2);
+    return t;
+}
+
+bool stacks(const DimStyle& style) {
+    return style.tolerance == DimTolerance::Deviation || style.tolerance == DimTolerance::Limits;
+}
+
+}  // namespace
+
+std::string dimensionText(const DimStyle& style, const DimensionData& d) {
+    const TextParts t = dimensionParts(style, d, false);
+    return t.before + t.after;
+}
+
+std::optional<StackedText> stackedDimensionText(const DimStyle& style, const DimensionData& d) {
+    if (!stacks(style))
+        return std::nullopt;
+    TextParts t = dimensionParts(style, d, true);
+    if (t.up.empty() && t.down.empty())
+        return std::nullopt;  // an override without "<>" replaces everything
+    StackedText s;
+    // Stack parts may not hold the stack separators themselves.
+    auto esc = [](const std::string& v) {
+        std::string o;
+        for (char c : v) {
+            if (c == '^' || c == '/' || c == '#' || c == '\\' || c == ';')
+                o += '\\';
+            o += c;
+        }
+        return o;
+    };
+    // MTEXT draws a stack at 0.7 of the height around it: DIMTFAC sets the height of each line,
+    // and \A1 keeps the measurement centred on the stack.
+    std::string stackMarkup = "\\S" + esc(t.up) + "^" + esc(t.down) + ";";
+    const double f = style.tolHeightFactor / 0.7;
+    if (std::abs(f - 1) > 1e-9) {
+        char buf[32];
+        std::snprintf(buf, sizeof buf, "%.6g", f);
+        stackMarkup = std::string("{\\H") + buf + "x;" + stackMarkup + "}";
+    }
+    s.markup = "\\A1;" + text::markupFromPlain(t.before) + stackMarkup +
+               text::markupFromPlain(t.after);
+    s.before = std::move(t.before);
+    s.up = std::move(t.up);
+    s.down = std::move(t.down);
+    s.after = std::move(t.after);
+    return s;
 }
 
 }  // namespace tbcad::dim

@@ -20,13 +20,20 @@ Precision precisionOf(cmd::CommandContext& ctx) {
         } catch (...) {
         }
     }
-    return 4;
+    return linearPrecision(ctx.doc().header());  // UNITS precision
 }
 
 // Prints a result and remembers it for "copy last result".
 void report(cmd::CommandContext& ctx, const std::string& text) {
     ctx.message(text);
     ctx.host().setSetting(kLastResultKey, text);
+}
+
+// Angles: the inquiry precision when one is set, else the drawing's angle precision (UNITS).
+Precision anglePrecisionOf(cmd::CommandContext& ctx) {
+    if (ctx.host().setting("inquiry.precision"))
+        return precisionOf(ctx);
+    return anglePrecision(ctx.doc().header());
 }
 
 std::string ang(double rad, Precision p) {
@@ -83,7 +90,7 @@ public:
         const Vec2 d = second.point - first.point;
         const double angle = length(d) < tol::kLinear ? 0 : normalizeAngle(std::atan2(d.y, d.x));
         report(ctx, "Distance = " + formatLengthIn(ctx.doc(), length(d), p) +
-                        ", Angle in XY plane = " + ang(angle, p) +
+                        ", Angle in XY plane = " + ang(angle, anglePrecisionOf(ctx)) +
                         ", Delta X = " + formatLengthIn(ctx.doc(), d.x, p) +
                         ", Delta Y = " + formatLengthIn(ctx.doc(), d.y, p));
     }
@@ -270,7 +277,7 @@ public:
             auto p2 = co_await ctx.getPoint("Specify second angle endpoint", po);
             if (!p2.ok())
                 co_return;
-            report(ctx, "Angle = " + ang(angleAtVertex(vertex.point, p1.point, p2.point), p));
+            report(ctx, "Angle = " + ang(angleAtVertex(vertex.point, p1.point, p2.point), anglePrecisionOf(ctx)));
             co_return;
         }
         if (!first.ok())
@@ -288,7 +295,8 @@ public:
         }
         report(ctx,
                "Angle = " +
-                   ang(angleBetweenLines(a0, a1, first.pickPoint, b0, b1, second.pickPoint), p));
+                   ang(angleBetweenLines(a0, a1, first.pickPoint, b0, b1, second.pickPoint),
+                       anglePrecisionOf(ctx)));
     }
 };
 

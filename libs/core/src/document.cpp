@@ -604,6 +604,9 @@ Result<void> checkRow(const Document& doc, DimStyle& r, const DimStyle* old) {
     }
     if (!std::isfinite(r.linearFactor) || !(r.linearFactor > 0))
         return invalid("linear scale factor must be positive");
+    if (!std::isfinite(r.tolHeightFactor) || !(r.tolHeightFactor > 0))
+        return invalid("tolerance height factor must be positive");
+    r.tolHeightFactor = std::min(r.tolHeightFactor, 10.0);
     r.textJustify = std::clamp(r.textJustify, 0, 2);
     r.angularPrecision = std::clamp(r.angularPrecision, -1, 8);
     r.textFill = std::clamp(r.textFill, 0, 2);
@@ -2259,6 +2262,42 @@ int attDisplay(const Header& h) {
 
 bool limitsCheck(const Header& h) {
     return customFlag(h, kLimCheckKey, false);
+}
+
+namespace {
+// The group-70 value of a DXF header variable kept in the header ("70<TAB>n" lines).
+int keptVarInt(const Header& h, const char* name, int fallback, int lo, int hi) {
+    auto it = h.custom.find(std::string("dxf.hv.") + name);
+    if (it == h.custom.end())
+        return fallback;
+    const std::string& t = it->second;
+    if (t.rfind("70\t", 0) != 0)
+        return fallback;
+    char* end = nullptr;
+    const long v = std::strtol(t.c_str() + 3, &end, 10);
+    if (end == t.c_str() + 3)
+        return fallback;
+    return static_cast<int>(std::clamp<long>(v, lo, hi));
+}
+void setKeptVarInt(Header& h, const char* name, int v) {
+    h.custom[std::string("dxf.hv.") + name] = "70\t" + std::to_string(v) + "\n";
+}
+}  // namespace
+
+int linearPrecision(const Header& h) {
+    return keptVarInt(h, "$LUPREC", 4, 0, 8);
+}
+
+void setLinearPrecision(Header& h, int places) {
+    setKeptVarInt(h, "$LUPREC", std::clamp(places, 0, 8));
+}
+
+int anglePrecision(const Header& h) {
+    return keptVarInt(h, "$AUPREC", 0, 0, 8);
+}
+
+void setAnglePrecision(Header& h, int places) {
+    setKeptVarInt(h, "$AUPREC", std::clamp(places, 0, 8));
 }
 
 double ceLtScale(const Header& h) {

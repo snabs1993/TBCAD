@@ -1,3 +1,4 @@
+#include <cmath>
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -266,8 +267,10 @@ Result<void> PdfDocument::write(std::ostream& out) const {
         const Page& p = pages_[i];
         const size_t pageNum = pageObj0 + 2 * i;
         begin(pageNum);
+        // Whole points, as AutoCAD writes them (A1 is 2384 x 1684 pt, 841.0 x 594.1 mm).
         buf += "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " +
-               formatNumber(p.widthMm() * kPtPerMm) + " " + formatNumber(p.heightMm() * kPtPerMm) +
+               formatNumber(std::max(1.0, std::round(p.widthMm() * kPtPerMm))) + " " +
+               formatNumber(std::max(1.0, std::round(p.heightMm() * kPtPerMm))) +
                "] /Resources " + resources(p) + " /Contents " + std::to_string(pageNum + 1) +
                " 0 R >>\n";
         end();

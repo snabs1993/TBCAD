@@ -70,13 +70,23 @@ public:
         flush();
         layer(f.layer);
         page_.setFillRGB(f.color.r / 255.0, f.color.g / 255.0, f.color.b / 255.0);
+        if (f.outline) {
+            // The stroke state is changed here, so the next path sets its own again.
+            have_ = false;
+            page_.setStrokeRGB(f.color.r / 255.0, f.color.g / 255.0, f.color.b / 255.0);
+            page_.setLineWidthMm(0);
+            page_.setDashMm({});
+        }
         for (const auto& ring : f.rings) {
             page_.moveTo(ring[0].x, ring[0].y);
             for (std::size_t i = 1; i < ring.size(); ++i)
                 page_.lineTo(ring[i].x, ring[i].y);
             page_.closePath();
         }
-        page_.fill(pdf::FillRule::EvenOdd);
+        if (f.outline)
+            page_.fillStroke(pdf::FillRule::EvenOdd);
+        else
+            page_.fill(pdf::FillRule::EvenOdd);
     }
 
     void dots(const PlotDots& d) {

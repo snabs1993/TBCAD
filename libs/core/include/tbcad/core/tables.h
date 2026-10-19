@@ -183,8 +183,12 @@ struct DimStyle {
     int textFillColor = 0;
     bool textFrame = false;
     DimLinearFormat linearFormat = DimLinearFormat::Decimal;
+    // DIMTFAC: the height of a stacked tolerance (each line) as a fraction of the text height.
+    double tolHeightFactor = 1;
     bool hasTextBox() const { return textFill != 0 || textFrame; }
-    bool hasLinearFormat() const { return linearFormat != DimLinearFormat::Decimal; }
+    bool hasLinearFormat() const {
+        return linearFormat != DimLinearFormat::Decimal || tolHeightFactor != 1;
+    }
     bool hasNumberFormat() const {
         return angleFormat != DimAngleFormat::Degrees || angularPrecision != -1 || commaDecimal ||
                baselineSpacing != 0 || centerMark != 0;

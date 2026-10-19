@@ -1,4 +1,5 @@
 #include "support.h"
+#include "tbcad/text/text.h"
 
 using namespace tbcad;
 using namespace tbcad::dim;
@@ -182,4 +183,44 @@ TEST_CASE("a multileader lays out its lines, arrowheads, dogleg and note, its bl
     CHECK(lines == 1);
     CHECK(mtexts == 1);
     CHECK_FALSE(mleaderAsLeaders(doc, entityOf(LineData{})).ok());
+}
+
+TEST_CASE("a deviation tolerance explodes into MTEXT with the stack, centred on the text spot") {
+    Document doc;
+    Transaction tx = doc.begin("style");
+    REQUIRE(tx.modifyDimStyle(kDimStyleStandard, [](DimStyle& s) {
+        s.tolerance = DimTolerance::Deviation;
+        s.tolUpper = 0.1;
+        s.tolLower = 0.05;
+    }));
+    tx.commit();
+    EntityId id = add(doc, entityOf(Indirect<DimensionData>(linear({0, 0}, {100, 0}, {50, 10}))));
+    const Layout L = layoutDimension(doc, *entityAs<DimensionData>(*doc.find(id)), 0.01);
+    CHECK(L.text.stacked);
+    // Wider than the measurement alone, narrower than the inline form.
+    const TextStyle* ts = text::styleFor(doc, kTextStyleStandard);
+    const double th = styleOf(doc, kDimStyleStandard).textHeight;
+    CHECK(L.text.width > text::measureWidth(ts, "100.00 ", th));
+    CHECK(L.text.width < text::measureWidth(ts, "100.00 +0.10 -0.05", th));
+    // DIMTFAC makes the stack narrower.
+    Transaction tx2 = doc.begin("tfac");
+    REQUIRE(tx2.modifyDimStyle(kDimStyleStandard, [](DimStyle& s) { s.tolHeightFactor = 0.5; }));
+    tx2.commit();
+    const Layout small = layoutDimension(doc, *entityAs<DimensionData>(*doc.find(id)), 0.01);
+    CHECK(small.text.width < L.text.width);
+    Transaction tx3 = doc.begin("tfac back");
+    REQUIRE(tx3.modifyDimStyle(kDimStyleStandard, [](DimStyle& s) { s.tolHeightFactor = 1; }));
+    tx3.commit();
+    auto r = explodeDimension(doc, *doc.find(id));
+    REQUIRE(r.ok());
+    int mtexts = 0;
+    for (const Entity& x : r.value())
+        if (const auto* m = entityAs<MTextData>(x)) {
+            ++mtexts;
+            CHECK(m->utf8 == "\\A1;100.00 {\\H1.42857x;\\S+0.10^-0.05;}");
+            CHECK(m->attach == Attachment::MiddleCenter);
+        } else {
+            CHECK(kind(x) != EntityKind::Text);
+        }
+    CHECK(mtexts == 1);
 }
