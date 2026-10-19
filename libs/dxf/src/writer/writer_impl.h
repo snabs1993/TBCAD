@@ -286,6 +286,7 @@ private:
 
     // Handles given to text styles before their table is written (linetype marks refer to them).
     std::unordered_map<std::uint32_t, std::uint64_t> tsHandle_{};
+    std::map<std::string, std::uint64_t> shapeFileHandle_{};  // shape files named by linetypes
     std::unordered_map<std::uint32_t, std::string> layerName_{}, ltName_{}, tsName_{}, dsName_{},
         blockName_{};
     NameSet layerSet_{}, ltSet_{}, tsSet_{}, dsSet_{}, blockSet_{};

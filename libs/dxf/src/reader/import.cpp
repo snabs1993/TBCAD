@@ -849,6 +849,8 @@ void Importer::keepObjects() {
                     packGroup(packed, c, "@" + std::to_string(token[h]));
                 else if (!h.empty() && entityHandles.count(std::strtoull(h.c_str(), nullptr, 16)))
                     packGroup(packed, c, "#" + h);
+                else if (auto sit = styleNameByHandle_.find(v); sit != styleNameByHandle_.end())
+                    packGroup(packed, c, "$S:" + sit->second);  // a text style, by name
                 else
                     packGroup(packed, c, "0");
             } else {
@@ -920,7 +922,13 @@ void Importer::processTables(RecordReader& rr) {
             for (LinetypeMark& m : lt.marks) {
                 if (m.style.empty() || m.style[0] != '\x01')
                     continue;
-                auto it = styleNameByHandle_.find(m.style.substr(1));
+                const std::string handle = m.style.substr(1);
+                if (m.kind == LinetypeMark::Kind::Shape) {
+                    auto sit = shapeFileByHandle_.find(handle);
+                    m.style = sit == shapeFileByHandle_.end() ? std::string() : sit->second;
+                    continue;
+                }
+                auto it = styleNameByHandle_.find(handle);
                 m.style = it == styleNameByHandle_.end() ? std::string() : it->second;
             }
         });
@@ -1088,6 +1096,11 @@ void Importer::readLinetype(const Record& r) {
                 if (haveMark)
                     mark.text = dec(g.str());
                 break;
+            case 75:  // a shape is named by its number in the shape file: "#132"
+                if (haveMark && mark.kind == LinetypeMark::Kind::Shape && g.integer() > 0 &&
+                    mark.text.empty())
+                    mark.text = "#" + std::to_string(g.integer());
+                break;
             case 340:
                 if (haveMark)
                     mark.style = "\x01" + std::string(g.str());
@@ -1152,9 +1165,12 @@ void Importer::readStyle(const Record& r) {
     std::string name = dec(r.raw(2));
     if (name.empty())
         return;
-    // Shape files (flag bit 0) are not text styles.
-    if (r.integer(70) & 1)
+    // Shape files (flag bit 0) are not text styles; linetype shapes name them.
+    if (r.integer(70) & 1) {
+        if (r.has(5))
+            shapeFileByHandle_[std::string(r.raw(5))] = dec(r.raw(3));
         return;
+    }
     if (r.has(5) && r.num(40) > 0)
         styleHeights_[std::string(r.raw(5))] = r.num(40) * k_;
     if (r.has(5))
