@@ -894,7 +894,44 @@ public:
     }
 };
 
+// IMAGETRANSPARENCY [ITR]: whether the white background of a black and white picture shows.
+class ImageTransparencyCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "IMAGETRANSPARENCY"; }
+    std::vector<std::string> defaultAliases() const override { return {"ITR"}; }
+    std::string_view description() const override {
+        return "Make the background of a black and white picture transparent or opaque";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        Document& doc = ctx.doc();
+        const BlockDef* def = nullptr;
+        co_await pickUnderlay(ctx, true, def, "Enter the picture");
+        if (!def)
+            co_return;
+        const std::string blockName = def->name;
+        underlay::ImageParams params = underlay::imageParams(doc.header(), blockName);
+        auto kw = co_await ctx.getKeyword("Enter the transparency [ON/OFF]",
+                                          cmd::KeywordOptions{.keywords = {"ON", "OFF"}});
+        if (!kw.ok())
+            co_return;
+        params.transparent = kw.keyword == "ON";
+        auto set = underlay::setImageParams(ctx.tx(), blockName, params);
+        if (!set) {
+            ctx.message(set.error().message);
+            co_return;
+        }
+        ctx.setUndoLabel("Transparency " + blockName);
+        ctx.message("\"" + blockName + "\" background transparency " +
+                    (params.transparent ? "on (black and white pictures only)" : "off"));
+    }
+};
+
 }  // namespace
+
+std::unique_ptr<cmd::Command> makeImageTransparencyCommand() {
+    return std::make_unique<ImageTransparencyCommand>();
+}
 
 std::unique_ptr<cmd::Command> makeXAttachCommand() {
     return std::make_unique<XAttachCommand>(XAttachCommand::Kind::Drawing);

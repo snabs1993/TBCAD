@@ -49,6 +49,7 @@ std::unique_ptr<cmd::Command> makeImageAttachCommand();
 std::unique_ptr<cmd::Command> makeImageClipCommand();
 std::unique_ptr<cmd::Command> makeImageAdjustCommand();
 std::unique_ptr<cmd::Command> makeImageFrameCommand();
+std::unique_ptr<cmd::Command> makeImageTransparencyCommand();
 std::unique_ptr<cmd::Command> makeUnderlayFadeCommand();
 std::unique_ptr<cmd::Command> makeXReloadCommand();
 std::unique_ptr<cmd::Command> makeXDetachCommand();

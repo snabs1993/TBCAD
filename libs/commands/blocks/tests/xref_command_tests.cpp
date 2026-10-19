@@ -343,6 +343,10 @@ TEST_CASE("IMAGECLIP Polygonal clips to an outline - IMAGEADJUST and IMAGEFRAME 
     CHECK(underlay::imageParams(f.doc.header(), "site").frame == 0);
     f.host->run("IMAGEFRAME", {"Plot"});
     CHECK(underlay::imageParams(f.doc.header(), "site").frame == 1);
+    f.host->run("IMAGETRANSPARENCY", {"ON"});
+    CHECK(underlay::imageParams(f.doc.header(), "site").transparent);
+    f.host->run("IMAGETRANSPARENCY", {"OFF"});
+    CHECK_FALSE(underlay::imageParams(f.doc.header(), "site").transparent);
 }
 
 TEST_CASE("UNDERLAYFADE changes the fade of a picture and of a PDF page") {

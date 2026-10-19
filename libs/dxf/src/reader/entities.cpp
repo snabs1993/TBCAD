@@ -1458,6 +1458,7 @@ bool Importer::convImage(const Record& r, std::vector<Entity>& out) {
         else if (g.code == 24 && !clip.empty())
             clip.back().y = g.number();
     }
+    img.transparent = (r.integer(70, 0) & 8) != 0;
     img.brightness = static_cast<int>(std::clamp(r.num(281, 50), 0.0, 100.0));
     img.contrast = static_cast<int>(std::clamp(r.num(282, 50), 0.0, 100.0));
     if (r.integer(71) == 2 && clip.size() >= 3) {
@@ -1555,6 +1556,7 @@ void Importer::resolveImages() {
         p.v0 = img.v0;
         p.u1 = img.u1;
         p.v1 = img.v1;
+        p.transparent = img.transparent;
         p.brightness = img.brightness;
         p.contrast = img.contrast;
         p.clip = img.clip;

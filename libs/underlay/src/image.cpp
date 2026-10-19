@@ -134,6 +134,8 @@ ImageParamTable readImageParams(const Header& header) {
                 p.contrast = std::clamp(std::stoi(f[7]), 0, 100);
                 p.frame = std::clamp(std::stoi(f[8]), 0, 2);
             }
+            if (f.size() >= 11)
+                p.transparent = f[10] == "1";
             if (f.size() >= 10 && !f[9].empty()) {  // polygon: u,v;u,v;...
                 std::istringstream ps(f[9]);
                 std::string item;
@@ -172,7 +174,7 @@ void writeImageParams(Header& header, const ImageParamTable& table) {
             std::snprintf(pt, sizeof pt, "%s%.9g,%.9g", i ? ";" : "", p.clip[i].x, p.clip[i].y);
             text += pt;
         }
-        text += '\n';
+        text += p.transparent ? "\t1\n" : "\t0\n";
     }
     if (text.empty())
         header.custom.erase(kImageParamsKey);
@@ -218,18 +220,34 @@ std::shared_ptr<const ImageData> ImageCache::get(const std::filesystem::path& fi
     return it->second.data;
 }
 
+bool isBitonal(const ImageData& img) {
+    for (std::size_t i = 0; i + 3 < img.rgba.size(); i += 4) {
+        const std::uint8_t r = img.rgba[i];
+        if ((r != 0 && r != 255) || img.rgba[i + 1] != r || img.rgba[i + 2] != r)
+            return false;
+    }
+    return !img.rgba.empty();
+}
+
 std::shared_ptr<const ImageData> ImageCache::adjusted(std::uint64_t key,
                                                       const std::shared_ptr<const ImageData>& src,
                                                       const ImageParams& params,
                                                       std::uint64_t* outKey) {
     const bool poly = params.clip.size() >= 3;
-    if (!src || (!poly && !params.adjusted())) {
+    bool clear = false;
+    if (src && params.transparent) {  // looking at every pixel once per picture is enough
+        auto b = bitonal_.find(key);
+        if (b == bitonal_.end())
+            b = bitonal_.emplace(key, isBitonal(*src)).first;
+        clear = b->second;
+    }
+    if (!src || (!poly && !params.adjusted() && !clear)) {
         if (outKey)
             *outKey = key;
         return src;
     }
     std::string id = std::to_string(key) + "|" + std::to_string(params.brightness) + "|" +
-                     std::to_string(params.contrast);
+                     std::to_string(params.contrast) + (clear ? "|t" : "");
     if (poly)
         for (const Vec2& p : params.clip) {
             char buf[64];
@@ -251,6 +269,10 @@ std::shared_ptr<const ImageData> ImageCache::adjusted(std::uint64_t key,
                 for (int c = 0; c < 3; ++c)
                     img->rgba[i + c] = lut[img->rgba[i + c]];
         }
+        if (clear)  // the white background of a bitonal picture
+            for (std::size_t i = 0; i + 3 < img->rgba.size(); i += 4)
+                if (img->rgba[i] > 127)
+                    img->rgba[i + 3] = 0;
         if (poly) {
             const auto& pts = params.clip;
             const int w = img->width, h = img->height;
