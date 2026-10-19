@@ -5,6 +5,7 @@
 #include <exception>
 #include <future>
 #include <memory>
+#include <numbers>
 #include <thread>
 
 #include "keep.h"
@@ -19,6 +20,7 @@
 #include "tbcad/text/field.h"
 #include "tbcad/text/text.h"
 #include "tbcad/underlay/image.h"
+#include "tbcad/underlay/pdf.h"
 #include "writer_impl.h"
 
 namespace tbcad::dxf::detail {
@@ -1147,6 +1149,47 @@ bool Writer::writeImage(const Props& p, const InsertData& d, std::uint64_t owner
     return true;
 }
 
+// A PDF page is written as a PDFUNDERLAY that points at a PDFDEFINITION with the file and page.
+bool Writer::writePdfUnderlay(const Props& p, const InsertData& d, std::uint64_t owner) {
+    const BlockDef* bd = doc_.block(d.block);
+    if (!bd || bd->xrefPath.empty() || !underlay::isPdfPath(bd->xrefPath))
+        return false;
+    if (r12_) {
+        skipEntity("PDFUNDERLAY", "this DXF version has no underlays");
+        return true;
+    }
+    const underlay::Spec spec = underlay::parseSpec(bd->xrefPath);
+    // One definition per file and page, shared by every placement of it.
+    const std::string page = std::to_string(spec.pdf.page);
+    std::uint64_t def = 0;
+    for (const PdfOut& o : pdfs_)
+        if (o.file == spec.file && o.page == page)
+            def = o.def;
+    if (!def) {
+        PdfOut out;
+        out.name = bd->name;
+        out.file = spec.file;
+        out.page = page;
+        out.def = def = newHandle();
+        pdfs_.push_back(std::move(out));
+    }
+    head("PDFUNDERLAY", p, owner, "AcDbUnderlayReference");
+    Out& o = *L().o;
+    o.h(340, def);
+    const double c = std::cos(d.rotation), sn = std::sin(d.rotation);
+    const Vec2 u{c * d.scale.x, sn * d.scale.x}, v{-sn * d.scale.y, c * d.scale.y};
+    o.pt(10, d.position - u * bd->base.x - v * bd->base.y);
+    o.d(41, d.scale.x);
+    o.d(42, d.scale.y);
+    o.d(43, d.scale.x);
+    o.d(50, d.rotation * 180.0 / std::numbers::pi);
+    o.i(280, (spec.pdf.monochrome ? 4 : 0));
+    o.i(281, spec.pdf.contrast);
+    o.i(282, static_cast<long long>(std::lround(spec.pdf.fadePercent)));
+    count("PDFUNDERLAY");
+    return true;
+}
+
 // A feature control frame made by TOLERANCE (or read from a TOLERANCE) is written as one. The
 // size comes from the dimension style (text height x overall scale), so the frame takes the
 // current style and says so when that is not the size it was drawn at.
@@ -1178,7 +1221,7 @@ bool Writer::writeTolerance(const Props& p, const InsertData& d, std::uint64_t o
 }
 
 void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owner) {
-    if (writeImage(p, d, owner) || writeTolerance(p, d, owner))
+    if (writeImage(p, d, owner) || writePdfUnderlay(p, d, owner) || writeTolerance(p, d, owner))
         return;
     std::string name = blockNameOf(d.block);
     if (name.empty()) {

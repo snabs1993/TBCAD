@@ -14,6 +14,7 @@
 #include "tbcad/mline/mline.h"
 #include "tbcad/text/text.h"
 #include "tbcad/underlay/image.h"
+#include "tbcad/underlay/pdf.h"
 #include "writer_impl.h"
 
 namespace tbcad::dxf::detail {
@@ -185,7 +186,8 @@ void Writer::prepareBlocks() {
         if (dimBlock && !referenced.count(id.value))
             continue;
         // A picture is written as an IMAGE entity; its block has no DXF form.
-        if (!def.xrefPath.empty() && underlay::isImagePath(def.xrefPath))
+        if (!def.xrefPath.empty() &&
+            (underlay::isImagePath(def.xrefPath) || underlay::isPdfPath(def.xrefPath)))
             continue;
         // So is a tolerance frame, as a TOLERANCE.
         if (frames.count(def.name))
@@ -1074,6 +1076,7 @@ std::string Writer::objectsSection() {
     const bool scaleObjects = hasScales && opt_.version == DxfVersion::R2007;
     const std::uint64_t imageDict = images_.empty() ? 0 : newHandle();
     const std::uint64_t imageVars = images_.empty() ? 0 : newHandle();
+    const std::uint64_t pdfDict = pdfs_.empty() ? 0 : newHandle();
     const bool hasWipeoutVars = !r12_ && doc_.header().custom.count(kWipeoutFrameKey) != 0;
     const std::uint64_t wipeoutVars = hasWipeoutVars ? newHandle() : 0;
     std::uint64_t scaleDict = scaleObjects ? newHandle() : 0;
@@ -1145,6 +1148,10 @@ std::string Writer::objectsSection() {
     if (hasWipeoutVars) {
         o.raw(3, "ACAD_WIPEOUT_VARS");
         o.h(350, wipeoutVars);
+    }
+    if (pdfDict) {
+        o.raw(3, "ACAD_PDFDEFINITIONS");
+        o.h(350, pdfDict);
     }
     if (!images_.empty()) {
         o.raw(3, "ACAD_IMAGE_DICT");
@@ -1351,6 +1358,29 @@ std::string Writer::objectsSection() {
             o.raw(100, "AcDbRasterImageDefReactor");
             o.i(90, 2);
             o.h(330, im.image);
+        }
+    }
+
+    if (pdfDict) {
+        ownedDict(pdfDict);
+        std::set<std::string> used;
+        for (const PdfOut& pd : pdfs_) {
+            std::string key = cleanName(pd.name, "pdf");
+            for (int n = 2; !used.insert(key).second; ++n)
+                key = cleanName(pd.name, "pdf") + "_" + std::to_string(n);
+            o.str(3, key);
+            o.h(350, pd.def);
+        }
+        for (const PdfOut& pd : pdfs_) {
+            o.zero("PDFDEFINITION");
+            o.h(5, pd.def);
+            o.raw(102, "{ACAD_REACTORS");
+            o.h(330, pdfDict);
+            o.raw(102, "}");
+            o.h(330, pdfDict);
+            o.raw(100, "AcDbUnderlayDefinition");
+            o.str(1, pd.file);
+            o.str(2, pd.page);
         }
     }
 
@@ -1925,6 +1955,14 @@ Result<ExportResult> Writer::run() {
             out +=
                 "  0\r\nCLASS\r\n  1\r\nRASTERVARIABLES\r\n  2\r\nAcDbRasterVariables\r\n"
                 "  3\r\nISM\r\n 90\r\n0\r\n280\r\n0\r\n281\r\n0\r\n";
+        }
+        if (!pdfs_.empty()) {
+            out +=
+                "  0\r\nCLASS\r\n  1\r\nPDFUNDERLAY\r\n  2\r\nAcDbUnderlayReference\r\n"
+                "  3\r\nObjectDBX Classes\r\n 90\r\n127\r\n280\r\n0\r\n281\r\n1\r\n";
+            out +=
+                "  0\r\nCLASS\r\n  1\r\nPDFDEFINITION\r\n  2\r\nAcDbUnderlayDefinition\r\n"
+                "  3\r\nObjectDBX Classes\r\n 90\r\n0\r\n280\r\n0\r\n281\r\n0\r\n";
         }
         if (!r12_ && doc_.header().custom.count(kWipeoutFrameKey))
             out +=
