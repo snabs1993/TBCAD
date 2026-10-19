@@ -152,9 +152,12 @@ struct Site {
         }
     }
 
-    Timing bench(const std::vector<std::string>& lines) {
+    Timing bench(const std::vector<std::string>& lines, bool preselect = true) {
         settle();
-        core->selectAll();
+        if (preselect)
+            core->selectAll();
+        else
+            core->clearSelection();
         const std::size_t depth = core->undoStack().undoCount();
         auto t = std::chrono::steady_clock::now();
         for (const std::string& l : lines) {
@@ -307,6 +310,35 @@ TEST_CASE("perf: table commands with thousands of layers and blocks stay fast") 
 #ifdef NDEBUG
         INFO(c.label);
         CHECK(t.runMs < c.budgetMs);
+#endif
+    }
+}
+
+// One object at a time on the big drawing: what an operator does all day. Each step must cost
+// about what it costs on a small drawing, not grow with the 392k objects around it.
+TEST_CASE("perf: single-object edits on a drawing of 392k objects stay interactive") {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+    Site s;
+    // The first cell: a polyline from (0,0) rising to (7,1) and a line (0,0)-(20,10).
+    const std::vector<Case> cases = {
+        {"ERASE-one", {"ERASE", "@click10,5", ""}},
+        {"MOVE-one", {"MOVE", "@click10,5", "", "0,0", "50,50"}},
+        {"COPY-one", {"COPY", "@click10,5", "", "0,0", "50,50", ""}},
+        {"ROTATE-one", {"ROTATE", "@click10,5", "", "0,0", "30"}},
+        {"OFFSET-one", {"OFFSET", "3", "@click10,5", "@click12,2", ""}},
+        {"TRIM-one", {"TRIM", "", "@click10,5", ""}},
+        {"BREAK-one", {"BREAK", "@click10,5", "@click14,7"}},
+        {"CHPROP-one", {"CHPROP", "@click10,5", "", "Color", "1"}},
+        {"LIST-one", {"LIST", "@click10,5", ""}},
+    };
+    std::printf("%zu objects\n", s.core->document().modelSpaceCount());
+    for (const Case& c : cases) {
+        const Timing t = s.bench(c.lines, false);
+        std::printf("%-16s %8.0f %8.0f %8.0f   %s\n", c.label, t.runMs, t.undoMs, t.redoMs,
+                    s.core->history().empty() ? "" : s.core->history().back().c_str());
+#ifdef NDEBUG
+        INFO(c.label);
+        CHECK(t.runMs < 500);
 #endif
     }
 }
