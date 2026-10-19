@@ -394,3 +394,34 @@ TEST_CASE("a ray has an origin grip and a direction grip that turns it") {
     REQUIRE(o.ok());
     CHECK(distance(entityAs<RayData>(o.value())->dir, Vec2{1, 0}) < 1e-12);
 }
+
+TEST_CASE("a table has grips on its column and row borders") {
+    TableData t;
+    t.origin = {10, 20};
+    t.colWidths = {5, 6, 7};
+    t.rowHeights = {2, 3};
+    Entity e = make(t);
+    auto g = gripPoints(e);
+    REQUIRE(g.size() == 2 + 2 + 1);  // origin, corner, two column borders, one row border
+    CHECK(distance(g[2], Vec2{15, 20}) < 1e-12);
+    CHECK(distance(g[3], Vec2{21, 20}) < 1e-12);
+    CHECK(distance(g[4], Vec2{10, 18}) < 1e-12);
+    // Drag the first column border: that column changes, the others stay.
+    auto c = moveGrip(e, 2, {18, 20});
+    REQUIRE(c.ok());
+    const auto* tc = entityAs<TableData>(c.value());
+    CHECK(tc->colWidths[0] == doctest::Approx(8));
+    CHECK(tc->colWidths[1] == doctest::Approx(6));
+    // Drag the row border down.
+    auto r = moveGrip(e, 4, {10, 14});
+    REQUIRE(r.ok());
+    CHECK(entityAs<TableData>(r.value())->rowHeights[0] == doctest::Approx(6));
+    // A border dragged past the previous one is refused.
+    CHECK_FALSE(moveGrip(e, 3, {12, 20}).ok());
+    CHECK_FALSE(moveGrip(e, 9, {12, 20}).ok());
+    // Rotated by a quarter turn the borders turn with the table.
+    t.rotation = kPi / 2;
+    Entity q = make(t);
+    auto gq = gripPoints(q);
+    CHECK(distance(gq[2], Vec2{10, 25}) < 1e-9);
+}

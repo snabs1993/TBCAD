@@ -224,6 +224,18 @@ std::vector<Vec2> gripPoints(const Entity& e) {
             const double c = std::cos(d.rotation), si = std::sin(d.rotation);
             // bottom-right corner in the rotated frame (y points down)
             g.push_back(d.origin + Vec2{w * c + h * si, w * si - h * c});
+            // Column borders on the top edge, then row borders on the left edge; the outer
+            // borders are the origin and the corner.
+            double x = 0;
+            for (std::size_t i = 0; i + 1 < d.colWidths.size(); ++i) {
+                x += d.colWidths[i];
+                g.push_back(d.origin + Vec2{x * c, x * si});
+            }
+            double y = 0;
+            for (std::size_t i = 0; i + 1 < d.rowHeights.size(); ++i) {
+                y += d.rowHeights[i];
+                g.push_back(d.origin + Vec2{y * si, -y * c});
+            }
             break;
         }
         case EntityKind::Hatch:
@@ -487,6 +499,37 @@ Result<Entity> moveGrip(const Entity& e, int index, Vec2 to) {
             if (index == 0) {
                 d.origin = to;
                 return out;
+            }
+            if (index > 1) {
+                // A border grip moves one column or row border: that column or row changes size,
+                // the table grows or shrinks with it.
+                const std::size_t cols = d.colWidths.size() > 0 ? d.colWidths.size() - 1 : 0;
+                const std::size_t rows = d.rowHeights.size() > 0 ? d.rowHeights.size() - 1 : 0;
+                const std::size_t k = static_cast<std::size_t>(index - 2);
+                const double c = std::cos(d.rotation), si = std::sin(d.rotation);
+                const Vec2 v = to - d.origin;
+                if (k < cols) {
+                    double before = 0;
+                    for (std::size_t i = 0; i < k; ++i)
+                        before += d.colWidths[i];
+                    const double nw = v.x * c + v.y * si - before;
+                    if (!(nw > 1e-9))
+                        return makeError(ErrorCode::InvalidArgument, "column would collapse");
+                    d.colWidths[k] = nw;
+                    return out;
+                }
+                if (k - cols < rows) {
+                    const std::size_t r = k - cols;
+                    double before = 0;
+                    for (std::size_t i = 0; i < r; ++i)
+                        before += d.rowHeights[i];
+                    const double nh = v.x * si - v.y * c - before;
+                    if (!(nh > 1e-9))
+                        return makeError(ErrorCode::InvalidArgument, "row would collapse");
+                    d.rowHeights[r] = nh;
+                    return out;
+                }
+                return badGrip();
             }
             if (index != 1)
                 return badGrip();
