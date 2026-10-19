@@ -279,3 +279,96 @@ TEST_CASE("REVCLOUD Freehand: Enter ends an open cloud and Reverse turns its arc
     REQUIRE(f.host.run("REVC", {"5,5", ""}).finished);
     CHECK(f.entities().size() == 2);
 }
+
+namespace {
+EntityId square(Fixture& f) {
+    PolylineData box;
+    box.closed = true;
+    for (Vec2 p : {Vec2{0, 0}, Vec2{100, 0}, Vec2{100, 100}, Vec2{0, 100}})
+        box.v.push_back(PolyVertex{.p = p});
+    return f.addEntity(box);
+}
+BBox2 boundsOf(const PolylineData& pl) {
+    BBox2 b;
+    for (const auto& v : pl.v)
+        b.expand(v.p);
+    return b;
+}
+}  // namespace
+
+TEST_CASE("REVCLOUD Modify replaces the erased side with a new cloud part") {
+    Fixture f;
+    const EntityId id = square(f);
+    REQUIRE(f.host.run("REVC", {"A", "10", "Modify", ScriptItem::pick(id, {50, 0}), "50,-30",
+                                "80,-30", "80,0", "65,1", ""})
+                .finished);
+    const auto& pl = as<PolylineData>(f.doc.find(id));
+    CHECK(pl.closed);
+    // kept: 80,0 100,0 100,100 0,100 0,0; new: 50,0 then every 10 along 50,-30 80,-30 80,0
+    REQUIRE(pl.v.size() == 14);
+    CHECK(close(pl.v[0].p, {80, 0}));
+    CHECK(close(pl.v[4].p, {0, 0}));
+    CHECK(pl.v[4].bulge == 0);
+    CHECK(close(pl.v[5].p, {50, 0}));
+    CHECK(close(pl.v[8].p, {50, -30}));
+    for (std::size_t i = 5; i < pl.v.size(); ++i)
+        CHECK(close(pl.v[i].bulge, kBulge));  // counter-clockwise result: outwards
+    const BBox2 b = boundsOf(pl);
+    CHECK(close(b.min, {0, -30}));
+    CHECK(close(b.max, {100, 100}));
+    CHECK(f.host.undoStack().undoCount() == 1);  // one step
+    f.host.undo();
+    CHECK(as<PolylineData>(f.doc.find(id)).v.size() == 4);
+}
+
+TEST_CASE("REVCLOUD Modify erasing the far side keeps only the near part, and Reverse turns in") {
+    Fixture f;
+    const EntityId id = square(f);
+    REQUIRE(f.host.run("REVC", {"A", "10", "M", ScriptItem::pick(id, {50, 0}), "50,-30",
+                                "80,-30", "80,0", "50,100", "Yes"})
+                .finished);
+    const auto& pl = as<PolylineData>(f.doc.find(id));
+    REQUIRE(pl.v.size() == 10);  // 50,0 kept, then the new part back from 80,0
+    CHECK(close(pl.v[0].p, {50, 0}));
+    CHECK(close(pl.v[1].p, {80, 0}));
+    const BBox2 b = boundsOf(pl);
+    CHECK(close(b.min, {50, -30}));
+    CHECK(close(b.max, {80, 0}));
+    // clockwise result: outwards would be negative; reversed they are positive
+    for (std::size_t i = 1; i < pl.v.size(); ++i)
+        CHECK(close(pl.v[i].bulge, kBulge));
+}
+
+TEST_CASE("REVCLOUD Modify works on a cloud, Enter ends at the nearest place, Esc changes nothing") {
+    Fixture f;
+    REQUIRE(f.host.run("REVC", {"A", "10", "Rectangular", "0,0", "40,40"}).finished);
+    const EntityId id = f.entities()[0]->common.id;
+    const std::size_t before = as<PolylineData>(f.doc.find(id)).v.size();
+    f.host.run("REVC", {"M", ScriptItem::pick(id, {20, 0}), "20,-20", ScriptItem::esc()});
+    CHECK(as<PolylineData>(f.doc.find(id)).v.size() == before);
+
+    // Enter: the part ends at the nearest place on the cloud to 30,-20 (30,0, a vertex)
+    REQUIRE(f.host.run("REVC", {"M", ScriptItem::pick(id, {20, 0}), "20,-20", "30,-20", "",
+                                "25,1", ""})
+                .finished);
+    const auto& pl = as<PolylineData>(f.doc.find(id));
+    CHECK(pl.closed);
+    const BBox2 b = boundsOf(pl);
+    CHECK(b.min.y == doctest::Approx(-20));
+    CHECK(b.max.y == doctest::Approx(40));
+    for (const auto& v : pl.v)  // the kept arcs and the new ones all face out
+        CHECK(v.bulge > 0);
+}
+
+TEST_CASE("REVCLOUD Modify refuses open polylines and a part that ends where it starts") {
+    Fixture f;
+    PolylineData open;
+    open.v = {PolyVertex{.p = {0, 0}}, PolyVertex{.p = {10, 0}}};
+    const EntityId openId = f.addEntity(open);
+    f.host.run("REVC", {"M", ScriptItem::pick(openId, {5, 0})});
+    CHECK(f.host.runner().active());  // the open polyline was not taken
+    f.host.feed({ScriptItem::esc()});
+    const EntityId id = square(f);
+    f.host.run("REVC", {"M", ScriptItem::pick(id, {50, 0}), "50,0", ""});
+    CHECK(as<PolylineData>(f.doc.find(id)).v.size() == 4);
+}
