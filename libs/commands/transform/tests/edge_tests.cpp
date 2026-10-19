@@ -173,3 +173,43 @@ TEST_CASE("ALIGN with coincident points is refused without touching the drawing"
     CHECK(canonicalDump(f.doc) == before);
     CHECK_FALSE(f.host.runner().active());
 }
+
+TEST_CASE("A zero displacement copies and moves nothing") {
+    {
+        Fixture f;
+        auto a = add(f.doc, LineData{{0, 0}, {10, 0}});
+        f.host.setSelection({a});
+        f.host.run("COPY", {"5,5", "5,5", ScriptItem::esc()});  // second point on the base
+        CHECK(lines(f.doc) == 1);
+    }
+    {
+        Fixture f;
+        auto a = add(f.doc, LineData{{0, 0}, {10, 0}});
+        f.host.setSelection({a});
+        f.host.run("COPY", {"0,0", ScriptItem::enter()});  // Enter: base point is the vector, zero
+        CHECK(lines(f.doc) == 1);
+    }
+    {
+        Fixture f;
+        auto a = add(f.doc, LineData{{0, 0}, {10, 0}});
+        f.host.setSelection({a});
+        f.host.run("COPY", {"Displacement", "0,0"});
+        CHECK(lines(f.doc) == 1);
+    }
+    {
+        Fixture f;
+        auto a = add(f.doc, LineData{{0, 0}, {10, 0}});
+        f.host.setSelection({a});
+        const auto undo0 = f.host.undoStack().undoCount();
+        f.host.run("MOVE", {"Displacement", "0,0"});
+        f.host.run("MOVE", {"3,3", "3,3"});
+        CHECK(f.host.undoStack().undoCount() == undo0);
+    }
+    {
+        Fixture f;  // Array with the second point on the base asks again, then accepts a real one
+        auto a = add(f.doc, LineData{{0, 0}, {10, 0}});
+        f.host.setSelection({a});
+        f.host.run("COPY", {"0,0", "Array", "3", "0,0", "0,5"});
+        CHECK(lines(f.doc) == 3);
+    }
+}
