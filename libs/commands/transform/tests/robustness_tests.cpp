@@ -360,3 +360,61 @@ TEST_CASE("every grip menu action on every grip stays finite and undoes exactly"
             }
     CHECK(tried > 10);
 }
+
+TEST_CASE("a random run of transforms and copies undoes step by step and redoes to the same drawing") {
+    std::uint32_t seed = 12345;
+    auto rnd = [&] {
+        seed = seed * 1664525u + 1013904223u;
+        return (seed >> 8) % 1000u;
+    };
+    auto num = [&](double lo, double hi) { return lo + (hi - lo) * (rnd() / 1000.0); };
+    auto pt = [&] { return std::to_string(num(-50, 50)) + "," + std::to_string(num(-50, 50)); };
+    Fixture f;
+    std::vector<EntityId> ids;
+    addSamples(f.doc, ids);
+    std::vector<std::string> states{canonicalDump(f.doc)};
+    for (int step = 0; step < 40; ++step) {
+        f.host.setSelection(ids);
+        std::vector<cmd::ScriptItem> in;
+        const char* name;
+        switch (rnd() % 5) {
+            case 0:
+                name = "MOVE";
+                in = {cmd::ScriptItem(pt()), cmd::ScriptItem(pt())};
+                break;
+            case 1:
+                name = "ROTATE";
+                in = {cmd::ScriptItem(pt()), cmd::ScriptItem(std::to_string(num(-180, 180)))};
+                break;
+            case 2:
+                name = "SCALE";
+                in = {cmd::ScriptItem(pt()), cmd::ScriptItem(std::to_string(num(0.5, 2)))};
+                break;
+            case 3:
+                name = "MIRROR";
+                in = {cmd::ScriptItem(pt()), cmd::ScriptItem("100,100"), cmd::ScriptItem("Y")};
+                break;
+            default:
+                name = "COPY";
+                in = {cmd::ScriptItem(pt()), cmd::ScriptItem(pt()), cmd::ScriptItem::enter()};
+                break;
+        }
+        CAPTURE(step);
+        CAPTURE(std::string(name));
+        f.host.run(name, in);
+        const std::string now = canonicalDump(f.doc);
+        CHECK_FALSE(hasNonFinite(now));
+        if (now != states.back())
+            states.push_back(now);
+        // COPY adds entities: the selection for the next step is the originals again.
+    }
+    for (std::size_t i = states.size() - 1; i > 0; --i) {
+        REQUIRE(canonicalDump(f.doc) == states[i]);
+        REQUIRE(f.host.undo());
+    }
+    CHECK(canonicalDump(f.doc) == states[0]);
+    for (std::size_t i = 1; i < states.size(); ++i) {
+        REQUIRE(f.host.redo());
+        REQUIRE(canonicalDump(f.doc) == states[i]);
+    }
+}
