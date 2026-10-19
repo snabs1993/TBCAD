@@ -98,24 +98,39 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         const Clip& clip = current();
-        if (clip.empty()) {
-            ctx.message("The clipboard is empty.");
-            co_return;
-        }
         Mode mode = mode_;
         bool onCurrentLayer = false;
         if (mode == Mode::Special) {
             cmd::KeywordOptions ko;
-            ko.keywords = {"Objects", "Block", "Original", "CurrentLayer"};
-            ko.defaultKeyword = "Objects";
+            ko.keywords = {"Objects", "Block",     "Original", "CurrentLayer",
+                           "Text",    "Hyperlink", "Image"};
+            ko.defaultKeyword = clip.empty() ? "Text" : "Objects";
             auto how = co_await ctx.getKeyword(
-                "Paste as [Objects/Block/Original coordinates/CurrentLayer] <Objects>", ko);
+                "Paste as [Objects/Block/Original coordinates/CurrentLayer/Text/Hyperlink/Image] "
+                "<Objects>",
+                ko);
             if (!how.ok())
                 co_return;
+            if (how.keyword == "Image") {
+                ctx.message("Pictures are placed from a file: use IMAGEATTACH (IAT).");
+                co_return;
+            }
+            if (how.keyword == "Text" || how.keyword == "Hyperlink") {
+                co_await pasteText(ctx, how.keyword == "Hyperlink");
+                co_return;
+            }
+            if (clip.empty()) {
+                ctx.message("The clipboard is empty.");
+                co_return;
+            }
             mode = how.keyword == "Block"      ? Mode::Block
                    : how.keyword == "Original" ? Mode::Original
                                                : Mode::Normal;
             onCurrentLayer = how.keyword == "CurrentLayer";
+        }
+        if (clip.empty()) {
+            ctx.message("The clipboard is empty.");
+            co_return;
         }
         Vec2 target = clip.base;
         if (mode != Mode::Original) {
@@ -153,6 +168,49 @@ public:
     }
 
 private:
+    // Text (or a text that opens a link): typed or pasted into the command line, since the
+    // system clipboard is read by the window, which types it as the answer. A link keeps the
+    // address in HYPERLINK form and shows it as the text.
+    static cmd::Task pasteText(cmd::CommandContext& ctx, bool link) {
+        auto t =
+            co_await ctx.getString(link ? "Web address or file (Ctrl+V pastes)"
+                                        : "Text to paste (Ctrl+V pastes; \\P starts a new line)");
+        if (!t.ok())
+            co_return;
+        std::string text = cmd::trim(t.text);
+        if (text.empty())
+            co_return;
+        auto at = co_await ctx.getPoint("Specify insertion point");
+        if (!at.ok())
+            co_return;
+        MTextData d;
+        d.position = at.point;
+        d.style = ctx.doc().header().currentTextStyle;
+        const TextStyle* ts = ctx.doc().textStyle(d.style);
+        double h = 0;
+        if (ts && ts->height > 0)
+            h = ts->height;
+        else if (auto s = ctx.host().setting("text.height"))
+            h = std::atof(s->c_str());
+        d.height = h > 0 ? h : 2.5;
+        if (link)
+            std::replace(text.begin(), text.end(), '\n', ' ');
+        d.utf8 = text;
+        Entity created{{}, std::move(d)};
+        applyCurrentProperties(ctx.doc().header(), created);
+        auto id = ctx.tx().add(std::move(created));
+        if (!id) {
+            ctx.message(id.error().message);
+            co_return;
+        }
+        if (link) {
+            const std::string key = "tbcad.link." + std::to_string(id.value().value);
+            (void)ctx.tx().modifyHeader([&](Header& h) { h.custom[key] = text + "\n"; });
+        }
+        ctx.host().setSelection({id.value()});
+        ctx.message(link ? "Hyperlink pasted." : "Text pasted.");
+    }
+
     std::string name_;
     Mode mode_;
 };

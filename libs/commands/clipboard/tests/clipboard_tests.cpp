@@ -183,6 +183,57 @@ TEST_CASE("blocks referenced by copied inserts travel with the clip") {
     CHECK(dst.count(EntityKind::Insert) == 1);
 }
 
+TEST_CASE("nested blocks and a big selection copy, paste and undo cleanly") {
+    Fixture src;
+    BlockId inner, outer;
+    {
+        Transaction tx = src.doc.begin("blk");
+        BlockDef a;
+        a.name = "INNER";
+        inner = tx.addBlock(a).value();
+        Entity m;
+        m.data = CircleData{{0, 0}, 2};
+        REQUIRE(tx.add(std::move(m), inner).ok());
+        BlockDef b;
+        b.name = "OUTER";
+        outer = tx.addBlock(b).value();
+        InsertData in;
+        in.block = inner;
+        in.position = {3, 0};
+        Entity e;
+        e.data = in;
+        REQUIRE(tx.add(std::move(e), outer).ok());
+        tx.commit();
+    }
+    std::vector<EntityId> ids;
+    for (int i = 0; i < 3000; ++i) {
+        InsertData ins;
+        ins.block = (i % 2) ? outer : inner;
+        ins.position = {double(i), 0};
+        ids.push_back(src.add(ins));
+    }
+    src.host.run("COPYCLIP", {ScriptItem::select(ids), ScriptItem::enter()});
+    Fixture dst;
+    CHECK(dst.host.run("PASTECLIP", {"0,0"}).finished);
+    // 3000 placed inserts plus the one inside OUTER.
+    CHECK(dst.count(EntityKind::Insert) == 3001);
+    REQUIRE(dst.doc.blockByName("OUTER") != nullptr);
+    REQUIRE(dst.doc.blockByName("INNER") != nullptr);
+    // A second paste reuses the blocks it already made.
+    CHECK(dst.host.run("PASTECLIP", {"0,50"}).finished);
+    CHECK(dst.count(EntityKind::Insert) == 6001);
+    std::size_t outers = 0;
+    for (const auto& kv : dst.doc.blocks())
+        outers += kv.second.name == "OUTER" ? 1 : 0;
+    CHECK(outers == 1);
+    dst.host.undo();
+    CHECK(dst.count(EntityKind::Insert) == 3001);
+    dst.host.undo();
+    CHECK(dst.count(EntityKind::Insert) == 0);
+    dst.host.redo();
+    CHECK(dst.count(EntityKind::Insert) == 3001);
+}
+
 TEST_CASE("WBLOCK writes the selection to a drawing file at the base point") {
     Fixture f;
     LineData l;
@@ -279,6 +330,22 @@ TEST_CASE("PASTESPEC pastes as a block, at the original place or on the current 
             onZero = e.common.layer == kLayerZero;
     });
     CHECK(onZero);
+}
+
+TEST_CASE("PASTESPEC makes text and a hyperlink from typed or pasted text, even with no clip") {
+    Fixture f;
+    CHECK(f.host.run("PASTESPEC", {"Text", "Hello\\Pworld", "5,5"}).finished);
+    CHECK(f.count(EntityKind::MText) == 1);
+    CHECK(f.host.run("PASTESPEC", {"Hyperlink", "https://example.org", "9,9"}).finished);
+    CHECK(f.count(EntityKind::MText) == 2);
+    std::size_t links = 0;
+    for (const auto& kv : f.doc.header().custom)
+        if (kv.first.rfind("tbcad.link.", 0) == 0)
+            ++links;
+    CHECK(links == 1);
+    f.host.undo();
+    CHECK(f.count(EntityKind::MText) == 1);
+    CHECK(f.host.run("PASTESPEC", {"Image"}).finished);
 }
 
 TEST_CASE("a drawing kept in inches pastes into a millimetre drawing at the same real size") {
