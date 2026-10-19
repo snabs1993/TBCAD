@@ -183,6 +183,9 @@ TEST_CASE("serialize and parse round-trip, including awkward text") {
     REQUIRE(merge(t, {1, 0}, {2, 0}));
     t.rotation = 0.3;
     t.margin = 1.25;
+    t.headerRow = true;
+    t.titleStyle = {5.5, 1, 8, 1};
+    t.dataStyle = {0, 3, 0, 2};
     const std::string s = serialize(t);
     for (char c : s)
         CHECK((static_cast<unsigned char>(c) < 128 && c != '\n'));
@@ -194,6 +197,10 @@ TEST_CASE("serialize and parse round-trip, including awkward text") {
     CHECK(back->rotation == t.rotation);
     CHECK(back->margin == t.margin);
     CHECK(back->titleRow);
+    CHECK(back->headerRow);
+    CHECK(back->titleStyle == t.titleStyle);
+    CHECK(back->headerStyle.isDefault());
+    CHECK(back->dataStyle == t.dataStyle);
     for (std::size_t i = 0; i < t.cells.size(); ++i) {
         CHECK(back->cells[i].utf8 == t.cells[i].utf8);
         CHECK(back->cells[i].colSpan == t.cells[i].colSpan);
