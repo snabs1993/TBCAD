@@ -80,8 +80,9 @@ private:
     bool saveScreenshot(const std::string& path);
     int runCapture();
     void captureFrames(int n);
-    bool recordItems_ = false;  // capture mode: widgets are recorded for @clickitem
+    bool recordItems_ = false;     // capture mode: widgets are recorded for @clickitem
     std::size_t historySeen_ = 0;  // capture mode: command-line lines already logged
+    std::size_t framesDrawn_ = 0;
     bool hidden() const { return options_.selfTest || !options_.captureScript.empty(); }
 
     Options options_;

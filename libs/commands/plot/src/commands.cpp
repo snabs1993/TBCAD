@@ -292,9 +292,17 @@ public:
                 so.defaultValue = plotLayout(ctx.host());
                 auto r = co_await ctx.getString("Layout to plot (empty = model space)", so);
                 if (r.ok()) {
+                    // "Model", as the tab is called, is model space too.
+                    std::string name = r.text;
+                    if (name.size() == 5 &&
+                        std::tolower(static_cast<unsigned char>(name[0])) == 'm' &&
+                        std::equal(name.begin() + 1, name.end(), "odel", [](char a, char b) {
+                            return std::tolower(static_cast<unsigned char>(a)) == b;
+                        }))
+                        name.clear();
                     std::string m;
                     timePhase("layout page setup", [&] {
-                        setPlotLayout(ctx.host(), r.text);
+                        setPlotLayout(ctx.host(), name);
                         m = applyAssignedPageSetup(ctx.doc(), ctx.host());
                     });
                     if (!m.empty()) {

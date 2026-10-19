@@ -141,6 +141,28 @@ script's folder. The scenarios in `apps/tbcad/tests/scenarios` run as ctest `tbc
 (skipped without a display); each gets fresh settings through `TBCAD_CONFIG_DIR`. Their test
 plot style table `data/ep-test.ctb` is made by `tools/make_test_ctb.py`.
 
+Scripts can also run on real drawings. `{env:NAME}` (or `{env:NAME|fallback}`) is replaced by an
+environment variable and `{stem:NAME}` by the file name, without extension, of the path in it;
+`@require-env NAME` skips the script (exit 77) when the variable is not set. `@step NAME` starts a
+timed step: when the next one starts (or the script ends) the program waits for the drawing to
+settle and prints `step NAME: S s (N frames)`; a command still running at a step boundary is ended
+with Esc and counted as a failure. `@count NAME` remembers the number of objects and layouts, and
+`@expect same NAME` / `@expect added NAME K` compare with it. Generic steps find something to work
+on in any drawing: `@enter-viewport` shows the first layout with a viewport and double-clicks into
+it (sets `{layout}` and `{vpid}`; `@expect viewport-zoomed F` checks the viewport now shows F times
+closer), `@hatch-pick` zooms to a closed polyline that nothing crosses (sets `{pick}`, a point in
+its middle) and `@select-kind KIND[|KIND] [i]` selects such an object (sets `{picked}`).
+`@skip-step-unless NAME` leaves out the rest of the step when `{NAME}` came out empty, and
+`{NAME|fallback}` gives a value for that case. `10_real_file.txt` runs open, viewport zoom and
+pan, select all, move and undo, hatch pick, text edit, plot and save-and-reopen (as .tbcad and as
+.dxf) on the drawing named by `TBCAD_SCENARIO_DWG`, plotting with `TBCAD_SCENARIO_CTB` when set:
+
+```
+set TBCAD_SCENARIO_DWG=C:\drawings\S2312.dwg
+set TBCAD_SCENARIO_CTB=C:\plotstyles\office.ctb
+tbcad --capture-script apps\tbcad\tests\scenarios\10_real_file.txt --capture-out C:\out\S2312
+```
+
 `--self-test` opens a hidden window, runs the script, draws the frames and checks that something
 was drawn; it exits with 77 (skipped by ctest) when there is no display or OpenGL 3.3, unless
 `TBCAD_REQUIRE_GUI` is set. `--gate` runs the M1 measurements (see the pull request for the limits).

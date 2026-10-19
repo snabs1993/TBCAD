@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -18,6 +19,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <map>
+#include <optional>
 #include <sstream>
 
 #include "gui.h"
@@ -236,6 +239,7 @@ void App::captureFrames(int n) {
             imgui_items::clear();  // keep the newest frame's widgets only
         frame();
         glfwSwapBuffers(window_);
+        ++framesDrawn_;
         if (recordItems_) {
             // The command line's history goes to the log, so a failed check shows its cause.
             const auto& h = core_->history();
@@ -258,9 +262,12 @@ int App::runCapture() {
     }
     ImGuiIO& io = ImGui::GetIO();
     // Frames until the drawing is built and the picture has stopped changing.
+    // A drawing opened on a worker thread counts too: real files can take a while.
     const auto settle = [&] {
         captureFrames(3);
-        for (int i = 0; i < 600 && core_->sceneBuilding(); ++i)
+        const auto until = std::chrono::steady_clock::now() + std::chrono::minutes(15);
+        while ((core_->sceneBuilding() || core_->opening()) &&
+               std::chrono::steady_clock::now() < until)
             captureFrames(1);
         captureFrames(3);
     };
@@ -278,6 +285,7 @@ int App::runCapture() {
     struct Item {
         EntityKind kind;
         BBox2 box;
+        EntityId id;
     };
     const auto items = [&] {
         std::vector<Item> v;
@@ -289,7 +297,7 @@ int App::runCapture() {
             if (b.empty() || !std::isfinite(b.min.x) || !std::isfinite(b.max.x) ||
                 !std::isfinite(b.min.y) || !std::isfinite(b.max.y))
                 continue;
-            v.push_back({kind(*e), b});
+            v.push_back({kind(*e), b, id});
         }
         return v;
     };
@@ -343,6 +351,33 @@ int App::runCapture() {
     };
     int failed = 0;
     int failedSinceShot = 0;
+    // {name} values set by the generic steps (@enter-viewport, @hatch-pick, ...).
+    std::map<std::string, std::string> vars{{"layout", ""}, {"pick", ""}, {"picked", ""}};
+    struct Counts {
+        std::size_t objects = 0, layouts = 0;
+    };
+    std::map<std::string, Counts> counts;
+    const auto countNow = [&] {
+        return Counts{core_->document().modelSpaceCount(), core_->layoutNames().size()};
+    };
+    double vpScaleBefore = 0;
+    bool skipping = false;  // @skip-step-unless: until the next @step
+    // @step: the time of each step, printed when the next one starts (and at the end).
+    std::string stepName;
+    auto stepStart = std::chrono::steady_clock::now();
+    std::size_t stepFrames = 0;
+    const auto endStep = [&] {
+        if (stepName.empty())
+            return;
+        settle();
+        const double s =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - stepStart).count();
+        // The frames drawn are part of the time: with a software renderer they dominate it.
+        std::printf("step %s: %.3f s (%zu frames)\n", stepName.c_str(), s,
+                    framesDrawn_ - stepFrames);
+        std::fflush(stdout);
+        stepName.clear();
+    };
     // A world point on the window (points), through the viewport of the last frame.
     const auto toWindow = [&](double wx, double wy) {
         const ViewportRect& r = gui_->lastViewportRect();
@@ -451,6 +486,40 @@ int App::runCapture() {
                         have += at(v.p);
             }
             ok = countIs(have);
+        } else if (what == "same" || what == "added") {
+            // same NAME: as many objects and layouts as when @count NAME ran;
+            // added NAME K: K more objects than then
+            std::string name;
+            long long k = 0;
+            ss >> name >> k;
+            const auto it = counts.find(name);
+            const Counts now = countNow();
+            got = std::to_string(now.objects) + " objects, " + std::to_string(now.layouts) +
+                  " layouts";
+            if (it == counts.end()) {
+                got += "; no @count " + name;
+            } else {
+                got += " (then " + std::to_string(it->second.objects) + ", " +
+                       std::to_string(it->second.layouts) + ")";
+                ok = now.layouts == it->second.layouts &&
+                     static_cast<long long>(now.objects) ==
+                         static_cast<long long>(it->second.objects) + (what == "added" ? k : 0);
+            }
+        } else if (what == "viewport-zoomed") {
+            // viewport-zoomed F: the viewport entered by @enter-viewport shows F times closer
+            double f = 1;
+            ss >> f;
+            const auto l = layout::findLayout(core_->document(), vars["layout"]);
+            const layout::Viewport* vp =
+                l ? l->findViewport(std::atoi(vars["vpid"].c_str())) : nullptr;
+            char buf[96] = "no viewport entered";
+            if (vp) {
+                std::snprintf(buf, sizeof buf, "1:%.6g, was 1:%.6g%s", vp->scaleN, vpScaleBefore,
+                              vp->locked ? " (locked)" : "");
+                const double want = vp->locked ? vpScaleBefore : vpScaleBefore / f;
+                ok = std::abs(vp->scaleN - want) <= 1e-6 * std::max(1.0, want);
+            }
+            got = buf;
         } else if (what == "layout") {
             std::string name;
             ss >> name;
@@ -630,10 +699,47 @@ int App::runCapture() {
             line.pop_back();
         if (!line.empty() && line.front() == '#')
             continue;
+        // {env:NAME}, {env:NAME|fallback}, {stem:NAME} (the file name of the path in NAME,
+        // without its extension) and the values of the generic steps.
+        for (std::size_t at = 0; (at = line.find('{', at)) != std::string::npos;) {
+            const std::size_t close = line.find('}', at);
+            if (close == std::string::npos)
+                break;
+            const std::string key = line.substr(at + 1, close - at - 1);
+            std::optional<std::string> value;
+            const auto env = [](const std::string& n) {
+                const char* v = std::getenv(n.c_str());
+                return v ? std::string(v) : std::string();
+            };
+            if (key.rfind("env:", 0) == 0) {
+                const std::string spec = key.substr(4);
+                const auto bar = spec.find('|');
+                value = env(spec.substr(0, bar));
+                if (value->empty() && bar != std::string::npos)
+                    value = spec.substr(bar + 1);
+            } else if (key.rfind("stem:", 0) == 0) {
+                value = platform::pathToUtf8(platform::pathFromUtf8(env(key.substr(5))).stem());
+            } else if (const auto v = vars.find(key.substr(0, key.find('|'))); v != vars.end()) {
+                value = v->second;  // {name|fallback}: the fallback when the step found nothing
+                if (value->empty() && key.find('|') != std::string::npos)
+                    value = key.substr(key.find('|') + 1);
+            }
+            if (!value) {
+                at = close + 1;
+                continue;
+            }
+            line.replace(at, close - at + 1, *value);
+            at += value->size();
+        }
         for (std::size_t at; (at = line.find("{out}")) != std::string::npos;)
             line.replace(at, 5, platform::pathToUtf8(outDir));
         for (std::size_t at; (at = line.find("{dir}")) != std::string::npos;)
             line.replace(at, 5, platform::pathToUtf8(scriptDir));
+        if (skipping) {
+            if (line.rfind("@step", 0) != 0)
+                continue;
+            skipping = false;
+        }
         // "@10,5" and "@20<45" are relative points typed at a prompt, not capture lines.
         const bool relativePoint = line.size() > 1 && line.front() == '@' &&
                                    (std::isdigit(static_cast<unsigned char>(line[1])) ||
@@ -746,6 +852,197 @@ int App::runCapture() {
                     std::printf("item \"%s\" in \"%s\" at %.0f,%.0f\n", it.label.c_str(),
                                 it.window.c_str(), it.min.x, it.min.y);
             std::fflush(stdout);
+        } else if (op == "require-env") {
+            // @require-env NAME...: without them the scenario is skipped (exit 77, as ctest wants)
+            for (std::string n; ss >> n;) {
+                const char* v = std::getenv(n.c_str());
+                if (!v || !*v) {
+                    std::printf("skipped: %s is not set\n", n.c_str());
+                    std::fflush(stdout);
+                    return 77;
+                }
+            }
+        } else if (op == "skip-step-unless") {
+            // @skip-step-unless NAME: when the generic step found nothing ({NAME} empty), the
+            // lines up to the next @step are left out (a drawing without layouts or text).
+            std::string name;
+            ss >> name;
+            if (vars[name].empty()) {
+                std::printf("step %s: skipped, nothing for {%s} in this drawing\n",
+                            stepName.c_str(), name.c_str());
+                std::fflush(stdout);
+                stepName.clear();
+                skipping = true;
+            }
+        } else if (op == "step") {
+            endStep();
+            // A step that went wrong can leave its command asking: end it, so the next step
+            // starts at the command prompt.
+            for (int k = 0; k < 5 && core_->runner().active(); ++k) {
+                if (k == 0) {
+                    std::printf("FAILED line %d: a command was still running; Esc\n", lineNo);
+                    ++failed, ++failedSinceShot;
+                }
+                core_->pressEscape();
+                captureFrames(2);
+            }
+            std::getline(ss, stepName);
+            while (!stepName.empty() && stepName.front() == ' ')
+                stepName.erase(0, 1);
+            if (stepName.empty())
+                stepName = "line " + std::to_string(lineNo);
+            stepStart = std::chrono::steady_clock::now();
+            stepFrames = framesDrawn_;
+        } else if (op == "count") {
+            std::string name;
+            ss >> name;
+            settle();
+            counts[name] = countNow();
+            std::printf("count %s: %zu objects, %zu layouts\n", name.c_str(), counts[name].objects,
+                        counts[name].layouts);
+            std::fflush(stdout);
+        } else if (op == "enter-viewport") {
+            // The first layout with a viewport that is on (an unlocked one if there is one): the
+            // sheet is shown and the viewport double-clicked. Sets {layout}, {vpid}.
+            vars["layout"].clear();
+            vars["vpid"].clear();
+            std::string name;
+            std::optional<layout::Viewport> pick;
+            const std::vector<layout::Layout> all = layout::layouts(core_->document());
+            for (const bool lockedToo : {false, true})
+                for (const layout::Layout& l : all)
+                    for (const layout::Viewport& v : l.viewports)
+                        if (!pick && v.on && (lockedToo || !v.locked)) {
+                            name = l.name;
+                            pick = v;
+                        }
+            if (!pick) {
+                std::printf("enter-viewport: no layout has a viewport\n");
+                std::fflush(stdout);
+                continue;
+            }
+            vars["layout"] = name;
+            vars["vpid"] = std::to_string(pick->id);
+            vpScaleBefore = pick->scaleN;
+            core_->setActiveLayout(name);
+            settle();
+            const BBox2 box = pick->paper;
+            const ImVec2 w = toWindow((box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2);
+            moveTo(w.x, w.y);
+            for (int k = 0; k < 2; ++k) {
+                io.AddMouseButtonEvent(0, true);
+                captureFrames(1);
+                io.AddMouseButtonEvent(0, false);
+                captureFrames(1);
+            }
+            settle();
+            std::printf("enter-viewport: layout \"%s\" viewport %d at 1:%.6g%s\n", name.c_str(),
+                        pick->id, pick->scaleN, pick->locked ? " (locked)" : "");
+            if (core_->inPaperSpace()) {
+                std::printf("enter-viewport: the double click did not enter it\n");
+                ++failed, ++failedSinceShot;
+            }
+            std::fflush(stdout);
+        } else if (op == "select-kind") {
+            // @select-kind KIND[|KIND...] [i]: selects the i-th such object and shows it.
+            // Sets {picked}: the point in its middle.
+            std::string kinds;
+            int index = 0;
+            ss >> kinds >> index;
+            vars["picked"].clear();
+            std::vector<int> wanted;
+            for (std::size_t from = 0; from <= kinds.size();) {
+                const std::size_t bar = std::min(kinds.find('|', from), kinds.size());
+                const std::string k = kinds.substr(from, bar - from);
+                for (std::size_t i = 0; i < std::size(kKindNames); ++i)
+                    if (k == kKindNames[i])
+                        wanted.push_back(static_cast<int>(i));
+                from = bar + 1;
+            }
+            int seen = 0;
+            bool found = false;
+            for (const Item& it : items()) {
+                if (std::find(wanted.begin(), wanted.end(), static_cast<int>(it.kind)) ==
+                        wanted.end() ||
+                    seen++ != index)
+                    continue;
+                const double half = std::max({it.box.width(), it.box.height(), 1e-3}) * 1.5;
+                const Vec2 mid{(it.box.min.x + it.box.max.x) / 2,
+                               (it.box.min.y + it.box.max.y) / 2};
+                core_->zoomToBox(BBox2{{mid.x - half, mid.y - half}, {mid.x + half, mid.y + half}});
+                core_->setSelection({it.id});
+                char buf[64];
+                std::snprintf(buf, sizeof buf, "%.9g,%.9g", mid.x, mid.y);
+                vars["picked"] = buf;
+                std::printf("select-kind: %s number %d at %s\n", kinds.c_str(), index, buf);
+                found = true;
+                break;
+            }
+            if (!found)
+                std::printf("select-kind: no %s number %d\n", kinds.c_str(), index);
+            std::fflush(stdout);
+            captureFrames(2);
+        } else if (op == "hatch-pick") {
+            // A point inside a closed polyline, with that polyline in view: sets {pick} for
+            // HATCH. The polyline's middle must be inside it and nothing else may reach into
+            // its box, so the pick finds that area and no islands.
+            bool found = false;
+            vars["pick"].clear();
+            const std::vector<Item> all = items();
+            for (const Item& it : all) {
+                if (it.kind != EntityKind::Polyline)
+                    continue;
+                const Entity* e = core_->document().find(it.id);
+                const auto* pl = e ? entityAs<PolylineData>(*e) : nullptr;
+                if (!pl || !pl->closed || pl->v.size() < 3 || !(it.box.width() > 0) ||
+                    !(it.box.height() > 0))
+                    continue;
+                bool straight = true;
+                for (const PolyVertex& v : pl->v)
+                    straight = straight && v.bulge == 0;
+                if (!straight)
+                    continue;
+                const Vec2 mid{(it.box.min.x + it.box.max.x) / 2,
+                               (it.box.min.y + it.box.max.y) / 2};
+                bool inside = false;
+                for (std::size_t i = 0, j = pl->v.size() - 1; i < pl->v.size(); j = i++) {
+                    const Vec2 a = pl->v[i].p, b = pl->v[j].p;
+                    if ((a.y > mid.y) != (b.y > mid.y) &&
+                        mid.x < (b.x - a.x) * (mid.y - a.y) / (b.y - a.y) + a.x)
+                        inside = !inside;
+                }
+                if (!inside)
+                    continue;
+                // Nothing else may reach into the polyline's box (an outline around all of it
+                // is fine): a line across it would split the area.
+                bool alone = true;
+                for (const Item& o : all) {
+                    const bool overlaps = o.box.min.x < it.box.max.x &&
+                                          o.box.max.x > it.box.min.x &&
+                                          o.box.min.y < it.box.max.y && o.box.max.y > it.box.min.y;
+                    const bool around = o.box.min.x <= it.box.min.x &&
+                                        o.box.max.x >= it.box.max.x &&
+                                        o.box.min.y <= it.box.min.y && o.box.max.y >= it.box.max.y;
+                    if (o.id != it.id && overlaps && !around) {
+                        alone = false;
+                        break;
+                    }
+                }
+                if (!alone)
+                    continue;
+                const double half = std::max(it.box.width(), it.box.height()) * 0.75;
+                core_->zoomToBox(BBox2{{mid.x - half, mid.y - half}, {mid.x + half, mid.y + half}});
+                char buf[64];
+                std::snprintf(buf, sizeof buf, "%.9g,%.9g", mid.x, mid.y);
+                vars["pick"] = buf;
+                std::printf("hatch-pick: inside a closed polyline at %s\n", buf);
+                found = true;
+                break;
+            }
+            if (!found)
+                std::printf("hatch-pick: no closed polyline with an empty middle\n");
+            std::fflush(stdout);
+            captureFrames(2);
         } else if (op == "key") {
             std::string k;
             ss >> k;
@@ -897,6 +1194,7 @@ int App::runCapture() {
             ++failed;
         }
     }
+    endStep();
     return failed == 0 ? 0 : 1;
 }
 
