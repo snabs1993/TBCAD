@@ -1,7 +1,10 @@
 #include "tbcad/modify/offset.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstdint>
+#include <unordered_map>
 
 namespace tbcad::modify {
 
@@ -31,6 +34,98 @@ Seg offsetSeg(const Seg& s, double d, bool& ok) {
     return {g->center + u0 * r, g->center + u1 * r, s.bulge};
 }
 
+
+// Finds the boxes that meet a query box without comparing with all of them: a uniform grid sized
+// to the number of boxes, boxes that span many cells kept in a short list checked every time.
+class BoxGrid {
+public:
+    explicit BoxGrid(const std::vector<BBox2>& boxes) : boxes_(boxes), seen_(boxes.size(), 0) {
+        BBox2 all;
+        for (const BBox2& b : boxes)
+            all.merge(b);
+        if (all.empty() || boxes.empty())
+            return;
+        const double w = std::max(all.width(), 1e-9), h = std::max(all.height(), 1e-9);
+        cell_ = std::sqrt(w * h / std::max<double>(4.0 * boxes.size(), 1.0));
+        // A thin drawing: keep at least a few cells across its short side.
+        cell_ = std::max(cell_, std::max(w, h) / 2.0e6);
+        cell_ = std::max(cell_, 1e-9);
+        origin_ = all.min;
+        nx_ = static_cast<long>(w / cell_) + 1;
+        ny_ = static_cast<long>(h / cell_) + 1;
+        cells_.assign(static_cast<std::size_t>(nx_ * ny_), {});
+        for (std::size_t i = 0; i < boxes.size(); ++i) {
+            const auto [x0, y0, x1, y1] = range(boxes[i]);
+            if ((x1 - x0 + 1) * (y1 - y0 + 1) > 64) {
+                large_.push_back(i);
+                continue;
+            }
+            for (long y = y0; y <= y1; ++y)
+                for (long x = x0; x <= x1; ++x)
+                    cells_[static_cast<std::size_t>(y * nx_ + x)].push_back(i);
+        }
+    }
+
+    // Calls f(i) once for each box that may meet `q`.
+    template <class F>
+    void query(const BBox2& q, F&& f) const {
+        ++stamp_;
+        auto visit = [&](std::size_t i) {
+            if (seen_[i] == stamp_)
+                return;
+            seen_[i] = stamp_;
+            if (boxes_[i].intersects(q))
+                f(i);
+        };
+        for (std::size_t i : large_)
+            visit(i);
+        if (cells_.empty())
+            return;
+        const auto [x0, y0, x1, y1] = range(q);
+        for (long y = y0; y <= y1; ++y)
+            for (long x = x0; x <= x1; ++x)
+                for (std::size_t i : cells_[static_cast<std::size_t>(y * nx_ + x)])
+                    visit(i);
+    }
+
+private:
+    std::array<long, 4> range(const BBox2& b) const {
+        auto cx = [&](double v) { return std::clamp(static_cast<long>(std::floor((v - origin_.x) / cell_)), 0L, nx_ - 1); };
+        auto cy = [&](double v) { return std::clamp(static_cast<long>(std::floor((v - origin_.y) / cell_)), 0L, ny_ - 1); };
+        return {cx(b.min.x), cy(b.min.y), cx(b.max.x), cy(b.max.y)};
+    }
+
+    const std::vector<BBox2>& boxes_;
+    mutable std::vector<unsigned> seen_;
+    mutable unsigned stamp_ = 0;
+    Vec2 origin_{};
+    double cell_ = 1;
+    long nx_ = 0, ny_ = 0;
+    std::vector<std::vector<std::size_t>> cells_{};
+    std::vector<std::size_t> large_{};
+};
+
+// Hash of a point on a grid of `kJoinTol * 8`, so points within kJoinTol of each other are in the
+// same or an adjacent cell.
+struct PointIndex {
+    static long long cell(double v) { return static_cast<long long>(std::floor(v / (kJoinTol * 8))); }
+    static std::uint64_t key(long long x, long long y) {
+        return static_cast<std::uint64_t>(x) * 0x9E3779B97F4A7C15ull ^ static_cast<std::uint64_t>(y) * 0xC2B2AE3D27D4EB4Full;
+    }
+    std::unordered_multimap<std::uint64_t, std::size_t> map;
+    void add(Vec2 p, std::size_t i) { map.emplace(key(cell(p.x), cell(p.y)), i); }
+    template <class F>
+    void near(Vec2 p, F&& f) const {
+        const long long cx = cell(p.x), cy = cell(p.y);
+        for (long long dx = -1; dx <= 1; ++dx)
+            for (long long dy = -1; dy <= 1; ++dy) {
+                auto r = map.equal_range(key(cx + dx, cy + dy));
+                for (auto it = r.first; it != r.second; ++it)
+                    f(it->second);
+            }
+    }
+};
+
 double distanceToSegs(const std::vector<Seg>& segs, Vec2 p) {
     double best = std::numeric_limits<double>::infinity();
     for (const Seg& s : segs)
@@ -47,14 +142,15 @@ bool straightOn(const Seg& a, const Seg& b) {
 
 // Fuses consecutive collinear lines (left over from cutting at intersections).
 void mergeCollinear(std::vector<Seg>& run, bool closed) {
-    for (std::size_t i = 0; i + 1 < run.size();) {
-        if (straightOn(run[i], run[i + 1])) {
-            run[i].p1 = run[i + 1].p1;
-            run.erase(run.begin() + static_cast<std::ptrdiff_t>(i) + 1);
-        } else {
-            ++i;
-        }
+    std::vector<Seg> out;
+    out.reserve(run.size());
+    for (const Seg& s : run) {
+        if (!out.empty() && straightOn(out.back(), s))
+            out.back().p1 = s.p1;
+        else
+            out.push_back(s);
     }
+    run = std::move(out);
     if (closed && run.size() > 2 && straightOn(run.back(), run.front())) {
         run.front().p0 = run.back().p0;
         run.pop_back();
@@ -150,20 +246,30 @@ Result<std::vector<Entity>> offsetPolyline(const Entity& src, const PolylineData
         boxes.push_back(curves.back().bounds().inflated(1e-7));
     }
     std::vector<std::vector<double>> cuts(cn);
-    for (std::size_t i = 0; i < cn; ++i) {
-        for (std::size_t j = i + 1; j < cn; ++j) {
-            if (!boxes[i].intersects(boxes[j]))
-                continue;
-            std::vector<geom::Intersection> xs;
-            geom::intersect(curves[i], curves[j], xs);
-            for (const auto& x : xs) {
-                double ui = segParam(chain[i], x.p), uj = segParam(chain[j], x.p);
-                if (ui > 1e-9 && ui < 1.0 - 1e-9)
-                    cuts[i].push_back(ui);
-                if (uj > 1e-9 && uj < 1.0 - 1e-9)
-                    cuts[j].push_back(uj);
-            }
+    const bool useGrid = !opt.scanAll && cn >= 64;
+    const auto cutPair = [&](std::size_t i, std::size_t j) {
+        std::vector<geom::Intersection> xs;
+        geom::intersect(curves[i], curves[j], xs);
+        for (const auto& x : xs) {
+            double ui = segParam(chain[i], x.p), uj = segParam(chain[j], x.p);
+            if (ui > 1e-9 && ui < 1.0 - 1e-9)
+                cuts[i].push_back(ui);
+            if (uj > 1e-9 && uj < 1.0 - 1e-9)
+                cuts[j].push_back(uj);
         }
+    };
+    if (useGrid) {
+        const BoxGrid grid(boxes);
+        for (std::size_t i = 0; i < cn; ++i)
+            grid.query(boxes[i], [&](std::size_t j) {
+                if (j > i)
+                    cutPair(i, j);
+            });
+    } else {
+        for (std::size_t i = 0; i < cn; ++i)
+            for (std::size_t j = i + 1; j < cn; ++j)
+                if (boxes[i].intersects(boxes[j]))
+                    cutPair(i, j);
     }
 
     // 4b. A raw segment can also run into the offset distance of the opposite side of the source
@@ -184,40 +290,72 @@ Result<std::vector<Entity>> offsetPolyline(const Entity& src, const PolylineData
         }
     }
     std::vector<std::vector<double>> extras(cn);
-    if (cn * zoneEdge.size() <= 4000000) {
+    if (useGrid || cn * zoneEdge.size() <= 4000000) {
         std::vector<CurveRef> zc;
         std::vector<BBox2> zb;
         for (const Seg& z : zoneEdge) {
             zc.push_back(segCurve(z));
             zb.push_back(zc.back().bounds().inflated(1e-7));
         }
-        for (std::size_t i = 0; i < cn; ++i)
-            for (std::size_t j = 0; j < zc.size(); ++j) {
-                if (!boxes[i].intersects(zb[j]))
-                    continue;
-                std::vector<geom::Intersection> xs;
-                geom::intersect(curves[i], zc[j], xs);
-                for (const auto& x : xs) {
-                    const double ui = segParam(chain[i], x.p);
-                    if (ui > 1e-9 && ui < 1.0 - 1e-9)
-                        extras[i].push_back(ui);
-                }
+        const auto cutZone = [&](std::size_t i, std::size_t j) {
+            std::vector<geom::Intersection> xs;
+            geom::intersect(curves[i], zc[j], xs);
+            for (const auto& x : xs) {
+                const double ui = segParam(chain[i], x.p);
+                if (ui > 1e-9 && ui < 1.0 - 1e-9)
+                    extras[i].push_back(ui);
             }
+        };
+        if (useGrid) {
+            const BoxGrid grid(zb);
+            for (std::size_t i = 0; i < cn; ++i)
+                grid.query(boxes[i], [&](std::size_t j) { cutZone(i, j); });
+        } else {
+            for (std::size_t i = 0; i < cn; ++i)
+                for (std::size_t j = 0; j < zc.size(); ++j)
+                    if (boxes[i].intersects(zb[j]))
+                        cutZone(i, j);
+        }
     }
 
     // 5. Keep the pieces that stay at least |d| away from the source.
     const double validTol = 1e-6 * std::max(1.0, absd);
     std::vector<Seg> valid;
+    PointIndex validStart;  // the surviving pieces by their start point
     const auto addValid = [&](const Seg& piece) {
         // Two raw segments can run over the same stretch (a vanishing bridge): keep it once.
-        const bool duplicate = std::any_of(valid.begin(), valid.end(), [&](const Seg& v) {
-            return (samePoint(v.p0, piece.p0, kJoinTol) && samePoint(v.p1, piece.p1, kJoinTol) &&
-                    std::abs(v.bulge - piece.bulge) < 1e-7) ||
-                   (samePoint(v.p0, piece.p1, kJoinTol) && samePoint(v.p1, piece.p0, kJoinTol) &&
-                    std::abs(v.bulge + piece.bulge) < 1e-7);
-        });
-        if (!duplicate)
+        bool duplicate = false;
+        const auto same = [&](std::size_t k) {
+            const Seg& v = valid[k];
+            duplicate = duplicate ||
+                        (samePoint(v.p0, piece.p0, kJoinTol) && samePoint(v.p1, piece.p1, kJoinTol) &&
+                         std::abs(v.bulge - piece.bulge) < 1e-7) ||
+                        (samePoint(v.p0, piece.p1, kJoinTol) && samePoint(v.p1, piece.p0, kJoinTol) &&
+                         std::abs(v.bulge + piece.bulge) < 1e-7);
+        };
+        validStart.near(piece.p0, same);
+        validStart.near(piece.p1, same);
+        if (!duplicate) {
+            validStart.add(piece.p0, valid.size());
             valid.push_back(piece);
+        }
+    };
+    // Distance from `p` to the source, looking only at the segments that can be closer than |d|.
+    std::vector<BBox2> segBoxes;
+    std::optional<BoxGrid> segGrid;
+    if (useGrid) {
+        for (const Seg& s0 : segs)
+            segBoxes.push_back(segCurve(s0).bounds());
+        segGrid.emplace(segBoxes);
+    }
+    const auto nearSource = [&](Vec2 mid) {
+        if (!segGrid)
+            return distanceToSegs(segs, mid);
+        double best = std::numeric_limits<double>::infinity();
+        segGrid->query(BBox2{mid, mid}.inflated(absd + 1e-6), [&](std::size_t k) {
+            best = std::min(best, distance(segPoint(segs[k], segParam(segs[k], mid)), mid));
+        });
+        return best;
     };
     for (std::size_t i = 0; i < cn; ++i) {
         // Every cut with a flag: true for the extra ones.
@@ -242,7 +380,7 @@ Result<std::vector<Entity>> offsetPolyline(const Entity& src, const PolylineData
             if (segLength(piece) <= tol::kLinear)
                 continue;
             const Vec2 mid = segPoint(chain[i], 0.5 * (bounds[b].first + bounds[b + 1].first));
-            good[b] = distanceToSegs(segs, mid) >= absd - validTol;  // else inside the distance
+            good[b] = nearSource(mid) >= absd - validTol;  // else inside the distance
         }
         for (std::size_t b = 0; b < count;) {
             if (!good[b]) {
@@ -261,28 +399,45 @@ Result<std::vector<Entity>> offsetPolyline(const Entity& src, const PolylineData
     // 6. Join the surviving pieces into chains (pieces keep their raw order where possible).
     std::vector<std::vector<Seg>> runs;
     std::vector<bool> used(valid.size(), false);
+    PointIndex byEnd;  // the pieces by their end point (validStart has them by their start)
+    for (std::size_t i = 0; i < valid.size(); ++i)
+        byEnd.add(valid[i].p1, i);
     for (std::size_t i = 0; i < valid.size(); ++i) {
         if (used[i])
             continue;
         used[i] = true;
         std::vector<Seg> run{valid[i]};
+        // Run ends grow at both ends; `front` holds the pieces put before the start, newest last.
+        std::vector<Seg> front;
         for (bool grew = true; grew;) {
             grew = false;
-            for (std::size_t j = 0; j < valid.size(); ++j) {
-                if (used[j])
-                    continue;
-                if (samePoint(run.back().p1, valid[j].p0, kJoinTol)) {
-                    run.push_back(valid[j]);
-                } else if (samePoint(run.front().p0, valid[j].p1, kJoinTol)) {
-                    run.insert(run.begin(), valid[j]);
-                } else {
-                    continue;
+            const Vec2 tail = run.back().p1;
+            const Vec2 head = front.empty() ? run.front().p0 : front.back().p0;
+            // The lowest-numbered unused piece that continues either end.
+            std::size_t best = valid.size();
+            bool atTail = false;
+            validStart.near(tail, [&](std::size_t j) {
+                if (!used[j] && j < best && samePoint(tail, valid[j].p0, kJoinTol)) {
+                    best = j;
+                    atTail = true;
                 }
-                used[j] = true;
-                grew = true;
+            });
+            byEnd.near(head, [&](std::size_t j) {
+                if (!used[j] && j < best && samePoint(head, valid[j].p1, kJoinTol)) {
+                    best = j;
+                    atTail = false;
+                }
+            });
+            if (best == valid.size())
                 break;
-            }
+            if (atTail)
+                run.push_back(valid[best]);
+            else
+                front.push_back(valid[best]);
+            used[best] = true;
+            grew = true;
         }
+        run.insert(run.begin(), front.rbegin(), front.rend());
         runs.push_back(std::move(run));
     }
     if (runs.empty())

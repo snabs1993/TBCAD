@@ -12,6 +12,9 @@ struct OffsetOptions {
     bool roundCorners = true;
     // Maximum deviation of an ellipse / spline offset (approximated by a spline), in mm.
     double tolerance = 0.01;
+    // Tests: compare every segment with every other instead of using the grid that finds the
+    // neighbours of a long polyline.
+    bool scanAll = false;
 };
 
 // Side of the entity on which `p` lies relative to the direction of travel: +1 left, -1 right,
