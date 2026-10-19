@@ -1292,6 +1292,7 @@ bool Importer::convMLine(const Record& r, std::vector<Entity>& out) {
     };
     std::vector<Vertex> vs;
     bool first = false;  // the next 41 is the first number of an element's list
+    bool gaps = false;
     for (const Group& g : r.g) {
         if (g.code == 11) {
             vs.emplace_back();
@@ -1306,6 +1307,8 @@ bool Importer::convMLine(const Record& r, std::vector<Entity>& out) {
             vs.back().miter.y = g.number();
         } else if (g.code == 74) {
             first = true;
+            if (g.integer() > 2)
+                gaps = true;  // an element with gaps (MLEDIT cuts)
         } else if (g.code == 41 && first) {
             vs.back().offset.push_back(g.number() * k_);
             first = false;
@@ -1318,6 +1321,43 @@ bool Importer::convMLine(const Record& r, std::vector<Entity>& out) {
         return convForeign(r, out);
     }
     const bool closed = (r.integer(71) & 2) != 0;
+
+    // Keep it a multiline when its style is in the file and the style reproduces the lines.
+    if (!gaps && (r.integer(71) & 12) == 0) {
+        loadMlineStyles();
+        const std::string name = dec(r.raw(2));
+        std::string key = name;
+        for (char& c : key)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        auto sit = mlStyles_.find(key);
+        if (sit != mlStyles_.end() && sit->second.offsets.size() == elements) {
+            MlineData md;
+            md.style = sit->second.name;
+            md.scale = r.num(40, 1);
+            md.justification = static_cast<int>(r.integer(70, 1));
+            md.closed = closed && vs.size() > 2;
+            for (const Vertex& v : vs)
+                md.v.push_back(v.pos);
+            if (md.scale > 0 && md.justification >= 0 && md.justification <= 2) {
+                const mline::Strokes st = mline::strokes(md, sit->second);
+                bool same = st.lines.size() >= elements;
+                for (std::size_t e = 0; same && e < elements; ++e) {
+                    const auto& line = st.lines[e];
+                    same =
+                        line.size() == vs.size() + (md.closed ? 1 : 0) || line.size() == vs.size();
+                    for (std::size_t i = 0; same && i < vs.size() && i < line.size(); ++i) {
+                        const Vec2 want = vs[i].pos + vs[i].miter * vs[i].offset[e];
+                        same = distance(want, line[i]) <= 1e-4 * std::max(1.0, md.scale);
+                    }
+                }
+                if (same) {
+                    (void)tx_->modifyHeader([&](Header& h) { mline::storeStyle(h, sit->second); });
+                    out.push_back(makeEntity(Indirect<MlineData>(std::move(md))));
+                    return true;
+                }
+            }
+        }
+    }
     for (std::size_t e = 0; e < elements; ++e) {
         PolylineData pl;
         pl.closed = closed && vs.size() > 2;

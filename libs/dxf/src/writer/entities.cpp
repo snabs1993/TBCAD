@@ -291,11 +291,14 @@ void Writer::loadSourceHandles() {
 
 void Writer::pickEntityHandle(EntityId id) {
     entHandle_ = 0;
-    if (srcHandle_.empty())
-        return;
     auto it = srcHandle_.find(id.value);
     if (it != srcHandle_.end())
         entHandle_ = it->second;
+    if (!groupMembers_.count(id.value))
+        return;
+    if (!entHandle_ && !r12_)
+        entHandle_ = newHandle();
+    groupHandle_[id.value] = entHandle_;
 }
 
 void Writer::writeEntityList(const std::vector<EntityId>& ids, std::uint64_t owner) {

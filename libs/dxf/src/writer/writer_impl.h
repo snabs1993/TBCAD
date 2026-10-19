@@ -269,6 +269,8 @@ private:
     std::unordered_set<std::uint64_t> srcHandleReserved_{};
     std::uint64_t srcHandleTop_ = 0;
     std::unordered_set<std::uint64_t> entityHandlesWritten_{};
+    std::unordered_set<std::uint64_t> groupMembers_{};                // entities named by a group
+    std::unordered_map<std::uint64_t, std::uint64_t> groupHandle_{};  // their handles
     std::uint64_t entHandle_ = 0;  // the handle the next head() gives the entity, 0 = a new one
     void loadSourceHandles();
     void pickEntityHandle(EntityId id);
