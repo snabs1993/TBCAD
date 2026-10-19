@@ -72,11 +72,27 @@ double roundTo(double v, double step) {
 
 }  // namespace
 
-std::optional<Vec2> PolarOrthoFilter::filter(const cmd::PointQuery& query, Vec2 raw,
-                                             cmd::FilterFeedback& feedback) {
-    if (!env_ || !env_->host || !query.base)
+namespace {
+
+// Where ORTHO / polar tracking send the cursor from the base point: the direction (in the UCS),
+// its angle, the distance along it, and which of them was at work.
+struct Constrained {
+    Vec2 dir{};
+    double angleDeg = 0;
+    double d = 0;
+    bool ortho = false;
+    bool iso = false;
+    DraftingSettings s{};
+    Ucs ucs{};
+};
+
+std::optional<Constrained> constrain(const DraftingEnv* env, const cmd::PointQuery& query,
+                                     Vec2 raw) {
+    if (!env || !env->host || !query.base)
         return std::nullopt;
-    const DraftingSettings s = DraftingSettings::read(*env_->host);
+    Constrained c;
+    c.s = DraftingSettings::read(*env->host);
+    const DraftingSettings& s = c.s;
     // Shift flips ORTHO for as long as it is held: temporary ortho when it is off, free
     // (or polar) movement when it is on.
     const bool ortho = s.ortho != query.shift;
@@ -86,8 +102,8 @@ std::optional<Vec2> PolarOrthoFilter::filter(const cmd::PointQuery& query, Vec2 
     const Vec2 base = *query.base;
     // Directions are measured in the current UCS: ortho follows its axes and polar angles count
     // from its X axis.
-    const Ucs ucs = env_->effectiveUcs();
-    const Vec2 v = ucs.dirFromWorld(raw - base);
+    c.ucs = env->effectiveUcs();
+    const Vec2 v = c.ucs.dirFromWorld(raw - base);
     double d = length(v);
     if (d < 1e-9)
         return std::nullopt;
@@ -137,12 +153,39 @@ std::optional<Vec2> PolarOrthoFilter::filter(const cmd::PointQuery& query, Vec2 
         if (std::abs(dir.y) < 1e-12)
             dir.y = 0;
     }
+    c.dir = dir;
+    c.angleDeg = angleDeg;
+    c.d = d;
+    c.ortho = ortho;
+    c.iso = ortho && s.isoPlane != IsoPlane::Off;
+    return c;
+}
+
+}  // namespace
+
+std::optional<Vec2> orthoPolarDirection(const DraftingEnv* env, const cmd::PointQuery& query,
+                                        Vec2 raw) {
+    auto c = constrain(env, query, raw);
+    if (!c)
+        return std::nullopt;
+    return c->ucs.dirToWorld(c->dir);
+}
+
+std::optional<Vec2> PolarOrthoFilter::filter(const cmd::PointQuery& query, Vec2 raw,
+                                             cmd::FilterFeedback& feedback) {
+    auto c = constrain(env_, query, raw);
+    if (!c)
+        return std::nullopt;
+    const DraftingSettings& s = c->s;
+    const Vec2 base = *query.base;
+    double d = c->d;
+    const double angleDeg = c->angleDeg;
     if (s.snap && s.snapSpacing > 0) {
         const double snapped = roundTo(d, s.snapSpacing);
         if (snapped > 0)
             d = snapped;
     }
-    dir = ucs.dirToWorld(dir);
+    const Vec2 dir = c->ucs.dirToWorld(c->dir);
     const Vec2 p = base + dir * d;
     env_->tracking = DraftingEnv::Tracking{base, raw, dir};
 
@@ -151,7 +194,7 @@ std::optional<Vec2> PolarOrthoFilter::filter(const cmd::PointQuery& query, Vec2 
     std::snprintf(ang, sizeof ang, "%.4g",
                   std::fabs(shown) < 1e-9 ? 0.0 : std::round(shown * 100) / 100);
     feedback.tooltip =
-        std::string(ortho ? (s.isoPlane != IsoPlane::Off ? "Iso ortho: " : "Ortho: ") : "Polar: ") +
+        std::string(c->ortho ? (c->iso ? "Iso ortho: " : "Ortho: ") : "Polar: ") +
         formatDistance(*env_, d) + " < " + ang + "\xC2\xB0";
     const double reach = std::max(d, 1.0) + 4000.0 * std::max(query.pixelSize, 1e-9);
     feedback.guide =

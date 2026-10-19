@@ -18,6 +18,11 @@ inline constexpr int kDynamicUcsOrder = 150;
 inline constexpr int kPolarOrder = 200;
 inline constexpr int kGridSnapOrder = 300;
 
+// The direction (unit vector, world) ORTHO or polar tracking would give the cursor at `raw` from
+// the query's base point, or nullopt when neither applies there. A typed distance follows it.
+std::optional<Vec2> orthoPolarDirection(const DraftingEnv* env, const cmd::PointQuery& query,
+                                        Vec2 raw);
+
 // Snaps to the best object snap candidate under the cursor when OSNAP is on. FilterFeedback:
 // marker = the mode name ("endpoint" ...), markerPos, tooltip = the mode label.
 class OsnapFilter final : public cmd::PointFilter {
