@@ -73,6 +73,19 @@ std::vector<const T*> modelEntities(const Document& doc) {
     return out;
 }
 
+// Entities of one kind in a block definition, in order.
+template <class T>
+std::vector<const T*> blockEntities(const Document& doc, BlockId block) {
+    std::vector<const T*> out;
+    if (const BlockDef* def = doc.block(block)) {
+        for (EntityId id : def->entities) {
+            if (const T* d = entityAs<T>(*doc.find(id)))
+                out.push_back(d);
+        }
+    }
+    return out;
+}
+
 inline const Entity* firstOfKind(const Document& doc, EntityKind k) {
     for (EntityId id : doc.modelSpace()) {
         const Entity* e = doc.find(id);

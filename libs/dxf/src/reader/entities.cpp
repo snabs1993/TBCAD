@@ -603,6 +603,58 @@ bool Importer::projectMText(MTextData& d, const Record& r, const Tilt& t) const 
     return true;
 }
 
+// An insert whose block is turned by an angle other than a multiple of 90 degrees in a tilted
+// plane: seen from above, its linear map A = M R(rot) S(sx, sy) has a shear. Split by singular
+// values, A = R(phi) S(a, b) R(psi): the block turned by psi becomes a small block of its own (one
+// nested insert, which also takes the attribute values and clipping), inserted with rotation phi
+// and scale (a, b).
+void Importer::shearInsert(InsertData& in, const Tilt& t, double elev) {
+    const double c = std::cos(in.rotation), s = std::sin(in.rotation);
+    // Columns of R(rot) S: (c sx, s sx) and (-s sy, c sy); then the plane map.
+    const Vec2 col0 = t.map(Vec2{c, s} * in.scale.x, 0);
+    const Vec2 col1 = t.map(Vec2{-s, c} * in.scale.y, 0);
+    const double a = col0.x, b = col1.x, cc = col0.y, d = col1.y;
+    const double e = (a + d) / 2, f = (a - d) / 2, g = (cc + b) / 2, h = (cc - b) / 2;
+    const double q = std::hypot(e, h), r = std::hypot(f, g);
+    const double a1 = std::atan2(g, f), a2 = std::atan2(h, e);
+    const double psi = (a2 - a1) / 2, phi = (a2 + a1) / 2;
+
+    const bool own = !in.attribs.empty() || in.clip.size() >= 3;
+    const long key = std::lround(normalizeAngle(psi) * 1e6);
+    BlockId inner{};
+    if (!own) {
+        auto it = shearBlocks_.find({in.block.value, key});
+        if (it != shearBlocks_.end())
+            inner = it->second;
+    }
+    if (!inner) {
+        const BlockDef* def = doc_->block(in.block);
+        const std::string name =
+            (def ? def->name : std::string("B")) + "$TILT" + std::to_string(++shearCount_);
+        inner = blockFor(name);
+        if (!inner)
+            return;
+        blockDefined_.insert(inner);
+        ++sum_.blocks;
+        InsertData nested;
+        nested.block = in.block;
+        nested.rotation = psi;
+        nested.attribs = std::move(in.attribs);
+        nested.clip = std::move(in.clip);
+        nested.clipOn = in.clipOn;
+        nested.clipInvert = in.clipInvert;
+        (void)tx_->add(makeEntity(std::move(nested)), inner);
+        if (!own)
+            shearBlocks_[{in.block.value, key}] = inner;
+    }
+    in.block = inner;
+    in.attribs.clear();
+    in.clip.clear();
+    in.position = t.map(in.position, elev);
+    in.rotation = phi;
+    in.scale = {q + r, q - r};
+}
+
 bool Importer::convTilted(const Record& r, const Tilt& t, std::vector<Entity>& out) {
     const std::string_view type = r.type;
     const std::size_t before = out.size();
@@ -865,26 +917,23 @@ bool Importer::convert(Record& r, RecordReader& rr, std::vector<Entity>& out, Bl
             convInsert(r, rr, f, out);  // also consumes the ATTRIB records
             const double q = r.num(50) / 90;
             const double k = std::round(q);
-            if (std::abs(q - k) > 1e-6) {
-                out.resize(before);
-                report_.warn(code::kExtrusion3d,
-                             "INSERT turned by " + formatDouble(r.num(50)) +
-                                 " degrees in a tilted 3D plane cannot be drawn as seen from "
-                                 "above; skipped",
-                             r.line, handleOf(r));
-                return true;
-            }
-            const double theta = std::atan2(tilt->ax[1], tilt->ax[0]);
-            const bool odd = std::fmod(std::abs(k), 2.0) == 1;
-            const Vec2 squash = odd ? Vec2{tilt->n[2], 1} : Vec2{1, tilt->n[2]};
             const double elev = r.num(30) * k_;
-            for (std::size_t i = before; i < out.size(); ++i) {
-                if (auto* d = std::get_if<Indirect<InsertData>>(&out[i].data)) {
-                    InsertData& in = **d;
-                    in.position = tilt->map(in.position, elev);
-                    in.rotation += theta;
-                    in.scale = Vec2{in.scale.x * squash.x, in.scale.y * squash.y};
+            if (std::abs(q - k) <= 1e-6) {
+                const double theta = std::atan2(tilt->ax[1], tilt->ax[0]);
+                const bool odd = std::fmod(std::abs(k), 2.0) == 1;
+                const Vec2 squash = odd ? Vec2{tilt->n[2], 1} : Vec2{1, tilt->n[2]};
+                for (std::size_t i = before; i < out.size(); ++i) {
+                    if (auto* d = std::get_if<Indirect<InsertData>>(&out[i].data)) {
+                        InsertData& in = **d;
+                        in.position = tilt->map(in.position, elev);
+                        in.rotation += theta;
+                        in.scale = Vec2{in.scale.x * squash.x, in.scale.y * squash.y};
+                    }
                 }
+            } else {
+                for (std::size_t i = before; i < out.size(); ++i)
+                    if (auto* d = std::get_if<Indirect<InsertData>>(&out[i].data))
+                        shearInsert(**d, *tilt, elev);
             }
             if (out.size() > before)
                 countProjected(r);

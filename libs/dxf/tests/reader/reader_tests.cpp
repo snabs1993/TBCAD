@@ -252,14 +252,29 @@ TEST_CASE("extrusion: inserts in a tilted plane become squashed blocks seen from
     p.g(210, 0.0).g(220, -0.6).g(230, 0.8);
     Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
     const auto inserts = modelEntities<InsertData>(l.doc());
-    REQUIRE(inserts.size() == 2);
+    REQUIRE(inserts.size() == 3);
     CHECK(near(inserts[0]->position, Vec2{2, 2.4}, 1e-9));
     CHECK(near(inserts[0]->rotation, 0.0));
     CHECK(near(inserts[0]->scale, Vec2{1, 0.8}, 1e-9));
     // Turned 90 degrees: the block's X runs along object Y, which is foreshortened.
     CHECK(near(inserts[1]->rotation, kPi / 2));
     CHECK(near(inserts[1]->scale, Vec2{1.6, 1}, 1e-9));
-    CHECK(l.report.countCode(code::kExtrusion3d) == 2);  // the info line and the 45 degree one
+    // Turned 45 degrees: a shear, split into a block turned inside a rotated, scaled insert.
+    const InsertData& outer = *inserts[2];
+    const BlockDef* inner = l.doc().block(outer.block);
+    REQUIRE(inner);
+    CHECK(inner->name.rfind("B$TILT", 0) == 0);
+    const auto nested = blockEntities<InsertData>(l.doc(), outer.block);
+    REQUIRE(nested.size() == 1);
+    auto place = [](const InsertData& in, Vec2 p) {
+        p = Vec2{p.x * in.scale.x, p.y * in.scale.y};
+        const double c = std::cos(in.rotation), s = std::sin(in.rotation);
+        return in.position + Vec2{p.x * c - p.y * s, p.x * s + p.y * c};
+    };
+    // Object (cos 45, sin 45) seen from above: y shrinks by 0.8.
+    CHECK(near(place(outer, place(*nested[0], Vec2{1, 0})), Vec2{0.7071068, 0.5656854}, 1e-6));
+    CHECK(near(place(outer, place(*nested[0], Vec2{0, 1})), Vec2{-0.7071068, 0.5656854}, 1e-6));
+    CHECK(l.report.countCode(code::kExtrusion3d) == 1);  // the info line only
 }
 
 TEST_CASE("polyface and polygon meshes are drawn as their visible edges seen from above") {
