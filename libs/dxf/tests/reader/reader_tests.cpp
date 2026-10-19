@@ -146,21 +146,51 @@ TEST_CASE("extrusion: steeply tilted circles, ellipses and polylines are project
 
 TEST_CASE("extrusion: the tilted plane corpus counts what was projected and what was dropped") {
     Loaded l = loadCorpus("tilted_planes.dxf");
-    int infos = 0, warnings = 0;
+    int infos = 0;
     for (const Diagnostic& d : l.report.diagnostics()) {
         if (d.code != code::kExtrusion3d)
             continue;
-        if (d.severity == Severity::Info) {
-            ++infos;
-            CHECK(d.message.rfind("8 ", 0) == 0);  // 2 circles, arc, ellipse, 2 polylines, hatch, solid
-        } else {
-            ++warnings;
-            CHECK(d.message.find("TEXT") != std::string::npos);
-        }
+        CHECK(d.severity == Severity::Info);
+        ++infos;
+        // 2 circles, arc, ellipse, 2 polylines, hatch, solid and the text.
+        CHECK(d.message.rfind("9 ", 0) == 0);
     }
     CHECK(infos == 1);
-    CHECK(warnings == 1);
     CHECK(l.report.countCode(code::kBadEntity) == 1);  // the one-vertex polyline
+}
+
+TEST_CASE("extrusion: text in a tilted plane keeps its exact shape seen from above") {
+    // Normal (0, -0.6, 0.8): object X is world +X, object Y is (0, 0.8, 0.6).
+    Pairs p;
+    p.section("ENTITIES");
+    p.g(0, "TEXT").g(8, "0").g(10, 5.0).g(20, 5.0).g(30, 0.0).g(40, 2.0).g(1, "flat");
+    p.g(210, 0.0).g(220, -0.6).g(230, 0.8);
+    p.g(0, "TEXT").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(40, 2.0).g(50, 90.0);
+    p.g(1, "up").g(210, 0.0).g(220, -0.6).g(230, 0.8);
+    p.g(0, "MTEXT").g(8, "0").g(10, 1.0).g(20, 2.0).g(30, 3.0).g(40, 2.0).g(41, 10.0);
+    p.g(1, "m").g(210, 0.0).g(220, -0.6).g(230, 0.8);
+    // Edge-on: the baseline runs straight down the view direction.
+    p.g(0, "TEXT").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(40, 2.0).g(1, "edge");
+    p.g(210, 0.0).g(220, -1.0).g(230, 0.0).g(50, 90.0);
+    Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
+    const auto texts = modelEntities<TextData>(l.doc());
+    REQUIRE(texts.size() == 2);
+    const TextData* flat = texts[0]->utf8 == "flat" ? texts[0] : texts[1];
+    const TextData* up = flat == texts[0] ? texts[1] : texts[0];
+    CHECK(near(flat->position, Vec2{5, 4}, 1e-9));
+    CHECK(near(flat->rotation, 0.0));
+    CHECK(flat->height == doctest::Approx(1.6));        // its up direction is foreshortened
+    CHECK(flat->widthFactor == doctest::Approx(1.25));  // the baseline is not
+    CHECK(near(flat->oblique, 0.0));
+    CHECK(near(up->rotation, kPi / 2));
+    CHECK(up->height == doctest::Approx(2));
+    CHECK(up->widthFactor == doctest::Approx(0.8));
+    const auto mtexts = modelEntities<MTextData>(l.doc());
+    REQUIRE(mtexts.size() == 1);
+    CHECK(near(mtexts[0]->position, Vec2{1, 2}));  // MTEXT points are in world coordinates
+    CHECK(mtexts[0]->height == doctest::Approx(1.6));
+    CHECK(mtexts[0]->width == doctest::Approx(10));
+    CHECK(l.report.countCode(code::kBadEntity) == 1);  // the edge-on text
 }
 
 TEST_CASE("extrusion: hatches, solids and 2D polylines in tilted planes are projected") {

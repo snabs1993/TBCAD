@@ -539,6 +539,67 @@ void Importer::projectHatch(HatchData& h, const Tilt& t, double elev) {
     h.patternOrigin = m(h.patternOrigin);
 }
 
+// A text built in object coordinates, projected. The projection of the text's plane is an affine
+// map, which the rotation, height, width factor, obliquing angle and upside-down flag of a text
+// can express exactly. False when the text is seen edge-on.
+bool Importer::projectText(TextData& d, const Tilt& t, double elev) {
+    auto lin = [&](Vec2 v) { return t.map(v, 0); };
+    const Vec2 e1{std::cos(d.rotation), std::sin(d.rotation)};
+    const Vec2 dir = lin(e1);
+    const Vec2 up = lin(perp(e1) + e1 * std::tan(d.oblique));
+    const double dl = length(dir);
+    if (!(dl > 1e-6))
+        return false;
+    const Vec2 dh = dir / dl;
+    double a = dot(up, dh), b = dot(up, perp(dh));
+    if (b < 0) {
+        d.upsideDown = !d.upsideDown;
+        a = -a;
+        b = -b;
+    }
+    if (!(b > 1e-6))
+        return false;
+    d.position = t.map(d.position, elev);
+    d.alignPoint = t.map(d.alignPoint, elev);
+    d.rotation = std::atan2(dh.y, dh.x);
+    d.widthFactor *= dl / b;
+    d.height *= b;
+    d.oblique = std::clamp(std::atan(a / b), -85 * kDeg, 85 * kDeg);
+    return true;
+}
+
+// MTEXT keeps its insertion point and direction in world coordinates: only the height and the
+// wrapping width follow the plane. False when the text is seen edge-on.
+bool Importer::projectMText(MTextData& d, const Record& r, const Tilt& t) const {
+    double dir3[3];
+    if (r.has(11)) {
+        dir3[0] = r.num(11);
+        dir3[1] = r.num(21);
+        dir3[2] = r.num(31);
+    } else {
+        const double c = std::cos(r.num(50) * kDeg), s = std::sin(r.num(50) * kDeg);
+        for (int i = 0; i < 3; ++i)
+            dir3[i] = t.ax[i] * c + t.ay[i] * s;
+    }
+    const double l3 = std::sqrt(dir3[0] * dir3[0] + dir3[1] * dir3[1] + dir3[2] * dir3[2]);
+    if (!(l3 > 0))
+        return false;
+    for (double& v : dir3)
+        v /= l3;
+    const Vec2 dir{dir3[0], dir3[1]};
+    const Vec2 up{t.n[1] * dir3[2] - t.n[2] * dir3[1], t.n[2] * dir3[0] - t.n[0] * dir3[2]};
+    const double dl = length(dir);
+    if (!(dl > 1e-6))
+        return false;
+    const double b = std::abs(dot(up, perp(dir / dl)));
+    if (!(b > 1e-6))
+        return false;
+    d.rotation = std::atan2(dir.y, dir.x);
+    d.height *= b;
+    d.width *= dl;
+    return true;
+}
+
 bool Importer::convTilted(const Record& r, const Tilt& t, std::vector<Entity>& out) {
     const std::string_view type = r.type;
     const std::size_t before = out.size();
@@ -762,6 +823,33 @@ bool Importer::convert(Record& r, RecordReader& rr, std::vector<Entity>& out, Bl
                     projectHatch(**h, *tilt, r.num(30) * k_);
             if (out.size() > before)
                 countProjected(r);
+            return true;
+        }
+    }
+    if (t == "TEXT" || t == "ATTRIB" || t == "ATTDEF" || t == "MTEXT") {
+        if (const std::optional<Tilt> tilt = tiltOf(r)) {
+            const std::size_t before = out.size();
+            if (t == "MTEXT") {
+                convMText(r, f, out);
+            } else {
+                const TextKind kind = t == "TEXT"     ? TextKind::Text
+                                      : t == "ATTRIB" ? TextKind::Attrib
+                                                      : TextKind::AttDef;
+                convText(r, f, kind, out);
+            }
+            bool ok = out.size() > before;
+            for (std::size_t i = before; i < out.size() && ok; ++i) {
+                if (auto* d = std::get_if<Indirect<TextData>>(&out[i].data))
+                    ok = projectText(**d, *tilt, r.num(30) * k_);
+                else if (auto* m = std::get_if<Indirect<MTextData>>(&out[i].data))
+                    ok = projectMText(**m, r, *tilt);
+            }
+            if (ok) {
+                countProjected(r);
+            } else if (out.size() > before) {
+                out.resize(before);
+                bad(r, t, "seen edge-on in its tilted plane; skipped");
+            }
             return true;
         }
     }

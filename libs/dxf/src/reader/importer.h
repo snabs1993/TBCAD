@@ -155,6 +155,8 @@ private:
     static std::vector<PolyVertex> projectPath(const std::vector<PolyVertex>& vs, bool closed,
                                                const Tilt& t, double elev);
     static void projectHatch(HatchData& h, const Tilt& t, double elev);
+    static bool projectText(TextData& d, const Tilt& t, double elev);
+    bool projectMText(MTextData& d, const Record& r, const Tilt& t) const;
     void countProjected(const Record& r) {
         if (projected_++ == 0)
             firstProjectedLine_ = r.line;
