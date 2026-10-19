@@ -59,3 +59,22 @@ TEST_CASE("only picture inserts have corner grips") {
     CHECK(pictureHandles(doc, insertOf(xr, {0, 0})).empty());
     CHECK_FALSE(pictureDrag(doc, insertOf(plain, {0, 0}), 0, {1, 1}));
 }
+
+TEST_CASE("a PDF underlay gets corner grips on the box of its page") {
+    Document doc;
+    BlockId b;
+    {
+        Transaction tx = doc.begin("pdf");
+        b = tx.addBlock(BlockDef{.name = "PDF", .xrefPath = "plan.pdf"}).value();
+        REQUIRE(tx.add(line(0, 0, 300, 0), b));
+        REQUIRE(tx.add(line(0, 0, 0, 200), b));
+        tx.commit();
+    }
+    Entity ins = insertOf(b, {10, 10});
+    auto hs = pictureHandles(doc, ins);
+    REQUIRE(hs.size() == 4);
+    CHECK(near(hs[2].world, {310, 210}));
+    auto big = pictureDrag(doc, ins, 2, {610, 410});
+    REQUIRE(big);
+    CHECK(near(entityAs<InsertData>(big.value())->scale, {2, 2}));
+}
