@@ -168,3 +168,26 @@ TEST_CASE("invalid spline data is rejected") {
     d.weights = {};
     CHECK(CurveRef::spline(d).ok());  // clamped uniform knots are generated
 }
+
+TEST_CASE("paramAtLength inverts lengthBetween on a many-span spline and an ellipse") {
+    std::vector<Vec2> fit;
+    for (int i = 0; i <= 60; ++i)
+        fit.push_back({i * 2.5, 10 * std::sin(i * 0.12)});
+    auto r = interpolateSpline(fit);
+    REQUIRE(r.ok());
+    auto sc = CurveRef::spline(r.value());
+    REQUIRE(sc.ok());
+    const CurveRef ell = CurveRef::ellipse({3, 4}, {10, 2}, 0.4, 0.3, 4.0);
+    for (const CurveRef& c : {sc.value(), ell}) {
+        const double len = c.length();
+        CHECK(c.paramAtLength(0) == doctest::Approx(c.t0()));
+        CHECK(c.paramAtLength(len) == doctest::Approx(c.t1()));
+        for (int i = 1; i < 40; ++i) {
+            const double s = len * i / 40;
+            const double t = c.paramAtLength(s);
+            CHECK(t > c.t0());
+            CHECK(t < c.t1());
+            CHECK(c.lengthBetween(c.t0(), t) == doctest::Approx(s).epsilon(1e-9));
+        }
+    }
+}
