@@ -523,6 +523,35 @@ TEST_CASE("a viewport's lock and off flags (group 90) are read and written") {
     CHECK(out.value().bytes.find("\r\n90\r\n163840\r\n") != std::string::npos);
 }
 
+TEST_CASE("the frozen-in-new-viewports layer flag (70 bit 2) round-trips through DXF") {
+    const std::string dxfText =
+        "  0\nSECTION\n  2\nTABLES\n  0\nTABLE\n  2\nLAYER\n 70\n2\n"
+        "  0\nLAYER\n  2\n0\n 70\n0\n 62\n7\n  6\nContinuous\n"
+        "  0\nLAYER\n  2\nGrid\n 70\n2\n 62\n2\n  6\nContinuous\n"
+        "  0\nENDTAB\n  0\nENDSEC\n  0\nEOF\n";
+    dxf::Report report;
+    auto r = dxf::importDxf(std::span<const std::byte>(
+                                reinterpret_cast<const std::byte*>(dxfText.data()), dxfText.size()),
+                            {}, report);
+    REQUIRE(r.ok());
+    const Document& doc = *r.value().document;
+    const auto frozen = layout::layersFrozenInNewViewports(doc);
+    REQUIRE(frozen.size() == 1);
+    CHECK(doc.layer(frozen[0])->name == "Grid");
+    CHECK_FALSE(doc.layer(frozen[0])->frozen);
+    dxf::ExportOptions opts;
+    auto out = dxf::exportDxf(doc, opts, report);
+    REQUIRE(out.ok());
+    auto in = dxf::importDxf(
+        std::span<const std::byte>(reinterpret_cast<const std::byte*>(out.value().bytes.data()),
+                                   out.value().bytes.size()),
+        {}, report);
+    REQUIRE(in.ok());
+    const auto back = layout::layersFrozenInNewViewports(*in.value().document);
+    REQUIRE(back.size() == 1);
+    CHECK(in.value().document->layer(back[0])->name == "Grid");
+}
+
 TEST_CASE("layouts survive a DXF export and import") {
     Document doc;
     const LayerId walls = addLayer(doc, "Walls");
