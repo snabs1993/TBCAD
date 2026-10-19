@@ -411,3 +411,79 @@ TEST_CASE("a scene built on several threads equals the one built on one") {
     CHECK(one.entityCount() == 60000);
     CHECK(sameScene(one, many));
 }
+
+TEST_CASE("references to blocks packed on several threads give the same scene, also after a move") {
+    blocks::registerInsertDisplay();
+    Document doc;
+    LayerId plain = addLayer(doc, "Plain");
+    LayerId locked = addLayer(doc, "Locked");
+    modifyLayer(doc, locked, [](Layer& l) { l.locked = true; });
+    std::vector<EntityId> ids;
+    {
+        auto tx = doc.begin("fill");
+        BlockDef def;
+        def.name = "SYM";
+        const BlockId block = tx.addBlock(def).value();
+        (void)tx.add(Entity{{}, CircleData{{0, 0}, 2}}, block);
+        (void)tx.add(Entity{{}, LineData{{-3, 0}, {3, 0}}}, block);
+        BlockDef big;
+        big.name = "BIG";  // wider than a tile: its pieces go to several tiles
+        const BlockId wide = tx.addBlock(big).value();
+        for (int k = 0; k < 40; ++k)
+            (void)tx.add(Entity{{}, LineData{{k * 200.0, 0}, {k * 200.0 + 150, 90}}}, wide);
+        // Below the size that is built lazily, above the one built on several threads.
+        for (int i = 0; i < 19000; ++i) {
+            const double x = (i % 200) * 25.0, y = (i / 200) * 25.0;
+            Entity e;
+            if (i % 3 == 0) {
+                InsertData ins;
+                ins.block = i % 300 == 0 ? wide : block;
+                ins.position = {x, y};
+                ins.rotation = (i % 7) * 0.3;
+                if (i % 9 == 0) {
+                    ArrayInfo a;
+                    a.rows = 2;
+                    a.columns = 3;
+                    a.rowSpacing = 5;
+                    a.columnSpacing = 7;
+                    ins.array = a;
+                }
+                e.data = std::move(ins);
+            } else {
+                e.data = LineData{{x, y}, {x + 10, y + 7}};
+            }
+            e.common.layer = (i % 11 == 0) ? locked : plain;
+            ids.push_back(tx.add(std::move(e)).value());
+        }
+        tx.commit();
+    }
+    render::Scene one, many;
+    SceneSync a(doc, one), b(doc, many);
+    a.setMaxThreads(1);
+    b.setMaxThreads(8);
+    a.setPixelSize(0.5);
+    b.setPixelSize(0.5);
+    a.rebuildAll(500);
+    b.rebuildAll(500);
+    a.flushPending();
+    b.flushPending();
+    CHECK(one.entityCount() == 19000);
+    CHECK(sameScene(one, many));
+    {
+        auto tx = doc.begin("move all");
+        for (EntityId id : ids)
+            REQUIRE(tx.modify(id, [](Entity& e) {
+                if (auto* ins = entityAs<InsertData>(e))
+                    ins->position += Vec2{1234, -55};
+                else if (auto* l = entityAs<LineData>(e)) {
+                    l->a += Vec2{1234, -55};
+                    l->b += Vec2{1234, -55};
+                }
+            }));
+        tx.commit();
+    }
+    a.flushPending();
+    b.flushPending();
+    CHECK(one.entityCount() == 19000);
+    CHECK(sameScene(one, many));
+}

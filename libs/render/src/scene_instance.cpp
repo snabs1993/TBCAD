@@ -1,8 +1,8 @@
 // Drawing the same block many times: the shared list is prepared once and every reference only
 // transforms and packs it (see Scene::upsertInstance).
 #include <algorithm>
-#include <iterator>
 #include <cmath>
+#include <iterator>
 
 #include "scene_cursor.h"
 #include "tbcad/render/fill.h"
@@ -127,14 +127,105 @@ bool Scene::upsertInstance(EntityId id, const std::shared_ptr<const DisplayList>
                           builtPixelsPerMm);
 }
 
-bool Scene::upsertInstance(EntityId id, const std::shared_ptr<const DisplayList>& blockSpace,
-                           std::span<const Transform2> placements, const DisplayList* extra,
+bool Scene::instanceUsable(const std::shared_ptr<const DisplayList>& blockSpace) {
+    return blockSpace && templateFor(blockSpace)->usable;
+}
+
+void Scene::packInstance(const std::shared_ptr<const DisplayList>& blockSpace,
+                         std::span<const Transform2> placements, InstancePack& out) const {
+    out.used = 0;
+    out.list = blockSpace.get();
+    const auto found = templates_.find(blockSpace.get());
+    if (found == templates_.end() || !found->second->usable)
+        return;
+    const InstanceTemplate* tpl = found->second.get();
+    auto newRun = [&](std::uint32_t group, const TileKey& tile) -> InstancePack::Run& {
+        if (out.runs.size() == out.used)
+            out.runs.emplace_back();
+        InstancePack::Run& r = out.runs[out.used++];
+        r.group = group;
+        r.tile = tile;
+        r.box = BBox2{};
+        r.verts.clear();
+        return r;
+    };
+    auto origin = [&](const TileKey& tk) {
+        return Vec2{static_cast<double>(tk.x) * tileSize_, static_cast<double>(tk.y) * tileSize_};
+    };
+    for (const Transform2& t : placements) {
+        // The usual case: the whole reference lies in one tile. Then the geometry is only moved
+        // and packed.
+        if (!tpl->box.empty()) {
+            const BBox2 where = t.applyToBox(tpl->box);
+            if (drawable(where.min) && drawable(where.max)) {
+                const TileKey tk = tileOf(where.min);
+                if (tk == tileOf(where.max)) {
+                    const Vec2 o = origin(tk);
+                    for (std::size_t gi = 0; gi < tpl->groups.size(); ++gi) {
+                        const InstanceTemplate::Group& g = tpl->groups[gi];
+                        if (g.pts.empty())
+                            continue;
+                        InstancePack::Run& r = newRun(static_cast<std::uint32_t>(gi), tk);
+                        r.verts.resize(g.pts.size());
+                        for (std::size_t i = 0; i < g.pts.size(); ++i)
+                            r.verts[i] = packVertex(t.apply(g.pts[i]), o);
+                        r.box = where;
+                    }
+                    continue;
+                }
+            }
+        }
+        // The reference spans several tiles: its pieces go into one run per tile, so each tile
+        // gets one range of this object however often consecutive pieces change tiles.
+        for (std::size_t gi = 0; gi < tpl->groups.size(); ++gi) {
+            const InstanceTemplate::Group& g = tpl->groups[gi];
+            if (g.pts.empty())
+                continue;
+            const std::size_t step = g.kind == BatchKind::Stroke ? 2
+                                     : g.kind == BatchKind::Fill ? 3
+                                                                 : 1;
+            const std::size_t first = out.used;
+            std::size_t last = first;
+            for (std::size_t i = 0; i + step <= g.pts.size(); i += step) {
+                Vec2 q[3];
+                for (std::size_t k = 0; k < step; ++k)
+                    q[k] = t.apply(g.pts[i + k]);
+                bool ok = true;
+                for (std::size_t k = 0; k < step; ++k)
+                    ok = ok && drawable(q[k]);
+                if (!ok)
+                    continue;
+                // The tile is that of the first end point (strokes, points) or the centroid
+                // (fills), as when the transformed list is added.
+                const Vec2 at = step == 3 ? (q[0] + q[1] + q[2]) / 3.0 : q[0];
+                const TileKey here = tileOf(at);
+                if (out.used == first || !(out.runs[last].tile == here)) {
+                    last = out.used;
+                    for (std::size_t r = first; r < out.used; ++r)
+                        if (out.runs[r].tile == here) {
+                            last = r;
+                            break;
+                        }
+                    if (last == out.used)
+                        newRun(static_cast<std::uint32_t>(gi), here);
+                }
+                InstancePack::Run& run = out.runs[last];
+                const Vec2 o = origin(run.tile);
+                for (std::size_t k = 0; k < step; ++k) {
+                    run.verts.push_back(packVertex(q[k], o));
+                    run.box.expand(q[k]);
+                }
+            }
+        }
+    }
+}
+
+bool Scene::commitInstance(EntityId id, const InstancePack& pack, const DisplayList* extra,
                            std::uint32_t drawOrder, double builtPixelsPerMm) {
-    if (!blockSpace)
+    const auto found = templates_.find(pack.list);
+    if (!pack.list || found == templates_.end() || !found->second->usable)
         return false;
-    const InstanceTemplate* tpl = templateFor(blockSpace);
-    if (!tpl->usable)
-        return false;
+    const InstanceTemplate* tpl = found->second.get();
     if (extra)
         for (const DisplayItem& item : extra->items)
             if (const auto* f = std::get_if<DisplayFill>(&item);
@@ -150,105 +241,18 @@ bool Scene::upsertInstance(EntityId id, const std::shared_ptr<const DisplayList>
     c.level = levelBelow(drawOrder);
     c.maskLevel = c.level;
     c.builtZoom = static_cast<float>(builtPixelsPerMm);
-
-    thread_local std::vector<GpuVertex> chunk;
-    struct TileRun {
-        TileKey tile{};
-        Vec2 origin{};
-        std::vector<GpuVertex> verts{};
-        BBox2 box{};
-    };
-    thread_local std::vector<TileRun> runs;
-    auto place = [&](const Transform2& t) {
-        // The usual case: the whole reference lies in one tile. Then the tile is looked up once and
-        // the geometry is only moved and packed.
-        if (!tpl->box.empty()) {
-            const BBox2 where = t.applyToBox(tpl->box);
-            if (drawable(where.min) && drawable(where.max)) {
-                const TileKey tk = tileOf(where.min);
-                if (tk == tileOf(where.max)) {
-                    const Vec2 origin = {static_cast<double>(tk.x) * tileSize_,
-                                         static_cast<double>(tk.y) * tileSize_};
-                    for (const InstanceTemplate::Group& g : tpl->groups) {
-                        if (g.pts.empty())
-                            continue;
-                        const BatchKey key = styleKey(g.kind, g.style, c.level);
-                        chunk.resize(g.pts.size());
-                        for (std::size_t i = 0; i < g.pts.size(); ++i)
-                            chunk[i] = packVertex(t.apply(g.pts[i]), origin);
-                        c.batch = nullptr;
-                        c.tile = nullptr;
-                        c.append(*this, tk, key, g.halfWidthMm, chunk);
-                        c.expand(where.min);
-                        c.expand(where.max);
-                    }
-                    return;
-                }
-            }
-        }
-        // The reference spans several tiles: sort its pieces into one run per tile, so each tile
-        // gets one range of this object however often consecutive pieces change tiles.
-        for (const InstanceTemplate::Group& g : tpl->groups) {
-            if (g.pts.empty())
-                continue;
-            const BatchKey key = styleKey(g.kind, g.style, c.level);
-            const std::size_t step = g.kind == BatchKind::Stroke ? 2
-                                     : g.kind == BatchKind::Fill ? 3
-                                                                 : 1;
-            for (TileRun& r : runs)
-                r.verts.clear();
-            std::size_t used = 0;
-            std::size_t last = 0;
-            for (std::size_t i = 0; i + step <= g.pts.size(); i += step) {
-                Vec2 q[3];
-                for (std::size_t k = 0; k < step; ++k)
-                    q[k] = t.apply(g.pts[i + k]);
-                bool ok = true;
-                for (std::size_t k = 0; k < step; ++k)
-                    ok = ok && drawable(q[k]);
-                if (!ok)
-                    continue;
-                // The tile is that of the first end point (strokes, points) or the centroid
-                // (fills), as when the transformed list is added.
-                const Vec2 at = step == 3 ? (q[0] + q[1] + q[2]) / 3.0 : q[0];
-                const TileKey here = tileOf(at);
-                if (used == 0 || !(runs[last].tile == here)) {
-                    last = used;
-                    for (std::size_t r = 0; r < used; ++r)
-                        if (runs[r].tile == here) {
-                            last = r;
-                            break;
-                        }
-                    if (last == used) {
-                        if (runs.size() == used)
-                            runs.emplace_back();
-                        runs[used].tile = here;
-                        runs[used].origin = {static_cast<double>(here.x) * tileSize_,
-                                             static_cast<double>(here.y) * tileSize_};
-                        runs[used].verts.clear();
-                        runs[used].box = BBox2{};
-                        ++used;
-                    }
-                }
-                TileRun& run = runs[last];
-                for (std::size_t k = 0; k < step; ++k) {
-                    run.verts.push_back(packVertex(q[k], run.origin));
-                    run.box.expand(q[k]);
-                }
-            }
-            for (std::size_t r = 0; r < used; ++r) {
-                if (runs[r].verts.empty())
-                    continue;
-                c.batch = nullptr;
-                c.tile = nullptr;
-                c.append(*this, runs[r].tile, key, g.halfWidthMm, runs[r].verts);
-                c.expand(runs[r].box.min);
-                c.expand(runs[r].box.max);
-            }
-        }
-    };
-    for (const Transform2& t : placements)
-        place(t);
+    for (std::size_t r = 0; r < pack.used; ++r) {
+        const InstancePack::Run& run = pack.runs[r];
+        if (run.verts.empty())
+            continue;
+        const InstanceTemplate::Group& g = tpl->groups[run.group];
+        const BatchKey key = styleKey(g.kind, g.style, c.level);
+        c.batch = nullptr;
+        c.tile = nullptr;
+        c.append(*this, run.tile, key, g.halfWidthMm, run.verts);
+        c.expand(run.box.min);
+        c.expand(run.box.max);
+    }
     // What differs from reference to reference (attribute values) comes as an ordinary list.
     if (extra) {
         for (const DisplayItem& item : extra->items) {
@@ -265,6 +269,16 @@ bool Scene::upsertInstance(EntityId id, const std::shared_ptr<const DisplayList>
     finishRefs(rec);
     ++changeCounter_;
     return true;
+}
+
+bool Scene::upsertInstance(EntityId id, const std::shared_ptr<const DisplayList>& blockSpace,
+                           std::span<const Transform2> placements, const DisplayList* extra,
+                           std::uint32_t drawOrder, double builtPixelsPerMm) {
+    if (!instanceUsable(blockSpace))
+        return false;
+    thread_local InstancePack pack;
+    packInstance(blockSpace, placements, pack);
+    return commitInstance(id, pack, extra, drawOrder, builtPixelsPerMm);
 }
 
 }  // namespace tbcad::render
