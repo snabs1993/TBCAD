@@ -22,6 +22,8 @@ tbcad_add_tests(drafting
     tests/osnap_kinds_tests.cpp
     tests/osnap_modes_tests.cpp
     tests/tracking_tests.cpp
+    tests/point_modifier_tests.cpp
+    tests/polar_angle_tests.cpp
     tests/dyninput_tests.cpp
     tests/grid_tests.cpp
     tests/ucs_tests.cpp
