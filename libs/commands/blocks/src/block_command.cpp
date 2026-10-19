@@ -17,7 +17,7 @@ public:
     explicit BlockCommand(bool redefine = false) : redefine_(redefine) {}
     std::string_view name() const override { return redefine_ ? "ATTREDEF" : "BLOCK"; }
     std::vector<std::string> defaultAliases() const override {
-        return redefine_ ? std::vector<std::string>{} : std::vector<std::string>{"B"};
+        return redefine_ ? std::vector<std::string>{} : std::vector<std::string>{"B", "-BLOCK"};
     }
     std::string_view description() const override {
         return redefine_ ? "Redefine a block and update its attributes"

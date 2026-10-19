@@ -66,7 +66,7 @@ public:
     explicit InsertCommand(bool array = false) : array_(array) {}
     std::string_view name() const override { return array_ ? "MINSERT" : "INSERT"; }
     std::vector<std::string> defaultAliases() const override {
-        return array_ ? std::vector<std::string>{} : std::vector<std::string>{"I"};
+        return array_ ? std::vector<std::string>{} : std::vector<std::string>{"I", "-INSERT"};
     }
     std::string_view description() const override {
         return array_ ? "Insert a block as a rectangular array" : "Insert a block";
