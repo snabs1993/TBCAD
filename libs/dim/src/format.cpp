@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 #include "tbcad/dim/dim.h"
 
@@ -55,10 +57,71 @@ const DimStyle& styleOf(const Document& doc, DimStyleId id) {
     return defaultStyle();
 }
 
+// Degrees, minutes and seconds. Decimals 0..1 show degrees, 2..3 add minutes, 4 and more add
+// seconds (with decimals - 4 places), as DIMADEC does for DIMAUNIT 1. The value is rounded to
+// the finest part shown, so 59.9999 degrees becomes 60 and carries.
+static std::string formatDms(double radians, int decimals) {
+    const double deg = radians * 180.0 / kPi;
+    const bool neg = deg < 0;
+    const double a = std::abs(deg);
+    const int secDecimals = decimals >= 4 ? std::min(decimals - 4, 6) : 0;
+    double scale = 1;  // parts per degree at the finest unit shown
+    if (decimals >= 4) {
+        scale = 3600.0;
+        for (int i = 0; i < secDecimals; ++i)
+            scale *= 10;
+    } else if (decimals >= 2) {
+        scale = 60.0;
+    }
+    long long total = std::llround(a * scale);
+    const long long perDeg = static_cast<long long>(scale);
+    long long d = total / perDeg;
+    long long rest = total % perDeg;
+    std::string out = neg && total != 0 ? "-" : "";
+    out += std::to_string(d) + "\xC2\xB0";
+    if (decimals >= 2) {
+        long long unitsPerMinute = decimals >= 4 ? perDeg / 60 : 1;
+        long long m = rest / unitsPerMinute;
+        rest %= unitsPerMinute;
+        char buf[16];
+        std::snprintf(buf, sizeof buf, "%02lld", m);
+        out += buf;
+        out += "'";
+        if (decimals >= 4) {
+            long long unitsPerSecondFrac = unitsPerMinute / 60;  // 10^secDecimals
+            long long sec = rest / unitsPerSecondFrac;
+            long long frac = rest % unitsPerSecondFrac;
+            std::snprintf(buf, sizeof buf, "%02lld", sec);
+            out += buf;
+            if (secDecimals > 0) {
+                char fb[16];
+                std::snprintf(fb, sizeof fb, "%0*lld", secDecimals, frac);
+                out += ".";
+                out += fb;
+            }
+            out += "\"";
+        }
+    }
+    return out;
+}
+
 std::string formatNumber(const DimStyle& style, double value, bool angular) {
     std::string s;
     if (angular) {
-        s = formatAngle(value, style.precision, AngleUnit::Degrees, false);
+        const int decimals = style.angularPrecision >= 0 ? style.angularPrecision : style.precision;
+        switch (style.angleFormat) {
+            case DimAngleFormat::Dms:
+                return formatDms(value, decimals);
+            case DimAngleFormat::Gradians:
+                s = formatAngle(value, decimals, AngleUnit::Gradians, false);
+                break;
+            case DimAngleFormat::Radians:
+                s = formatAngle(value, decimals, AngleUnit::Radians, false);
+                break;
+            default:
+                s = formatAngle(value, decimals, AngleUnit::Degrees, false);
+                break;
+        }
     } else {
         if (style.roundOff > 0)
             value = std::round(value / style.roundOff) * style.roundOff;
@@ -67,8 +130,23 @@ std::string formatNumber(const DimStyle& style, double value, bool angular) {
         s = formatLength(value, style.precision, f);
     }
     suppressZeros(s, style);
-    if (angular)
-        s += "\xC2\xB0";  // °
+    if (style.commaDecimal)
+        for (char& c : s)
+            if (c == '.')
+                c = ',';
+    if (angular) {
+        switch (style.angleFormat) {
+            case DimAngleFormat::Gradians:
+                s += "g";
+                break;
+            case DimAngleFormat::Radians:
+                s += "r";
+                break;
+            default:
+                s += "\xC2\xB0";  // °
+                break;
+        }
+    }
     return s;
 }
 

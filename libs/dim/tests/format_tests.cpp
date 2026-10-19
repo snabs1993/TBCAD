@@ -153,3 +153,56 @@ TEST_CASE("alternate units follow the measurement in brackets") {
           "254.00 \xC2\xB1"
           "0.10");
 }
+
+TEST_CASE("angular dimensions: degrees, minutes and seconds, gradians, radians, own decimals") {
+    DimStyle s;
+    s.precision = 2;
+    const double rad = kPi / 180.0;
+    // Same decimals as the lengths unless DIMADEC says otherwise.
+    CHECK(formatNumber(s, 90 * rad, true) == "90.00\xC2\xB0");
+    s.angularPrecision = 0;
+    CHECK(formatNumber(s, 90 * rad, true) == "90\xC2\xB0");
+    s.angularPrecision = 1;
+    CHECK(formatNumber(s, 33.25 * rad, true) == "33.2\xC2\xB0");
+
+    s.angleFormat = DimAngleFormat::Dms;
+    s.angularPrecision = 0;
+    CHECK(formatNumber(s, 33.5 * rad, true) == "34\xC2\xB0");
+    s.angularPrecision = 2;
+    CHECK(formatNumber(s, 33.5 * rad, true) ==
+          "33\xC2\xB0"
+          "30'");
+    s.angularPrecision = 4;
+    CHECK(formatNumber(s, (33 + 30 / 60.0 + 15 / 3600.0) * rad, true) ==
+          "33\xC2\xB0"
+          "30'15\"");
+    s.angularPrecision = 5;
+    CHECK(formatNumber(s, (33 + 30 / 60.0 + 15.5 / 3600.0) * rad, true) ==
+          "33\xC2\xB0"
+          "30'15.5\"");
+    // Rounding carries into the larger parts.
+    s.angularPrecision = 2;
+    CHECK(formatNumber(s, 59.9999 * rad, true) ==
+          "60\xC2\xB0"
+          "00'");
+    s.angularPrecision = 4;
+    CHECK(formatNumber(s, 10.99999 * rad, true) ==
+          "11\xC2\xB0"
+          "00'00\"");
+
+    s.angleFormat = DimAngleFormat::Gradians;
+    s.angularPrecision = 1;
+    CHECK(formatNumber(s, kPi / 2, true) == "100.0g");
+    s.angleFormat = DimAngleFormat::Radians;
+    s.angularPrecision = 3;
+    CHECK(formatNumber(s, kPi / 2, true) == "1.571r");
+}
+
+TEST_CASE("DIMDSEP: a decimal comma in lengths and angles") {
+    DimStyle s;
+    s.commaDecimal = true;
+    CHECK(formatNumber(s, 12.5, false) == "12,50");
+    CHECK(formatNumber(s, 90 * kPi / 180.0, true) == "90,00\xC2\xB0");
+    s.precision = 0;
+    CHECK(formatNumber(s, 12.6, false) == "13");
+}
