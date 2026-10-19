@@ -4,6 +4,7 @@
 #include <string>
 
 #include "common.h"
+#include "tbcad/blocks/attributes.h"
 #include "tbcad/core/dump.h"
 #include "tbcad/geom/geom.h"
 #include "tbcad/transform/grip_menu.h"
@@ -67,6 +68,76 @@ void addSamples(Document& doc, std::vector<EntityId>& ids) {
     ld.utf8 = "note";
     ld.textPos = {5, 5};
     ids.push_back(add(doc, Indirect<LeaderData>(ld)));
+
+    // Blocks with their own grips: attributes, a picture frame, dynamic parameters.
+    auto block = [&](const char* name, std::string xref) {
+        auto t = doc.begin("block");
+        BlockId b = t.addBlock(BlockDef{.name = name, .xrefPath = std::move(xref)}).value();
+        t.commit();
+        return b;
+    };
+    auto put = [&](BlockId b, EntityData data) {
+        auto t = doc.begin("content");
+        Entity e;
+        e.data = std::move(data);
+        EntityId id = t.add(std::move(e), b).value();
+        t.commit();
+        return id;
+    };
+    const BlockId tagged = block("Tagged", "");
+    TextData def;
+    def.position = {0, 2};
+    def.height = 1;
+    def.utf8 = "NAME";
+    def.attdef = AttDefInfo{"NAME", "", "x", false, false, false, false};
+    put(tagged, Indirect<TextData>(def));
+    InsertData withTag{tagged, {50, 0}, {1.5, 1.5}, 0.4};
+    withTag.attribs = blocks::defaultAttribs(doc, tagged);
+    ids.push_back(add(doc, withTag));
+
+    const BlockId pic = block("Picture", "photo.png");
+    PolylineData frame;
+    frame.closed = true;
+    for (Vec2 p : {Vec2{0, 0}, Vec2{40, 0}, Vec2{40, 20}, Vec2{0, 20}})
+        frame.v.push_back({p, 0, 0, 0});
+    put(pic, frame);
+    ids.push_back(add(doc, InsertData{pic, {60, 40}, {0.5, 0.5}, 0.2}));
+
+    const BlockId dyn = block("Dyn", "");
+    const EntityId bar = put(dyn, LineData{{0, 0}, {10, 0}});
+    {
+        auto t = doc.begin("dyn");
+        DynamicDef dd;
+        DynParam w;
+        w.name = "Length";
+        w.base = {0, 0};
+        w.end = {10, 0};
+        dd.params.push_back(w);
+        DynParam fl;
+        fl.kind = DynParam::Kind::Flip;
+        fl.name = "Flip";
+        fl.base = {5, 0};
+        fl.end = {5, 5};
+        dd.params.push_back(fl);
+        DynParam lk;
+        lk.kind = DynParam::Kind::Lookup;
+        lk.name = "Size";
+        lk.base = {0, 4};
+        lk.states = {"S", "L"};
+        lk.stateObjects = {{}, {}};
+        lk.lookupParams = {0};
+        lk.lookupValues = {{10}, {25}};
+        dd.params.push_back(lk);
+        DynAction st;
+        st.kind = DynAction::Kind::Stretch;
+        st.frameMin = {9, -1};
+        st.frameMax = {11, 1};
+        st.objects = {bar};
+        dd.actions.push_back(st);
+        REQUIRE(t.modifyBlock(dyn, [&](BlockDef& d) { d.dynamic = std::move(dd); }).ok());
+        t.commit();
+    }
+    ids.push_back(add(doc, InsertData{dyn, {80, 0}, {1, 1}, 0}));
 }
 
 }  // namespace
@@ -220,7 +291,8 @@ TEST_CASE("every grip menu action on every grip stays finite and undoes exactly"
     samples(f0.doc, ids0);
     std::size_t tried = 0;
     for (std::size_t k = 0; k < ids0.size(); ++k)
-        for (const auto& g0 : tbcad::transform::collectGrips(f0.doc, std::vector<EntityId>{ids0[k]}))
+        for (const auto& g0 :
+             tbcad::transform::collectGrips(f0.doc, std::vector<EntityId>{ids0[k]}))
             for (GripAction a : tbcad::transform::gripActions(f0.doc, g0)) {
                 if (a == GripAction::Stretch)
                     continue;
@@ -230,10 +302,10 @@ TEST_CASE("every grip menu action on every grip stays finite and undoes exactly"
                 Fixture f;
                 std::vector<EntityId> ids;
                 samples(f.doc, ids);
-                const auto gs = tbcad::transform::collectGrips(f.doc, std::vector<EntityId>{ids[k]});
-                const auto gi = std::find_if(gs.begin(), gs.end(), [&](const auto& g) {
-                    return g.index == g0.index;
-                });
+                const auto gs =
+                    tbcad::transform::collectGrips(f.doc, std::vector<EntityId>{ids[k]});
+                const auto gi = std::find_if(gs.begin(), gs.end(),
+                                             [&](const auto& g) { return g.index == g0.index; });
                 REQUIRE(gi != gs.end());
                 const std::string before = canonicalDump(f.doc);
                 f.host.setSelection({ids[k]});
