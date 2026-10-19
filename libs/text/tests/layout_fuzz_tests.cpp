@@ -14,14 +14,16 @@ using namespace tbcad::text;
 namespace {
 
 std::string randomPiece(std::mt19937_64& rng) {
-    static const char* const kBits[] = {"Hello ",  "world",         "123",     " ",      "\\P",
-                                        "\\\\",    "\\{",           "{",       "}",      "\\L",
-                                        "\\l",     "\\O",           "\\o",     "{\\b1;", "{\\i1;",
-                                        "\\S1/2;", "\\S+0.1^-0.1;", "\\S3#4;", "\\S1/",  "\\S;",
-                                        "{\\H0;",  "{\\H3;",        "{\\H2x;", "{\\C7;", "{\\C999;",
-                                        "\\",      "\\Z",           ";",       "\n",     "\r\n",
-                                        "สวัสดีครับ", "การทดสอบระบบ",  "ก๊า",      "°C",     "​",
-                                        "\xff\xfe"};
+    static const char* const kBits[] = {
+        "Hello ", "world", "123", " ", "\\P", "\\\\", "\\{", "{", "}", "\\L", "\\l", "\\O", "\\o",
+        "{\\b1;", "{\\i1;", "\\S1/2;", "\\S+0.1^-0.1;", "\\S3#4;", "\\S1/", "\\S;", "{\\H0;",
+        "{\\H3;", "{\\H2x;", "{\\C7;", "{\\C999;", "\\", "\\Z", ";", "\n", "\r\n", "สวัสดีครับ",
+        "การทดสอบระบบ", "ก๊า", "°C", "​", "\xff\xfe",
+        // paragraphs, columns, tabs, character codes
+        "\\pqj;", "\\pqd;", "\\pqc;", "\\pxi-30,l500,r999;", "\\pt1,1,1,0,-5;",
+        "\\pl3,t10,20;sb9999,sa-4;", "\\p;", "\\pq", "\\N", "\\~", "\t", "\\W3;", "\\W0;",
+        "\\W1e9;", "\\T9;", "\\T0.01;", "\\Q-80;", "\\Q85;", "\\Qx;", "\\A2;", "\\A1;", "\\K",
+        "\\k", "{\\W0.5;"};
     return kBits[rng() % (sizeof kBits / sizeof kBits[0])];
 }
 
@@ -40,12 +42,17 @@ bool finite(const TextLayout& l) {
 TEST_CASE("random MTEXT markup lays out to finite numbers") {
     Document doc;
     std::mt19937_64 rng(20261020);
-    for (int round = 0; round < 400; ++round) {
+    for (int round = 0; round < 3000; ++round) {
         MTextData m;
         m.height = 0.5 + static_cast<double>(rng() % 400) / 10;
         m.width = (rng() % 3 == 0) ? 0 : 5 + static_cast<double>(rng() % 300);
         m.rotation = static_cast<double>(rng() % 700) / 100;
         m.attach = static_cast<Attachment>(rng() % 9);
+        if (rng() % 4 == 0) {
+            m.columns = static_cast<std::uint8_t>(1 + rng() % 8);
+            m.columnGap = static_cast<double>(rng() % 50);
+        }
+        m.lineSpacing = 0.25 + static_cast<double>(rng() % 376) / 100;
         for (int i = 0, n = static_cast<int>(rng() % 12); i < n; ++i)
             m.utf8 += randomPiece(rng);
         CAPTURE(m.utf8);
@@ -58,7 +65,10 @@ TEST_CASE("random MTEXT markup lays out to finite numbers") {
             CHECK(std::isfinite(b.max.y));
         }
         // A wrapped line is never wider than the box, unless one cluster is wider on its own.
-        if (m.width > 0 && m.utf8.find("\\S") == std::string::npos)  // a fraction is never split
+        if (m.width > 0 && m.columns == 1 && m.utf8.find("\\S") == std::string::npos &&
+            m.utf8.find("\\p") == std::string::npos && m.utf8.find("\\W") == std::string::npos &&
+            m.utf8.find("\\T") == std::string::npos &&
+            m.utf8.find('\t') == std::string::npos)  // fractions, indents, tabs overflow by design
             for (const LayoutLine& ln : l.lines)
                 if (ln.text.size() > 8)  // more than a single word or cluster
                     CHECK(ln.width <= m.width * 1.5 + m.height * 3);
