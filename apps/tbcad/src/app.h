@@ -29,6 +29,7 @@ struct Options {
     std::string screenshot{};  // write the last frame to this .ppm
     std::string report{};      // --gate: also write the report here
     std::string captureScript{};  // --capture-script F: run F offscreen, @shot lines write PNGs
+    std::string captureOut{};     // --capture-out DIR: where shots and {out} go (default: the script's folder)
     int captureW = 1600;          // --size WxH of the hidden capture window (logical pixels)
     int captureH = 900;
     int frames = 0;            // > 0: draw this many frames, then exit

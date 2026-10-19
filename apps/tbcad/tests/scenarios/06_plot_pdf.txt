@@ -1,0 +1,12 @@
+# Plot to a PDF and check the file is there.
+LINE
+0,0
+100,50
+
+CIRCLE
+50,25
+20
+EXPORTPDF
+
+{out}/06_plot.pdf
+@expect file 06_plot.pdf

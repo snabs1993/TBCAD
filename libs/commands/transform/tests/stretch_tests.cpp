@@ -70,6 +70,7 @@ TEST_CASE("COPY Array makes a row of copies with a fixed spacing or fitted to a 
     CHECK(r.finished);
     CHECK(f.doc.entityCount() == 4);  // the source plus three copies
     f.host.undo();
+    f.host.setSelection({a});  // the command used up the selection
     CHECK(f.doc.entityCount() == 1);
     r = f.host.run("COPY", {"0,0", "Array", "4", "Fit", "90,0"});
     CHECK(r.finished);

@@ -1,0 +1,32 @@
+# Layers and properties from the command line, then undo.
+-LAYER
+New
+Walls
+
+-LAYER
+Off
+Walls
+
+@expect layer Walls off
+-LAYER
+ON
+Walls
+Lock
+Walls
+
+@expect layer Walls on
+@expect layer Walls locked
+LINE
+0,0
+100,0
+
+SELECTALL
+-PROP
+Layer
+Walls
+@key Escape
+CIRCLE
+0,0
+10
+@expect circle 1
+@shot 05_layers_properties.png

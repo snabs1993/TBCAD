@@ -117,6 +117,20 @@ in draw order, shown `factor` times its size) and `@stats` (prints how many obje
 are in view and in the drawing, and how many are selected; it is also printed after every shot),
 `@deselect` (clear the selection) and the shot line itself: an older file of the same name is
 deleted first, and a warning is printed when a step before the shot failed. A byte order mark at the start of the script is ignored. Open a drawing with `tbcad file.dxf --capture-script ...`; zoom and selection are
+
+Scenario scripts drive whole workflows like a user and check the result: `@mousew X Y`,
+`@clickw X Y` and `@dragw X0 Y0 X1 Y1` act at drawing coordinates (a click lands on the nearest
+pixel, so exact points are typed or picked with an object snap), `@key [ctrl+|shift+]NAME`
+(Enter, Escape, Delete, Tab, Space, arrows, F1-F12, A-Z), `@type TEXT` (characters into the focused
+field), `@wait`, `@dump` (prints the first objects with their points) and `@expect`:
+`objects N`, `selected N`, `KIND N` (line, circle, hatch, ...), `endpoint X Y N` (line ends and
+polyline vertices at a point), `layer NAME on|off|frozen|thawed|locked|unlocked`, `file NAME`
+(exists and is not empty) and `prompt TEXT` (the current prompt contains it). A failed check
+prints `FAILED line N` and the exit status is 1. Lines like `@10,5` or `@20<45` are relative
+points, not capture lines. `{out}` in a line is replaced by the output folder (`--capture-out`,
+default the script's folder). The scenarios in `apps/tbcad/tests/scenarios` run as ctest
+`tbcad_scenario_*` (skipped without a display); each gets fresh settings through
+`TBCAD_CONFIG_DIR`.
 ordinary commands (`ZOOM`, `W`, `SELECT`) or a `@drag` across the view. A shot waits until the
 drawing has finished building. The program exits when the script ends (status 1 if a line failed).
 

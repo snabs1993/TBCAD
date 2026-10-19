@@ -7,6 +7,7 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -29,26 +30,28 @@ namespace tbcad::app {
 namespace {
 
 void printUsage() {
-    std::puts("TBCAD " TBCAD_VERSION
-              "\n"
-              "Usage: tbcad [file.tbcad|file.dxf] [options]\n"
-              "  --script \"CMD;CMD\"   run command lines after start\n"
-              "  --script-file F      run the command lines in text file F (one per line, # = "
-              "comment)\n"
-              "  --frames N           draw N frames, then exit\n"
-              "  --screenshot F.ppm   save the last frame\n"
-              "  --capture-script F   hidden window (never takes focus): run F, which holds command\n"
-              "                       lines and @ lines: @size W H, @frames N, @mouse X Y, @click X Y,\n"
-              "                       @drag X0 Y0 X1 Y1, @shot name.png (PNG of the whole window)\n"
-              "  --size WxH           window size for --capture-script (default 1600x900)\n"
-              "  --gate [--report F]  run the performance gate (1 M lines) and exit\n"
-              "  --gate-file F        time open, pan/zoom and select-all on drawing F, then exit\n"
-              "  --gate-lines N       use N lines for the gate instead of 1 000 000\n"
-              "  --list-commands F    write every command with its aliases (Markdown) to F "
-              "(default: stdout)\n"
-              "  --self-test          hidden window; exit code 77 when no display or OpenGL 3.3\n"
-              "  --mcp                turn the MCP server on (AI access to the drawing)\n"
-              "  --no-vsync           do not wait for the monitor\n");
+    std::puts(
+        "TBCAD " TBCAD_VERSION
+        "\n"
+        "Usage: tbcad [file.tbcad|file.dxf] [options]\n"
+        "  --script \"CMD;CMD\"   run command lines after start\n"
+        "  --script-file F      run the command lines in text file F (one per line, # = "
+        "comment)\n"
+        "  --frames N           draw N frames, then exit\n"
+        "  --screenshot F.ppm   save the last frame\n"
+        "  --capture-script F   hidden window (never takes focus): run F, which holds command\n"
+        "                       lines and @ lines: @size W H, @frames N, @mouse X Y, @click X Y,\n"
+        "                       @drag X0 Y0 X1 Y1, @shot name.png (PNG of the whole window)\n"
+        "  --size WxH           window size for --capture-script (default 1600x900)\n"
+        "  --capture-out DIR    folder for shots, files and {out} in the script lines\n"
+        "  --gate [--report F]  run the performance gate (1 M lines) and exit\n"
+        "  --gate-file F        time open, pan/zoom and select-all on drawing F, then exit\n"
+        "  --gate-lines N       use N lines for the gate instead of 1 000 000\n"
+        "  --list-commands F    write every command with its aliases (Markdown) to F "
+        "(default: stdout)\n"
+        "  --self-test          hidden window; exit code 77 when no display or OpenGL 3.3\n"
+        "  --mcp                turn the MCP server on (AI access to the drawing)\n"
+        "  --no-vsync           do not wait for the monitor\n");
 }
 
 void glfwError(int code, const char* description) {
@@ -72,6 +75,8 @@ Options parseOptions(int argc, char** argv) {
             o.screenshot = next();
         else if (a == "--capture-script")
             o.captureScript = next();
+        else if (a == "--capture-out")
+            o.captureOut = next();
         else if (a == "--size") {
             const std::string v = next();
             int w = 0, h = 0;
@@ -131,8 +136,8 @@ bool App::initWindow(std::string& why) {
         glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_FALSE);  // captures are the same on any screen
     }
     const bool capturing = !options_.captureScript.empty();
-    window_ = glfwCreateWindow(capturing ? options_.captureW : 1440, capturing ? options_.captureH : 900,
-                               "TBCAD", nullptr, nullptr);
+    window_ = glfwCreateWindow(capturing ? options_.captureW : 1440,
+                               capturing ? options_.captureH : 900, "TBCAD", nullptr, nullptr);
     if (!window_) {
         why = "could not create an OpenGL 3.3 window";
         return false;
@@ -240,7 +245,8 @@ void App::captureFrames(int n) {
 int App::runCapture() {
     std::ifstream in(platform::pathFromUtf8(options_.captureScript));
     if (!in) {
-        std::fprintf(stderr, "tbcad: cannot read capture script %s\n", options_.captureScript.c_str());
+        std::fprintf(stderr, "tbcad: cannot read capture script %s\n",
+                     options_.captureScript.c_str());
         return 1;
     }
     ImGuiIO& io = ImGui::GetIO();
@@ -294,13 +300,19 @@ int App::runCapture() {
         b.max = {xs[hi], ys[hi]};
         return b;
     };
-    static const char* const kKindNames[] = {"line",   "circle",    "arc",    "polyline", "point",
+    static const char* const kKindNames[] = {"line",    "circle",    "arc",    "polyline", "point",
                                              "ellipse", "spline",    "text",   "mtext",    "hatch",
-                                             "insert", "dimension", "leader", "proxy",    "table",
-                                             "ray",    "mline",     "mleader"};
+                                             "insert",  "dimension", "leader", "proxy",    "table",
+                                             "ray",     "mline",     "mleader"};
+    const std::filesystem::path outDir =
+        options_.captureOut.empty() ? scriptDir : platform::pathFromUtf8(options_.captureOut);
+    if (!options_.captureOut.empty()) {
+        std::error_code ec;
+        std::filesystem::create_directories(outDir, ec);
+    }
     const auto resolveShot = [&](const std::string& name) {
         std::filesystem::path f = platform::pathFromUtf8(name);
-        return (f.is_absolute() ? f : scriptDir / f).string();
+        return (f.is_absolute() ? f : outDir / f).string();
     };
     const auto printStats = [&] {
         const BBox2 view = core_->camera().visibleWorld();
@@ -320,6 +332,143 @@ int App::runCapture() {
     };
     int failed = 0;
     int failedSinceShot = 0;
+    // A world point on the window (points), through the viewport of the last frame.
+    const auto toWindow = [&](double wx, double wy) {
+        const ViewportRect& r = gui_->lastViewportRect();
+        const double s = io.DisplayFramebufferScale.x > 0 ? io.DisplayFramebufferScale.x : 1.0;
+        const Vec2 p = core_->camera().worldToScreen({wx, wy});
+        return ImVec2(static_cast<float>(r.x + p.x / s), static_cast<float>(r.y + p.y / s));
+    };
+    // "Enter", "Escape", "F8", "A", "ctrl+Z", "shift+Tab", ...
+    const auto pressKey = [&](std::string name) {
+        bool ctrl = false, shift = false;
+        for (;;) {
+            if (name.rfind("ctrl+", 0) == 0) {
+                ctrl = true;
+                name.erase(0, 5);
+            } else if (name.rfind("shift+", 0) == 0) {
+                shift = true;
+                name.erase(0, 6);
+            } else {
+                break;
+            }
+        }
+        ImGuiKey key = ImGuiKey_None;
+        static const std::pair<const char*, ImGuiKey> kNamed[] = {
+            {"Enter", ImGuiKey_Enter},    {"Escape", ImGuiKey_Escape},
+            {"Delete", ImGuiKey_Delete},  {"Tab", ImGuiKey_Tab},
+            {"Space", ImGuiKey_Space},    {"Backspace", ImGuiKey_Backspace},
+            {"Up", ImGuiKey_UpArrow},     {"Down", ImGuiKey_DownArrow},
+            {"Left", ImGuiKey_LeftArrow}, {"Right", ImGuiKey_RightArrow}};
+        for (const auto& [n, k] : kNamed)
+            if (name == n)
+                key = k;
+        if (name.size() == 1 && name[0] >= 'A' && name[0] <= 'Z')
+            key = static_cast<ImGuiKey>(ImGuiKey_A + (name[0] - 'A'));
+        if (name.size() >= 2 && name[0] == 'F') {
+            const int f = std::atoi(name.c_str() + 1);
+            if (f >= 1 && f <= 12)
+                key = static_cast<ImGuiKey>(ImGuiKey_F1 + (f - 1));
+        }
+        if (key == ImGuiKey_None)
+            return false;
+        if (ctrl)
+            io.AddKeyEvent(ImGuiMod_Ctrl, true);
+        if (shift)
+            io.AddKeyEvent(ImGuiMod_Shift, true);
+        io.AddKeyEvent(key, true);
+        captureFrames(2);
+        io.AddKeyEvent(key, false);
+        if (shift)
+            io.AddKeyEvent(ImGuiMod_Shift, false);
+        if (ctrl)
+            io.AddKeyEvent(ImGuiMod_Ctrl, false);
+        captureFrames(2);
+        return true;
+    };
+    // @expect WHAT ...: a check; a failed one is printed and makes the exit status 1.
+    const auto expect = [&](std::istringstream& ss, int lineNo, const std::string& lineText) {
+        std::string what;
+        ss >> what;
+        std::string got;
+        bool ok = false;
+        const auto countIs = [&](std::size_t have) {
+            std::size_t want = 0;
+            ss >> want;
+            got = std::to_string(have);
+            return have == want;
+        };
+        if (what == "objects") {
+            ok = countIs(core_->document().modelSpaceCount());
+        } else if (what == "selected") {
+            ok = countIs(core_->selection().size());
+        } else if (what == "layer") {
+            std::string name, state;
+            ss >> name >> state;
+            const Layer* l = core_->document().layerByName(name);
+            got = !l ? "no such layer"
+                     : std::string(l->on ? "on" : "off") + (l->frozen ? " frozen" : "") +
+                           (l->locked ? " locked" : "");
+            ok = l && ((state == "on" && l->on) || (state == "off" && !l->on) ||
+                       (state == "frozen" && l->frozen) || (state == "thawed" && !l->frozen) ||
+                       (state == "locked" && l->locked) || (state == "unlocked" && !l->locked));
+        } else if (what == "file") {
+            std::string name;
+            ss >> name;
+            std::error_code ec;
+            const auto size =
+                std::filesystem::file_size(platform::pathFromUtf8(resolveShot(name)), ec);
+            got = ec ? "missing" : std::to_string(size) + " bytes";
+            ok = !ec && size > 0;
+        } else if (what == "endpoint") {
+            // Line ends and polyline vertices at a point.
+            double x = 0, y = 0;
+            ss >> x >> y;
+            const double tol = 1e-6 * std::max({1.0, std::abs(x), std::abs(y)});
+            const auto at = [&](Vec2 p) {
+                return std::abs(p.x - x) <= tol && std::abs(p.y - y) <= tol;
+            };
+            std::size_t have = 0;
+            for (EntityId id : core_->document().modelSpace()) {
+                const Entity* e = core_->document().find(id);
+                if (!e)
+                    continue;
+                if (const auto* l = entityAs<LineData>(*e))
+                    have += at(l->a) + at(l->b);
+                else if (const auto* pl = entityAs<PolylineData>(*e))
+                    for (const PolyVertex& v : pl->v)
+                        have += at(v.p);
+            }
+            ok = countIs(have);
+        } else if (what == "prompt") {
+            std::string rest;
+            std::getline(ss, rest);
+            while (!rest.empty() && rest.front() == ' ')
+                rest.erase(0, 1);
+            got = core_->promptText();
+            ok = got.find(rest) != std::string::npos;
+        } else {
+            int want = -1;
+            for (std::size_t k = 0; k < std::size(kKindNames); ++k)
+                if (what == kKindNames[k])
+                    want = static_cast<int>(k);
+            if (want >= 0) {
+                std::size_t have = 0;
+                for (EntityId id : core_->document().modelSpace())
+                    if (const Entity* e = core_->document().find(id);
+                        e && static_cast<int>(kind(*e)) == want)
+                        ++have;
+                ok = countIs(have);
+            } else {
+                got = "unknown check";
+            }
+        }
+        std::printf("%s line %d: %s (got %s)\n", ok ? "ok" : "FAILED", lineNo, lineText.c_str(),
+                    got.c_str());
+        std::fflush(stdout);
+        return ok;
+    };
+    settle();  // the window, the viewport size and the first view are in place before line 1
     std::string line;
     int lineNo = 0;
     while (std::getline(in, line)) {
@@ -330,7 +479,13 @@ int App::runCapture() {
             line.pop_back();
         if (!line.empty() && line.front() == '#')
             continue;
-        if (line.empty() || line.front() != '@') {
+        for (std::size_t at; (at = line.find("{out}")) != std::string::npos;)
+            line.replace(at, 5, outDir.string());
+        // "@10,5" and "@20<45" are relative points typed at a prompt, not capture lines.
+        const bool relativePoint = line.size() > 1 && line.front() == '@' &&
+                                   (std::isdigit(static_cast<unsigned char>(line[1])) ||
+                                    line[1] == '-' || line[1] == '.' || line[1] == '<');
+        if (line.empty() || line.front() != '@' || relativePoint) {
             core_->submitText(line);
             captureFrames(1);
             continue;
@@ -360,8 +515,65 @@ int App::runCapture() {
             moveTo(c, d);
             io.AddMouseButtonEvent(0, false);
             captureFrames(2);
+        } else if (op == "mousew" && (ss >> a >> b)) {
+            const ImVec2 w = toWindow(a, b);
+            moveTo(w.x, w.y);
+        } else if (op == "clickw" && (ss >> a >> b)) {
+            const ImVec2 w = toWindow(a, b);
+            moveTo(w.x, w.y);
+            io.AddMouseButtonEvent(0, true);
+            captureFrames(2);
+            io.AddMouseButtonEvent(0, false);
+            captureFrames(2);
+        } else if (op == "dragw" && (ss >> a >> b >> c >> d)) {
+            const ImVec2 w0 = toWindow(a, b), w1 = toWindow(c, d);
+            moveTo(w0.x, w0.y);
+            io.AddMouseButtonEvent(0, true);
+            captureFrames(2);
+            moveTo((w0.x + w1.x) / 2, (w0.y + w1.y) / 2);
+            moveTo(w1.x, w1.y);
+            io.AddMouseButtonEvent(0, false);
+            captureFrames(2);
+        } else if (op == "key") {
+            std::string k;
+            ss >> k;
+            if (!pressKey(k)) {
+                std::fprintf(stderr, "tbcad: line %d: unknown key '%s'\n", lineNo, k.c_str());
+                ++failed, ++failedSinceShot;
+            }
+        } else if (op == "type") {
+            std::string rest;
+            std::getline(ss, rest);
+            if (!rest.empty() && rest.front() == ' ')
+                rest.erase(0, 1);
+            io.AddInputCharactersUTF8(rest.c_str());
+            captureFrames(2);
+        } else if (op == "dump") {
+            // The first objects of the drawing with their main points, for writing checks.
+            int shown = 0;
+            for (EntityId id : core_->document().modelSpace()) {
+                const Entity* e = core_->document().find(id);
+                if (!e || ++shown > 50)
+                    continue;
+                if (const auto* l = entityAs<LineData>(*e))
+                    std::printf("dump: line %.6g,%.6g to %.6g,%.6g\n", l->a.x, l->a.y, l->b.x,
+                                l->b.y);
+                else if (const auto* c = entityAs<CircleData>(*e))
+                    std::printf("dump: circle %.6g,%.6g r %.6g\n", c->center.x, c->center.y,
+                                c->radius);
+                else
+                    std::printf("dump: %s\n", kKindNames[static_cast<std::size_t>(kind(*e))]);
+            }
+            std::fflush(stdout);
+        } else if (op == "wait") {
+            settle();
+        } else if (op == "expect") {
+            settle();
+            if (!expect(ss, lineNo, line))
+                ++failed, ++failedSinceShot;
         } else if (op == "zoom" && (ss >> a >> b >> c >> d)) {
-            core_->zoomToBox(BBox2{{std::min(a, c), std::min(b, d)}, {std::max(a, c), std::max(b, d)}});
+            core_->zoomToBox(
+                BBox2{{std::min(a, c), std::min(b, d)}, {std::max(a, c), std::max(b, d)}});
             captureFrames(2);
         } else if (op == "zoom-all") {
             const BBox2 box = robustBox(items());
@@ -389,7 +601,8 @@ int App::runCapture() {
             }
             std::vector<int> count(static_cast<std::size_t>(n) * n, 0);
             for (const Item& it : v) {
-                const double cx = (it.box.min.x + it.box.max.x) / 2, cy = (it.box.min.y + it.box.max.y) / 2;
+                const double cx = (it.box.min.x + it.box.max.x) / 2,
+                             cy = (it.box.min.y + it.box.max.y) / 2;
                 const int ix = static_cast<int>(std::floor((cx - box.min.x) / box.width() * n));
                 const int iy = static_cast<int>(std::floor((cy - box.min.y) / box.height() * n));
                 if (ix >= 0 && ix < n && iy >= 0 && iy < n)
@@ -422,7 +635,8 @@ int App::runCapture() {
                 if (static_cast<int>(it.kind) != want || seen++ != index)
                     continue;
                 const double w = std::max({it.box.width(), it.box.height(), 1e-3});
-                const Vec2 mid{(it.box.min.x + it.box.max.x) / 2, (it.box.min.y + it.box.max.y) / 2};
+                const Vec2 mid{(it.box.min.x + it.box.max.x) / 2,
+                               (it.box.min.y + it.box.max.y) / 2};
                 const double half = w * std::max(factor, 1.0) / 2;
                 core_->zoomToBox(BBox2{{mid.x - half, mid.y - half}, {mid.x + half, mid.y + half}});
                 std::printf("zoom-kind %s %d: box %.3f,%.3f to %.3f,%.3f\n", kn.c_str(), index,
@@ -431,7 +645,8 @@ int App::runCapture() {
                 break;
             }
             if (!found) {
-                std::fprintf(stderr, "tbcad: line %d: no %s number %d\n", lineNo, kn.c_str(), index);
+                std::fprintf(stderr, "tbcad: line %d: no %s number %d\n", lineNo, kn.c_str(),
+                             index);
                 ++failed, ++failedSinceShot;
             }
             captureFrames(2);
@@ -451,9 +666,12 @@ int App::runCapture() {
             const std::string target = name.empty() ? std::string{} : resolveShot(name);
             std::error_code ec;
             if (!target.empty())
-                std::filesystem::remove(platform::pathFromUtf8(target), ec);  // never leave a stale one
+                std::filesystem::remove(platform::pathFromUtf8(target),
+                                        ec);  // never leave a stale one
             std::printf("shot %s%s\n", name.c_str(),
-                        failedSinceShot > 0 ? ": WARNING a step before it failed (see the messages above)" : "");
+                        failedSinceShot > 0
+                            ? ": WARNING a step before it failed (see the messages above)"
+                            : "");
             printStats();
             failedSinceShot = 0;
             if (target.empty() || !saveScreenshot(target)) {
@@ -462,7 +680,8 @@ int App::runCapture() {
             }
             glfwSwapBuffers(window_);
         } else {
-            std::fprintf(stderr, "tbcad: line %d: unknown capture line '%s'\n", lineNo, line.c_str());
+            std::fprintf(stderr, "tbcad: line %d: unknown capture line '%s'\n", lineNo,
+                         line.c_str());
             ++failed;
         }
     }
@@ -626,7 +845,8 @@ bool App::saveScreenshot(const std::string& path) {
         std::ofstream pout(platform::pathFromUtf8(path), std::ios::binary);
         if (png.empty() || !pout)
             return false;
-        pout.write(reinterpret_cast<const char*>(png.data()), static_cast<std::streamsize>(png.size()));
+        pout.write(reinterpret_cast<const char*>(png.data()),
+                   static_cast<std::streamsize>(png.size()));
         return static_cast<bool>(pout);
     }
     std::ofstream out(path, std::ios::binary);

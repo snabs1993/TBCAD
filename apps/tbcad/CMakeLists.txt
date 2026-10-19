@@ -135,6 +135,19 @@ if(TBCAD_BUILD_TESTS)
   set_tests_properties(tbcad_capture_smoke PROPERTIES
     SKIP_RETURN_CODE 77
     ENVIRONMENT "TBCAD_CONFIG_DIR=${CMAKE_CURRENT_BINARY_DIR}/smoke-config;TBCAD_DATA_DIR=${CMAKE_CURRENT_BINARY_DIR}/smoke-data")
+  # Whole workflows driven like a user (mouse at world points, keys, typed lines) with checks:
+  # apps/tbcad/tests/scenarios/*.txt, run in a hidden window. Skipped (77) without a display.
+  file(GLOB TBCAD_SCENARIOS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/scenarios/*.txt")
+  foreach(scenario ${TBCAD_SCENARIOS})
+    get_filename_component(scenarioName "${scenario}" NAME_WE)
+    add_test(NAME tbcad_scenario_${scenarioName}
+             COMMAND tbcad --self-test --capture-script "${scenario}"
+                     --capture-out "${CMAKE_CURRENT_BINARY_DIR}/scenarios/${scenarioName}")
+    set_tests_properties(tbcad_scenario_${scenarioName} PROPERTIES
+      SKIP_RETURN_CODE 77
+      RUN_SERIAL TRUE
+      ENVIRONMENT "TBCAD_CONFIG_DIR=${CMAKE_CURRENT_BINARY_DIR}/scenario-config/${scenarioName};TBCAD_DATA_DIR=${CMAKE_CURRENT_BINARY_DIR}/scenario-data/${scenarioName}")
+  endforeach()
   set_tests_properties(tbcad_gui_smoke PROPERTIES
     SKIP_RETURN_CODE 77
     ENVIRONMENT "TBCAD_CONFIG_DIR=${CMAKE_CURRENT_BINARY_DIR}/smoke-config;TBCAD_DATA_DIR=${CMAKE_CURRENT_BINARY_DIR}/smoke-data")
