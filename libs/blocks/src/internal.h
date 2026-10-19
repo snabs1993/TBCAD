@@ -24,6 +24,8 @@ struct Flatten {
     std::vector<std::string> messages{};
 
     void contents(const Entity& insert, const Transform2& outer, int depth);
+    // The replaced items of an array insert (none for anything else).
+    void swapped(const Entity& insert, const Transform2& outer, int depth);
     void place(Entity child, const Transform2& t, int depth);
 
 private:

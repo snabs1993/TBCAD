@@ -152,6 +152,57 @@ bool saveBack(cmd::CommandContext& ctx, bool removeCopies) {
     return true;
 }
 
+}  // namespace
+
+namespace detail {
+
+bool startBlockEdit(cmd::CommandContext& ctx, const BlockDef& def, const Transform2& xf) {
+    Document& doc = ctx.doc();
+    if (!editedBlock(ctx.host()).empty()) {
+        ctx.message("Block \"" + editedBlock(ctx.host()) +
+                    "\" is already being edited. Use BSAVE or BCLOSE first.");
+        return false;
+    }
+    if (!def.xrefPath.empty()) {
+        ctx.message("An external reference cannot be edited here.");
+        return false;
+    }
+    ctx.commitOnCancel();
+    std::uint64_t mark = 0;
+    for (EntityId id : doc.modelSpace())
+        mark = std::max(mark, id.value);
+    ctx.host().setSetting(kMarkKey, std::to_string(mark));
+    std::vector<EntityId> made;
+    const std::vector<EntityId> source = def.entities;
+    for (EntityId id : source) {
+        const Entity* e = doc.find(id);
+        if (!e)
+            continue;
+        auto moved = geom::transformed(*e, xf);
+        if (!moved) {
+            ctx.message(moved.error().message);
+            continue;
+        }
+        Entity copy = std::move(moved.value());
+        copy.common.id = {};
+        auto added = ctx.tx().add(std::move(copy));
+        if (added)
+            made.push_back(added.value());
+    }
+    ctx.host().setSetting(kBlockKey, def.name);
+    ctx.host().setSetting(kIdsKey, encodeIds(made));
+    ctx.host().setSetting(kXformKey, encodeXform(xf));
+    ctx.host().setSelection(made);
+    ctx.setUndoLabel("Edit block " + def.name);
+    ctx.message("Editing block \"" + def.name + "\" (" + std::to_string(made.size()) +
+                " objects). Edit them, then BSAVE to update the block or BCLOSE to finish.");
+    return true;
+}
+
+}  // namespace detail
+
+namespace {
+
 class BEditCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "BEDIT"; }
@@ -208,39 +259,7 @@ public:
             xf = blocks::instanceTransform(doc, *ins);
             break;
         }
-        if (!def->xrefPath.empty()) {
-            ctx.message("An external reference cannot be edited here.");
-            co_return;
-        }
-        ctx.commitOnCancel();
-        std::uint64_t mark = 0;
-        for (EntityId id : doc.modelSpace())
-            mark = std::max(mark, id.value);
-        ctx.host().setSetting(kMarkKey, std::to_string(mark));
-        std::vector<EntityId> made;
-        const std::vector<EntityId> source = def->entities;
-        for (EntityId id : source) {
-            const Entity* e = doc.find(id);
-            if (!e)
-                continue;
-            auto moved = geom::transformed(*e, xf);
-            if (!moved) {
-                ctx.message(moved.error().message);
-                continue;
-            }
-            Entity copy = std::move(moved.value());
-            copy.common.id = {};
-            auto added = ctx.tx().add(std::move(copy));
-            if (added)
-                made.push_back(added.value());
-        }
-        ctx.host().setSetting(kBlockKey, def->name);
-        ctx.host().setSetting(kIdsKey, encodeIds(made));
-        ctx.host().setSetting(kXformKey, encodeXform(xf));
-        ctx.host().setSelection(made);
-        ctx.setUndoLabel("Edit block " + def->name);
-        ctx.message("Editing block \"" + def->name + "\" (" + std::to_string(made.size()) +
-                    " objects). Edit them, then BSAVE to update the block or BCLOSE to finish.");
+        (void)detail::startBlockEdit(ctx, *def, xf);
     }
 };
 

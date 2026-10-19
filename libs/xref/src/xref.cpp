@@ -252,8 +252,12 @@ private:
             ml->style = mapDimStyle(ml->style);
             if (ml->block)
                 ml->block = mapBlock(ml->block, depth);
-        } else if (auto* ins = entityAs<InsertData>(e))
+        } else if (auto* ins = entityAs<InsertData>(e)) {
             ins->block = mapBlock(ins->block, depth);
+            if (ins->array)
+                for (ArrayItemSwap& sw : ins->array->swaps)
+                    sw.block = mapBlock(sw.block, depth);
+        }
         return e;
     }
 

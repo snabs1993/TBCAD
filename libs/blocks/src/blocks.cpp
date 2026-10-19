@@ -28,9 +28,77 @@ std::vector<Transform2> instanceTransforms(const InsertData& ins, Vec2 base) {
     if (!ins.array)
         return {inst};
     std::vector<Transform2> out = arrayItemTransforms(*ins.array);
-    for (Transform2& t : out)
-        t = inst * t;
+    const ArrayInfo& a = *ins.array;
+    if (a.removed.empty() && a.swaps.empty()) {
+        for (Transform2& t : out)
+            t = inst * t;
+        return out;
+    }
+    std::vector<Transform2> shown;
+    shown.reserve(out.size());
+    for (std::size_t i = 0; i < out.size(); ++i)
+        if (arrayItemShowsSource(a, static_cast<int>(i)))
+            shown.push_back(inst * out[i]);
+    return shown;
+}
+
+std::vector<SwappedItem> swappedItems(const Document& doc, const InsertData& ins) {
+    std::vector<SwappedItem> out;
+    if (!ins.array || ins.array->swaps.empty())
+        return out;
+    const BlockDef* def = doc.block(ins.block);
+    const Transform2 inst = instanceTransform(ins, def ? def->base : Vec2{});
+    const std::vector<Transform2> items = arrayItemTransforms(*ins.array);
+    for (const ArrayItemSwap& sw : ins.array->swaps) {
+        const BlockDef* other = doc.block(sw.block);
+        if (!other || sw.item < 0 || static_cast<std::size_t>(sw.item) >= items.size())
+            continue;
+        out.push_back({sw.item, sw.block,
+                       inst * items[static_cast<std::size_t>(sw.item)] *
+                           Transform2::translate(sw.at - other->base)});
+    }
     return out;
+}
+
+Vec2 arrayItemBase(const Document& doc, const InsertData& ins) {
+    const BBox2 box = blockBounds(doc, ins.block);
+    if (box.empty()) {
+        const BlockDef* def = doc.block(ins.block);
+        return def ? def->base : Vec2{};
+    }
+    return box.center();
+}
+
+std::optional<int> arrayItemAt(const Document& doc, const InsertData& ins, Vec2 p, double tol) {
+    if (!ins.array)
+        return std::nullopt;
+    const BlockDef* def = doc.block(ins.block);
+    const Transform2 inst = instanceTransform(ins, def ? def->base : Vec2{});
+    const BBox2 source = blockBounds(doc, ins.block);
+    std::optional<int> best;
+    double bestGap = 0, bestCentre = 0;
+    auto consider = [&](int item, const BBox2& box) {
+        if (box.empty())
+            return;
+        const double dx = std::max({box.min.x - p.x, 0.0, p.x - box.max.x});
+        const double dy = std::max({box.min.y - p.y, 0.0, p.y - box.max.y});
+        const double gap = std::hypot(dx, dy);
+        if (gap > tol)
+            return;
+        const double centre = distance(p, box.center());
+        if (!best || gap < bestGap - 1e-12 || (gap <= bestGap + 1e-12 && centre < bestCentre)) {
+            best = item;
+            bestGap = gap;
+            bestCentre = centre;
+        }
+    };
+    const std::vector<Transform2> items = arrayItemTransforms(*ins.array);
+    for (std::size_t i = 0; i < items.size(); ++i)
+        if (arrayItemShowsSource(*ins.array, static_cast<int>(i)))
+            consider(static_cast<int>(i), (inst * items[i]).applyToBox(source));
+    for (const SwappedItem& sw : swappedItems(doc, ins))
+        consider(sw.item, sw.t.applyToBox(blockBounds(doc, sw.block)));
+    return best;
 }
 
 Result<void> validateBlockName(const Document& doc, std::string_view name, BlockId ignore) {
@@ -70,8 +138,12 @@ void directChildren(const Document& doc, BlockId block, std::vector<BlockId>& ou
         return;
     for (EntityId id : def->entities)
         if (const Entity* e = doc.find(id))
-            if (const auto* ins = entityAs<InsertData>(*e))
+            if (const auto* ins = entityAs<InsertData>(*e)) {
                 out.push_back(ins->block);
+                if (ins->array)
+                    for (const ArrayItemSwap& sw : ins->array->swaps)
+                        out.push_back(sw.block);
+            }
 }
 
 }  // namespace
@@ -187,7 +259,7 @@ Local localOf(const Document& doc, const BlockDef& def, Memo& memo, int depth) {
             if (!inner)
                 continue;
             const Local il = localOf(doc, *inner, memo, depth + 1);
-            if (!il.plain) {
+            if (!il.plain || (ins->array && !ins->array->swaps.empty())) {
                 plain = false;
                 break;
             }
@@ -232,6 +304,9 @@ BBox2 contentBounds(const Document& doc, const BlockDef& def, const Transform2& 
                 for (const Transform2& it : instanceTransforms(*ins, inner->base))
                     box.merge(limitToClip(contentBounds(doc, *inner, t * it, depth + 1, ins, memo),
                                           *ins, t * it));
+            for (const SwappedItem& sw : swappedItems(doc, *ins))
+                if (const BlockDef* other = doc.block(sw.block))
+                    box.merge(contentBounds(doc, *other, t * sw.t, depth + 1, nullptr, memo));
             continue;
         }
         std::optional<Entity> shown;
@@ -279,6 +354,9 @@ BBox2 insertBounds(const Document& doc, const Entity& insert) {
     Memo& memo = g_memo ? *g_memo : own;
     for (const Transform2& t : instanceTransforms(*ins, def->base))
         box.merge(limitToClip(contentBounds(doc, *def, t, 0, ins, memo), *ins, t));
+    for (const SwappedItem& sw : swappedItems(doc, *ins))
+        if (const BlockDef* other = doc.block(sw.block))
+            box.merge(contentBounds(doc, *other, sw.t, 1, nullptr, memo));
     return box;
 }
 
@@ -301,6 +379,7 @@ std::vector<Entity> snapGeometry(const Document& doc, const Entity& insert) {
         return {};
     for (const Transform2& t : instanceTransforms(*ins, def->base))
         f.contents(insert, t, 0);
+    f.swapped(insert, Transform2::identity(), 0);
     return std::move(f.out);
 }
 

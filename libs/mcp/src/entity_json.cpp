@@ -716,6 +716,18 @@ Json arrayToJson(const ArrayInfo& a) {
             o["reference"] = pointToJson(a.reference);
             break;
     }
+    if (!a.removed.empty()) {
+        Json::Array rm;
+        for (int i : a.removed)
+            rm.emplace_back(static_cast<double>(i));
+        o["removedItems"] = Json(std::move(rm));
+    }
+    if (!a.swaps.empty()) {
+        Json::Array sw;
+        for (const ArrayItemSwap& s : a.swaps)
+            sw.emplace_back(static_cast<double>(s.item));
+        o["replacedItems"] = Json(std::move(sw));
+    }
     return Json(std::move(o));
 }
 
@@ -757,6 +769,21 @@ ArrayInfo arrayFromJson(const Json& j) {
             a.reference = pt(j, "reference");
     } else {
         fail("array kind must be rectangular, polar or path");
+    }
+    if (const Json* rm = j.find("removedItems")) {
+        if (!rm->isArray())
+            fail("removedItems must be a list of item numbers");
+        const long long items = a.kind == ArrayInfo::Kind::Rectangular
+                                    ? static_cast<long long>(a.rows) * a.columns
+                                    : a.count;
+        for (const Json& v : rm->asArray()) {
+            const double n = v.asNumber(-1);
+            if (!(n >= 0 && n < static_cast<double>(items)) || n != std::floor(n))
+                fail("removedItems must be item numbers from 0 to " + std::to_string(items - 1));
+            a.removed.push_back(static_cast<int>(n));
+        }
+        std::sort(a.removed.begin(), a.removed.end());
+        a.removed.erase(std::unique(a.removed.begin(), a.removed.end()), a.removed.end());
     }
     return a;
 }

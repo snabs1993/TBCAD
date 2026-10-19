@@ -527,10 +527,97 @@ private:
     Mode mode_;
 };
 
+// Associative arrays near `p` in the drawing being edited (the host's own search when it has one).
+std::vector<EntityId> arraysNear(cmd::CommandContext& ctx, Vec2 p, double tol) {
+    const Document& doc = ctx.doc();
+    BBox2 window;
+    window.expand(p);
+    window = window.inflated(std::max(tol, 1e-9));
+    std::vector<EntityId> out;
+    auto consider = [&](const Entity& e) {
+        const auto* ins = entityAs<InsertData>(e);
+        if (ins && ins->array && blocks::insertBounds(doc, e).inflated(tol).contains(p) &&
+            detail::editable(doc, e))
+            out.push_back(e.common.id);
+    };
+    if (auto ids = ctx.host().entitiesInWindow(window)) {
+        for (EntityId id : *ids)
+            if (const Entity* e = doc.find(id))
+                consider(*e);
+        return out;
+    }
+    const BlockId owner = ctx.host().drawingOwner();
+    doc.forEachEntity([&](const Entity& e) {
+        if (doc.ownerBlock(e.common.id) == owner)
+            consider(e);
+    });
+    return out;
+}
+
+// ARRAYREMOVE: takes items out of associative arrays (Ctrl+click on an item starts it). Each pick
+// removes the item under it; Enter ends. One undo step; an array with nothing left goes.
+class ArrayRemoveCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "ARRAYREMOVE"; }
+    std::string_view description() const override {
+        return "Remove single items from an associative array (Ctrl+click an item)";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        Document& doc = ctx.doc();
+        int removed = 0;
+        for (;;) {
+            auto pt = co_await ctx.getPoint("Select an array item to remove",
+                                            cmd::PointOptions{.allowNone = true, .snap = false});
+            if (pt.status == cmd::Status::None)
+                break;
+            if (!pt.ok())
+                co_return;
+            bool done = false;
+            for (EntityId id : arraysNear(ctx, pt.point, 0)) {
+                const Entity* e = doc.find(id);
+                const auto* ins = e ? entityAs<InsertData>(*e) : nullptr;
+                if (!ins)
+                    continue;
+                auto item = blocks::arrayItemAt(doc, *ins, pt.point, 0);
+                if (!item)
+                    continue;
+                ArrayInfo a = *ins->array;
+                if (!blocks::removeArrayItem(a, *item))
+                    continue;
+                const bool empty =
+                    a.swaps.empty() &&
+                    static_cast<long long>(a.removed.size()) >= blocks::arrayItemCount(a);
+                if (empty) {
+                    (void)ctx.tx().erase(id);
+                    ctx.message("That was the last item: the array was erased.");
+                } else {
+                    (void)ctx.tx().modify(id, [&](Entity& ent) {
+                        if (auto* d = entityAs<InsertData>(ent))
+                            d->array = a;
+                    });
+                }
+                ++removed;
+                done = true;
+                break;
+            }
+            if (!done)
+                ctx.message("No array item there.");
+        }
+        if (removed > 0) {
+            ctx.message("Removed " + std::to_string(removed) +
+                        (removed == 1 ? " array item." : " array items."));
+            ctx.setUndoLabel("Remove array items");
+        }
+    }
+};
+
 // ARRAYEDIT: change the parameters of an associative array, one option at a time as in AutoCAD
 // (Enter or eXit ends). Rectangular: Rows, Columns (count, then spacing or Total). Polar: Items,
 // Angle between, Fill angle, ROTate items. Path: Method (Divide or Measure), Items, Align items.
-// Every change shows at once and the whole edit is one undo step.
+// All kinds: Source (edit the source objects in place, as BEDIT; BSAVE or BCLOSE updates every
+// item), REPlace (show chosen items as other objects) and RESet (bring back removed and replaced
+// items). Every change shows at once and the whole edit is one undo step.
 class ArrayEditCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "ARRAYEDIT"; }
@@ -565,19 +652,26 @@ public:
             return true;
         };
         auto yesNo = [](bool b) { return std::string(b ? "Yes" : "No"); };
+        // The array as it is now (with `a`), for finding items.
+        auto current = [&] {
+            InsertData d = *entityAs<InsertData>(*doc.find(picked.id));
+            d.array = a;
+            return d;
+        };
 
         for (;;) {
             cmd::KeywordOptions ko;
             std::string prompt;
             switch (a.kind) {
                 case ArrayInfo::Kind::Rectangular:
-                    ko.keywords = {"Rows", "Columns", "eXit"};
+                    ko.keywords = {"Source", "REPlace", "Rows", "Columns", "RESet", "eXit"};
                     break;
                 case ArrayInfo::Kind::Polar:
-                    ko.keywords = {"Items", "Angle", "Fill", "ROTate", "eXit"};
+                    ko.keywords = {"Source", "REPlace", "Items", "Angle",
+                                   "Fill",   "ROTate",  "RESet", "eXit"};
                     break;
                 case ArrayInfo::Kind::Path:
-                    ko.keywords = {"Method", "Items", "Align", "eXit"};
+                    ko.keywords = {"Source", "REPlace", "Method", "Items", "Align", "RESet", "eXit"};
                     break;
             }
             for (const std::string& k : ko.keywords)
@@ -589,6 +683,140 @@ public:
             const std::string& k = opt.keyword;
             if (k == "eXit")
                 break;
+            const ArrayInfo before = a;
+
+            if (k == "Source") {
+                // Edited in place at the first item that shows the source objects.
+                const InsertData d = current();
+                const BlockDef* def = doc.block(d.block);
+                if (!def) {
+                    ctx.message("The source objects of this array no longer exist.");
+                    continue;
+                }
+                const auto items = blocks::arrayItemTransforms(a);
+                std::size_t first = 0;
+                while (first < items.size() &&
+                       !blocks::arrayItemShowsSource(a, static_cast<int>(first)))
+                    ++first;
+                Transform2 xf = blocks::instanceTransform(d, def->base);
+                if (first < items.size())
+                    xf = xf * items[first];
+                if (!detail::startBlockEdit(ctx, *def, xf))
+                    continue;
+                co_return;
+            }
+            if (k == "RESet") {
+                if (a.removed.empty() && a.swaps.empty()) {
+                    ctx.message("No items were removed or replaced.");
+                    continue;
+                }
+                const std::size_t n = a.removed.size() + a.swaps.size();
+                a.removed.clear();
+                a.swaps.clear();
+                apply();
+                ctx.message("Brought back " + std::to_string(n) + (n == 1 ? " item." : " items."));
+                continue;
+            }
+            if (k == "REPlace") {
+                auto sel = co_await ctx.getSelection(
+                    "Select replacement objects",
+                    cmd::SelectionOptions{.filter = detail::editableFilter(doc),
+                                          .allowPreselection = false});
+                if (!sel.ok())
+                    co_return;
+                std::vector<Entity> objs;
+                for (EntityId id : detail::inDrawOrder(doc, sel.ids))
+                    if (id != picked.id)
+                        objs.push_back(*doc.find(id));
+                if (objs.empty()) {
+                    ctx.message("No replacement objects selected.");
+                    continue;
+                }
+                const Vec2 centroid = detail::boundsOf(doc, objs).center();
+                auto basePt = co_await ctx.getPoint(
+                    "Select base point of replacement objects <centroid>",
+                    cmd::PointOptions{.allowNone = true});
+                if (basePt.status != cmd::Status::None && !basePt.ok())
+                    co_return;
+                const Vec2 base = basePt.ok() ? basePt.point : centroid;
+                // The replacement block holds the objects in the array's own scale and rotation,
+                // so they look as selected when an item shows them.
+                const InsertData d = current();
+                const BlockDef* srcDef = doc.block(d.block);
+                Transform2 lin = blocks::instanceTransform(d, srcDef ? srcDef->base : Vec2{});
+                lin.tx = lin.ty = 0;
+                auto inv = lin.inverse();
+                if (!inv) {
+                    ctx.message("This array is scaled to nothing.");
+                    continue;
+                }
+                const Transform2 toBlock = inv.value() * Transform2::translate(-base);
+                Transaction& tx = ctx.tx();
+                auto block = tx.addBlock(BlockDef{.name = freeArrayName(doc), .anonymous = true});
+                if (!block) {
+                    ctx.message(block.error().message);
+                    co_return;
+                }
+                bool failed = false;
+                for (const Entity& e : objs) {
+                    auto moved = geom::transformed(e, toBlock);
+                    if (!moved) {
+                        ctx.message(moved.error().message);
+                        failed = true;
+                        break;
+                    }
+                    Entity copy = std::move(moved.value());
+                    copy.common.id = {};
+                    if (auto r = tx.add(std::move(copy), block.value()); !r) {
+                        ctx.message(r.error().message);
+                        failed = true;
+                        break;
+                    }
+                }
+                if (failed) {
+                    (void)tx.eraseBlock(block.value());
+                    continue;
+                }
+                const Vec2 at = blocks::arrayItemBase(doc, d);
+                int replaced = 0;
+                for (;;) {
+                    cmd::PointOptions po{.allowNone = true, .snap = false};
+                    po.keywords = {"Source"};
+                    auto item = co_await ctx.getPoint(
+                        "Select an item in the array to replace or [Source objects]", po);
+                    if (item.status == cmd::Status::None)
+                        break;
+                    if (item.status == cmd::Status::Keyword) {
+                        // every item that still shows the source objects
+                        const long long n = blocks::arrayItemCount(a);
+                        for (long long i = 0; i < n; ++i)
+                            if (blocks::arrayItemShowsSource(a, static_cast<int>(i)) &&
+                                blocks::swapArrayItem(a, {static_cast<int>(i), block.value(), at}))
+                                ++replaced;
+                        apply();
+                        break;
+                    }
+                    if (!item.ok())
+                        co_return;
+                    auto hit = blocks::arrayItemAt(doc, current(), item.point, 0);
+                    if (!hit) {
+                        ctx.message("No array item there.");
+                        continue;
+                    }
+                    if (blocks::swapArrayItem(a, {*hit, block.value(), at})) {
+                        ++replaced;
+                        apply();
+                    }
+                }
+                if (replaced == 0) {
+                    (void)tx.eraseBlock(block.value());
+                    ctx.message("No items were replaced.");
+                } else {
+                    ctx.message("Replaced " + std::to_string(replaced) +
+                                (replaced == 1 ? " item." : " items."));
+                }
+                continue;
+            }
 
             if (k == "Rows" || k == "Columns") {
                 const bool rows = k == "Rows";
@@ -713,6 +941,7 @@ public:
                     a.pathSpacing = gaps > 0 && total > 0 ? total / gaps : 1;
                 }
             }
+            geom::carryArrayOverrides(before, a);
             apply();
         }
         ctx.message("Array now has " + std::to_string(blocks::arrayItemCount(a)) + " items");
@@ -738,5 +967,28 @@ std::unique_ptr<cmd::Command> makeArrayPathCommand() {
 std::unique_ptr<cmd::Command> makeArrayEditCommand() {
     return std::make_unique<ArrayEditCommand>();
 }
+std::unique_ptr<cmd::Command> makeArrayRemoveCommand() {
+    return std::make_unique<ArrayRemoveCommand>();
+}
+
+namespace detail {
+
+std::optional<std::pair<EntityId, int>> arrayItemNear(const Document& doc, Vec2 p, double tol) {
+    std::optional<std::pair<EntityId, int>> hit;
+    doc.forEachEntity([&](const Entity& e) {
+        if (hit)
+            return;
+        const auto* ins = entityAs<InsertData>(e);
+        if (!ins || !ins->array || doc.ownerBlock(e.common.id) || !editable(doc, e))
+            return;
+        if (!blocks::insertBounds(doc, e).inflated(tol).contains(p))
+            return;
+        if (auto item = blocks::arrayItemAt(doc, *ins, p, tol))
+            hit = std::pair{e.common.id, *item};
+    });
+    return hit;
+}
+
+}  // namespace detail
 
 }  // namespace tbcad::block_cmds

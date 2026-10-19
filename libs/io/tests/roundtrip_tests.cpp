@@ -435,6 +435,48 @@ TEST_CASE("round trip: associative arrays of every kind") {
     CHECK(arrays == 3);
 }
 
+TEST_CASE("round trip: removed and replaced array items") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("arrays");
+        BlockId blk = tx.addBlock(BlockDef{.name = "*A1", .anonymous = true}).value();
+        Entity c;
+        c.data = CircleData{{0, 0}, 1};
+        (void)tx.add(std::move(c), blk);
+        BlockId rep = tx.addBlock(BlockDef{.name = "*A2", .anonymous = true}).value();
+        Entity l;
+        l.data = LineData{{0, -1}, {0, 1}};
+        (void)tx.add(std::move(l), rep);
+        ArrayInfo rect;
+        rect.rows = 3;
+        rect.columns = 4;
+        rect.rowSpacing = 5;
+        rect.columnSpacing = 6;
+        rect.removed = {1, 7};
+        rect.swaps = {ArrayItemSwap{3, rep, {0.5, -0.25}}, ArrayItemSwap{9, rep, {0, 0}}};
+        Entity e;
+        e.data = Indirect<InsertData>(InsertData{blk, {2, 3}, {1, 1}, 0, {}, std::move(rect)});
+        REQUIRE(tx.add(std::move(e)).ok());
+        tx.commit();
+    }
+    std::string before = canonicalDump(doc);
+    auto back = readOrFail(writeOrFail(doc));
+    CHECK(canonicalDump(*back) == before);
+    bool seen = false;
+    back->forEachEntity([&](const Entity& e) {
+        const auto* i = entityAs<InsertData>(e);
+        if (!i || !i->array)
+            return;
+        seen = true;
+        CHECK(i->array->removed == std::vector<int>{1, 7});
+        REQUIRE(i->array->swaps.size() == 2);
+        CHECK(i->array->swaps[0].item == 3);
+        CHECK(i->array->swaps[0].at == Vec2{0.5, -0.25});
+        CHECK(back->block(i->array->swaps[1].block));
+    });
+    CHECK(seen);
+}
+
 TEST_CASE("round trip: dynamic block definitions and values") {
     Document doc;
     {

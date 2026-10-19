@@ -232,6 +232,10 @@ struct DataDumper {
               << a.rotateItems << " ref" << a.reference << " closed" << a.pathClosed << " sp"
               << a.pathSpacing;
             polyV(o, a.path);
+            for (int i : a.removed)
+                o << " rm" << i;
+            for (const ArrayItemSwap& sw : a.swaps)
+                o << " sw" << sw.item << " b" << sw.block.value << " at" << sw.at;
         }
         if (d.clip.size() >= 3) {
             o << " CLIP" << (d.clipOn ? "on" : "off") << (d.clipInvert ? "inv" : "");

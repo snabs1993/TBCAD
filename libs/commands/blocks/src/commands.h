@@ -1,6 +1,8 @@
 #pragma once
 
 #include <memory>
+#include <optional>
+#include <utility>
 #include <string>
 #include <vector>
 
@@ -27,6 +29,7 @@ std::unique_ptr<cmd::Command> makeArrayRectCommand();
 std::unique_ptr<cmd::Command> makeArrayPolarCommand();
 std::unique_ptr<cmd::Command> makeArrayPathCommand();
 std::unique_ptr<cmd::Command> makeArrayEditCommand();
+std::unique_ptr<cmd::Command> makeArrayRemoveCommand();
 std::unique_ptr<cmd::Command> makeBParamCommand();
 std::unique_ptr<cmd::Command> makeBActionCommand();
 std::unique_ptr<cmd::Command> makeDynSetCommand();
@@ -84,6 +87,15 @@ BBox2 boundsOf(const Document& doc, const std::vector<Entity>& entities);
 
 // "3 objects" / "1 object".
 std::string objects(std::size_t n);
+
+// Starts editing `def` in place (BEDIT): copies of its objects go into the drawing through `xf`
+// (block space to drawing). False, with a message, when another block is being edited or `def`
+// is an external reference.
+bool startBlockEdit(cmd::CommandContext& ctx, const BlockDef& def, const Transform2& xf);
+
+// The associative array (in model space, on an editable layer) and its item under `p`, within
+// `tol` of the item's extents.
+std::optional<std::pair<EntityId, int>> arrayItemNear(const Document& doc, Vec2 p, double tol);
 
 }  // namespace detail
 
