@@ -118,7 +118,7 @@ TEST_CASE("a .ctb file is imported: colours, lineweights, screening") {
         "  name=\"Color_1\"\n"
         "  color=-1006632961\n"  // 0xC3FFFFFF: white
         "  screen=100\n"
-        "  lineweight=2\n"
+        "  lineweight=3\n"
         " }\n"
         " 1{\n"
         "  name=\"Color_2\"\n"
@@ -130,7 +130,7 @@ TEST_CASE("a .ctb file is imported: colours, lineweights, screening") {
         "  name=\"Color_3\"\n"
         "  color=-1023409921\n"  // 0xC30000FF = blue
         "  screen=100\n"
-        "  lineweight=1\n"
+        "  lineweight=2\n"
         " }\n"
         " 3{\n"
         "  name=\"Color_4\"\n"
@@ -157,28 +157,35 @@ TEST_CASE("a .ctb file is imported: colours, lineweights, screening") {
     CHECK_FALSE(t.entries[4].color);
 }
 
-TEST_CASE("AutoCAD's custom_lineweight_table gives each pen its width, 255 keeps the object's") {
+// AutoCAD writes custom_lineweight_table after plot_style, as here.
+// Pens count from 1 into the table: _EP-100's pens 5 / 12 / 13 / 18 plot 0.13 / 0.30 / 0.33 / 0.55
+// mm in AutoCAD's PDF of the owner's drawing.
+TEST_CASE("AutoCAD's custom_lineweight_table gives each pen its width, 0 and 255 keep the object's") {
     const std::string text =
         "description=\"Color 7 = 0.35mm\"\n"
         "aci_table_available=TRUE\n"
         "scale_factor=1.0\n"
         "apply_factor=FALSE\n"
-        "custom_lineweight_table{\n"
-        " 0=0.0\n 1=0.08\n 4=0.13\n 5=0.15\n 13=0.35\n 17=0.55\n"
-        "}\n"
         "plot_style{\n"
         " 0{\n  name=\"Color_1\"\n  color=-1023410176\n  color_policy=4\n  lineweight=5\n }\n"
         " 1{\n  name=\"Color_2\"\n  color=-1023410176\n  color_policy=4\n  lineweight=13\n }\n"
         " 2{\n  name=\"Color_3\"\n  color=-1006632961\n  color_policy=0\n  lineweight=255\n }\n"
-        " 3{\n  name=\"Color_4\"\n  color=-1023410176\n  color_policy=4\n  lineweight=17\n }\n"
+        " 3{\n  name=\"Color_4\"\n  color=-1023410176\n  color_policy=4\n  lineweight=18\n }\n"
+        " 4{\n  name=\"Color_5\"\n  color=-1023410176\n  color_policy=4\n  lineweight=0\n }\n"
+        "}\n"
+        "custom_lineweight_table{\n"
+        " 0=0.0\n 1=0.08\n 2=0.1\n 3=0.12\n 4=0.13\n 5=0.15\n 6=0.18\n 7=0.2\n 8=0.23\n"
+        " 9=0.25\n 10=0.27\n 11=0.3\n 12=0.33\n 13=0.35\n 14=0.4\n 15=0.45\n 16=0.5\n"
+        " 17=0.55\n 18=0.6\n"
         "}\n";
     auto r = importCtb(makeCtb(text));
     REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
     const PlotStyleTable& t = r.value();
-    CHECK(t.entries[1].lineweightMm.value() == doctest::Approx(0.15));
-    CHECK(t.entries[2].lineweightMm.value() == doctest::Approx(0.35));
+    CHECK(t.entries[1].lineweightMm.value() == doctest::Approx(0.13));
+    CHECK(t.entries[2].lineweightMm.value() == doctest::Approx(0.33));
     CHECK_FALSE(t.entries[3].lineweightMm);
     CHECK(t.entries[4].lineweightMm.value() == doctest::Approx(0.55));
+    CHECK_FALSE(t.entries[5].lineweightMm);
 }
 
 TEST_CASE("an .stb file imports as a named table that round-trips through text") {
@@ -187,7 +194,7 @@ TEST_CASE("an .stb file imports as a named table that round-trips through text")
         "lineweight_table{\n 0=0.0000\n 1=0.2500\n}\n"
         "plot_style{\n"
         " 0{\n  name=\"Normal\"\n  color=-1\n  screen=100\n  lineweight=0\n }\n"
-        " 1{\n  name=\"Thin Red\"\n  color=-1023409921\n  screen=60\n  lineweight=1\n }\n"
+        " 1{\n  name=\"Thin Red\"\n  color=-1023409921\n  screen=60\n  lineweight=2\n }\n"
         "}\n";
     auto r = importCtb(makeCtb(text, true));
     REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));

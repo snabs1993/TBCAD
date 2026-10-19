@@ -132,6 +132,10 @@ TEST_CASE("layouts: create, add a viewport and a title block, change it, plot it
     std::filesystem::remove(pdf2);
     f.ok("export_pdf", "{\"path\":\"" + pdf2.generic_string() + "\"}");
     CHECK(std::filesystem::exists(pdf2));
+    // the same path again replaces the file instead of stopping at "Overwrite?"
+    std::filesystem::resize_file(pdf2, 3);
+    f.ok("export_pdf", "{\"path\":\"" + pdf2.generic_string() + "\"}");
+    CHECK(std::filesystem::file_size(pdf2) > 3);
     CHECK(f.fails("export_pdf", "{\"path\":\"" + (dir / "x.pdf").generic_string() +
                                     "\",\"layout\":\"No such sheet\"}")
               .size() > 0);

@@ -79,6 +79,10 @@ Result<PlotStyleTable> importCtb(std::span<const std::uint8_t> bytes) {
     int depth = 0, styleIndex = -1;
     PlotStyleEntry cur;
     std::vector<PlotStyleEntry> styles;
+    // Lineweight index per style: AutoCAD writes custom_lineweight_table after plot_style, so
+    // the widths are looked up once the whole file is read.
+    int curWeight = -1;
+    std::vector<int> styleWeights;
     bool sawStyles = false;
 
     std::istringstream in(text);
@@ -95,6 +99,7 @@ Result<PlotStyleTable> importCtb(std::span<const std::uint8_t> bytes) {
                 if (policyZero)
                     cur.color.reset();
                 styles.push_back(cur);
+                styleWeights.push_back(curWeight);
                 styleIndex = -1;
                 policyZero = false;
             }
@@ -116,6 +121,7 @@ Result<PlotStyleTable> importCtb(std::span<const std::uint8_t> bytes) {
             } else if (depth == 2 && section == Section::Styles) {
                 styleIndex = std::atoi(key.c_str());
                 cur = PlotStyleEntry{};
+                curWeight = -1;
             }
             continue;
         }
@@ -147,15 +153,20 @@ Result<PlotStyleTable> importCtb(std::span<const std::uint8_t> bytes) {
             } else if (key == "screen") {
                 cur.screen = std::clamp(std::atoi(val.c_str()), 0, 100);
             } else if (key == "lineweight") {
-                const auto idx = static_cast<std::size_t>(std::atoi(val.c_str()));
-                // Index 0 is "use object lineweight" in practice (width 0.0000).
-                if (idx < weights.size() && weights[idx] > 0)
-                    cur.lineweightMm = weights[idx];
+                curWeight = std::atoi(val.c_str());
             }
         }
     }
     if (!sawStyles)
         return Error{ErrorCode::Unsupported, "This plot style table has no styles"};
+    // A pen's lineweight counts from 1 into the table: 0 (and 255) keep the object's lineweight,
+    // n is entry n - 1. Checked against an AutoCAD plot of the owner's _EP-100.ctb, whose pens
+    // 5 / 12 / 13 / 18 printed 0.13 / 0.30 / 0.33 / 0.55 mm (entries 4 / 11 / 12 / 17).
+    for (std::size_t i = 0; i < styles.size(); ++i) {
+        const int n = styleWeights[i];
+        if (n >= 1 && static_cast<std::size_t>(n) <= weights.size())
+            styles[i].lineweightMm = weights[static_cast<std::size_t>(n) - 1];
+    }
     if (stb) {
         t.named = true;
         t.styles = std::move(styles);

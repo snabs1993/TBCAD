@@ -202,7 +202,12 @@ std::filesystem::path locateFontFile(const std::string& name) {
     dirs.emplace_back(fs::path(TBCAD_BUNDLED_FONT_DIR) / "shx");
 #endif
 #ifdef _WIN32
+    if (const char* windir = std::getenv("WINDIR"))
+        dirs.emplace_back(fs::path(windir) / "Fonts");
     dirs.emplace_back("C:/Windows/Fonts");
+    // Fonts installed for the current user only.
+    if (const char* local = std::getenv("LOCALAPPDATA"))
+        dirs.emplace_back(fs::path(local) / "Microsoft" / "Windows" / "Fonts");
 #else
     dirs.emplace_back("/usr/share/fonts");
     dirs.emplace_back("/usr/local/share/fonts");
@@ -341,10 +346,19 @@ font::FontId fontForStyle(const TextStyle* style, bool bold, bool italic) {
         }
     }
     if (!found && !file.empty() && !endsWithNoCase(file, ".shx")) {
-        auto r = isStrokeFile(file) ? lib.loadStroke(std::filesystem::path(file))
-                                    : lib.load(std::filesystem::path(file));
+        // Drawings name the file bare ("arial.ttf") or with the author's folders: look it up in
+        // the font folders when it is not where the name says.
+        std::filesystem::path path(file);
+        std::error_code ec;
+        if (!std::filesystem::is_regular_file(path, ec))
+            if (auto located = locateFontFile(file); !located.empty())
+                path = located;
+        auto r = isStrokeFile(file) ? lib.loadStroke(path) : lib.load(path);
         if (r.ok())
             found = r.value();
+        // Not on this machine: the installed font of the same name ("arial" for arial.ttf).
+        if (!found && family.empty() && !isStrokeFile(file))
+            found = lib.findSystem(std::filesystem::path(file).stem().string(), bold, italic);
     }
     if (!found && isStrokeFamily(family)) {
         auto r = lib.loadBundledStroke();
