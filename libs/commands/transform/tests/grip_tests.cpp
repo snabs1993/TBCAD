@@ -264,6 +264,17 @@ TEST_CASE("a dynamic block insert offers the handle of its linear parameter") {
     auto moved = tf::stretchResults(f.doc, grips, hot, {5, 0}, &error);
     REQUIRE(moved.size() == 1);
     CHECK(entityAs<InsertData>(moved[0].second)->dynValues == std::vector<double>{15});
+
+    // Dragging the handle in GRIPEDIT previews the stretched bar before anything is committed.
+    f.host.setSelection(ids);
+    f.host.run("GRIPEDIT", {"60,0"});
+    f.host.runner().pointerMoved(cmd::RawInput{{65, 0}, {65, 0}, 1});
+    REQUIRE_FALSE(f.host.preview().items.empty());
+    CHECK(get<InsertData>(f.doc, ins).dynValues.empty());
+    f.host.feed({cmd::ScriptItem::click({65, 0})});
+    CHECK(get<InsertData>(f.doc, ins).dynValues == std::vector<double>{15});
+    f.host.undo();
+    CHECK(get<InsertData>(f.doc, ins).dynValues.empty());
 }
 
 TEST_CASE("an insert offers a grip per attribute and dragging it moves just that value") {
