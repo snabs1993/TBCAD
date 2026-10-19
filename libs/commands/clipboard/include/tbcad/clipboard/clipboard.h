@@ -34,6 +34,9 @@ struct Clip {
     // empty = follows its layer) and of the layers copied with them.
     std::vector<std::string> plotStyles{};
     std::map<LayerId, std::string> layerPlotStyles{};
+    // The file of the drawing the objects were copied from: relative xref paths are rebased from
+    // its folder when the clip is pasted into a drawing in another one.
+    std::string sourceFile{};
 
     bool empty() const { return entities.empty(); }
     // Bounding box of the copied entities (their own extents, without the table rows).

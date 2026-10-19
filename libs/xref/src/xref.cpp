@@ -337,6 +337,43 @@ std::filesystem::path resolvePath(std::string_view stored, const std::filesystem
     return hostFile.parent_path() / p;
 }
 
+std::string rebaseStored(std::string_view stored, const std::filesystem::path& fromHost,
+                         const std::filesystem::path& toHost) {
+    if (fromHost.empty() || toHost.empty() || stored.empty())
+        return std::string(stored);
+    if (fromHost.parent_path() == toHost.parent_path())
+        return std::string(stored);
+    const std::string plain = underlay::parseSpec(stored).file;
+    const std::filesystem::path p{std::u8string(plain.begin(), plain.end())};
+    if (p.is_absolute() || p.empty())
+        return std::string(stored);
+    std::error_code ec;
+    const std::filesystem::path abs =
+        std::filesystem::weakly_canonical(fromHost.parent_path() / p, ec);
+    if (ec)
+        return std::string(stored);
+    std::string out = storedPath(abs, toHost, PathType::Relative);
+    const auto hash = stored.find('#');
+    if (hash != std::string_view::npos)
+        out += std::string(stored.substr(hash));
+    return out;
+}
+
+std::size_t rebaseAll(Transaction& tx, const Document& doc, const std::filesystem::path& fromHost,
+                      const std::filesystem::path& toHost) {
+    std::vector<std::pair<BlockId, std::string>> todo;
+    for (const auto& [id, b] : doc.blocks()) {
+        if (b.xrefPath.empty())
+            continue;
+        std::string now = rebaseStored(b.xrefPath, fromHost, toHost);
+        if (now != b.xrefPath)
+            todo.emplace_back(id, std::move(now));
+    }
+    for (auto& [id, text] : todo)
+        (void)tx.modifyBlock(id, [&](BlockDef& d) { d.xrefPath = std::move(text); });
+    return todo.size();
+}
+
 std::int64_t fileStamp(const std::filesystem::path& file) {
     std::error_code ec;
     auto t = std::filesystem::last_write_time(file, ec);

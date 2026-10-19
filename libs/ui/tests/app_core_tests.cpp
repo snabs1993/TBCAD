@@ -1504,3 +1504,32 @@ TEST_CASE("recovery survives leftovers of a process killed in the middle of an a
     (void)second.recoverAll();                      // the damaged one is skipped ...
     CHECK(second.documentCount() == 2);             // ... and the good ones are back
 }
+
+TEST_CASE("saveAs into another folder keeps relative xref paths pointing at the same file") {
+    Fixture f("saveas_xref");
+    fs::create_directories(f.dir / "proj");
+    fs::create_directories(f.dir / "lib");
+    fs::create_directories(f.dir / "other" / "deep");
+    REQUIRE(f.core->saveAs(f.dir / "proj" / "a.tbcad").ok());
+    {
+        Transaction tx = f.core->document().begin("xref");
+        BlockDef def;
+        def.name = "SITE";
+        def.xrefPath = "../lib/site.tbcad";
+        REQUIRE(tx.addBlock(std::move(def)).ok());
+        tx.commit();
+    }
+    REQUIRE(f.core->saveAs(f.dir / "other" / "deep" / "b.tbcad").ok());
+    const BlockDef* b = f.core->document().blockByName("SITE");
+    REQUIRE(b != nullptr);
+    CHECK(b->xrefPath == "../../lib/site.tbcad");
+    // The saved file says the same.
+    io::IoReport report;
+    auto back = io::readTbcad(f.dir / "other" / "deep" / "b.tbcad", report);
+    REQUIRE(back.ok());
+    REQUIRE(back.value()->blockByName("SITE") != nullptr);
+    CHECK(back.value()->blockByName("SITE")->xrefPath == "../../lib/site.tbcad");
+    // Saving again in the same folder changes nothing.
+    REQUIRE(f.core->saveAs(f.dir / "other" / "deep" / "c.tbcad").ok());
+    CHECK(f.core->document().blockByName("SITE")->xrefPath == "../../lib/site.tbcad");
+}

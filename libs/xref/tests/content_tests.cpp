@@ -1,5 +1,7 @@
 #include <doctest/doctest.h>
 
+#include <filesystem>
+
 #include "tbcad/xref/xref.h"
 
 using namespace tbcad;
@@ -156,4 +158,25 @@ TEST_CASE("importContent without a source drawing is an error") {
     ImportReport rep;
     Transaction tx = host.begin("x");
     CHECK_FALSE(importContent(tx, host, Source{}, {{ContentKind::Layer, "a"}}, rep));
+}
+
+TEST_CASE("rebaseStored keeps a relative xref path pointing at the same file") {
+    namespace fs = std::filesystem;
+    const fs::path a = fs::temp_directory_path() / "tbcad_rebase" / "proj" / "a.tbcad";
+    const fs::path b = fs::temp_directory_path() / "tbcad_rebase" / "other" / "deep" / "b.tbcad";
+    std::error_code ec;
+    fs::create_directories(a.parent_path(), ec);
+    fs::create_directories(b.parent_path(), ec);
+    // ..\lib\plan.tbcad from proj is tbcad_rebase/lib/plan.tbcad; from other/deep it is ../../lib.
+    CHECK(rebaseStored("../lib/plan.tbcad", a, b) == "../../lib/plan.tbcad");
+    CHECK(rebaseStored("sub/plan.tbcad", a, b) == "../../proj/sub/plan.tbcad");
+    CHECK(rebaseStored("plan.pdf#page=2,fade=60", a, b) == "../../proj/plan.pdf#page=2,fade=60");
+    // The same folder, an unsaved host or an absolute path change nothing.
+    CHECK(rebaseStored("../lib/plan.tbcad", a, a.parent_path() / "c.tbcad") == "../lib/plan.tbcad");
+    CHECK(rebaseStored("../lib/plan.tbcad", {}, b) == "../lib/plan.tbcad");
+    CHECK(rebaseStored("../lib/plan.tbcad", a, {}) == "../lib/plan.tbcad");
+    const std::string abs = (fs::temp_directory_path() / "x" / "y.tbcad").generic_string();
+    CHECK(rebaseStored(abs, a, b) == abs);
+    // And back again.
+    CHECK(rebaseStored(rebaseStored("../lib/plan.tbcad", a, b), b, a) == "../lib/plan.tbcad");
 }

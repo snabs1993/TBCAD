@@ -502,3 +502,27 @@ TEST_CASE("a dimension and a multileader pasted elsewhere carry no stale links")
     CHECK(seenDim);
     CHECK(seenMl);
 }
+
+TEST_CASE("an xref path relative to the source drawing is rebased when pasted in another folder") {
+    namespace fs = std::filesystem;
+    const fs::path root = fs::temp_directory_path() / "tbcad_paste_rebase";
+    Fixture src;
+    src.doc.setFilePath((root / "proj" / "a.tbcad").generic_string());
+    BlockId xr;
+    {
+        Transaction tx = src.doc.begin("xref");
+        BlockDef def;
+        def.name = "SITE";
+        def.xrefPath = "../lib/site.tbcad";
+        xr = tx.addBlock(std::move(def)).value();
+        tx.commit();
+    }
+    const EntityId ins = src.add(InsertData{xr, {0, 0}, {1, 1}, 0});
+    src.host.run("COPYCLIP", {ScriptItem::select({ins}), ScriptItem::enter()});
+    Fixture dst;
+    dst.doc.setFilePath((root / "other" / "deep" / "b.tbcad").generic_string());
+    dst.host.run("PASTECLIP", {"0,0"});
+    const BlockDef* b = dst.doc.blockByName("SITE");
+    REQUIRE(b != nullptr);
+    CHECK(b->xrefPath == "../../lib/site.tbcad");
+}

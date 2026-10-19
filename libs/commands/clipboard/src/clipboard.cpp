@@ -1,4 +1,5 @@
 #include "tbcad/clipboard/clipboard.h"
+#include "tbcad/xref/xref.h"
 
 #include <functional>
 #include <mutex>
@@ -294,6 +295,10 @@ private:
         BlockDef def = src->second.def;
         def.id = {};
         def.entities.clear();
+        // An xref (or picture) path that is relative to the source drawing's folder must still
+        // find the same file from this drawing's folder.
+        if (!def.xrefPath.empty())
+            def.xrefPath = xref::rebaseStored(def.xrefPath, clip_.sourceFile, doc().filePath());
         auto r = tx_.addBlock(std::move(def));
         if (!r) {
             fail(r.error().message);
@@ -343,6 +348,7 @@ Clip g_clip;
 
 Clip capture(const Document& doc, std::span<const EntityId> ids, std::optional<Vec2> base) {
     Clip clip;
+    clip.sourceFile = doc.filePath();
     Collector collector(doc, clip);
     for (EntityId id : ids) {
         const Entity* e = doc.find(id);
@@ -364,6 +370,7 @@ Clip capture(const Document& doc, std::span<const EntityId> ids, std::optional<V
 
 Clip captureBlock(const Document& doc, BlockId block) {
     Clip clip;
+    clip.sourceFile = doc.filePath();
     const BlockDef* def = doc.block(block);
     if (!def)
         return clip;
