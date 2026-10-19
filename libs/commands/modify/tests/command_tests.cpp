@@ -1364,3 +1364,107 @@ TEST_CASE("SPLINEDIT and PEDIT Tolerance refit a spline through fewer fit points
     f.host.run("PEDIT", {ScriptItem::pick(id, {10, 5}), "Tolerance", "0.05", "Exit"});
     CHECK(entityAs<SplineData>(f.get(id))->fit.size() == after);
 }
+
+TEST_CASE("BREAK and BREAKATPOINT on a construction line and a ray") {
+    Fixture f;
+    RayData xl;
+    xl.origin = {0, 0};
+    xl.dir = {1, 0};
+    xl.infinite = true;
+    EntityId x = f.add(xl);
+    f.host.run("BREAK", {ScriptItem::pick(x, {5, 0}), "10,0"});
+    CHECK(f.count(EntityKind::Ray) == 2);
+    f.host.undo();
+    CHECK(f.count(EntityKind::Ray) == 1);
+    f.host.run("BREAKATPOINT", {ScriptItem::pick(x, {5, 0}), "5,0"});
+    CHECK(f.count(EntityKind::Ray) == 2);
+
+    Fixture g;
+    RayData ray;
+    ray.origin = {0, 0};
+    ray.dir = {1, 0};
+    EntityId r = g.add(ray);
+    g.host.run("BREAK", {ScriptItem::pick(r, {4, 0}), "8,0"});
+    CHECK(g.count(EntityKind::Line) == 1);
+    CHECK(g.count(EntityKind::Ray) == 1);
+    g.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* l = entityAs<LineData>(e))
+            CHECK(near(l->b, {4, 0}));
+        if (const auto* rr = entityAs<RayData>(e))
+            CHECK(near(rr->origin, {8, 0}));
+    });
+    // A break that starts before the ray's start cuts the start off; one wholly before removes
+    // nothing.
+    Fixture h;
+    EntityId r2 = h.add(ray);
+    h.host.run("BREAK", {ScriptItem::pick(r2, {4, 0}), "-5,0"});
+    CHECK(h.count(EntityKind::Ray) == 1);
+    CHECK(h.count(EntityKind::Line) == 0);
+    Fixture k;
+    EntityId r3 = k.add(ray);
+    k.host.run("BREAKATPOINT", {ScriptItem::pick(r3, {4, 0}), "4,0"});
+    CHECK(k.count(EntityKind::Ray) == 1);
+    CHECK(k.count(EntityKind::Line) == 1);
+}
+
+TEST_CASE("LENGTHEN works on a spline given only by fit points") {
+    Fixture f;
+    SplineData s;
+    s.degree = 3;
+    s.fit = {{0, 0}, {10, 10}, {20, -5}, {30, 0}};
+    EntityId id = f.add(s);
+    f.host.run("LENGTHEN", {"DE", "3", ScriptItem::pick(id, {29, 0}), ScriptItem::enter()});
+    CHECK(f.count(EntityKind::Spline) == 1);
+    CHECK(f.host.undoStack().undoCount() == 1);
+}
+
+TEST_CASE("FILLET and CHAMFER between a ray, a construction line and a line") {
+    // A ray from the origin along +x and a vertical line: a sharp corner trims the ray's start
+    // side to a finite line and keeps the far side of the vertical line.
+    Fixture f;
+    RayData ray;
+    ray.origin = {0, 0};
+    ray.dir = {1, 0};
+    EntityId r = f.add(ray);
+    EntityId v = f.add(LineData{{10, -20}, {10, 30}});
+    f.host.run("FILLET", {"R", "0", ScriptItem::pick(r, {20, 0}), ScriptItem::pick(v, {10, 20})});
+    const Entity& r2 = f.get(r);
+    REQUIRE(entityAs<RayData>(r2) != nullptr);
+    CHECK(near(entityAs<RayData>(r2)->origin, {10, 0}));  // the ray's far part is kept
+    const auto* vl = entityAs<LineData>(f.get(v));
+    REQUIRE(vl != nullptr);
+    CHECK(near(vl->a, {10, 0}));
+
+    // A construction line with a rounded corner: the kept side becomes a ray, plus an arc.
+    Fixture g;
+    RayData xl;
+    xl.origin = {0, 0};
+    xl.dir = {1, 0};
+    xl.infinite = true;
+    EntityId x = g.add(xl);
+    EntityId w = g.add(LineData{{10, 0}, {10, 30}});
+    g.host.run("FILLET", {"R", "2", ScriptItem::pick(x, {-30, 0}), ScriptItem::pick(w, {10, 20})});
+    CHECK(g.count(EntityKind::Arc) == 1);
+    const auto* kept = entityAs<RayData>(g.get(x));
+    REQUIRE(kept != nullptr);
+    CHECK(near(kept->origin, {8, 0}));
+    CHECK(near(kept->dir, {-1, 0}));
+
+    // CHAMFER with a ray.
+    Fixture h;
+    EntityId r3 = h.add(ray);
+    EntityId v3 = h.add(LineData{{10, -20}, {10, 30}});
+    h.host.run("CHAMFER",
+               {"D", "2", "2", ScriptItem::pick(r3, {20, 0}), ScriptItem::pick(v3, {10, 20})});
+    CHECK(h.count(EntityKind::Line) == 2);
+    CHECK(h.count(EntityKind::Ray) == 1);
+
+    // Parallel construction lines have no corner.
+    Fixture k;
+    EntityId p1 = k.add(xl);
+    RayData up = xl;
+    up.origin = {0, 5};
+    EntityId p2 = k.add(up);
+    k.host.run("FILLET", {"R", "1", ScriptItem::pick(p1, {3, 0}), ScriptItem::pick(p2, {3, 5})});
+    CHECK(k.count(EntityKind::Arc) == 0);
+}

@@ -137,8 +137,37 @@ Result<EntityEdit> breakCurve(const Entity& e, Vec2 p1, std::optional<Vec2> p2) 
     return pieces(e, std::move(data));
 }
 
+// A ray keeps a finite line towards its start and a new ray beyond the cut; a construction line
+// becomes two rays pointing away from the cut.
+Result<EntityEdit> breakRay(const Entity& e, const RayData& r, Vec2 p1, std::optional<Vec2> p2) {
+    if (tol::isZeroLength(r.dir))
+        return err("The line has no direction.");
+    const Vec2 dir = r.dir / length(r.dir);
+    double t1 = dot(p1 - r.origin, dir);
+    double t2 = p2 ? dot(*p2 - r.origin, dir) : t1;
+    if (t1 > t2)
+        std::swap(t1, t2);
+    if (p2 && t2 - t1 <= 1e-9)
+        return err("The two break points are the same.");
+    auto at = [&](double t) { return r.origin + dir * t; };
+    std::vector<EntityData> data;
+    if (r.infinite) {
+        data.push_back(RayData{at(t1), dir * -1.0, false});
+        data.push_back(RayData{at(t2), dir, false});
+    } else {
+        if (t2 <= tol::kLinear)
+            return err("The break is before the start of the ray.");
+        if (t1 > tol::kLinear)
+            data.push_back(LineData{r.origin, at(t1)});
+        data.push_back(RayData{at(t2), dir, false});
+    }
+    return pieces(e, std::move(data));
+}
+
 Result<EntityEdit> breakAny(const Entity& e, Vec2 p1, std::optional<Vec2> p2) {
     switch (kind(e)) {
+        case EntityKind::Ray:
+            return breakRay(e, *entityAs<RayData>(e), p1, p2);
         case EntityKind::Line:
         case EntityKind::Circle:
         case EntityKind::Arc:
@@ -305,7 +334,15 @@ SplineData chainSplines(const SplineData& a, const SplineData& b) {
     return out;
 }
 
-SplineData splineWithStraightRun(const SplineData& sd, bool atEnd, Vec2 to) {
+SplineData splineWithStraightRun(const SplineData& source, bool atEnd, Vec2 to) {
+    SplineData sd = source;
+    if (sd.control.empty()) {  // fit points only: the curve through them
+        auto through = geom::interpolateSpline(
+            sd.fit, geom::InterpolateOptions{sd.degree, sd.closed, {}, {}, true});
+        if (!through)
+            return source;
+        sd = std::move(through).value();
+    }
     const Vec2 from = atEnd ? sd.control.back() : sd.control.front();
     SplineData run;
     run.degree = sd.degree;

@@ -12,6 +12,8 @@ namespace tbcad::modify {
 // (in either order); a closed polyline is opened and loses the part between them. A circle (or
 // closed ellipse) loses the arc running counter-clockwise from p1 to p2, so what remains is the arc
 // from p2 counter-clockwise to p1. If a point lies at or beyond an end, that end is cut off.
+// A construction line becomes two rays pointing away from the gap; a ray keeps a line towards its
+// start (if any) and a new ray beyond the gap.
 Result<EntityEdit> breakEntity(const Entity& e, Vec2 p1, Vec2 p2);
 // Splits the entity in two at p (BREAKATPOINT). A closed polyline is opened at p. Circles and other
 // closed curves cannot be split at one point.

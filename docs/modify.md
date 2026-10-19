@@ -12,9 +12,9 @@ Two modules (W5-2):
 | `OFFSET` | `O` | `offsetEntity`, `offsetToward`, `offsetThrough` |
 | `TRIM` | `TR` | `trimEntity` |
 | `EXTEND` | `EX` | `extendEntity` |
-| `FILLET` | `F` | `filletEntities`, `filletPolylineVertex`, `filletPolyline` |
-| `CHAMFER` | `CHA` | `chamferEntities`, `chamferPolylineVertex`, `chamferPolyline` |
-| `BREAK` | `BR` | `breakEntity` |
+| `FILLET` | `F` | `filletEntities` (also rays and construction lines: the kept side becomes a ray, or a line towards a ray's start), `filletPolylineVertex`, `filletPolyline` |
+| `CHAMFER` | `CHA` | `chamferEntities` (rays and construction lines as for FILLET), `chamferPolylineVertex`, `chamferPolyline` |
+| `BREAK` | `BR` | `breakEntity` (a construction line becomes two rays, a ray a line plus a new ray) |
 | `BREAKATPOINT` | `BAP` | `breakAtPoint` |
 | `JOIN` | `J` | `joinEntities` |
 | `ERASE` | `E` | (only registered when nobody else did) |

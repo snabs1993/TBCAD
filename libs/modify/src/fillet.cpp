@@ -482,8 +482,59 @@ Result<PairEdit> chamferCurves(const Entity& a, Vec2 pickA, const Entity& b, Vec
 
 }  // namespace
 
+namespace {
+// ---- Rays and construction lines
+// ---------------------------------------------------------------------------
+
+// A ray or xline takes part as the long line it is drawn as; what the line keeps goes back as a
+// ray (the kept side reaches the far end), as the finite line towards a ray's start, or as a ray
+// pointing the other way for an xline.
+Entity rayProxy(const Entity& e) {
+    if (const auto* r = entityAs<RayData>(e))
+        return withData(e, LineData{rayStart(*r), rayEnd(*r)});
+    return e;
+}
+
+std::optional<Entity> fromRayProxy(const Entity& orig, std::optional<Entity> mod) {
+    const auto* r = entityAs<RayData>(orig);
+    if (!r || !mod)
+        return mod;
+    const auto* l = entityAs<LineData>(*mod);
+    if (!l)
+        return mod;
+    const Vec2 s = rayStart(*r), e = rayEnd(*r);
+    const Vec2 dir = normalized(e - s);
+    if (distance(l->b, e) <= 1e-6)
+        return withData(orig, RayData{l->a, dir, false});
+    if (!r->infinite)
+        return withData(orig, LineData{l->a, l->b});
+    return withData(orig, RayData{l->b, dir * -1.0, false});
+}
+
+template <class Run>
+Result<PairEdit> viaRayProxies(const Entity& a, const Entity& b, Run&& run) {
+    const auto* ra = entityAs<RayData>(a);
+    const auto* rb = entityAs<RayData>(b);
+    if (ra && rb && std::abs(cross(normalized(ra->dir), normalized(rb->dir))) < 1e-9)
+        return err("The lines are parallel; there is no corner.");
+    auto res = run(rayProxy(a), rayProxy(b));
+    if (!res)
+        return res;
+    PairEdit out = std::move(res.value());
+    out.modifiedA = fromRayProxy(a, std::move(out.modifiedA));
+    out.modifiedB = fromRayProxy(b, std::move(out.modifiedB));
+    return out;
+}
+
+}  // namespace
+
 Result<PairEdit> filletEntities(const Entity& a, Vec2 pickA, const Entity& b, Vec2 pickB,
                                 const FilletOptions& opt) {
+    if (kind(a) == EntityKind::Ray || kind(b) == EntityKind::Ray) {
+        return viaRayProxies(a, b, [&](const Entity& pa, const Entity& pb) {
+            return filletEntities(pa, pickA, pb, pickB, opt);
+        });
+    }
     auto pa = primOf(a), pb = primOf(b);
     if (!pa || !pb) {
         std::vector<CurveRef> ca, cb;
@@ -711,6 +762,11 @@ Result<Entity> chamferPolyline(const Entity& polyline, const ChamferOptions& opt
 
 Result<PairEdit> chamferEntities(const Entity& a, Vec2 pickA, const Entity& b, Vec2 pickB,
                                  const ChamferOptions& opt) {
+    if (kind(a) == EntityKind::Ray || kind(b) == EntityKind::Ray) {
+        return viaRayProxies(a, b, [&](const Entity& pa, const Entity& pb) {
+            return chamferEntities(pa, pickA, pb, pickB, opt);
+        });
+    }
     const auto* la = entityAs<LineData>(a);
     const auto* lb = entityAs<LineData>(b);
     if (!la || !lb) {

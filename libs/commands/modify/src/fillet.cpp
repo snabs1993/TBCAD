@@ -14,9 +14,10 @@ constexpr const char* kByAngleKey = "chamfer.byangle";
 constexpr const char* kChamferTrimKey = "chamfer.trim";
 
 bool filletable(const Document& doc, const Entity& e) {
-    if (!isEditable(doc, e))
+    if (!isTrimTarget(doc, e))
         return false;
     switch (kind(e)) {
+        case EntityKind::Ray:
         case EntityKind::Line:
         case EntityKind::Arc:
         case EntityKind::Circle:
@@ -30,9 +31,10 @@ bool filletable(const Document& doc, const Entity& e) {
 }
 
 bool chamferable(const Document& doc, const Entity& e) {
-    if (!isEditable(doc, e))
+    if (!isTrimTarget(doc, e))
         return false;
     switch (kind(e)) {
+        case EntityKind::Ray:
         case EntityKind::Line:
         case EntityKind::Arc:
         case EntityKind::Circle:
