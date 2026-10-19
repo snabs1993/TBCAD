@@ -140,7 +140,7 @@ bool Scene::upsertInstance(EntityId id, const std::shared_ptr<const DisplayList>
     c.drawOrder = drawOrder;
     c.level = levelBelow(drawOrder);
     c.maskLevel = c.level;
-    c.builtZoom = builtPixelsPerMm;
+    c.builtZoom = static_cast<float>(builtPixelsPerMm);
 
     thread_local std::vector<GpuVertex> chunk;
     auto place = [&](const Transform2& t) {

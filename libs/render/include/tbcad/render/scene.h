@@ -82,7 +82,7 @@ struct BatchRange {
     std::uint32_t begin = 0;
     std::uint32_t count = 0;
     std::uint32_t drawOrder = 0;
-    double builtPixelsPerMm = 0;  // zoom the geometry was tessellated for; 0 = unknown
+    float builtPixelsPerMm = 0;  // zoom the geometry was tessellated for; 0 = unknown
 };
 
 // Strokes: two vertices per segment (a, b). Fills: three per triangle. Points: one each.
