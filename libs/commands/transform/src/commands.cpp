@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <unordered_set>
 
 #include "tbcad/geom/geom.h"
 #include "tbcad/transform/apply.h"
@@ -155,9 +156,30 @@ public:
         co_await askObjects(ctx, ids);
         if (ids.empty())
             co_return;
-        PointOptions bo;
-        bo.keywords = {"Displacement"};
-        auto base = co_await ctx.getPoint("Specify base point or [Displacement]", std::move(bo));
+        // COPYMODE, as in AutoCAD: Multiple repeats until Enter, Single makes one copy.
+        bool single = ctx.host().setting("copy.mode").value_or("multiple") == "single";
+        ctx.message(std::string("Current settings: Copy mode = ") +
+                    (single ? "Single" : "Multiple"));
+        cmd::PointResult base;
+        for (;;) {
+            PointOptions bo;
+            bo.keywords = {"Displacement", "mOde"};
+            base =
+                co_await ctx.getPoint("Specify base point or [Displacement/mOde]", std::move(bo));
+            if (base.status == Status::Keyword && base.keyword == "mOde") {
+                KeywordOptions ko;
+                ko.keywords = {"Single", "Multiple"};
+                ko.defaultKeyword = single ? "Single" : "Multiple";
+                auto m = co_await ctx.getKeyword("Enter a copy mode option [Single/Multiple]",
+                                                 std::move(ko));
+                if (m.ok()) {
+                    single = m.keyword == "Single";
+                    ctx.host().setSetting("copy.mode", single ? "single" : "multiple");
+                }
+                continue;
+            }
+            break;
+        }
         if (base.status == Status::Keyword) {
             auto d = co_await ctx.getPoint("Specify displacement");
             if (d.ok() && !noDisplacement(ctx, d.point))
@@ -172,14 +194,22 @@ public:
             PointOptions o;
             o.base = base.point;
             o.keywords = {"Array", "Exit"};
+            if (copies > 0)
+                o.keywords.push_back("Undo");
             o.preview = previewOf(ctx, ids, [b = base.point](Vec2 c) -> std::optional<Transform2> {
                 return Transform2::translate(c - b);
             });
             auto to = co_await ctx.getPoint(
                 first ? "Specify second point or [Array] <use first point as displacement>"
-                      : "Specify second point or [Array/Exit] (" + std::to_string(copies) +
+                      : "Specify second point or [Array/Exit/Undo] (" + std::to_string(copies) +
                             (copies == 1 ? " copy" : " copies") + " made, Enter to finish)",
                 std::move(o));
+            if (to.status == Status::Keyword && to.keyword == "Undo") {
+                // Takes back the last copy.
+                if (ctx.rollbackToCheckpoint())
+                    --copies;
+                continue;
+            }
             if (to.status == Status::Keyword && to.keyword == "Array") {
                 co_await arrayCopies(ctx, ids, base.point);
                 co_return;
@@ -196,8 +226,11 @@ public:
                 continue;  // a copy on top of the original: ask again
             first = false;
             ++copies;
+            ctx.checkpoint();
             report(ctx,
                    applyTransform(ctx, ids, Transform2::translate(to.point - base.point), true));
+            if (single)
+                co_return;
         }
     }
 };
@@ -508,8 +541,11 @@ public:
         ctx.message(
             "Select with a crossing window or polygon: only the end points and vertices inside "
             "it move.");
-        std::vector<Vec2> polygon;  // empty = rectangular window
-        BBox2 window;
+        // The first area, then at the base point prompt Window / CPolygon add more areas and
+        // Remove takes the objects an area crosses out again (AutoCAD collects several).
+        std::vector<StretchRegion> regions;
+        std::vector<EntityId> ids;
+        std::unordered_set<EntityId> seen;
         {
             PointOptions fo;
             fo.keywords = {"CPolygon"};
@@ -517,86 +553,125 @@ public:
                 "Specify first corner of the crossing window or [CPolygon]", std::move(fo));
             if (!c1.ok() && !(c1.status == Status::Keyword && c1.keyword == "CPolygon"))
                 co_return;
-            if (c1.status == Status::Keyword) {
-                for (;;) {
-                    PointOptions po;
-                    if (!polygon.empty())
-                        po.base = polygon.back();
-                    auto p = co_await ctx.getPoint(
-                        polygon.size() < 3 ? "Specify next polygon point"
-                                           : "Specify next polygon point <Enter to finish>",
-                        std::move(po));
-                    if (p.status == Status::None && polygon.size() >= 3)
-                        break;
-                    if (!p.ok())
-                        co_return;
-                    polygon.push_back(p.point);
-                }
-                for (Vec2 v : polygon)
-                    window.expand(v);
-            } else {
-                PointOptions co;
-                co.base = c1.point;
-                co.preview = [first = c1.point](Vec2 c, DisplayList& out) {  // the crossing window
-                    DisplayPolyline pl;
-                    pl.closed = true;
-                    pl.pts = {first, {c.x, first.y}, c, {first.x, c.y}};
-                    out.items.emplace_back(std::move(pl));
-                };
-                auto c2 = co_await ctx.getPoint("Specify opposite corner", std::move(co));
-                if (!c2.ok())
-                    co_return;
-                window.expand(c1.point);
-                window.expand(c2.point);
-            }
+            StretchRegion region;
+            bool ok = false;
+            co_await readRegion(ctx, c1.status == Status::Keyword, c1.point, region, ok);
+            if (!ok)
+                co_return;
+            addRegion(ctx, std::move(region), regions, ids, seen);
         }
-        auto stretchWith = [&](const std::vector<EntityId>& ids, Vec2 d, std::string* err) {
-            return polygon.empty() ? stretchByWindow(ctx.doc(), ids, window, d, err)
-                                   : stretchByPolygon(ctx.doc(), ids, polygon, d, err);
+        auto stretchWith = [&](const std::vector<EntityId>& which, Vec2 d, std::string* err) {
+            return stretchByRegions(ctx.doc(), which, regions, d, err);
         };
-        const std::vector<EntityId> ids = stretchCandidates(ctx, window);
+        // Only objects with an end point or vertex inside an area move; say how many do. The
+        // ones that move are kept: the preview and the final stretch work on those only.
+        std::vector<EntityId> moving;
+        auto count = [&] {
+            moving.clear();
+            for (const auto& r : stretchWith(ids, {1, 0}, nullptr))
+                moving.push_back(r.first);
+        };
+        count();
         if (ids.empty()) {
             ctx.message("Nothing to stretch in the window.");
             co_return;
         }
-        // Only objects with an end point or vertex inside the window move; say how many do.
-        // The ones that move are kept: the preview and the final stretch work on those only.
-        std::vector<EntityId> moving;
-        for (const auto& r : stretchWith(ids, {1, 0}, nullptr))
-            moving.push_back(r.first);
-        const std::size_t movable = moving.size();
-        if (movable == 0) {
+        if (moving.empty()) {
             ctx.message(
                 "No end point or vertex lies inside the crossing window; nothing to stretch.");
             co_return;
         }
-        ctx.message(std::to_string(movable) + " found in the crossing window.");
-        auto base = co_await ctx.getPoint("Specify base point");
-        if (!base.ok())
-            co_return;
-        PointOptions o;
-        o.base = base.point;
-        o.preview = [&ctx, &moving, &stretchWith, b = base.point](Vec2 c, DisplayList& out) {
-            geom::DisplayContext dc;
-            dc.pixelSizeMm = ctx.host().view().scale > 0 ? ctx.host().view().scale : 1;
-            // A drawing-sized selection would rebuild every object on each mouse move; the
-            // preview shows the first few thousand.
-            constexpr std::size_t kPreviewMax = 4000;
-            const std::vector<EntityId> shown(
-                moving.begin(),
-                moving.begin() + static_cast<std::ptrdiff_t>(std::min(moving.size(), kPreviewMax)));
-            for (auto& [id, e] : stretchWith(shown, c - b, nullptr))
-                geom::buildDisplay(ctx.doc(), e, dc, out);
-        };
-        auto to = co_await ctx.getPoint("Specify second point or <use first point as displacement>",
-                                        std::move(o));
-        Vec2 delta;
-        if (to.status == Status::None)
-            delta = base.point;
-        else if (to.ok())
-            delta = to.point - base.point;
-        else
-            co_return;
+        ctx.message(std::to_string(moving.size()) + " found in the crossing window.");
+        Vec2 delta{};
+        for (;;) {
+            PointOptions bo;
+            bo.keywords = {"Displacement", "Window", "CPolygon", "Remove"};
+            auto base = co_await ctx.getPoint(
+                "Specify base point or [Displacement/Window/CPolygon/Remove]", std::move(bo));
+            if (base.status == Status::Keyword && base.keyword == "Displacement") {
+                auto d = co_await ctx.getPoint("Specify displacement");
+                if (!d.ok())
+                    co_return;
+                delta = d.point;
+                break;
+            }
+            if (base.status == Status::Keyword) {
+                // Another area to add, or one whose objects leave the selection.
+                const bool remove = base.keyword == "Remove";
+                bool polygon = base.keyword == "CPolygon";
+                Vec2 first{};
+                if (remove) {
+                    PointOptions ro;
+                    ro.keywords = {"CPolygon"};
+                    auto r = co_await ctx.getPoint(
+                        "Specify first corner of the window to remove objects or [CPolygon]",
+                        std::move(ro));
+                    if (r.status == Status::Keyword)
+                        polygon = true;
+                    else if (!r.ok())
+                        continue;
+                    first = r.point;
+                } else if (!polygon) {
+                    auto r = co_await ctx.getPoint("Specify first corner of the crossing window");
+                    if (!r.ok())
+                        continue;
+                    first = r.point;
+                }
+                StretchRegion region;
+                bool ok = false;
+                co_await readRegion(ctx, polygon, first, region, ok);
+                if (!ok)
+                    continue;
+                if (remove) {
+                    const std::vector<EntityId> found = stretchCandidates(ctx, region.window);
+                    const std::unordered_set<EntityId> drop(found.begin(), found.end());
+                    std::size_t gone = 0;
+                    std::erase_if(ids, [&](EntityId i) {
+                        const bool d = drop.count(i) != 0;
+                        if (d) {
+                            seen.erase(i);
+                            ++gone;
+                        }
+                        return d;
+                    });
+                    ctx.message(std::to_string(gone) + " removed.");
+                } else {
+                    addRegion(ctx, std::move(region), regions, ids, seen);
+                }
+                count();
+                ctx.message(std::to_string(moving.size()) + " found in the crossing windows.");
+                if (moving.empty()) {
+                    ctx.message("Nothing left to stretch.");
+                    co_return;
+                }
+                continue;
+            }
+            if (!base.ok())
+                co_return;
+            PointOptions o;
+            o.base = base.point;
+            o.preview = [&ctx, &moving, &stretchWith, b = base.point](Vec2 c, DisplayList& out) {
+                geom::DisplayContext dc;
+                dc.pixelSizeMm = ctx.host().view().scale > 0 ? ctx.host().view().scale : 1;
+                // A drawing-sized selection would rebuild every object on each mouse move; the
+                // preview shows the first few thousand.
+                constexpr std::size_t kPreviewMax = 4000;
+                const std::vector<EntityId> shown(
+                    moving.begin(), moving.begin() + static_cast<std::ptrdiff_t>(
+                                                         std::min(moving.size(), kPreviewMax)));
+                for (auto& [id, e] : stretchWith(shown, c - b, nullptr))
+                    geom::buildDisplay(ctx.doc(), e, dc, out);
+            };
+            auto to = co_await ctx.getPoint(
+                "Specify second point or <use first point as displacement>", std::move(o));
+            if (to.status == Status::None)
+                delta = base.point;
+            else if (to.ok())
+                delta = to.point - base.point;
+            else
+                co_return;
+            break;
+        }
         std::string err;
         std::size_t n = 0;
         for (auto& [id, e] : stretchWith(moving, delta, &err)) {
@@ -607,6 +682,56 @@ public:
         if (!err.empty())
             ctx.message("Some objects could not be stretched: " + err);
         ctx.message(std::to_string(n) + " object(s) stretched.");
+    }
+
+private:
+    // Reads a crossing window from its first corner, or a polygon (Enter closes it).
+    static Task readRegion(CommandContext& ctx, bool polygon, Vec2 first, StretchRegion& region,
+                           bool& ok) {
+        ok = false;
+        if (polygon) {
+            for (;;) {
+                PointOptions po;
+                if (!region.polygon.empty())
+                    po.base = region.polygon.back();
+                auto p = co_await ctx.getPoint(region.polygon.size() < 3
+                                                   ? "Specify next polygon point"
+                                                   : "Specify next polygon point <Enter to finish>",
+                                               std::move(po));
+                if (p.status == Status::None && region.polygon.size() >= 3)
+                    break;
+                if (!p.ok())
+                    co_return;
+                region.polygon.push_back(p.point);
+            }
+            for (Vec2 v : region.polygon)
+                region.window.expand(v);
+            ok = true;
+            co_return;
+        }
+        PointOptions co;
+        co.base = first;
+        co.preview = [first](Vec2 c, DisplayList& out) {  // the crossing window
+            DisplayPolyline pl;
+            pl.closed = true;
+            pl.pts = {first, {c.x, first.y}, c, {first.x, c.y}};
+            out.items.emplace_back(std::move(pl));
+        };
+        auto c2 = co_await ctx.getPoint("Specify opposite corner", std::move(co));
+        if (!c2.ok())
+            co_return;
+        region.window.expand(first);
+        region.window.expand(c2.point);
+        ok = true;
+    }
+
+    static void addRegion(CommandContext& ctx, StretchRegion region,
+                          std::vector<StretchRegion>& regions, std::vector<EntityId>& ids,
+                          std::unordered_set<EntityId>& seen) {
+        for (EntityId id : stretchCandidates(ctx, region.window))
+            if (seen.insert(id).second)
+                ids.push_back(id);
+        regions.push_back(std::move(region));
     }
 };
 

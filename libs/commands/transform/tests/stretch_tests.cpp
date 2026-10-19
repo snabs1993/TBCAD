@@ -146,15 +146,18 @@ TEST_CASE("STRETCH moves the fit points of a fit-only spline inside the window")
     CHECK(near(s.fit[2], {65, 20}));
 }
 
-TEST_CASE("performance: STRETCH of 100k lines in a crossing window is one undo step and its preview is light") {
+TEST_CASE(
+    "performance: STRETCH of 100k lines in a crossing window is one undo step and its preview is "
+    "light") {
     Fixture f;
     std::vector<EntityId> ids;
     {
         auto tx = f.doc.begin("setup");
         for (int i = 0; i < 100000; ++i)
-            ids.push_back(
-                tx.add(Entity{{}, LineData{{double(i % 500), double(i / 500)}, {double(i % 500) + 0.5, double(i / 500) + 0.5}}})
-                    .value());
+            ids.push_back(tx.add(Entity{{},
+                                        LineData{{double(i % 500), double(i / 500)},
+                                                 {double(i % 500) + 0.5, double(i / 500) + 0.5}}})
+                              .value());
         (void)tx.commit();
     }
     // The window holds the right-hand ends of the lines in columns 0..249, so half the lines move.
@@ -175,4 +178,31 @@ TEST_CASE("performance: STRETCH of 100k lines in a crossing window is one undo s
     CHECK(f.host.undo());
     CHECK(near(get<LineData>(f.doc, ids[0]).a, {0, 0}));
     CHECK_FALSE(f.host.undoStack().canUndo());
+}
+
+TEST_CASE("STRETCH collects more crossing areas and removes objects, AutoCAD style") {
+    Fixture f;
+    auto a = add(f.doc, LineData{{0, 0}, {100, 0}});
+    auto b = add(f.doc, LineData{{0, 50}, {100, 50}});
+    auto c = add(f.doc, LineData{{0, 80}, {100, 80}});
+    // the first window catches a's end, Window adds b's end, a CPolygon adds c's end
+    auto r = f.host.run("STRETCH", {"90,-5", "110,5", "W", "90,45", "110,55", "CP", "90,75",
+                                    "110,75", "110,85", ScriptItem::enter(), "0,0", "10,0"});
+    CHECK(r.finished);
+    CHECK(near(get<LineData>(f.doc, a).b, {110, 0}));
+    CHECK(near(get<LineData>(f.doc, b).b, {110, 50}));
+    CHECK(near(get<LineData>(f.doc, c).b, {110, 80}));
+    CHECK(near(get<LineData>(f.doc, a).a, {0, 0}));
+    CHECK(f.host.undo());
+    CHECK(near(get<LineData>(f.doc, b).b, {100, 50}));
+
+    // Remove takes b out again even though its end is in the window
+    f.host.run("STRETCH", {"90,-5", "110,55", "R", "-5,45", "5,55", "0,0", "10,0"});
+    CHECK(near(get<LineData>(f.doc, a).b, {110, 0}));
+    CHECK(near(get<LineData>(f.doc, b).b, {100, 50}));
+    CHECK(f.host.undo());
+
+    // Displacement at the base point prompt
+    f.host.run("STRETCH", {"90,-5", "110,5", "D", "0,7"});
+    CHECK(near(get<LineData>(f.doc, a).b, {100, 7}));
 }

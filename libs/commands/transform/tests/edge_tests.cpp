@@ -46,6 +46,28 @@ TEST_CASE("COPY Array makes the copies in one undo step, with spacing or Fit") {
     }
 }
 
+TEST_CASE("COPY mOde Single makes one copy, Undo takes back the last copy, one undo step") {
+    Fixture f;
+    auto a = add(f.doc, LineData{{0, 0}, {10, 0}});
+    f.host.setSelection({a});
+    const std::string before = canonicalDump(f.doc);
+    auto r = f.host.run("COPY", {"0,0", "0,5", "0,10", "0,15", "Undo", ScriptItem::enter()});
+    CHECK(r.finished);
+    CHECK(lines(f.doc) == 3);  // two copies stay
+    CHECK(f.host.undo());
+    CHECK(canonicalDump(f.doc) == before);  // the whole command is one step
+
+    f.host.setSelection({a});
+    r = f.host.run("COPY", {"mOde", "Single", "0,0", "0,5"});
+    CHECK(r.finished);  // ends after one copy
+    CHECK(lines(f.doc) == 2);
+    CHECK(f.host.setting("copy.mode") == std::optional<std::string>("single"));
+    f.host.setSelection({a});
+    f.host.run("COPY", {"O", "M", "0,0", "0,7", "0,9", ScriptItem::enter()});
+    CHECK(lines(f.doc) == 4);
+    CHECK(f.host.logContains("Copy mode = Single"));
+}
+
 TEST_CASE("COPY Array refuses a count below 2 and keeps the drawing") {
     Fixture f;
     auto a = add(f.doc, LineData{{0, 0}, {10, 0}});
