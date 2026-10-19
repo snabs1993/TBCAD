@@ -1527,4 +1527,35 @@ TEST_CASE("dimension text: \\X starts the line under the dimension line, radial 
     CHECK(near(dims[1]->textPos, Vec2{103, 1}));
 }
 
+TEST_CASE("dimension comparison: a block drawn at group 12 and a stale block") {
+    // The dimension measures 15 (0,0)-(15,0); its block was made elsewhere for 15000 and is
+    // drawn moved by group 12 back onto the dimension.
+    Pairs p;
+    p.section("BLOCKS");
+    p.g(0, "BLOCK").g(8, "0").g(2, "*D1").g(70, 1).g(10, 0.0).g(20, 0.0).g(3, "*D1");
+    p.g(0, "LINE").g(8, "0").g(10, 1000.0).g(20, 2005.0).g(11, 1015.0).g(21, 2005.0);
+    p.g(0, "MTEXT").g(8, "0").g(10, 1007.5).g(20, 2006.0).g(40, 1.5).g(71, 5).g(1, "15000");
+    p.g(0, "ENDBLK").g(8, "0");
+    p.end();
+    p.section("ENTITIES");
+    p.g(0, "DIMENSION").g(8, "0").g(2, "*D1").g(10, 15.0).g(20, 5.0).g(11, 7.5).g(21, 6.0);
+    p.g(12, -1000.0).g(22, -2000.0).g(70, 32).g(13, 0.0).g(23, 0.0).g(14, 15.0).g(24, 0.0);
+    p.g(50, 0.0);
+    p.end().g(0, "EOF");
+    ImportOptions compare;
+    compare.dimensionCompare = true;
+    Loaded l = load(p.text, compare);
+    const auto& all = l.result.summary.dimCompare;
+    REQUIRE(all.size() == 1);
+    const DimComparison& c = all[0];
+    CHECK(c.storedText == "15000");
+    CHECK(c.stale);
+    CHECK(c.detail.find("p12=(-1000,-2000)") != std::string::npos);
+    // Moved by group 12, the stored dimension line lies on TBCAD's.
+    CHECK(c.strayStored < 0.05);
+    const std::string json = l.result.summary.toJson(l.report);
+    CHECK(json.find("\"differ\":0") != std::string::npos);
+    CHECK(json.find("\"stale\":1") != std::string::npos);
+}
+
 }  // namespace tbcad::dxf

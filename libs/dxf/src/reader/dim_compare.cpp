@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 
 #include "importer.h"
 #include "tbcad/dim/dim.h"
@@ -44,8 +45,10 @@ void addPath(const std::vector<Vec2>& pts, bool closed, std::vector<Segment>& ou
         out.push_back({pts.back(), pts.front()});
 }
 
-// Share of the length of `from` that lies further than `tol` from every segment of `to`.
-double strayShare(const std::vector<Segment>& from, const std::vector<Segment>& to, double tol) {
+// Share of the length of `from` that lies further than `tol` from every segment of `to` and
+// outside every box of `covered`.
+double strayShare(const std::vector<Segment>& from, const std::vector<Segment>& to, double tol,
+                  const std::vector<BBox2>& covered = {}) {
     double total = 0, stray = 0;
     for (const Segment& s : from) {
         const double len = distance(s.a, s.b);
@@ -61,6 +64,9 @@ double strayShare(const std::vector<Segment>& from, const std::vector<Segment>& 
                     break;
             }
             total += len / (n + 1);
+            for (const BBox2& b : covered)
+                if (best > tol && b.inflated(tol).contains(p))
+                    best = 0;
             if (best > tol)
                 stray += len / (n + 1);
         }
@@ -175,6 +181,9 @@ void Importer::compareDimension(const Record& r, const Entity& dim) {
         return;
     std::vector<Entity> shapes, texts;
     dimensionBlockEntities(*def, shapes, texts);
+    // The block is drawn at the dimension's group 12 point (zero unless the dimension was
+    // copied or moved without its block being made again).
+    const Vec2 shift = r.has(12) ? P(r, 12, 22) : Vec2{};
 
     const double factor = annotationFactor(doc_->header(), dim.common, 0);
     const dim::Layout L = dim::layoutDimension(*doc_, *d, 0.01, factor);
@@ -209,9 +218,22 @@ void Importer::compareDimension(const Record& r, const Entity& dim) {
             if (!b.empty())
                 storedCenter = (b.min + b.max) * 0.5;
         }
+        if (storedCenter)
+            *storedCenter = *storedCenter + shift;
     }
     c.generatedText = plain(L.text.utf8);
     c.textMatch = c.storedText == c.generatedText;
+    // A block made for another measurement: no text of its own and both numbers, but different.
+    // AutoCAD makes such a block again whenever the dimension is edited, so TBCAD's is the one
+    // to trust; it is counted apart.
+    {
+        auto isNumber = [](const std::string& t) {
+            char* end = nullptr;
+            return !t.empty() && (std::strtod(t.c_str(), &end), end && *end == 0);
+        };
+        c.stale = d->textOverride.empty() && !c.textMatch && isNumber(c.storedText) &&
+                  isNumber(c.generatedText);
+    }
     const double unit = storedHeight > 0       ? storedHeight
                         : L.text.height > 0    ? L.text.height
                                                : std::max(style.arrowSize * style.overallScale, 1e-6);
@@ -234,7 +256,7 @@ void Importer::compareDimension(const Record& r, const Entity& dim) {
                 single.loops = {loop};
                 for (const std::vector<Vec2>& ring : hatch::loopRings(single, 0.01 * unit))
                     if (!ring.empty())
-                        storedArrows.push_back(centroid(ring));
+                        storedArrows.push_back(centroid(ring) + shift);
             }
             continue;
         }
@@ -244,6 +266,8 @@ void Importer::compareDimension(const Record& r, const Entity& dim) {
         for (const geom::CurveRef& cv : curves) {
             std::vector<Vec2> pts;
             geom::flatten(cv, 0.01 * unit, pts);
+            for (Vec2& q : pts)
+                q = q + shift;
             addPath(pts, false, stored);
         }
     }
@@ -256,7 +280,17 @@ void Importer::compareDimension(const Record& r, const Entity& dim) {
         addPath(a.ring, true, generated);
     const double tol = 0.1 * unit;
     c.strayStored = strayShare(stored, generated, tol);
-    c.strayGenerated = strayShare(generatedLines, stored, tol);
+    // AutoCAD's block leaves out the part of the dimension line an arrowhead covers; TBCAD draws
+    // the line to the tip. That part is not a difference.
+    std::vector<BBox2> arrowBoxes;
+    for (const dim::Layout::Arrow& a : L.arrows) {
+        BBox2 b;
+        for (const Vec2& q : a.ring)
+            b.expand(q);
+        if (!b.empty())
+            arrowBoxes.push_back(b);
+    }
+    c.strayGenerated = strayShare(generatedLines, stored, tol, arrowBoxes);
 
     // Arrowheads: each stored one should have one of the generator's within an arrow size.
     c.arrowsStored = static_cast<int>(storedArrows.size());
@@ -284,7 +318,9 @@ void Importer::compareDimension(const Record& r, const Entity& dim) {
                num(style.overallScale) + " annotation=" + num(factor) +
                " lfac=" + num(style.linearFactor) + " prefix=\"" + style.prefix +
                "\" suffix=\"" + style.suffix + "\" units=" + num(k_) +
-               " storedHeight=" + num(storedHeight) + " generatedHeight=" + num(L.text.height) +
+               " asz=" + num(style.arrowSize) + " gap=" + num(style.textGap) +
+               " fit=" + std::to_string(static_cast<int>(style.fit)) +
+               " textWidth=" + num(L.text.width) + " storedHeight=" + num(storedHeight) + " generatedHeight=" + num(L.text.height) +
                " measured=" + num(dim::measurement(*d)) + " defPts=" + pt(d->defPts[0]) +
                pt(d->defPts[1]) + pt(d->defPts[2]) + pt(d->defPts[3]) +
                " textPos=" + pt(d->textPos) + " storedText@" +

@@ -548,6 +548,15 @@ void Importer::appendDimensionGraphics(const Record& r, const Entity& /*dim*/,
 
     std::vector<Entity> shapes, texts;
     dimensionBlockEntities(*def, shapes, texts);
+    // The block is drawn at the dimension's group 12 point (zero unless the dimension was copied
+    // or moved without its block being made again).
+    if (const Vec2 shift = r.has(12) ? P(r, 12, 22) : Vec2{}; shift.x != 0 || shift.y != 0) {
+        const Transform2 move = Transform2::translate(shift);
+        for (std::vector<Entity>* list : {&shapes, &texts})
+            for (Entity& e : *list)
+                if (Result<Entity> m = geom::transformed(e, move); m.ok())
+                    e = std::move(m.value());
+    }
 
     ProxyData proxy;
     proxy.originalType = "DIMENSION";

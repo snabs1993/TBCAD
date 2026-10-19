@@ -61,7 +61,8 @@ DimFaults faultsOf(const DimComparison& c) {
 //  "samples":[the first differing dimensions of each kind of fault]}
 std::string dimCompareJson(const std::vector<DimComparison>& all) {
     struct Tally {
-        std::size_t count = 0, differ = 0, text = 0, offset = 0, height = 0, lines = 0, arrows = 0;
+        std::size_t count = 0, differ = 0, text = 0, offset = 0, height = 0, lines = 0, arrows = 0,
+                    stale = 0;
     };
     std::map<std::string, Tally> byKind;
     Tally total;
@@ -69,9 +70,11 @@ std::string dimCompareJson(const std::vector<DimComparison>& all) {
     std::size_t sampled = 0;
     std::map<std::string, int> perSignature;
     for (const DimComparison& c : all) {
-        const DimFaults f = faultsOf(c);
+        // A stale stored block is counted apart and not compared further (see DimComparison).
+        const DimFaults f = c.stale ? DimFaults{} : faultsOf(c);
         for (Tally* t : {&byKind[c.kind], &total}) {
             ++t->count;
+            t->stale += c.stale;
             t->differ += f.any();
             t->text += f.text;
             t->offset += f.offset;
@@ -115,7 +118,8 @@ std::string dimCompareJson(const std::vector<DimComparison>& all) {
         return "{\"count\":" + std::to_string(t.count) + ",\"differ\":" + std::to_string(t.differ) +
                ",\"text\":" + std::to_string(t.text) + ",\"offset\":" + std::to_string(t.offset) +
                ",\"height\":" + std::to_string(t.height) + ",\"lines\":" + std::to_string(t.lines) +
-               ",\"arrows\":" + std::to_string(t.arrows) + "}";
+               ",\"arrows\":" + std::to_string(t.arrows) +
+               ",\"stale\":" + std::to_string(t.stale) + "}";
     };
     std::string o = "{\"total\":" + tally(total) + ",\"byKind\":{";
     bool first = true;
