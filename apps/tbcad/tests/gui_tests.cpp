@@ -1850,7 +1850,17 @@ TEST_CASE("random clicks, keys and commands leave the program usable") {
     for (int step = 0; step < steps; ++step) {
         const float x = 40.0f + static_cast<float>(rnd(1360));
         const float y = (menus ? 2.0f : 70.0f) + static_cast<float>(rnd(menus ? 850 : 780));  // (not the menu bar: file dialogs)
-        switch (rnd(8)) {
+        switch (rnd(11)) {
+            case 8:
+                h.core().newDocument();
+                break;
+            case 9:
+                h.core().closeDocument(rnd(static_cast<std::uint32_t>(h.core().documentCount())));
+                break;
+            case 10:
+                h.core().activateDocument(rnd(static_cast<std::uint32_t>(h.core().documentCount())));
+                h.core().submitText(rnd(2) ? "LAYOUT New" : "LAYOUT Move");
+                break;
             case 0:
                 h.click(x, y);
                 break;
