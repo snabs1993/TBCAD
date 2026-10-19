@@ -145,13 +145,16 @@ edits through the same command line; it is listed under the panels menu.
 The preview follows the cursor while the location is chosen. All dimensions of one DIM run are one undo step.
 
 **MLEADER** (alias MLD) takes an arrowhead point and a landing point, then asks for the note straight away. Text
-typed at either point prompt is the note itself. The first prompt has the option **Content** (**Text**,
-**Block**, an existing block inserted at the landing point, or **None**; the multileader style's type is the
-default) and the landing prompt has **Add** for further arrowheads. It uses the current dimension style for arrow and text. The result is one
+typed at either point prompt is the note itself. As in AutoCAD the first prompt also offers **leader Landing first**
+(the landing point, then one or more arrowheads, Enter ends), **Content first** (the note or block name, where it goes,
+then the arrowheads) and **Options**: **Type** of content (**Text**, **Block**, an existing block inserted at the
+landing point, or **None**; the multileader style's type is the default), **Maxpoints** (how many points a leader line
+has, arrowhead and landing included: with more than two, each further pick is a bend and Enter makes the last bend the
+landing) and **Dogleg** (Yes / No). The landing prompt has **Add** for further arrowheads. It uses the current dimension style for arrow and text. The result is one
 multileader object (`MLeader`): all leader lines, the landing point where they meet, a dogleg of one arrow
 length to the note, and the note or block at its end. It moves, copies, scales, grips and erases as one
 object, and its lines, landing point and note each have a grip. **MLEADERALIGN** (MLA) lines up the landing
-ends of several multileaders (or plain leaders) in a column or a row with a reference one. **MLEADERCOLLECT** (MLC) merges several multileaders with a text note into the first one: every arrow stays, all lines end at its landing and the notes are joined one per line (block notes are left alone). Everything from
+ends of several multileaders (or plain leaders) in a column or a row with a reference one; **Spacing** sets the distance between them, **Distribute** spreads the landings evenly between two picked points and **Parallel** turns the last segment of every leader line parallel to the reference's, keeping its length. **MLEADERCOLLECT** (MLC) merges several multileaders with a text note into the first one: every arrow stays, all lines end at its landing and the notes are joined one per line (block notes are left alone). Everything from
 one MLEADER run is one undo step. To DXF a multileader is written as one LEADER per line, a line for the
 dogleg and the note as MTEXT (or a block as INSERT): other programs show it, but it is no longer one object
 there.
@@ -190,7 +193,7 @@ moves, scales and saves with it.
   others, then type the spacing or **Auto** (two text heights). A spacing of 0 lines them up with the base.
 
 **MLEADEREDIT** (MLE) adds leader lines to a multileader (**Add**: pick arrowhead points, Enter ends) or removes the
-one whose arrowhead is nearest to a pick (**Remove**); one leader line always stays.
+one whose arrowhead is nearest to a pick (**Remove**); one leader line always stays. **AIMLEADEREDITADD** and **AIMLEADEREDITREMOVE** are the same with the choice already made.
 
 ## What the commands accept
 

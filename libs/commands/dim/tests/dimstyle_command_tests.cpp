@@ -271,6 +271,43 @@ TEST_CASE("MLEADERALIGN Spacing lines leaders up at an even distance, the refere
     CHECK(f.host->undo());
 }
 
+TEST_CASE("MLEADERALIGN Distribute spreads the landings evenly between two points") {
+    Fixture f;
+    f.host->run("MLEADER", {"0,0", "10,10", "a"});
+    f.host->run("MLEADER", {"0,20", "30,22", "b"});
+    f.host->run("MLEADER", {"0,40", "50,47", "c"});
+    std::vector<EntityId> ids;
+    f.doc.forEachEntity([&](const Entity& e) { ids.push_back(e.common.id); });
+    REQUIRE(ids.size() == 3);
+    f.host->run("MLEADERALIGN", {ScriptItem::select(ids), ScriptItem::enter(),
+                                 ScriptItem::pick(ids[0], {5, 5}), "Distribute", "60,0", "60,40"});
+    for (int i = 0; i < 3; ++i) {
+        const auto* m = entityAs<MLeaderData>(*f.doc.find(ids[static_cast<std::size_t>(i)]));
+        CHECK(m->landing.x == doctest::Approx(60));
+        CHECK(m->landing.y == doctest::Approx(20.0 * i));
+        CHECK(m->lines[0].back().y == doctest::Approx(20.0 * i));
+    }
+    CHECK(f.host->undo());
+    CHECK(entityAs<MLeaderData>(*f.doc.find(ids[2]))->landing.x == doctest::Approx(50));
+}
+
+TEST_CASE("MLEADERALIGN Parallel turns each leader line parallel to the reference") {
+    Fixture f;
+    f.host->run("MLEADER", {"0,0", "10,10", "a"});   // 45 degrees
+    f.host->run("MLEADER", {"0,20", "30,20", "b"});  // flat, 30 long
+    std::vector<EntityId> ids;
+    f.doc.forEachEntity([&](const Entity& e) { ids.push_back(e.common.id); });
+    REQUIRE(ids.size() == 2);
+    f.host->run("MLEADERALIGN", {ScriptItem::select(ids), ScriptItem::enter(),
+                                 ScriptItem::pick(ids[0], {5, 5}), "Parallel"});
+    const auto* b = entityAs<MLeaderData>(*f.doc.find(ids[1]));
+    const Vec2 v = b->landing - b->lines[0].front();
+    CHECK(v.x == doctest::Approx(v.y));                   // now at 45 degrees
+    CHECK(length(v) == doctest::Approx(30));              // the same length
+    CHECK(b->lines[0].front().y == doctest::Approx(20));  // the arrow stays put
+    CHECK(b->contentPos.x > b->landing.x);
+}
+
 TEST_CASE("MLEADERCOLLECT merges notes into the first multileader") {
     Fixture f;
     f.host->run("MLEADER", {"0,0", "10,10", "a"});
@@ -333,6 +370,17 @@ TEST_CASE("MLEADEREDIT adds and removes leader lines") {
     CHECK(m->lines[0].front().y == doctest::Approx(0));
     f.host->run("MLEADEREDIT", {ScriptItem::pick(id, {5, 5}), "Remove"});
     CHECK(f.host->logContains("at least one"));
+}
+
+TEST_CASE("AIMLEADEREDITADD and AIMLEADEREDITREMOVE skip the Add/Remove question") {
+    Fixture f;
+    f.host->run("MLEADER", {"0,0", "10,10", "a"});
+    EntityId id{};
+    f.doc.forEachEntity([&](const Entity& e) { id = e.common.id; });
+    f.host->run("AIMLEADEREDITADD", {ScriptItem::pick(id, {5, 5}), "0,20", "0,30", ""});
+    CHECK(entityAs<MLeaderData>(*f.doc.find(id))->lines.size() == 3);
+    f.host->run("AIMLEADEREDITREMOVE", {ScriptItem::pick(id, {5, 5}), "0,29", ""});
+    CHECK(entityAs<MLeaderData>(*f.doc.find(id))->lines.size() == 2);
 }
 
 TEST_CASE("DIMSTYLE Compare lists the differences between two styles") {
