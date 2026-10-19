@@ -1,12 +1,15 @@
+#include <algorithm>
 #include <atomic>
 #include <cctype>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <tuple>
+#include <vector>
 
 #include "text_internal.h"
 
@@ -171,6 +174,37 @@ void setFontSearchPaths(std::vector<std::filesystem::path> dirs) {
     fontCache().clear();
 }
 
+#ifdef _WIN32
+namespace {
+// The Fonts folders of CAD programs under Program Files, newest version first (found once).
+const std::vector<std::filesystem::path>& installedCadFontDirs() {
+    static const std::vector<std::filesystem::path> dirs = [] {
+        namespace fs = std::filesystem;
+        std::vector<fs::path> out;
+        std::error_code ec;
+        for (const char* var : {"ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"}) {
+            const char* root = std::getenv(var);
+            if (!root)
+                continue;
+            const fs::path vendor = fs::path(root) / "Autodesk";
+            if (!fs::is_directory(vendor, ec))
+                continue;
+            std::vector<fs::path> found;
+            for (const auto& entry : fs::directory_iterator(vendor, ec))
+                if (entry.is_directory(ec) && fs::is_directory(entry.path() / "Fonts", ec))
+                    found.push_back(entry.path() / "Fonts");
+            std::sort(found.begin(), found.end(), std::greater<>());
+            for (fs::path& f : found)
+                if (std::find(out.begin(), out.end(), f) == out.end())
+                    out.push_back(std::move(f));
+        }
+        return out;
+    }();
+    return dirs;
+}
+}  // namespace
+#endif
+
 std::filesystem::path locateFontFile(const std::string& name) {
     namespace fs = std::filesystem;
     if (name.empty())
@@ -212,6 +246,10 @@ std::filesystem::path locateFontFile(const std::string& name) {
     // Fonts installed for the current user only.
     if (const char* local = std::getenv("LOCALAPPDATA"))
         dirs.emplace_back(fs::path(local) / "Microsoft" / "Windows" / "Fonts");
+    // SHX fonts that come with another CAD program on this computer (romans.shx and the like):
+    // the real font draws text exactly as in that program's plots.
+    for (const fs::path& d : installedCadFontDirs())
+        dirs.push_back(d);
 #else
     dirs.emplace_back("/usr/share/fonts");
     dirs.emplace_back("/usr/local/share/fonts");
