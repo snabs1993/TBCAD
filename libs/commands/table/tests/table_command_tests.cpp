@@ -144,7 +144,7 @@ TEST_CASE("TABLEEXPORT writes a CSV that TABLEIMPORT turns back into the same ta
     fs::remove_all(dir);
 }
 
-TEST_CASE("TABLESTYLE defines styles; TABLE starts from the current one") {
+TEST_CASE("TABLESTYLE defines styles, TABLE starts from the current one") {
     Fx f;
     f.host->run("TABLESTYLE", {"New", "Big", "50", "12", "4", "2", ""});
     auto s = table::findTableStyle(f.doc.header(), "big");
@@ -181,7 +181,7 @@ TEST_CASE("TABLESTYLE defines styles; TABLE starts from the current one") {
     CHECK(f.host->undo());
 }
 
-TEST_CASE("TABLEEDIT aligns a cell or a column; editing the text keeps the alignment") {
+TEST_CASE("TABLEEDIT aligns a cell or a column, editing the text keeps the alignment") {
     Fx f;
     f.host->run("TABLE", {"2", "2", "40", "10", ScriptItem::enter(), "0,0"});
     const EntityId id = f.tableId();

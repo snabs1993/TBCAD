@@ -187,7 +187,7 @@ TEST_CASE("DWGUNITS is UNITS, and FLATTEN says the drawing is flat") {
     CHECK(f.doc.find(b)->common.level == upper);
 }
 
-TEST_CASE("HYPERLINK sets, lists, opens and removes a link; the link is saved in the drawing") {
+TEST_CASE("HYPERLINK sets, lists, opens and removes a link, the link is saved in the drawing") {
     Fixture f;
     EntityId line;
     {
@@ -209,7 +209,7 @@ TEST_CASE("HYPERLINK sets, lists, opens and removes a link; the link is saved in
     CHECK(f.doc.header().custom.count("tbcad.link." + std::to_string(line.value)) == 1);
 }
 
-TEST_CASE("SPACETRANS converts between paper and model lengths; DELAY checks its range") {
+TEST_CASE("SPACETRANS converts between paper and model lengths, DELAY checks its range") {
     Fixture f;
     f.host.run("SPACETRANS", {"Paper", "2.5", "50"});
     CHECK(f.host.logContains("125 in model units"));
@@ -353,7 +353,7 @@ TEST_CASE("FILL and ATTDISP set the display modes in the header, with undo") {
     CHECK(fillMode(f.doc.header()));
 }
 
-TEST_CASE("QTEXT sets quick text in the header; CONVERTPOLY only reports") {
+TEST_CASE("QTEXT sets quick text in the header, CONVERTPOLY only reports") {
     Fixture f;
     CHECK_FALSE(quickText(f.doc.header()));
     f.host.run("QTEXT", {"ON"});

@@ -246,7 +246,7 @@ TEST_CASE(
     f.edit([&](Transaction& tx) { CHECK_FALSE(deleteLayerGroup(f.doc, tx, "plan").ok()); });
 }
 
-TEST_CASE("a saved filter can use another saved filter and groups; circles are refused") {
+TEST_CASE("a saved filter can use another saved filter and groups, circles are refused") {
     Fixture f;
     f.build();
     f.edit([&](Transaction& tx) {

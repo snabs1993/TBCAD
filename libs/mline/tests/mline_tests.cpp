@@ -210,7 +210,7 @@ TEST_CASE("a cut stays on its segment when repeated points are dropped") {
     CHECK(s.lines[1].front().x == doctest::Approx(17.5));
 }
 
-TEST_CASE("arc caps close an end with half circles; inner arcs join the lines in pairs") {
+TEST_CASE("arc caps close an end with half circles, inner arcs join the lines in pairs") {
     MlineData d;
     d.v = {{0, 0}, {10, 0}};
     Style outer;

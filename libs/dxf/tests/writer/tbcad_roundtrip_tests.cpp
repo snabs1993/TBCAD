@@ -328,7 +328,7 @@ TEST_CASE("objects of other programs hang on under their dictionary with fresh h
 
 namespace tbcad::dxf {
 
-TEST_CASE("entities keep the handles they had; new ones get handles that clash with none") {
+TEST_CASE("entities keep the handles they had, new ones get handles that clash with none") {
     const std::string src =
         "  0\nSECTION\n  2\nENTITIES\n"
         "  0\nLINE\n  5\n2B\n  8\n0\n 10\n0\n 20\n0\n 11\n5\n 21\n5\n"

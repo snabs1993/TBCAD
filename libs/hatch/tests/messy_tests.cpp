@@ -107,7 +107,7 @@ TEST_CASE("a circle drawn as two arcs and a rectangle with arcs for corners") {
     }
 }
 
-TEST_CASE("a closed spline inside a frame is an island; picking inside it fills it") {
+TEST_CASE("a closed spline inside a frame is an island, picking inside it fills it") {
     for (Vec2 o : kOrigins) {
         Scene s;
         s.rectLines(at(o, 0, 0), at(o, 200, 200));

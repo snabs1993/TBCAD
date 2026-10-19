@@ -80,7 +80,9 @@ TEST_CASE("index colours 10 to 255 are AutoCAD's table") {
 
 TEST_CASE("Entity stays small and kinds match the variant order") {
     // 104: PolylineData carries a second flag after its width (PEDIT Ltype gen).
+#ifndef _GLIBCXX_DEBUG  // checked containers are larger
     static_assert(sizeof(Entity) <= 104);
+#endif
     Entity e;
     CHECK(kind(e) == EntityKind::Line);
     e.data = CircleData{};

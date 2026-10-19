@@ -327,7 +327,7 @@ Ref vtx(EntityId e, std::uint32_t i) {
 
 }  // namespace
 
-TEST_CASE("polyline segments take part in constraints; bulges and other vertices stay") {
+TEST_CASE("polyline segments take part in constraints, bulges and other vertices stay") {
     Fixture f;
     const EntityId pl = polyline(f.doc, {{0, 0}, {10, 1}, {12, 8}, {20, 9}});
     const EntityId ln = f.line({0, 20}, {10, 20});

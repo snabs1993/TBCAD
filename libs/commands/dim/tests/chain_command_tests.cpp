@@ -326,7 +326,7 @@ TEST_CASE("DIMJOGLINE puts a Z-shaped jog in the dimension line and Remove takes
     CHECK(entityAs<DimensionData>(t.value())->jogs[0].x == doctest::Approx(25));
 }
 
-TEST_CASE("an associative dimension follows its line; a dimension moved alone loses the link") {
+TEST_CASE("an associative dimension follows its line, a dimension moved alone loses the link") {
     Chain f;
     EntityId line;
     {
@@ -408,7 +408,7 @@ TEST_CASE("DIMDISASSOC cuts the links of a dimension") {
     CHECK(f.dims()[0]->assoc[0].kind == DimAssoc::Kind::Vertex);
 }
 
-TEST_CASE("moving the measured line moves the dimension line with it; stretching does not") {
+TEST_CASE("moving the measured line moves the dimension line with it, stretching does not") {
     Chain f;
     EntityId line;
     {

@@ -71,7 +71,7 @@ TEST_CASE("\\Q slants the glyphs without moving the pen") {
     CHECK(slant.box.max.x > base.box.max.x);
 }
 
-TEST_CASE("\\A puts small text at the bottom, middle or top of the line; \\K strikes through") {
+TEST_CASE("\\A puts small text at the bottom, middle or top of the line, \\K strikes through") {
     // The tall letter first, the small one lifted inside the same line:
     TextLayout mid = lay("{\\H10;H}{\\H4;\\A1;x}");
     TextLayout top = lay("{\\H10;H}{\\H4;\\A2;x}");

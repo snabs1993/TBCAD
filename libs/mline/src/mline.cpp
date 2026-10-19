@@ -306,7 +306,7 @@ Strokes strokes(const MlineData& d, const Style& style) {
             // outer: the outermost pair; inner: the pairs inside it, outermost first
             for (std::size_t lo = kind == 1 ? 0 : 1; lo < count - 1 - lo; ++lo) {
                 const std::size_t hi = count - 1 - lo;
-                const Vec2 a = ends[lo].second, b = ends[hi].second;
+                const Vec2 a = ends[hi].second, b = ends[lo].second;  // drawn from the high offset
                 const Vec2 mid = (a + b) * 0.5;
                 const Vec2 half = (b - a) * 0.5;
                 std::vector<Vec2> arc;

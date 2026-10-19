@@ -599,7 +599,7 @@ TEST_CASE("MATCHPROP copies layer, colour and text height") {
     CHECK(f.get(b).common.linetypeScale == doctest::Approx(3));
 }
 
-TEST_CASE("MATCHPROP copies hatch pattern and transparency; Settings can switch a group off") {
+TEST_CASE("MATCHPROP copies hatch pattern and transparency, Settings can switch a group off") {
     Fixture f;
     HatchData ha;
     ha.solid = false;

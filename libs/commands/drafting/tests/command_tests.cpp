@@ -167,7 +167,7 @@ TEST_CASE("UCS Object aligns to a line and DYNUCS toggles") {
     CHECK(f.get("drafting.dynucs") == "0");
 }
 
-TEST_CASE("ISODRAFT and ISOPLANE set the isometric plane; Enter goes round Left, Top, Right") {
+TEST_CASE("ISODRAFT and ISOPLANE set the isometric plane, Enter goes round Left, Top, Right") {
     Fixture f;
     CHECK(f.reg.find("ISOPLANE") != nullptr);
     f.host.run("ISODRAFT", {"ON"});
