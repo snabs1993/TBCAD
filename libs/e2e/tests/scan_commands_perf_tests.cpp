@@ -329,6 +329,11 @@ TEST_CASE("perf: commands that scan the whole drawing stay fast on 392k objects"
         {"PROP-delete", {"-PROP", "Only", "Line", "Delete"}},
         {"JOIN", {"JOIN"}, 8000},
         {"PEDIT-join", {"PEDIT", "Multiple", "Yes", "Join", "0.001", ""}, 8000},
+        {"OVERKILL", {"OVERKILL", "ALL", "", ""}, 8000},
+        {"REVERSE", {"REVERSE", "ALL", ""}},
+        {"SETBYLAYER", {"SETBYLAYER", "ALL", "", "Yes", "Yes"}},
+        {"ISOLATE", {"ISOLATE", "ALL", ""}},
+        {"SELECTALL", {"SELECTALL"}},
         {"FIND-nomatch", {"FIND", "zzzqq", "yy", "Yes"}},
     };
     Site s;
@@ -415,6 +420,10 @@ TEST_CASE("perf: single-object edits on a drawing of 392k objects stay interacti
         {"MOVE-one", {"MOVE", "@click10,5", "", "0,0", "50,50"}},
         {"COPY-one", {"COPY", "@click10,5", "", "0,0", "50,50", ""}},
         {"ROTATE-one", {"ROTATE", "@click10,5", "", "0,0", "30"}},
+        {"SCALE-one", {"SCALE", "@click10,5", "", "0,0", "2"}},
+        {"MIRROR-one", {"MIRROR", "@click10,5", "", "0,0", "10,0", "N"}},
+        {"STRETCH-one", {"STRETCH", "5,3", "12,8", "0,0", "5,0"}},
+        {"ARRAY-one", {"ARRAYRECT", "@click10,5", "", ""}},
         {"OFFSET-one", {"OFFSET", "3", "@click10,5", "@click12,2", ""}},
         {"TRIM-one", {"TRIM", "", "@click10,5", ""}},
         {"BREAK-one", {"BREAK", "@click10,5", "@click14,7"}},
@@ -428,7 +437,7 @@ TEST_CASE("perf: single-object edits on a drawing of 392k objects stay interacti
                     s.core->history().empty() ? "" : s.core->history().back().c_str());
 #ifdef NDEBUG
         INFO(c.label);
-        CHECK(t.runMs < 500);
+        CHECK(t.runMs < 100);  // a pick costs what it costs on a small drawing (about 20 ms)
 #endif
     }
 }
@@ -493,6 +502,10 @@ TEST_CASE("perf: edits of one polyline of 100k vertices stay quick") {
         {"ROTATE-contour", {"ROTATE", "@click0,-300000", "", "0,-300000", "30"}, 3000},
         {"MIRROR-contour", {"MIRROR", "@click0,-300000", "", "0,-300000", "100,-300000", "No"}, 3000},
         {"COPY-contour", {"COPY", "@click0,-300000", "", "0,0", "5,5"}, 3000},
+        {"DIVIDE-contour", {"DIVIDE", "@click0,-300000", "30000"}, 3000},
+        {"MEASURE-contour", {"MEASURE", "@click0,-300000", "40"}, 3000},
+        {"PEDIT-width-contour", {"PEDIT", "@click0,-300000", "Width", "3", ""}, 3000},
+        {"PEDIT-fit-contour", {"PEDIT", "@click0,-300000", "Ltype", "ON", ""}, 3000},
         {"LIST-contour", {"LIST", "@click0,-300000", ""}},
         {"MOVE-contour", {"MOVE", "@click0,-300000", "", "0,0", "5,5"}},
     };

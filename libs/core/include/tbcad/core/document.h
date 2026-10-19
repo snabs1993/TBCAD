@@ -339,6 +339,9 @@ public:
     }
     // Model-space entity ids in draw order (back to front).
     std::vector<EntityId> modelSpace() const;
+    // The model-space entities among `ids`, once each, in the same draw order as modelSpace(),
+    // without walking the other entities of the drawing.
+    std::vector<EntityId> inDrawOrder(std::span<const EntityId> ids) const;
     std::size_t modelSpaceCount() const { return store_.size() - owner_.size(); }
     // The draw-order override of an entity (bring to front / send to back), if it has one.
     std::optional<std::int64_t> drawOrderOverride(EntityId id) const {

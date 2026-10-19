@@ -562,7 +562,14 @@ void SceneSync::onChanged(const ChangeSet& cs) {
         SceneSync& s;
         ~Relevel() { s.relevelMasks(); }
     } relevel{*this};
-    bool blockTouched = !cs.blocks.empty();
+    bool blockTouched = false;  // every insert is drawn again (a style or a level changed)
+    // Blocks whose definition changed: only the inserts that show them (directly or through
+    // another block) are drawn again. A block that is new has no insert yet that shows it.
+    std::unordered_set<BlockId> changedBlocks;
+    for (const auto& c : cs.blocks) {
+        if (c.before)
+            changedBlocks.insert(c.before->id);
+    }
     std::vector<EntityId> removed;
     for (const EntityChange& c : cs.entities)
         if (!cs.after(c))
@@ -579,8 +586,8 @@ void SceneSync::onChanged(const ChangeSet& cs) {
         const Entity* after = cs.after(c);
         if (!after)
             continue;
-        if (doc_.ownerBlock(after->common.id)) {
-            blockTouched = true;
+        if (const BlockId owner = doc_.ownerBlock(after->common.id)) {
+            changedBlocks.insert(owner);
             continue;
         }
         const Entity* live = doc_.find(after->common.id);
@@ -685,12 +692,32 @@ void SceneSync::onChanged(const ChangeSet& cs) {
             upsertMany(styled);
         blockTouched = true;  // inserts show blocks that hold such objects
     }
-    if (blockTouched) {
+    if (blockTouched || !changedBlocks.empty()) {
         // Inserts show the contents of their block: redraw them.
         flushPending();
+        if (!blockTouched) {
+            // Blocks that hold an insert of a changed block change too, all the way up.
+            std::unordered_multimap<BlockId, BlockId> parents;  // shown block -> block that holds it
+            for (const auto& [bid, def] : doc_.blocks())
+                for (EntityId member : def.entities)
+                    if (const Entity* m = doc_.find(member))
+                        if (const auto* in = entityAs<InsertData>(*m))
+                            parents.emplace(in->block, bid);
+            std::vector<BlockId> open(changedBlocks.begin(), changedBlocks.end());
+            while (!open.empty()) {
+                const BlockId b = open.back();
+                open.pop_back();
+                auto range = parents.equal_range(b);
+                for (auto it = range.first; it != range.second; ++it)
+                    if (changedBlocks.insert(it->second).second)
+                        open.push_back(it->second);
+            }
+        }
         std::vector<const Entity*> inserts;
         doc_.forEachEntity([&](const Entity& e) {
-            if (kind(e) == EntityKind::Insert)
+            if (const auto* in = entityAs<InsertData>(e);
+                in && !doc_.ownerBlock(e.common.id) &&
+                (blockTouched || changedBlocks.count(in->block)))
                 inserts.push_back(&e);
         });
         upsertMany(inserts);

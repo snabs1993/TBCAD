@@ -13,7 +13,7 @@ struct Scene::Cursor {
     std::uint32_t drawOrder = 0;
     std::uint32_t level = 0;      // for strokes, fills and points
     std::uint32_t maskLevel = 0;  // for the entity's mask fills
-    double builtZoom = 0;
+    float builtZoom = 0;
     // Last (tile, batch) used, to skip hash lookups for consecutive segments.
     TileKey tileKey{};
     BatchKey batchKey{};

@@ -974,6 +974,25 @@ std::vector<EntityId> Document::modelSpace() const {
     return out;
 }
 
+std::vector<EntityId> Document::inDrawOrder(std::span<const EntityId> ids) const {
+    std::vector<std::pair<std::int64_t, EntityId>> keyed;
+    keyed.reserve(ids.size());
+    for (EntityId id : ids) {
+        if (!id || id.value >= posOf_.size() || posOf_[id.value] == 0xFFFFFFFFu)
+            continue;
+        if (!owner_.empty() && owner_.find(id) != owner_.end())
+            continue;
+        keyed.emplace_back(orderOverride_.empty() ? 0 : orderKey(id), id);
+    }
+    std::sort(keyed.begin(), keyed.end());  // (key, id): what the stable sort over ascending ids does
+    keyed.erase(std::unique(keyed.begin(), keyed.end()), keyed.end());
+    std::vector<EntityId> out;
+    out.reserve(keyed.size());
+    for (const auto& k : keyed)
+        out.push_back(k.second);
+    return out;
+}
+
 void Document::setBlockRow(const BlockDef* oldRow, const BlockDef* newRow) {
     if (oldRow) {
         for (EntityId id : oldRow->entities)

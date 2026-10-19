@@ -736,7 +736,7 @@ OverkillResult overkill(const std::vector<const Entity*>& entities, const Overki
             if (const auto* l = entityAs<LineData>(*entities[i]); l && !samePoint(l->a, l->b))
                 lines.push_back({i, l->a, l->b});
         }
-        std::vector<bool> used(lines.size(), false);
+        std::vector<bool> used(lines.size(), false), started(lines.size(), false);
         auto canonical = [](const L& l) {
             Vec2 d = l.b - l.a;
             return (d.x < 0 || (d.x == 0 && d.y < 0)) ? d * -1.0 : d;
@@ -782,7 +782,7 @@ OverkillResult overkill(const std::vector<const Entity*>& entities, const Overki
         }
         for (std::size_t ai = 0; ai < idxs.size(); ++ai) {
             std::size_t a = idxs[ai];
-            if (used[a])
+            if (used[a] || started[a])
                 continue;
             Vec2 d = canonical(lines[a]);
             double dl = length(d);
@@ -807,6 +807,10 @@ OverkillResult overkill(const std::vector<const Entity*>& entities, const Overki
                 consider(cl[q]);
             if (group.size() < 2)
                 continue;
+            // Every line of the group meets the same neighbours: none of them starts a group of
+            // its own (a row of survey lines would otherwise be walked once per line).
+            for (std::size_t k : group)
+                started[k] = true;
             struct Iv {
                 double lo, hi;
                 std::size_t k;
@@ -856,12 +860,33 @@ OverkillResult overkill(const std::vector<const Entity*>& entities, const Overki
                 arcs.push_back(i);
         }
         std::vector<bool> done(arcs.size(), false);
+        // Arcs with centres in neighbouring cells are the only ones that can share a circle.
+        const double cell = o.tolerance * 4 + 1e-9;
+        auto centreCell = [&](double v) { return static_cast<long long>(std::floor(v / cell)); };
+        std::map<std::pair<long long, long long>, std::vector<std::size_t>> byCentre;
+        for (std::size_t ai = 0; ai < arcs.size(); ++ai) {
+            const auto& a = *entityAs<ArcData>(*entities[arcs[ai]]);
+            byCentre[{centreCell(a.center.x), centreCell(a.center.y)}].push_back(ai);
+        }
         for (std::size_t ai = 0; ai < arcs.size(); ++ai) {
             if (done[ai])
                 continue;
             const auto& a = *entityAs<ArcData>(*entities[arcs[ai]]);
             std::vector<std::size_t> cluster{ai};
-            for (std::size_t bi = ai + 1; bi < arcs.size(); ++bi) {
+            std::vector<std::size_t> near;
+            for (long long dx = -1; dx <= 1; ++dx) {
+                for (long long dy = -1; dy <= 1; ++dy) {
+                    auto it = byCentre.find(
+                        {centreCell(a.center.x) + dx, centreCell(a.center.y) + dy});
+                    if (it == byCentre.end())
+                        continue;
+                    for (std::size_t bi : it->second)
+                        if (bi > ai)
+                            near.push_back(bi);
+                }
+            }
+            std::sort(near.begin(), near.end());
+            for (std::size_t bi : near) {
                 const auto& b = *entityAs<ArcData>(*entities[arcs[bi]]);
                 if (done[bi] || !samePoint(a.center, b.center, o.tolerance) ||
                     std::abs(a.radius - b.radius) > o.tolerance)
