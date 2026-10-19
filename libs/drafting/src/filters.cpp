@@ -250,8 +250,11 @@ std::optional<Vec2> PolarOrthoFilter::filter(const cmd::PointQuery& query, Vec2 
     const Vec2 base = *query.base;
     double d = c->d;
     const double angleDeg = c->shownDeg ? *c->shownDeg : c->angleDeg;
-    if (s.snap && s.snapSpacing > 0) {
-        const double snapped = roundTo(d, s.snapSpacing);
+    // Snap steps along the tracking line: the polar distance for polar snap, else the snap X
+    // spacing.
+    const double step = s.polarSnap && s.polarDistance > 0 ? s.polarDistance : s.snapSpacing;
+    if (s.snap && step > 0) {
+        const double snapped = roundTo(d, step);
         if (snapped > 0)
             d = snapped;
     }
@@ -277,22 +280,25 @@ std::optional<Vec2> GridSnapFilter::filter(const cmd::PointQuery&, Vec2 raw, cmd
     if (!env_ || !env_->host)
         return std::nullopt;
     const DraftingSettings s = DraftingSettings::read(*env_->host);
-    if (!s.snap || !(s.snapSpacing > 0))
+    // Polar snap only acts along polar / ortho tracking (PolarOrthoFilter); the free cursor
+    // does not jump to a lattice.
+    if (!s.snap || s.polarSnap || !(s.snapSpacing > 0) || !(s.snapSpacingY > 0))
         return std::nullopt;
     const Ucs ucs = env_->effectiveUcs();
-    const Vec2 u = ucs.fromWorld(raw);
+    const Vec2 u = ucs.fromWorld(raw) - s.snapBase;
     if (s.isoPlane != IsoPlane::Off) {
         // The lattice of the plane: steps of the spacing along both of its axes.
         const auto [a1, a2] = isoAxesDeg(s.isoPlane);
         const Vec2 b1{std::cos(a1 * kPi / 180.0), std::sin(a1 * kPi / 180.0)};
         const Vec2 b2{std::cos(a2 * kPi / 180.0), std::sin(a2 * kPi / 180.0)};
         const double det = b1.x * b2.y - b1.y * b2.x;
-        const double i = (u.x * b2.y - u.y * b2.x) / det / s.snapSpacing;
-        const double j = (b1.x * u.y - b1.y * u.x) / det / s.snapSpacing;
+        const double i = (u.x * b2.y - u.y * b2.x) / det / s.snapSpacingY;
+        const double j = (b1.x * u.y - b1.y * u.x) / det / s.snapSpacingY;
         const double ri = std::round(i), rj = std::round(j);
-        return ucs.toWorld((b1 * ri + b2 * rj) * s.snapSpacing);
+        return ucs.toWorld((b1 * ri + b2 * rj) * s.snapSpacingY + s.snapBase);
     }
-    return ucs.toWorld({roundTo(u.x, s.snapSpacing), roundTo(u.y, s.snapSpacing)});
+    return ucs.toWorld(Vec2{roundTo(u.x, s.snapSpacing), roundTo(u.y, s.snapSpacingY)} +
+                       s.snapBase);
 }
 
 }  // namespace tbcad::drafting

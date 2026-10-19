@@ -252,7 +252,24 @@ DraftingSettings DraftingSettings::read(const cmd::IHost& host) {
         }
     s.aperturePx = numOf(keys::osnapAperture, 10, 0);
     s.snapSpacing = numOf(keys::snapSpacing, 10, 0);
+    s.snapSpacingY = numOf(keys::snapSpacingY, s.snapSpacing, 0);
+    if (auto b = get(keys::snapBase)) {
+        const auto parts = words(*b);
+        double x = 0, y = 0;
+        if (parts.size() == 2 && toDouble(parts[0], x) && toDouble(parts[1], y) &&
+            std::isfinite(x) && std::isfinite(y))
+            s.snapBase = {x, y};
+    }
+    if (auto t = get(keys::snapType))
+        s.polarSnap = lower(*t) == "polar";
+    s.polarDistance = numOf(keys::polarDistance, 0, 0);
     s.gridSpacing = numOf(keys::gridSpacing, 10, 0);
+    // A grid spacing of 0 follows the snap spacing, like AutoCAD's GRIDUNIT 0,0.
+    if (auto g = get(keys::gridSpacing)) {
+        double d = -1;
+        if (toDouble(*g, d) && d == 0)
+            s.gridSpacing = s.snapSpacing;
+    }
     if (auto st = get(keys::gridStyle))
         s.gridLines = lower(*st) == "lines";
     if (auto p = get(keys::polarIncrement)) {

@@ -163,14 +163,15 @@ protected:
     cmd::Task option(cmd::CommandContext& ctx, const std::string& kw) override {
         if (kw == "Spacing") {
             cmd::RealOptions ro;
-            ro.min = 1e-6;
+            ro.min = 0;
             ro.defaultValue = drafting::DraftingSettings::read(ctx.host()).gridSpacing;
-            auto s = co_await ctx.getReal("Grid spacing", ro);
+            auto s = co_await ctx.getReal("Grid spacing (0 follows the snap spacing)", ro);
             if (!s.ok())
                 co_return;
             ctx.host().setSetting(drafting::keys::gridSpacing, number(s.value));
             setOn(ctx, grid, true);
-            ctx.message("Grid spacing: " + number(s.value));
+            ctx.message(s.value > 0 ? "Grid spacing: " + number(s.value)
+                                    : std::string("Grid spacing follows the snap spacing"));
         } else if (kw == "Style") {
             cmd::KeywordOptions ko;
             ko.keywords = {"Dots", "Lines"};
@@ -190,8 +191,70 @@ public:
     SnapCommand() : SwitchCommand("SNAP", "Snap", snap, "Grid snap on/off and spacing") {}
 
 protected:
-    std::vector<std::string> options() const override { return {"Spacing"}; }
-    cmd::Task option(cmd::CommandContext& ctx, const std::string&) override {
+    std::vector<std::string> options() const override {
+        return {"Spacing", "Aspect", "Base", "Type"};
+    }
+    cmd::Task option(cmd::CommandContext& ctx, const std::string& opt) override {
+        const auto cur = drafting::DraftingSettings::read(ctx.host());
+        if (opt == "Aspect") {
+            // Different X and Y spacing.
+            cmd::RealOptions rx;
+            rx.min = 1e-6;
+            rx.defaultValue = cur.snapSpacing;
+            auto x = co_await ctx.getReal("Horizontal spacing", rx);
+            if (!x.ok())
+                co_return;
+            cmd::RealOptions ry;
+            ry.min = 1e-6;
+            ry.defaultValue = cur.snapSpacingY;
+            auto y = co_await ctx.getReal("Vertical spacing", ry);
+            if (!y.ok())
+                co_return;
+            ctx.host().setSetting(drafting::keys::snapSpacing, number(x.value));
+            ctx.host().setSetting(drafting::keys::snapSpacingY, number(y.value));
+            setOn(ctx, snap, true);
+            ctx.message("Snap spacing: X " + number(x.value) + ", Y " + number(y.value));
+            co_return;
+        }
+        if (opt == "Base") {
+            // The lattice passes through this point (AutoCAD's SNAPBASE), in the current UCS.
+            cmd::PointOptions po;
+            auto b = co_await ctx.getPoint(
+                "Snap base point <" + number(cur.snapBase.x) + "," + number(cur.snapBase.y) + ">",
+                po);
+            if (!b.ok())
+                co_return;
+            const auto ucs = drafting::currentUcs(&ctx.doc(), &ctx.host());
+            const Vec2 u = ucs.fromWorld(b.point);
+            ctx.host().setSetting(drafting::keys::snapBase, number(u.x) + "," + number(u.y));
+            ctx.message("Snap base: " + number(u.x) + "," + number(u.y));
+            co_return;
+        }
+        if (opt == "Type") {
+            cmd::KeywordOptions ko;
+            ko.keywords = {"Polar", "Grid"};
+            ko.defaultKeyword = cur.polarSnap ? "Polar" : "Grid";
+            auto k = co_await ctx.getKeyword("Snap type [Polar/Grid]", std::move(ko));
+            if (!k.ok())
+                co_return;
+            if (k.keyword == "Grid") {
+                ctx.host().setSetting(drafting::keys::snapType, "grid");
+                ctx.message("Snap type: grid");
+                co_return;
+            }
+            // Polar snap: steps of this distance along polar and object snap tracking.
+            cmd::RealOptions rd;
+            rd.min = 0;
+            rd.defaultValue = cur.polarDistance;
+            auto d = co_await ctx.getReal("Polar distance (0 uses the snap spacing)", rd);
+            if (!d.ok())
+                co_return;
+            ctx.host().setSetting(drafting::keys::snapType, "polar");
+            ctx.host().setSetting(drafting::keys::polarDistance, number(d.value));
+            ctx.message("Snap type: polar, distance " +
+                        (d.value > 0 ? number(d.value) : std::string("= snap spacing")));
+            co_return;
+        }
         cmd::RealOptions ro;
         ro.min = 1e-6;
         ro.defaultValue = drafting::DraftingSettings::read(ctx.host()).snapSpacing;
@@ -199,6 +262,7 @@ protected:
         if (!s.ok())
             co_return;
         ctx.host().setSetting(drafting::keys::snapSpacing, number(s.value));
+        ctx.host().setSetting(drafting::keys::snapSpacingY, number(s.value));
         setOn(ctx, snap, true);
         ctx.message("Snap spacing: " + number(s.value));
     }

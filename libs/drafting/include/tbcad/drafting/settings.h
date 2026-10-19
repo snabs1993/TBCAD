@@ -77,7 +77,11 @@ inline constexpr const char* dynInput = "drafting.dynInput";             // bool
 inline constexpr const char* osnapModes = "drafting.osnap.modes";        // "endpoint,midpoint,..."
 inline constexpr const char* osnapAperture = "drafting.osnap.aperture";  // pixels
 inline constexpr const char* snapSpacing = "drafting.snap.spacing";      // mm
-inline constexpr const char* gridSpacing = "drafting.grid.spacing";      // mm
+inline constexpr const char* gridSpacing = "drafting.grid.spacing";      // mm; 0 = snap X spacing
+inline constexpr const char* snapSpacingY = "drafting.snap.spacing.y";   // mm; unset = snap spacing
+inline constexpr const char* snapBase = "drafting.snap.base";            // "x,y" in the UCS
+inline constexpr const char* snapType = "drafting.snap.type";            // "grid" | "polar"
+inline constexpr const char* polarDistance = "drafting.polar.distance";  // mm; 0 = snap spacing
 inline constexpr const char* gridStyle = "drafting.grid.style";          // "dots" | "lines"
 inline constexpr const char* osnapOnce = "drafting.osnap.once";  // "endpoint": next point only
 inline constexpr const char* ucsIcon = "drafting.ucsicon";       // bool, on by default
@@ -105,7 +109,11 @@ struct DraftingSettings {
     SnapModeMask modes = kDefaultSnapModes;
     double apertureMm = 0;  // unused by read(); filled from aperturePx and the pixel size
     double aperturePx = 10;
-    double snapSpacing = 10;
+    double snapSpacing = 10;   // X spacing
+    double snapSpacingY = 10;  // Y spacing (the isometric lattice uses this one)
+    Vec2 snapBase{};           // the snap lattice passes through this UCS point
+    bool polarSnap = false;    // SNAP type Polar: steps of polarDistance along tracking only
+    double polarDistance = 0;  // 0 = the snap X spacing
     double gridSpacing = 10;
     bool gridLines = false;  // false = dots
     // Each entry is an increment: polar tracking snaps to every multiple of every entry.
