@@ -50,9 +50,18 @@ std::vector<Transform2> arrayItemTransforms(const ArrayInfo& info);
 // Number of items arrayItemTransforms returns.
 long long arrayItemCount(const ArrayInfo& info);
 
+// False for an item that was removed or replaced by other objects (ArrayInfo::removed, swaps).
+bool arrayItemShowsSource(const ArrayInfo& info, int item);
+// The replacement of `item`, if it has one.
+const ArrayItemSwap* arrayItemSwap(const ArrayInfo& info, int item);
+// Marks `item` as removed (dropping a replacement). False when it is out of range or already gone.
+bool removeArrayItem(ArrayInfo& info, int item);
+// Shows `item` as `swap` (dropping a removal). False when the item is out of range.
+bool swapArrayItem(ArrayInfo& info, ArrayItemSwap swap);
+
 // One-line text form of an array's parameters (DXF round trip), and back. `lengthScale` multiplies
 // every length and coordinate when reading (file units to drawing units). Fails on text it did
-// not write.
+// not write. Replacements come back without their block (the caller knows it from elsewhere).
 std::string arrayToText(const ArrayInfo& info);
 std::optional<ArrayInfo> arrayFromText(std::string_view text, double lengthScale = 1);
 

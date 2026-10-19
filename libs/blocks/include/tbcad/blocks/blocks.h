@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string_view>
 #include <vector>
 
@@ -21,7 +22,24 @@ Transform2 instanceTransform(const Document& doc, const InsertData& insert);
 // Block space to the Insert's space for every item of the Insert: one transform for a plain
 // Insert, one per item for an associative array (see ArrayInfo; item transforms act in block
 // space, before instanceTransform).
+// Items that were removed or replaced (ArrayInfo::removed, swaps) are left out.
 std::vector<Transform2> instanceTransforms(const InsertData& insert, Vec2 blockBase);
+
+// The replaced items of an associative array: `t` takes `block`'s own space (its base point
+// included) to the space the Insert lives in. Items whose block is missing are left out.
+struct SwappedItem {
+    int item = 0;
+    BlockId block{};
+    Transform2 t{};
+};
+std::vector<SwappedItem> swappedItems(const Document& doc, const InsertData& insert);
+
+// The point of an array's own block that stands for each item (the centre of its contents):
+// replacement objects are placed on it.
+Vec2 arrayItemBase(const Document& doc, const InsertData& insert);
+// The shown item (source or replacement) of an associative array nearest `p` (in the space the
+// Insert lives in) whose extents come within `tol` of it, or nothing.
+std::optional<int> arrayItemAt(const Document& doc, const InsertData& insert, Vec2 p, double tol);
 
 // ---- Definitions
 // ---------------------------------------------------------------------------------

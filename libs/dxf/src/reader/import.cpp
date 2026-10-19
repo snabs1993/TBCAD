@@ -2703,6 +2703,7 @@ Result<ImportResult> Importer::run() {
             Vec2 dpos{};
             double drot = 0;
             bool hasInfo = false;
+            EntityId anchor{};  // the item carrying the parameters
         };
         std::map<long long, Group> groups;
         doc_->forEachEntity([&](const Entity& e) {
@@ -2739,6 +2740,7 @@ Result<ImportResult> Importer::run() {
                     g.dpos = dpos * k_;
                     g.drot = drot;
                     g.hasInfo = true;
+                    g.anchor = e.common.id;
                 }
             }
         });
@@ -2747,13 +2749,39 @@ Result<ImportResult> Importer::run() {
             for (auto& [gid, g] : groups) {
                 std::sort(g.items.begin(), g.items.end(),
                           [](const Item& a, const Item& b) { return a.index < b.index; });
-                bool whole = g.hasInfo && static_cast<long long>(g.items.size()) == g.count;
-                for (std::size_t k = 0; whole && k < g.items.size(); ++k)
-                    whole = g.items[k].index == static_cast<long long>(k);
+                const bool whole =
+                    g.hasInfo && static_cast<long long>(g.items.size()) == g.count;
                 auto info = whole ? blocks::arrayFromText(g.info, k_) : std::nullopt;
-                if (info && blocks::arrayItemCount(*info) != g.count)
-                    info.reset();
-                const Entity* first = info ? doc_->find(g.items.front().id) : nullptr;
+                if (info) {
+                    // Every item that is not removed must be there, once; replaced items take
+                    // the block of their insert.
+                    std::size_t k = 0;
+                    const long long n = blocks::arrayItemCount(*info);
+                    for (long long i = 0; info && i < n; ++i) {
+                        const int item = static_cast<int>(i);
+                        ArrayItemSwap* sw = nullptr;
+                        for (ArrayItemSwap& x : info->swaps)
+                            sw = x.item == item ? &x : sw;
+                        if (!sw && !blocks::arrayItemShowsSource(*info, item))
+                            continue;
+                        if (k >= g.items.size() || g.items[k].index != i) {
+                            info.reset();
+                            break;
+                        }
+                        if (sw) {
+                            const Entity* rep = doc_->find(g.items[k].id);
+                            const auto* ri = rep ? entityAs<InsertData>(*rep) : nullptr;
+                            if (!ri)
+                                info.reset();
+                            else
+                                sw->block = ri->block;
+                        }
+                        ++k;
+                    }
+                    if (info && k != g.items.size())
+                        info.reset();
+                }
+                const Entity* first = info ? doc_->find(g.anchor) : nullptr;
                 if (first && doc_->ownerBlock(first->common.id))
                     first = nullptr;  // items inside a block definition stay plain
                 if (!first) {

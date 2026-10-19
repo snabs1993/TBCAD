@@ -169,4 +169,9 @@ Result<Entity> transformed(const Entity& e, const Transform2& t);
 std::vector<Vec2> gripPoints(const Entity& e);
 Result<Entity> moveGrip(const Entity& e, int index, Vec2 to);
 
+// After the parameters of an associative array were changed from `from` to `to`: the removed and
+// replaced items of `from` keep their row and column (rectangular) or their index (polar, path);
+// those no longer in the array are dropped.
+void carryArrayOverrides(const ArrayInfo& from, ArrayInfo& to);
+
 }  // namespace tbcad::geom

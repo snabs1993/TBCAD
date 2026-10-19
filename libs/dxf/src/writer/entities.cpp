@@ -1298,13 +1298,35 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
         const bool uniform = std::abs(std::abs(d.scale.x) - std::abs(d.scale.y)) < 1e-9;
         const double flip = d.scale.x * d.scale.y < 0 ? -1.0 : 1.0;
         bool noted = false;
-        const auto items = blocks::arrayItemTransforms(*d.array);
+        const ArrayInfo& info = *d.array;
+        const auto items = blocks::arrayItemTransforms(info);
         const int arrayId = nextArrayId_++;
-        std::size_t index = 0;
-        for (const Transform2& item : items) {
+        // The note with the array's parameters goes on the first item that shows the source
+        // (without one the items stay plain inserts when read back).
+        std::size_t anchor = items.size(), written = 0;
+        for (std::size_t i = 0; i < items.size(); ++i) {
+            if (!blocks::arrayItemSwap(info, static_cast<int>(i)) &&
+                !blocks::arrayItemShowsSource(info, static_cast<int>(i)))
+                continue;  // removed
+            ++written;
+            if (anchor == items.size() && blocks::arrayItemShowsSource(info, static_cast<int>(i)))
+                anchor = i;
+        }
+        for (std::size_t index = 0; index < items.size(); ++index) {
+            const Transform2& item = items[index];
+            const ArrayItemSwap* swap = blocks::arrayItemSwap(info, static_cast<int>(index));
+            if (!swap && !blocks::arrayItemShowsSource(info, static_cast<int>(index)))
+                continue;
             InsertData one = d;
             one.array.reset();
             one.position = (inst * item).apply(base);
+            if (swap) {
+                // A replaced item: an insert of the replacement block, its base point on `at`.
+                one = InsertData{};
+                one.block = swap->block;
+                one.scale = d.scale;
+                one.position = (inst * item).apply(swap->at);
+            }
             const double phi = std::atan2(item.m10, item.m00);
             one.rotation = d.rotation + flip * phi;
             auto text = [](int code, std::string s) {
@@ -1314,10 +1336,11 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
                 return it;
             };
             arrayTag_.clear();
-            arrayTag_.push_back(text(1000, "a=" + std::to_string(arrayId) +
-                                               ";n=" + std::to_string(items.size()) +
-                                               ";i=" + std::to_string(index)));
-            if (index == 0) {
+            if (anchor < items.size())
+                arrayTag_.push_back(text(1000, "a=" + std::to_string(arrayId) +
+                                                   ";n=" + std::to_string(written) +
+                                                   ";i=" + std::to_string(index)));
+            if (index == anchor) {
                 char buf[160];
                 std::snprintf(buf, sizeof buf, "dpos=%.17g,%.17g;drot=%.17g",
                               d.position.x - one.position.x, d.position.y - one.position.y,
@@ -1325,7 +1348,6 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
                 arrayTag_.push_back(text(1000, buf));
                 arrayTag_.push_back(text(1000, "info=" + blocks::arrayToText(*d.array)));
             }
-            ++index;
             if (!uniform && std::abs(phi) > 1e-9 && !noted) {
                 noted = true;
                 downgrade("INSERT",

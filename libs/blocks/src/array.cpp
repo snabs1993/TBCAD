@@ -32,6 +32,17 @@ std::string arrayToText(const ArrayInfo& a) {
             out += ';';
         out += num(a.path[i].p.x) + ":" + num(a.path[i].p.y) + ":" + num(a.path[i].bulge);
     }
+    if (!a.removed.empty()) {
+        out += ",rm=";
+        for (std::size_t i = 0; i < a.removed.size(); ++i)
+            out += (i ? ";" : "") + std::to_string(a.removed[i]);
+    }
+    if (!a.swaps.empty()) {
+        out += ",sw=";
+        for (std::size_t i = 0; i < a.swaps.size(); ++i)
+            out += (i ? ";" : "") + std::to_string(a.swaps[i].item) + ":" + num(a.swaps[i].at.x) +
+                   ":" + num(a.swaps[i].at.y);
+    }
     return out;
 }
 
@@ -113,7 +124,71 @@ std::optional<ArrayInfo> arrayFromText(std::string_view text, double k) {
     }
     if (a.kind == ArrayInfo::Kind::Path && a.path.size() < 2)
         return std::nullopt;
+    const long long items = arrayItemCount(a);
+    auto parts = [](const std::string& list) {
+        std::vector<std::string> out;
+        std::size_t q = 0;
+        while (q < list.size()) {
+            std::size_t semi = list.find(';', q);
+            if (semi == std::string::npos)
+                semi = list.size();
+            out.push_back(list.substr(q, semi - q));
+            q = semi + 1;
+        }
+        return out;
+    };
+    if (auto it = kv.find("rm"); it != kv.end())
+        for (const std::string& part : parts(it->second)) {
+            int i = -1;
+            if (std::sscanf(part.c_str(), "%d", &i) != 1 || !removeArrayItem(a, i))
+                return std::nullopt;
+        }
+    if (auto it = kv.find("sw"); it != kv.end())
+        for (const std::string& part : parts(it->second)) {
+            ArrayItemSwap sw;
+            double x = 0, y = 0;
+            if (std::sscanf(part.c_str(), "%d:%lf:%lf", &sw.item, &x, &y) != 3 || sw.item < 0 ||
+                sw.item >= items)
+                return std::nullopt;
+            sw.at = {x * k, y * k};
+            (void)swapArrayItem(a, sw);
+        }
     return a;
+}
+
+bool arrayItemShowsSource(const ArrayInfo& a, int item) {
+    return !std::binary_search(a.removed.begin(), a.removed.end(), item) &&
+           !arrayItemSwap(a, item);
+}
+
+const ArrayItemSwap* arrayItemSwap(const ArrayInfo& a, int item) {
+    auto it = std::lower_bound(a.swaps.begin(), a.swaps.end(), item,
+                               [](const ArrayItemSwap& s, int i) { return s.item < i; });
+    return it != a.swaps.end() && it->item == item ? &*it : nullptr;
+}
+
+bool removeArrayItem(ArrayInfo& a, int item) {
+    if (item < 0 || item >= arrayItemCount(a))
+        return false;
+    std::erase_if(a.swaps, [&](const ArrayItemSwap& s) { return s.item == item; });
+    auto it = std::lower_bound(a.removed.begin(), a.removed.end(), item);
+    if (it != a.removed.end() && *it == item)
+        return false;
+    a.removed.insert(it, item);
+    return true;
+}
+
+bool swapArrayItem(ArrayInfo& a, ArrayItemSwap swap) {
+    if (swap.item < 0 || swap.item >= arrayItemCount(a))
+        return false;
+    std::erase(a.removed, swap.item);
+    auto it = std::lower_bound(a.swaps.begin(), a.swaps.end(), swap.item,
+                               [](const ArrayItemSwap& s, int i) { return s.item < i; });
+    if (it != a.swaps.end() && it->item == swap.item)
+        *it = swap;
+    else
+        a.swaps.insert(it, swap);
+    return true;
 }
 
 std::vector<Transform2> rectangularTransforms(const RectArray& s) {

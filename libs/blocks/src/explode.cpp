@@ -102,6 +102,20 @@ void Flatten::contents(const Entity& insert, const Transform2& outer, int depth)
     }
 }
 
+void Flatten::swapped(const Entity& insert, const Transform2& outer, int depth) {
+    const auto* ins = entityAs<InsertData>(insert);
+    if (!ins || !ins->array || ins->array->swaps.empty())
+        return;
+    for (const SwappedItem& sw : swappedItems(doc, *ins)) {
+        // The replacement shows as a plain insert of its block, with the array's properties.
+        Entity other = insert;
+        InsertData plain;
+        plain.block = sw.block;
+        other.data = Indirect<InsertData>(std::move(plain));
+        contents(other, outer * sw.t, depth);
+    }
+}
+
 void Flatten::place(Entity child, const Transform2& t, int depth) {
     const EntityKind k = kind(child);
     if (k == EntityKind::Insert) {
@@ -119,6 +133,7 @@ void Flatten::place(Entity child, const Transform2& t, int depth) {
         }
         for (const Transform2& it : instanceTransforms(*ins, def->base))
             contents(child, t * it, depth + 1);
+        swapped(child, t, depth + 1);
         return;
     }
     if (curvesOnly && !hasCurveOrPoint(k))
@@ -243,6 +258,7 @@ Result<ExplodeResult> explode(const Document& doc, const Entity& entity, bool at
             f.keepAttDefs = attributesAsDefinitions;
             for (const Transform2& t : instanceTransforms(*ins, def->base))
                 f.contents(entity, t, 0);
+            f.swapped(entity, Transform2::identity(), 0);
             if (ins->clip.size() >= 3 && ins->clipOn)
                 f.messages.push_back("The clipping boundary was dropped; all parts show");
             return ExplodeResult{std::move(f.out), std::move(f.messages)};

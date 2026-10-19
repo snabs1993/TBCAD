@@ -319,9 +319,17 @@ struct Checker {
             bad("insert refers to an unknown block");
             return;
         }
+        std::vector<BlockId> stack{d.block};
+        if (d.array)
+            for (const ArrayItemSwap& sw : d.array->swaps) {
+                if (!doc.block(sw.block)) {
+                    bad("array item refers to an unknown block");
+                    return;
+                }
+                stack.push_back(sw.block);
+            }
         if (owner) {
             // Reject cycles: the inserted block must not (transitively) insert the owner.
-            std::vector<BlockId> stack{d.block};
             std::unordered_set<BlockId> seen;
             while (!stack.empty() && err.empty()) {
                 BlockId b = stack.back();
@@ -339,6 +347,9 @@ struct Checker {
                     const Entity* e = doc.find(id);
                     if (const auto* ins = e ? entityAs<InsertData>(*e) : nullptr) {
                         stack.push_back(ins->block);
+                        if (ins->array)
+                            for (const ArrayItemSwap& sw : ins->array->swaps)
+                                stack.push_back(sw.block);
                     }
                 }
             }
@@ -709,8 +720,12 @@ std::unique_ptr<detail::ObjectRefs> scanObjectRefs(const Document& d) {
             r->dimStyles.insert(t->style.value);
         else if (const auto* t = entityAs<MLeaderData>(e))
             r->dimStyles.insert(t->style.value);
-        else if (const auto* t = entityAs<InsertData>(e))
+        else if (const auto* t = entityAs<InsertData>(e)) {
             ++r->blockUses[t->block.value];
+            if (t->array)
+                for (const ArrayItemSwap& sw : t->array->swaps)
+                    ++r->blockUses[sw.block.value];
+        }
     });
     return r;
 }
@@ -789,8 +804,12 @@ bool inUse(const Document& d, BlockId id, const detail::ObjectRefs* refs = nullp
         return refs->blockUses.count(id.value) != 0;
     bool used = false;
     d.forEachEntity([&](const Entity& e) {
-        if (const auto* t = entityAs<InsertData>(e))
+        if (const auto* t = entityAs<InsertData>(e)) {
             used = used || t->block == id;
+            if (t->array)
+                for (const ArrayItemSwap& sw : t->array->swaps)
+                    used = used || sw.block == id;
+        }
     });
     return used;
 }
@@ -1873,9 +1892,14 @@ Result<void> Transaction::eraseBlock(BlockId id) {
             const auto* in = e ? entityAs<InsertData>(*e) : nullptr;
             if (!in)
                 continue;
-            if (auto it = refs_->blockUses.find(in->block.value);
-                it != refs_->blockUses.end() && --it->second == 0)
-                refs_->blockUses.erase(it);
+            std::vector<BlockId> used{in->block};
+            if (in->array)
+                for (const ArrayItemSwap& sw : in->array->swaps)
+                    used.push_back(sw.block);
+            for (BlockId b : used)
+                if (auto it = refs_->blockUses.find(b.value);
+                    it != refs_->blockUses.end() && --it->second == 0)
+                    refs_->blockUses.erase(it);
         }
     }
     (void)eraseAllIn(id);

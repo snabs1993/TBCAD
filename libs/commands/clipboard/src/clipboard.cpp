@@ -35,8 +35,12 @@ void remap(Entity& e, const RefMap& m) {
             else if constexpr (std::is_same_v<S, DimStyleId>)
                 d.style = m.dim(d.style);
         }
-        if constexpr (std::is_same_v<D, InsertData>)
+        if constexpr (std::is_same_v<D, InsertData>) {
             d.block = m.block(d.block);
+            if (d.array)
+                for (ArrayItemSwap& sw : d.array->swaps)
+                    sw.block = m.block(sw.block);
+        }
         if constexpr (std::is_same_v<D, MLeaderData>)
             d.block = m.block(d.block);
         if constexpr (std::is_same_v<D, HatchData>)

@@ -214,6 +214,7 @@ Result<void> moveArrayGrip(InsertData& d, int index, Vec2 to) {
     } else {
         return badGrip();
     }
+    carryArrayOverrides(*d.array, a);
     d.array = a;
     return {};
 }
@@ -710,6 +711,38 @@ Result<Entity> moveGrip(const Entity& e, int index, Vec2 to) {
         default:
             return makeError(ErrorCode::Unsupported, "entity has no grips");
     }
+}
+
+void carryArrayOverrides(const ArrayInfo& from, ArrayInfo& to) {
+    const bool grid =
+        from.kind == ArrayInfo::Kind::Rectangular && to.kind == ArrayInfo::Kind::Rectangular;
+    const int fromCols = std::max(from.columns, 1);
+    const int toCols = std::max(to.columns, 1);
+    const long long count = to.kind == ArrayInfo::Kind::Rectangular
+                                ? static_cast<long long>(std::max(to.rows, 1)) * toCols
+                                : std::max(to.count, 1);
+    // The item's new index, or -1 when it is no longer in the array. Increasing, so the lists
+    // stay sorted.
+    auto map = [&](int i) -> long long {
+        long long n = i;
+        if (grid) {
+            const int r = i / fromCols, c = i % fromCols;
+            if (r >= std::max(to.rows, 1) || c >= toCols)
+                return -1;
+            n = static_cast<long long>(r) * toCols + c;
+        }
+        return n >= 0 && n < count ? n : -1;
+    };
+    to.removed.clear();
+    to.swaps.clear();
+    for (int i : from.removed)
+        if (long long n = map(i); n >= 0)
+            to.removed.push_back(static_cast<int>(n));
+    for (ArrayItemSwap sw : from.swaps)
+        if (long long n = map(sw.item); n >= 0) {
+            sw.item = static_cast<int>(n);
+            to.swaps.push_back(sw);
+        }
 }
 
 }  // namespace tbcad::geom

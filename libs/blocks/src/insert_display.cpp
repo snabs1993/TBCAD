@@ -203,6 +203,17 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
         for (const Transform2& it : items)
             transformList(*blockSpace, it, out);
     }
+    // Replaced array items show their own block, styled like the array.
+    for (const SwappedItem& sw : swappedItems(doc, *ins)) {
+        const BlockDef* other = doc.block(sw.block);
+        if (!other)
+            continue;
+        Entity plain = insert;
+        plain.data = Indirect<InsertData>(InsertData{.block = sw.block});
+        const auto list = buildBlockSpace(doc, *other, plain, entityAs<InsertData>(plain),
+                                          nullptr, child);
+        transformList(*list, sw.t, out);
+    }
 
     // Attribute values differ per insert, so they are built here and not shared.
     for (EntityId id : def->entities) {
@@ -239,6 +250,8 @@ bool buildInsertInstance(const Document& doc, const Entity& insert, const geom::
     if (hiddenImageFrame(doc, *def))
         return false;
     if (ins->clipOn && ins->clip.size() >= 3)
+        return false;
+    if (ins->array && !ins->array->swaps.empty())
         return false;
     std::vector<Transform2> items = instanceTransforms(*ins, def->base);
     if (items.empty())

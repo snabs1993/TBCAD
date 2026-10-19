@@ -32,9 +32,12 @@ void remap(Entity& e, const Maps& m) {
         t->style = Maps::get(m.textStyle, t->style);
     else if (auto* mt = entityAs<MTextData>(e))
         mt->style = Maps::get(m.textStyle, mt->style);
-    else if (auto* in = entityAs<InsertData>(e))
+    else if (auto* in = entityAs<InsertData>(e)) {
         in->block = Maps::get(m.block, in->block);
-    else if (auto* d = entityAs<DimensionData>(e))
+        if (in->array)
+            for (ArrayItemSwap& sw : in->array->swaps)
+                sw.block = Maps::get(m.block, sw.block);
+    } else if (auto* d = entityAs<DimensionData>(e))
         d->style = Maps::get(m.dimStyle, d->style);
     else if (auto* l = entityAs<LeaderData>(e))
         l->style = Maps::get(m.dimStyle, l->style);

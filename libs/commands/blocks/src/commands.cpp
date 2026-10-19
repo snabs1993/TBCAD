@@ -1,6 +1,7 @@
 #include "commands.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <unordered_set>
 
 #include "tbcad/blocks/tbcad_blocks.h"
@@ -38,6 +39,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeArrayPolarCommand());
     (void)registry.add(makeArrayPathCommand());
     (void)registry.add(makeArrayEditCommand());
+    (void)registry.add(makeArrayRemoveCommand());
     (void)registry.add(makeBParamCommand());
     (void)registry.add(makeBActionCommand());
     (void)registry.add(makeDynSetCommand());
@@ -103,6 +105,21 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Modify/Array/Polar", "ARRAYPOLAR", "modify.arraypolar");
     ui.addMenuItem("Modify/Array/Path", "ARRAYPATH", "modify.arraypath");
     ui.addMenuItem("Modify/Array/Edit Array...", "ARRAYEDIT", "modify.arrayedit");
+    ui.addMenuItem("Modify/Array/Remove Items", "ARRAYREMOVE", "modify.arrayremove");
+
+    // Ctrl+click on an item of an associative array takes that item out (ARRAYREMOVE, which then
+    // waits for more items; Enter ends).
+    ui.addIdleClickHook([](ui::PanelContext& ctx, Vec2 world, double aperture, bool shift,
+                           bool ctrl) {
+        if (!ctrl || shift || ctx.commandActive || !ctx.doc || !ctx.runCommand)
+            return false;
+        if (!detail::arrayItemNear(*ctx.doc, world, aperture))
+            return false;
+        char buf[96];
+        std::snprintf(buf, sizeof buf, "ARRAYREMOVE %.17g,%.17g", world.x, world.y);
+        ctx.runCommand(buf);
+        return true;
+    });
 }
 
 namespace detail {

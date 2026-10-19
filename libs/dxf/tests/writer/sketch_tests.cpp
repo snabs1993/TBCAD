@@ -1,4 +1,6 @@
 // Constraints and parameters saved in a DXF file and read back (docs/constraints.md).
+#include <algorithm>
+
 #include "../lexer/doctest_include.h"
 #include "../lexer/test_util.h"
 #include "tbcad/dxf/reader.h"
@@ -104,6 +106,69 @@ TEST_CASE("associative arrays are fused back into one insert after a DXF round t
         }
     }
     CHECK(arrays == 3);
+}
+
+TEST_CASE("removed and replaced array items survive a DXF round trip") {
+    Document doc;
+    BlockId swapBlock;
+    {
+        auto tx = doc.begin("arrays");
+        BlockId b = tx.addBlock(BlockDef{.name = "*A1", .anonymous = true}).value();
+        Entity c;
+        c.data = CircleData{{0, 0}, 1};
+        REQUIRE(tx.add(std::move(c), b).ok());
+        swapBlock = tx.addBlock(BlockDef{.name = "*A2", .anonymous = true}).value();
+        Entity l;
+        l.data = LineData{{0, -1}, {0, 1}};
+        REQUIRE(tx.add(std::move(l), swapBlock).ok());
+        ArrayInfo rect;
+        rect.rows = 2;
+        rect.columns = 3;
+        rect.rowSpacing = 4;
+        rect.columnSpacing = 6;
+        rect.removed = {0, 4};  // the first item too: the note moves to item 1
+        rect.swaps = {ArrayItemSwap{2, swapBlock, {0, 0}}};
+        InsertData ins;
+        ins.block = b;
+        ins.position = {50, 0};
+        ins.array = rect;
+        Entity e;
+        e.data = Indirect<InsertData>(ins);
+        REQUIRE(tx.add(std::move(e)).ok());
+        tx.commit();
+    }
+    Report r1;
+    auto out = exportDxf(doc, ExportOptions{}, r1);
+    REQUIRE(out.ok());
+    std::string text = out.value().bytes;
+    text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
+    std::size_t inserts = 0;
+    for (std::size_t at = text.find("\nINSERT\n"); at != std::string::npos;
+         at = text.find("\nINSERT\n", at + 1))
+        ++inserts;
+    CHECK(inserts == 4);  // six items, two removed
+    Report r2;
+    auto in = importDxf(testing::bytesOf(out.value().bytes), ImportOptions{}, r2);
+    REQUIRE(in.ok());
+    const Document& back = *in.value().document;
+    std::vector<InsertData> got;
+    back.forEachEntity([&](const Entity& e) {
+        if (const auto* i = entityAs<InsertData>(e))
+            got.push_back(*i);
+    });
+    REQUIRE(got.size() == 1);
+    REQUIRE(got[0].array);
+    const ArrayInfo& a = *got[0].array;
+    CHECK(got[0].position.x == doctest::Approx(50));
+    CHECK(a.rows == 2);
+    CHECK(a.columns == 3);
+    CHECK(a.removed == std::vector<int>{0, 4});
+    REQUIRE(a.swaps.size() == 1);
+    CHECK(a.swaps[0].item == 2);
+    const BlockDef* sb = back.block(a.swaps[0].block);
+    REQUIRE(sb);
+    REQUIRE(sb->entities.size() == 1);
+    CHECK(entityAs<LineData>(*back.find(sb->entities[0])));
 }
 
 }  // namespace tbcad::dxf

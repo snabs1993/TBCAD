@@ -476,6 +476,15 @@ struct AttribValue {
 // An associative array: the Insert's block holds the source objects and the Insert is shown once
 // per item. All geometry is in the block's own coordinates, so moving, rotating or scaling the
 // Insert moves the whole array, and the parameters stay editable (ARRAYEDIT).
+// An array item shown as other objects (ARRAYEDIT REPlace): the base point of `block` lands on
+// `at` (a point in the array's own block) carried along with the item.
+struct ArrayItemSwap {
+    int item = 0;
+    BlockId block{};
+    Vec2 at{};
+    friend bool operator==(const ArrayItemSwap&, const ArrayItemSwap&) = default;
+};
+
 struct ArrayInfo {
     enum class Kind : std::uint8_t { Rectangular, Polar, Path };
     Kind kind = Kind::Rectangular;
@@ -500,6 +509,10 @@ struct ArrayInfo {
     std::vector<PolyVertex> path{};
     bool pathClosed = false;
     double pathSpacing = 0;
+    // Items taken out (Ctrl+click, ARRAYREMOVE) and items shown as other objects (ARRAYEDIT
+    // REPlace), by item index, both sorted; an item is in at most one of them. RESet clears them.
+    std::vector<int> removed{};
+    std::vector<ArrayItemSwap> swaps{};
 };
 
 struct InsertData {

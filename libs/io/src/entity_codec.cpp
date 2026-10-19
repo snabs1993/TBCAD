@@ -303,6 +303,19 @@ struct PayloadWriter {
                     w.vec2(a.offset);
                 }
         }
+        // 8 = removed and replaced array items (format 1.15).
+        if (d.array && (!d.array->removed.empty() || !d.array->swaps.empty())) {
+            w.u8(8);
+            w.varint(d.array->removed.size());
+            for (int i : d.array->removed)
+                w.varint(static_cast<std::uint64_t>(i));
+            w.varint(d.array->swaps.size());
+            for (const ArrayItemSwap& sw : d.array->swaps) {
+                w.varint(static_cast<std::uint64_t>(sw.item));
+                w.varint(sw.block.value);
+                w.vec2(sw.at);
+            }
+        }
     }
     void operator()(const DimensionData& d) {
         w.u8(static_cast<std::uint8_t>(d.kind));
@@ -783,6 +796,23 @@ struct PayloadReader {
                             for (AttribValue& a : d.attribs)
                                 if (a.tag == t)
                                     a.offset = off;
+                        }
+                        continue;
+                    }
+                    if (tag == 8) {
+                        if (!d.array)
+                            bad("array items without an array");
+                        ArrayInfo& a = *d.array;
+                        std::size_t n = r.count(1);
+                        for (std::size_t i = 0; i < n; ++i)
+                            a.removed.push_back(arrayCount());
+                        n = r.count(18);
+                        for (std::size_t i = 0; i < n; ++i) {
+                            ArrayItemSwap sw;
+                            sw.item = arrayCount();
+                            sw.block = id<BlockId>();
+                            sw.at = r.vec2();
+                            a.swaps.push_back(sw);
                         }
                         continue;
                     }
