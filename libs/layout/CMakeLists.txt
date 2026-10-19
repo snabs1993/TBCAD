@@ -2,7 +2,7 @@
 # plotted through libs/export. See docs/layout.md.
 tbcad_add_library(layout
   SOURCES src/layout.cpp src/layout_plot.cpp src/pagesetup.cpp
-  DEPENDS tbcad::core tbcad::geom tbcad::export tbcad::blocks)
+  DEPENDS tbcad::core tbcad::geom tbcad::export tbcad::blocks tbcad::text)
 
 tbcad_add_tests(layout
   SOURCES
