@@ -540,24 +540,6 @@ std::optional<DimLine> dimLineOf(const DimensionData& d) {
                    d.defPts[1] + e * (dot(P - d.defPts[1], n) / lean), u};
 }
 
-// Text put at `at` by hand. With DIMTMOVE 0 the dimension line of a linear or aligned dimension
-// moves with it, as in AutoCAD: the text keeps its lift (DIMTAD) above the line and its middle
-// stays at `at`.
-void placeText(const Document& doc, DimensionData& d, Vec2 at) {
-    d.textPos = at;
-    d.textPosUser = true;
-    if (dim::styleOf(doc, d.style).textMove != DimTextMove::WithLine)
-        return;
-    const auto line = dimLineOf(d);
-    if (!line)
-        return;
-    const Vec2 n = perp(line->u);
-    d.defPts[2] = d.defPts[2] + n * dot(at - d.defPts[2], n);
-    // With the line through the point the text sits lifted from it; move the line back by that.
-    const Vec2 lifted = dim::layoutDimension(doc, d).text.center;
-    d.defPts[2] = d.defPts[2] - n * dot(lifted - at, n);
-}
-
 // DIMTEDIT Left / Right / Center: the text point on the dimension line, next to the extension
 // line on the left (as the text reads) or the right, or in the middle.
 std::optional<Vec2> justifiedText(const Document& doc, const DimensionData& d,
@@ -611,7 +593,7 @@ public:
         auto* c = &ctx;
         po.preview = [c, original](Vec2 cursor, DisplayList& out) {
             DimensionData d = original;
-            placeText(c->doc(), d, cursor);
+            dim::placeText(c->doc(), d, cursor);
             dim::refresh(c->doc(), d);
             Entity e;
             e.data = Indirect<DimensionData>(std::move(d));
@@ -654,7 +636,7 @@ public:
                 d->textPos = *lined;
                 d->textPosUser = true;
             } else {
-                placeText(ctx.doc(), *d, where.point);
+                dim::placeText(ctx.doc(), *d, where.point);
             }
             dim::refresh(ctx.doc(), *d);
         });

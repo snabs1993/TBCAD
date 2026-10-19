@@ -186,8 +186,8 @@ HotGrips hotGripsOf(const std::vector<Grip>& grips, const Grip& hot,
 }
 
 std::vector<std::pair<EntityId, Entity>> stretchResults(const Document& doc, const HotGrips& set,
-                                                        const Grip&, Vec2 delta,
-                                                        std::string* error, std::size_t limit) {
+                                                        const Grip&, Vec2 delta, std::string* error,
+                                                        std::size_t limit) {
     std::vector<std::pair<EntityId, Entity>> out;
     const std::size_t count = std::min(set.order.size(), limit);
     for (std::size_t k = 0; k < count; ++k) {
@@ -199,6 +199,11 @@ std::vector<std::pair<EntityId, Entity>> stretchResults(const Document& doc, con
         for (std::size_t j = 0; j < set.indices[k].size(); ++j) {
             const int idx = set.indices[k][j];
             const Vec2 target = set.from[k][j] + delta;
+            // A dimension's text drags its dimension line along (DIMTMOVE 0), as in AutoCAD.
+            if (auto* dm = entityAs<DimensionData>(cur); dm && idx == geom::dimTextGrip(*dm)) {
+                dim::placeText(doc, *dm, target);
+                continue;
+            }
             auto moved =
                 idx >= kPicGripBase   ? blocks::pictureDrag(doc, cur, idx - kPicGripBase, target)
                 : idx >= kAttGripBase ? blocks::attribDrag(doc, cur, idx - kAttGripBase, target)

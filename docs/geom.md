@@ -78,7 +78,7 @@ indices.
 | Ellipse | 0 centre, 1 +major, 2 +minor, 3 −major, 4 −minor, then 5 start and 6 end for elliptical arcs |
 | Spline | the fit points when present, otherwise the control points (moving a fit point re-interpolates) |
 | Text, MText, Insert | 0 position |
-| Dimension | 0…3 `defPts`, 4 text position |
+| Dimension | linear and aligned: 0, 1 extension line origins, 2, 3 dimension line ends (move the line), 4 text; radius, diameter and ordinate: 0, 1 `defPts`, 2 text; others: 0…3 `defPts`, 4 text |
 | Leader | vertices, then the text position |
 
 ## Transforms
