@@ -6,6 +6,7 @@
 
 #include "common.h"
 #include "tbcad/geom/geom.h"
+#include "tbcad/text/text.h"
 
 namespace tbcad::select {
 
@@ -64,6 +65,51 @@ std::optional<LineWeight> parseWeight(const std::string& text) {
     }
 }
 
+// * any run of characters, ? one character; both already upper case.
+bool wildcardMatch(std::string_view pat, std::string_view text) {
+    std::size_t p = 0, t = 0, star = std::string_view::npos, mark = 0;
+    while (t < text.size()) {
+        if (p < pat.size() && (pat[p] == '?' || pat[p] == text[t])) {
+            ++p;
+            ++t;
+        } else if (p < pat.size() && pat[p] == '*') {
+            star = p++;
+            mark = t;
+        } else if (star != std::string_view::npos) {
+            p = star + 1;
+            t = ++mark;
+        } else {
+            return false;
+        }
+    }
+    while (p < pat.size() && pat[p] == '*')
+        ++p;
+    return p == pat.size();
+}
+
+// Name of the text or dimension style an object uses; empty for objects without one.
+std::string styleName(const Document& doc, const Entity& e) {
+    auto textStyle = [&](TextStyleId id) {
+        const TextStyle* s = doc.textStyle(id ? id : doc.header().currentTextStyle);
+        return s ? s->name : std::string();
+    };
+    auto dimStyle = [&](DimStyleId id) {
+        const DimStyle* s = doc.dimStyle(id ? id : doc.header().currentDimStyle);
+        return s ? s->name : std::string();
+    };
+    if (const auto* t = entityAs<TextData>(e))
+        return textStyle(t->style);
+    if (const auto* m = entityAs<MTextData>(e))
+        return textStyle(m->style);
+    if (const auto* d = entityAs<DimensionData>(e))
+        return dimStyle(d->style);
+    if (const auto* l = entityAs<LeaderData>(e))
+        return dimStyle(l->style);
+    if (const auto* ml = entityAs<MLeaderData>(e))
+        return dimStyle(ml->style);
+    return {};
+}
+
 bool sameColor(Color a, Color b) {
     return a == b;
 }
@@ -97,10 +143,17 @@ std::optional<std::vector<EntityId>> queryEntities(const Document& doc, const Qu
             return std::nullopt;
         }
     }
-    if (!numeric && q.compare != Compare::Equals)
+    const bool wild = q.compare == Compare::Wildcard;
+    if (wild && (numeric || q.property == Property::Color || q.property == Property::Lineweight))
+        return std::nullopt;
+    if (!numeric && q.compare != Compare::Equals && !wild)
         return std::nullopt;
     const std::string want = upper(q.value);
-    if (q.property == Property::Type) {
+    // Text properties: equal ignoring case, or a * and ? pattern.
+    auto same = [&](std::string_view have) {
+        return wild ? wildcardMatch(want, upper(have)) : upper(have) == want;
+    };
+    if (q.property == Property::Type && !wild) {
         static const char* const kKnown[] = {
             "LINE",   "CIRCLE",    "ARC",    "POLYLINE", "LWPOLYLINE", "POINT", "ELLIPSE",
             "SPLINE", "TEXT",      "MTEXT",  "HATCH",    "INSERT",     "BLOCK", "DIMENSION",
@@ -120,19 +173,19 @@ std::optional<std::vector<EntityId>> queryEntities(const Document& doc, const Qu
         switch (q.property) {
             case Property::Level: {
                 const Level* l = doc.level(e->common.level);
-                hit = l && upper(l->name) == want;
+                hit = l && same(l->name);
                 break;
             }
             case Property::Type: {
                 const std::string k = kindName(*e);
-                hit = want == k || (k == "POLYLINE" && want == "LWPOLYLINE") ||
+                hit = same(k) || (k == "POLYLINE" && want == "LWPOLYLINE") ||
                       (k == "INSERT" && want == "BLOCK") ||
                       (k == "MULTILEADER" && want == "MLEADER");
                 break;
             }
             case Property::Layer: {
                 const Layer* l = doc.layer(e->common.layer);
-                hit = l && upper(l->name) == want;
+                hit = l && same(l->name);
                 break;
             }
             case Property::Color:
@@ -147,7 +200,7 @@ std::optional<std::vector<EntityId>> queryEntities(const Document& doc, const Qu
                     hit = e->common.linetype == kLinetypeByBlock;
                 } else {
                     const Linetype* lt = doc.linetype(resolvedLinetype(doc, *e));
-                    hit = lt && upper(lt->name) == want;
+                    hit = lt && same(lt->name);
                 }
                 break;
             }
@@ -185,7 +238,28 @@ std::optional<std::vector<EntityId>> queryEntities(const Document& doc, const Qu
             }
             case Property::Pattern: {
                 if (const auto* h = entityAs<HatchData>(*e))
-                    hit = want == (h->solid ? "SOLID" : upper(h->pattern));
+                    hit = same(h->solid ? std::string("SOLID") : h->pattern);
+                break;
+            }
+            case Property::Name: {
+                if (const auto* i = entityAs<InsertData>(*e))
+                    if (const BlockDef* b = doc.block(i->block))
+                        hit = same(b->name);
+                break;
+            }
+            case Property::Style: {
+                const std::string st = styleName(doc, *e);
+                hit = !st.empty() && same(st);
+                break;
+            }
+            case Property::Contents: {
+                if (const auto* t = entityAs<TextData>(*e))
+                    hit = same(t->utf8);
+                else if (const auto* m = entityAs<MTextData>(*e))
+                    hit = same(text::plainText(m->utf8));
+                else if (const auto* ml = entityAs<MLeaderData>(*e))
+                    hit = ml->content == MLeaderData::Content::Text &&
+                          same(text::plainText(ml->utf8));
                 break;
             }
             case Property::Lineweight:
@@ -299,31 +373,45 @@ std::vector<EntityId> similarEntities(const Document& doc, std::span<const Entit
 
 namespace detail {
 
-const char* const kPropNames[11] = {"Type",       "Layer",  "Color",        "Linetype",
-                                    "Lineweight", "Level",  "Transparency", "Pattern",
-                                    "Height",     "Radius", "Length"};
+const char* const kPropNames[kPropCount] = {
+    "Type",         "Layer",   "Color",  "Linetype", "Lineweight", "Level", "Transparency",
+    "Pattern",      "Height",  "Radius", "Length",   "Name",       "Style", "Contents"};
+
+std::string propertyPrompt() {
+    std::string s = "Property [";
+    for (int i = 0; i < kPropCount; ++i)
+        s += std::string(i ? "/" : "") + kPropNames[i];
+    return s + "] <Type>";
+}
 
 cmd::Task askOperator(cmd::CommandContext& ctx, Query& q, std::string_view lead, bool& ok) {
     ok = false;
     const bool numeric = q.property == Property::Transparency || q.property == Property::Height ||
                          q.property == Property::Radius || q.property == Property::Length;
+    const bool text = !numeric && q.property != Property::Color &&
+                      q.property != Property::Lineweight;
     cmd::KeywordOptions oo;
     oo.keywords = {"Equals", "Not"};
     if (numeric) {
         oo.keywords.push_back("Greater");
         oo.keywords.push_back("Less");
     }
+    if (text)
+        oo.keywords.push_back("Wildcard");
     oo.defaultKeyword = "Equals";
     const std::string prompt = std::string(lead) +
-                               (numeric ? " [Equals/Not/Greater/Less]" : " [Equals/Not]") +
+                               (numeric ? " [Equals/Not/Greater/Less]"
+                                : text  ? " [Equals/Not/Wildcard]"
+                                        : " [Equals/Not]") +
                                " <Equals>";
     auto o = co_await ctx.getKeyword(prompt, std::move(oo));
     if (!o.ok())
         co_return;
     q.negate = o.keyword == "Not";
-    q.compare = o.keyword == "Greater" ? Compare::Greater
-                : o.keyword == "Less"  ? Compare::Less
-                                       : Compare::Equals;
+    q.compare = o.keyword == "Greater"    ? Compare::Greater
+                : o.keyword == "Less"     ? Compare::Less
+                : o.keyword == "Wildcard" ? Compare::Wildcard
+                                          : Compare::Equals;
     ok = true;
 }
 
@@ -338,17 +426,13 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::KeywordOptions po;
-        po.keywords = {"Type",         "Layer",   "Color",  "Linetype", "Lineweight", "Level",
-                       "Transparency", "Pattern", "Height", "Radius",   "Length"};
+        po.keywords.assign(kPropNames, kPropNames + kPropCount);
         po.defaultKeyword = "Type";
-        auto p = co_await ctx.getKeyword(
-            "Property [Type/Layer/Color/Linetype/Lineweight/Level/Transparency/Pattern/Height/"
-            "Radius/Length] <Type>",
-            std::move(po));
+        auto p = co_await ctx.getKeyword(propertyPrompt(), std::move(po));
         if (!p.ok())
             co_return;
         Query q;
-        for (int i = 0; i < 11; ++i)
+        for (int i = 0; i < kPropCount; ++i)
             if (p.keyword == kPropNames[i])
                 q.property = static_cast<Property>(i);
 
