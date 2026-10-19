@@ -133,8 +133,10 @@ private:
     // ---- entities.cpp: record -> entities ---------------------------------------------------
     void handleEntity(Record& r, RecordReader& rr, BlockId owner);
     bool convert(Record& r, RecordReader& rr, std::vector<Entity>& out, BlockId owner);
+    // `source` (the record `e` came from) lets an object beyond the hard coordinate limit be
+    // kept unshown, as keepUnshown does.
     void add(Entity&& e, BlockId owner, std::string_view type, int line,
-             std::optional<std::uint64_t> handle = std::nullopt);
+             std::optional<std::uint64_t> handle = std::nullopt, const Record* source = nullptr);
     EntityCommon commonOf(const Record& r);
     bool frameOf(const Record& r, Frame& f, std::string_view type);
     LayerId layerFor(std::string_view raw, int line);
@@ -189,6 +191,11 @@ private:
     bool convProxy(const Record& r, std::vector<Entity>& out);
     // An entity of another application (AEC, Civil, ACIS ...) that carries proxy graphics.
     bool convForeign(const Record& r, std::vector<Entity>& out);
+    // The record's own groups packed for writing back unchanged (kProxyDxfFresh + groups), or
+    // empty when they cannot be kept (scaled units, a value that cannot be written back).
+    std::string keptRecord(const Record& r);
+    // Keeps the record as a proxy that shows nothing and is written back to DXF as it was read.
+    bool keepUnshown(const Record& r, std::vector<Entity>& out);
     // An AutoCAD TABLE: its graphics live in an anonymous block, shown as an INSERT of it.
     bool convAcadTable(const Record& r, RecordReader& rr, const Frame& f, std::vector<Entity>& out);
 
