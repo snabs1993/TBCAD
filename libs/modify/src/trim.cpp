@@ -2,6 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
+
+#include "tbcad/geom/box_grid.h"
 
 namespace tbcad::modify {
 
@@ -21,6 +24,35 @@ std::vector<CurveRef> edgeCurves(const std::vector<const Entity*>& edges) {
     }
     return out;
 }
+
+// The edges that can meet a box. With many edges (a long polyline used as the cutting edge) a grid
+// answers without testing them all; an extending edge has no useful box, so then all are returned.
+class EdgeNear {
+public:
+    EdgeNear(const std::vector<CurveRef>& edges, bool extend) : edges_(edges), all_(extend || edges.size() <= 64) {
+        if (all_)
+            return;
+        boxes_.reserve(edges.size());
+        for (const CurveRef& e : edges)
+            boxes_.push_back(e.bounds().inflated(1e-6));
+        grid_ = std::make_unique<geom::BoxGrid>(boxes_);
+    }
+    template <class F>
+    void forEach(const BBox2& q, F&& f) const {
+        if (all_) {
+            for (const CurveRef& e : edges_)
+                f(e);
+            return;
+        }
+        grid_->query(q, [&](std::size_t i) { f(edges_[i]); });
+    }
+
+private:
+    const std::vector<CurveRef>& edges_;
+    bool all_;
+    std::vector<BBox2> boxes_;
+    std::unique_ptr<geom::BoxGrid> grid_;
+};
 
 void sortUnique(std::vector<double>& v, double eps = 1e-9) {
     std::sort(v.begin(), v.end());
@@ -80,14 +112,15 @@ Result<EntityEdit> trimSingle(const Entity& target, const CurveRef& c, Vec2 pick
     const bool isSpline = c.kind() == CurveRef::Kind::Spline;
     const bool periodic = !c.isLine() && !isSpline && c.sweep() >= kTwoPi - 1e-9;
     std::vector<double> cuts;
-    for (const CurveRef& e : edges) {
+    const EdgeNear near(edges, opt.extendEdges);
+    near.forEach(c.bounds().inflated(1e-6), [&](const CurveRef& e) {
         std::vector<geom::Intersection> xs;
         geom::intersect(c, e, xs, false, opt.extendEdges);
         for (const auto& x : xs) {
             double u = periodic ? normalizeAngle(x.tA - c.t0()) / kTwoPi : curveFraction(c, x.tA);
             cuts.push_back(u);
         }
-    }
+    });
     sortUnique(cuts);
     double up = curveFraction(c, c.paramAt(pick));
     std::vector<EntityData> pieces;
@@ -184,14 +217,15 @@ Result<EntityEdit> trimPolyline(const Entity& target, const PolylineData& raw, V
         return err("The polyline has no length.");
     const double n = static_cast<double>(segs.size());
     std::vector<double> cuts;
+    const EdgeNear near(edges, opt.extendEdges);
     for (std::size_t i = 0; i < segs.size(); ++i) {
         CurveRef c = segCurve(segs[i]);
-        for (const CurveRef& e : edges) {
+        near.forEach(c.bounds().inflated(1e-6), [&](const CurveRef& e) {
             std::vector<geom::Intersection> xs;
             geom::intersect(c, e, xs, false, opt.extendEdges);
             for (const auto& x : xs)
                 cuts.push_back(static_cast<double>(i) + segParam(segs[i], x.p));
-        }
+        });
     }
     if (pl.closed) {
         for (double& x : cuts) {

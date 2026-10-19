@@ -200,6 +200,13 @@ struct Site {
         e.data = std::move(p);
         (void)tx.add(std::move(e));
         (void)tx.add(Entity{{}, LineData{{count * 1.0, -300100}, {count * 1.0, -299900}}});
+        // A second contour with another phase: the two cross about every 300 vertices.
+        PolylineData q;
+        for (int i = 0; i < count; ++i)
+            q.v.push_back({{i * 2.0, -300000 + 3 + std::sin(i * 0.01 + 1) * 50}, 0, 0, 0});
+        Entity e2;
+        e2.data = std::move(q);
+        (void)tx.add(std::move(e2));
         tx.commit();
         core->zoomExtents();
         core->updateFrame();
@@ -475,6 +482,7 @@ TEST_CASE("perf: edits of one polyline of 100k vertices stay quick") {
     const std::vector<Case> cases = {
         {"OFFSET-contour", {"OFFSET", "5", "@click0,-300000", "-1000,-299990", ""}, 8000},
         {"TRIM-contour", {"TRIM", "", "@click0,-300000", ""}},
+        {"TRIM-by-contour", {"TRIM", "@click100,-299950", "", "@click100,-299976", ""}},
         {"EXTEND-contour", {"EXTEND", "", "@click0,-300000", ""}},
         {"BREAK-contour", {"BREAK", "@click0,-300000", "100,-300000"}},
         {"FILLET-contour", {"FILLET", "R", "0.2", "Polyline", "@click0,-300000"}},

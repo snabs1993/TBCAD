@@ -459,3 +459,47 @@ TEST_CASE("property: line-line against brute force") {
         }
     }
 }
+
+TEST_CASE("long polylines: the grid path finds the same points as testing each segment pair") {
+    std::mt19937 rng(11);
+    std::uniform_real_distribution<double> u(0, 100);
+    std::uniform_real_distribution<double> bulge(-0.6, 0.6);
+    auto make = [&](int n) {
+        PolylineData pl;
+        pl.closed = false;
+        for (int i = 0; i < n; ++i)
+            pl.v.push_back({{u(rng), u(rng)}, i % 3 == 0 ? bulge(rng) : 0.0});
+        return pl;
+    };
+    const PolylineData A = make(120), B = make(120);  // 14400 piece pairs: over the brute force limit
+    std::vector<EntityIntersection> big;
+    REQUIRE(intersectEntities(Entity{{}, A}, Entity{{}, B}, big).ok());
+
+    std::vector<Vec2> want;
+    for (std::size_t i = 0; i + 1 < A.v.size(); ++i) {
+        PolylineData sa;
+        sa.v = {A.v[i], {A.v[i + 1].p, 0}};
+        for (std::size_t j = 0; j + 1 < B.v.size(); ++j) {
+            PolylineData sb;
+            sb.v = {B.v[j], {B.v[j + 1].p, 0}};
+            std::vector<EntityIntersection> r;
+            REQUIRE(intersectEntities(Entity{{}, sa}, Entity{{}, sb}, r).ok());
+            for (const auto& x : r)
+                want.push_back(x.p);
+        }
+    }
+    // Hits at a shared vertex are reported once by the long path and per segment here.
+    for (const Vec2 w : want) {
+        bool found = false;
+        for (const auto& g : big)
+            found = found || distance(g.p, w) < 1e-6;
+        CHECK(found);
+    }
+    for (const auto& g : big) {
+        bool found = false;
+        for (const Vec2 w : want)
+            found = found || distance(g.p, w) < 1e-6;
+        CHECK(found);
+    }
+    CHECK(big.size() > 20);
+}

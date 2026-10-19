@@ -345,3 +345,28 @@ TEST_CASE("extend a polyline whose last segment is an arc") {
     CHECK(near(out.v.back().p, {-4, -3}, 1e-6));
     CHECK(near(distance(out.v.back().p, {0, 0}), 5, 1e-6));
 }
+
+TEST_CASE("trim by many edges finds the nearest cuts on both sides of the pick") {
+    // 300 teeth (more than the edge grid threshold) across a long polyline; random picks must be
+    // cut at the neighbouring teeth just as with a handful of edges.
+    std::vector<Entity> edges;
+    for (int i = 0; i < 300; ++i)
+        edges.push_back(line({i * 10.0 + 5, -3}, {i * 10.0 + 5, 3}));
+    std::vector<Vec2> p;
+    for (int i = 0; i <= 3000; i += 10)
+        p.push_back({static_cast<double>(i), (i / 10) % 2 ? 1.0 : -1.0});
+    Entity target = poly(pts(p), false);
+    std::mt19937 rng(7);
+    for (int k = 0; k < 20; ++k) {
+        const int tooth = 5 + static_cast<int>(rng() % 280);
+        const double x = tooth * 10.0 + 5 + 2.5;  // between teeth `tooth` and `tooth + 1`
+        auto r = trimEntity(target, {x, 0}, ptrs(edges));
+        REQUIRE(r.ok());
+        REQUIRE(r.value().modified.has_value());
+        const auto& left = as<PolylineData>(*r.value().modified);
+        REQUIRE(r.value().added.size() == 1);
+        const auto& right = as<PolylineData>(r.value().added[0]);
+        CHECK(near(left.v.back().p, {tooth * 10.0 + 5, left.v.back().p.y}));
+        CHECK(near(right.v.front().p, {(tooth + 1) * 10.0 + 5, right.v.front().p.y}));
+    }
+}
