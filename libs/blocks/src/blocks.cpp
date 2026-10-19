@@ -217,7 +217,8 @@ BBox2 limitToClip(BBox2 box, const InsertData& ins, const Transform2& t) {
 // for one call, or for a BoundsMemoScope (many measurements while the drawing does not change).
 struct Local {
     bool plain = false;
-    BBox2 box{};
+    bool attdefs = false;  // has attribute definitions of its own (not counted in `box`)
+    BBox2 box{};  // everything but its own attribute definitions, in block space
     std::size_t leaves = 0;  // drawn objects below it, counting nested ones (capped)
 };
 using Memo = std::unordered_map<BlockId, Local>;
@@ -251,8 +252,8 @@ Local localOf(const Document& doc, const BlockDef& def, Memo& memo, int depth) {
         if (!e)
             continue;
         if (const auto* td = entityAs<TextData>(*e); td && td->attdef) {
-            plain = false;
-            break;
+            loc.attdefs = true;  // what they show depends on the reference: measured per use
+            continue;
         }
         if (const auto* ins = entityAs<InsertData>(*e)) {
             const BlockDef* inner = doc.block(ins->block);
@@ -271,7 +272,7 @@ Local localOf(const Document& doc, const BlockDef& def, Memo& memo, int depth) {
     }
     loc.plain = plain;
     loc.leaves = leaves;
-    if (plain)
+    if (plain)  // measured without a reference: its own attribute definitions are left out
         loc.box = contentBounds(doc, def, Transform2::identity(), depth, nullptr, memo, true);
     memo[def.id] = loc;
     return loc;
@@ -286,8 +287,22 @@ BBox2 contentBounds(const Document& doc, const BlockDef& def, const Transform2& 
         const Local loc = localOf(doc, def, memo, depth);
         // Moved into place: exact when the transform keeps the axes; for a turned view of a block
         // with very many objects the box of the turned box is used (a little larger, but cheap).
-        if (loc.plain && (axisAligned(t) || loc.leaves > kLooseAbove))
-            return t.applyToBox(loc.box);
+        if (loc.plain && (axisAligned(t) || loc.leaves > kLooseAbove)) {
+            box = t.applyToBox(loc.box);
+            if (loc.attdefs && owner)
+                for (EntityId id : def.entities) {
+                    const Entity* e = doc.find(id);
+                    const auto* td = e ? entityAs<TextData>(*e) : nullptr;
+                    if (!td || !td->attdef || !e->common.visible)
+                        continue;
+                    if (auto shown = attributeText(*e, *owner)) {
+                        auto moved = geom::transformed(*shown, t);
+                        box.merge(moved ? geom::bounds(moved.value(), doc)
+                                        : t.applyToBox(geom::bounds(*shown, doc)));
+                    }
+                }
+            return box;
+        }
     }
     std::optional<AsmResolved> res;
     const InsertData* eff = owner;

@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <optional>
 
 #include "internal.h"
@@ -139,6 +140,60 @@ double polarStep(const ArrayInfo& a) {
     return cnt < 2 ? 0 : (full ? a.fillAngle / cnt : a.fillAngle / (cnt - 1));
 }
 
+// The path of a path array, walked by arc length.
+struct ArrayPath {
+    std::vector<Segment> segs;
+    std::vector<double> lens;
+    double total = 0;
+    explicit ArrayPath(const ArrayInfo& a) {
+        PolylineData pl;
+        pl.v = a.path;
+        pl.closed = a.pathClosed;
+        segs = segments(pl);
+        for (const Segment& g : segs) {
+            lens.push_back(g.curve.length());
+            total += lens.back();
+        }
+    }
+    Vec2 pointAt(double s) const {
+        for (std::size_t i = 0; i < segs.size(); ++i) {
+            if (s <= lens[i] || i + 1 == segs.size()) {
+                const double u = lens[i] > 0 ? std::clamp(s / lens[i], 0.0, 1.0) : 0.0;
+                return segs[i].pointAtLocal(u);
+            }
+            s -= lens[i];
+        }
+        return {};
+    }
+    // Arc length from the start to the point of the path nearest p.
+    double lengthAt(Vec2 p) const {
+        double best = std::numeric_limits<double>::infinity(), at = 0, run = 0;
+        for (std::size_t i = 0; i < segs.size(); ++i) {
+            const double t = segs[i].curve.paramAt(p);
+            const double d = distance(segs[i].curve.pointAt(t), p);
+            if (d < best) {
+                best = d;
+                at = run + lens[i] * segs[i].toLocal(t);
+            }
+            run += lens[i];
+        }
+        return at;
+    }
+    // Distance between items as arrayItemTransforms spaces them.
+    double spacing(const ArrayInfo& a) const {
+        if (a.pathSpacing > 0)
+            return a.pathSpacing;
+        const int cnt = std::max(a.count, 1);
+        return a.pathClosed ? total / cnt : (cnt > 1 ? total / (cnt - 1) : 0);
+    }
+    // Where item i sits (its copy of the reference point).
+    Vec2 item(const ArrayInfo& a, int i) const {
+        double s = spacing(a) * i;
+        s = a.pathClosed && total > 0 ? std::fmod(s, total) : std::min(s, total);
+        return pointAt(s);
+    }
+};
+
 void arrayGrips(const InsertData& d, std::vector<Vec2>& g) {
     const ArrayInfo& a = *d.array;
     auto at = [&](Vec2 blockOffset) { return d.position + insertVector(d, blockOffset); };
@@ -159,6 +214,12 @@ void arrayGrips(const InsertData& d, std::vector<Vec2>& g) {
         };
         g.push_back(item(step));
         g.push_back(item(step * (std::max(a.count, 1) - 1)));
+    } else if (a.kind == ArrayInfo::Kind::Path && a.path.size() >= 2) {
+        const ArrayPath path(a);
+        if (path.segs.empty())
+            return;
+        g.push_back(at(path.item(a, 1)));
+        g.push_back(at(path.item(a, std::max(a.count, 1) - 1)));
     }
 }
 
@@ -210,6 +271,26 @@ Result<void> moveArrayGrip(InsertData& d, int index, Vec2 to) {
             if (cnt < 2)
                 return makeError(ErrorCode::InvalidArgument, "a single item has no fill angle");
             a.fillAngle = ang;
+        }
+    } else if (a.kind == ArrayInfo::Kind::Path && (index == 1 || index == 2) &&
+               a.path.size() >= 2) {
+        const ArrayPath path(a);
+        if (path.segs.empty() || path.total <= tol::kLinear)
+            return makeError(ErrorCode::InvalidArgument, "the path has no length");
+        // Both grips measure along the path from its start (where the first item sits); the
+        // items are then spaced by distance (Measure).
+        const double s = path.lengthAt(*v);
+        if (index == 1) {  // the second item: the spacing
+            if (s <= tol::kLinear)
+                return makeError(ErrorCode::InvalidArgument, "the spacing would be zero");
+            a.pathSpacing = s;
+        } else {  // the last item: as many items as fit up to the grip
+            const double sp = path.spacing(a);
+            if (sp <= tol::kLinear)
+                return makeError(ErrorCode::InvalidArgument, "the spacing is zero");
+            a.pathSpacing = sp;
+            a.count = static_cast<int>(
+                std::clamp(std::floor(s / sp + 0.5) + 1, 1.0, static_cast<double>(kMaxItems)));
         }
     } else {
         return badGrip();

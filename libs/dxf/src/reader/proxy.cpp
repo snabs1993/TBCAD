@@ -7,9 +7,12 @@
 // Everything else is skipped by its size. A damaged record ends the decoding with a warning; what
 // was read so far stays.
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <set>
+#include <type_traits>
+#include <variant>
 
 #include "importer.h"
 #include "tbcad/geom/entity.h"
@@ -602,6 +605,64 @@ void stripProxyText(std::vector<std::uint8_t>& raw) {
     std::memcpy(out.data() + 4, &kept, 4);
     out.insert(out.end(), raw.begin() + total, raw.end());
     raw = std::move(out);
+}
+
+bool stripProxyText(Record& r) {
+    std::vector<std::uint8_t> gfx;
+    bool seenSize = false;
+    std::size_t sizeAt = r.g.size();
+    for (std::size_t i = 0; i < r.g.size(); ++i) {
+        const Group& g = r.g[i];
+        if (g.code == 92 || g.code == 160) {
+            if (!seenSize)
+                sizeAt = i;
+            seenSize = true;
+        } else if (g.code >= 310 && g.code <= 319 && seenSize) {
+            if (const auto* bytes = std::get_if<std::vector<std::byte>>(&g.value))
+                for (std::byte b : *bytes)
+                    gfx.push_back(static_cast<std::uint8_t>(b));
+        }
+    }
+    const std::size_t before = gfx.size();
+    stripProxyText(gfx);
+    if (gfx.size() == before)
+        return false;
+    // The size group keeps its integer type; the bytes go back as 310 groups of 127 bytes, where
+    // the first graphics group was.
+    Group& size = r.g[sizeAt];
+    std::visit(
+        [&](auto& v) {
+            using T = std::decay_t<decltype(v)>;
+            if constexpr (std::is_integral_v<T> && !std::is_same_v<T, bool>)
+                v = static_cast<T>(gfx.size());
+        },
+        size.value);
+    std::vector<Group> out;
+    out.reserve(r.g.size());
+    bool placed = false;
+    for (std::size_t i = 0; i < r.g.size(); ++i) {
+        Group& g = r.g[i];
+        if (i > sizeAt && g.code >= 310 && g.code <= 319 &&
+            std::holds_alternative<std::vector<std::byte>>(g.value)) {
+            if (!placed) {
+                placed = true;
+                for (std::size_t at = 0; at < gfx.size(); at += 127) {
+                    Group chunk;
+                    chunk.code = 310;
+                    chunk.line = g.line;
+                    std::vector<std::byte> bytes;
+                    for (std::size_t k = at; k < std::min(gfx.size(), at + 127); ++k)
+                        bytes.push_back(static_cast<std::byte>(gfx[k]));
+                    chunk.value = std::move(bytes);
+                    out.push_back(std::move(chunk));
+                }
+            }
+            continue;
+        }
+        out.push_back(std::move(g));
+    }
+    r.g = std::move(out);
+    return true;
 }
 
 DisplayStyle Importer::resolveProxyStyle(const EntityCommon& base, Color color) {

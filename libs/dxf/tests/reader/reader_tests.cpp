@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "reader_helpers.h"
+#include "tbcad/blocks/array.h"
 #include "tbcad/gdt/gdt.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/underlay/image.h"
@@ -432,10 +433,20 @@ TEST_CASE("extrusion -Z: INSERT array positions are mirrored before and after ro
     p.g(70, 2).g(71, 1).g(44, 5.0).g(45, 0.0).g(210, 0.0).g(220, 0.0).g(230, -1.0);
     Loaded l = load(p.text + Pairs().end().g(0, "EOF").text);
     auto inserts = modelEntities<InsertData>(l.doc());
-    REQUIRE(inserts.size() == 2);
+    REQUIRE(inserts.size() == 1);
+    REQUIRE(inserts[0]->array);
     // Column offset (5, 0) rotated by 90 degrees is (0, 5); the whole thing is mirrored in x.
-    CHECK(near(inserts[0]->position, Vec2{-1, 2}));
-    CHECK(near(inserts[1]->position, Vec2{-1, 7}));
+    const InsertData& g = *inserts[0];
+    std::vector<Vec2> pos;
+    for (const Transform2& t : blocks::arrayItemTransforms(*g.array)) {
+        const Vec2 o = t.apply({0, 0});
+        const Vec2 s{o.x * g.scale.x, o.y * g.scale.y};
+        const double c = std::cos(g.rotation), sn = std::sin(g.rotation);
+        pos.push_back(g.position + Vec2{s.x * c - s.y * sn, s.x * sn + s.y * c});
+    }
+    REQUIRE(pos.size() == 2);
+    CHECK(near(pos[0], Vec2{-1, 2}));
+    CHECK(near(pos[1], Vec2{-1, 7}));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -850,13 +861,19 @@ TEST_CASE("inserts: nested blocks, MINSERT arrays and attribute values") {
     }
     CHECK(nested == 1);
     auto inserts = modelEntities<InsertData>(d);
-    REQUIRE(inserts.size() == 8);
-    // 2 rows x 3 columns of INNER at spacing 10
-    std::vector<Vec2> pos;
-    for (const InsertData* i : inserts) {
+    REQUIRE(inserts.size() == 3);
+    // The MINSERT is one insert with a 2 rows x 3 columns array at spacing 10, as in AutoCAD.
+    const InsertData* grid = nullptr;
+    for (const InsertData* i : inserts)
         if (d.block(i->block)->name == "INNER")
-            pos.push_back(i->position);
-    }
+            grid = i;
+    REQUIRE(grid);
+    REQUIRE(grid->array);
+    CHECK(grid->array->rows == 2);
+    CHECK(grid->array->columns == 3);
+    std::vector<Vec2> pos;
+    for (const Transform2& t : blocks::arrayItemTransforms(*grid->array))
+        pos.push_back(grid->position + t.apply({0, 0}));
     REQUIRE(pos.size() == 6);
     CHECK(hasEndpoint(pos, Vec2{0, 0}));
     CHECK(hasEndpoint(pos, Vec2{20, 0}));

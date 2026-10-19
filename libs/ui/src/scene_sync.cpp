@@ -562,6 +562,18 @@ void SceneSync::onChanged(const ChangeSet& cs) {
         SceneSync& s;
         ~Relevel() { s.relevelMasks(); }
     } relevel{*this};
+    // A change of objects outside blocks only (moving, copying, erasing them) leaves every
+    // block looking as it did: its geometry is kept, not built again for each edit.
+    if (blockCache_.revision() == seenRevision_ && cs.layers.empty() && cs.levels.empty() &&
+        cs.linetypes.empty() && cs.textStyles.empty() && cs.dimStyles.empty() &&
+        cs.blocks.empty() && !cs.header &&
+        std::none_of(cs.entities.begin(), cs.entities.end(), [&](const EntityChange& c) {
+            // (Erasing from a block changes the block, which cs.blocks shows.)
+            const Entity* e = cs.after(c);
+            return e && doc_.ownerBlock(e->common.id);
+        }))
+        blockCache_.carryTo(doc_.revision());
+    seenRevision_ = doc_.revision();
     bool blockTouched = false;  // every insert is drawn again (a style or a level changed)
     // Blocks whose definition changed: only the inserts that show them (directly or through
     // another block) are drawn again. A block that is new has no insert yet that shows it.

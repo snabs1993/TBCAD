@@ -62,6 +62,9 @@ struct Query {
     std::string value{};
     bool negate = false;
     Compare compare = Compare::Equals;  // Greater and Less only apply to numeric properties
+    // In a filter: this condition starts a new group joined to the ones before by OR (AutoCAD's
+    // "** Begin OR"). Within a group every condition must hold.
+    bool orPrevious = false;
 };
 
 // Visible model-space objects whose property equals (or, with `negate`, differs from) the value.
@@ -71,7 +74,8 @@ struct Query {
 // Empty (nullopt) when the value cannot be read for that property.
 std::optional<std::vector<EntityId>> queryEntities(const Document& doc, const Query& query);
 
-// Objects that satisfy every query (AND). Empty (nullopt) when any value cannot be read.
+// Objects that satisfy the queries: every condition of a group (AND), any group (OR, see
+// Query::orPrevious). Empty (nullopt) when any value cannot be read.
 std::optional<std::vector<EntityId>> filterEntities(const Document& doc,
                                                     const std::vector<Query>& queries);
 

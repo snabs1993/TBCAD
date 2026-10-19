@@ -91,6 +91,9 @@ struct LevelRow {
 
 // Removes the text records from a proxy graphics stream (see proxy.cpp).
 void stripProxyText(std::vector<std::uint8_t>& raw);
+// The same for the proxy graphics groups of a record (92 or 160 size, then 310 data); returns
+// whether anything was removed.
+bool stripProxyText(Record& r);
 
 class Importer {
 public:

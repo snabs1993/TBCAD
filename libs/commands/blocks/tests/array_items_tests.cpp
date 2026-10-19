@@ -160,3 +160,59 @@ TEST_CASE("ARRAYEDIT Source edits the source objects in place and BCLOSE updates
         CHECK(c->radius == doctest::Approx(2));
     }
 }
+
+TEST_CASE("ARRAYEDIT Base moves the base grip and leaves the items in place, a copied array too") {
+    ArrayFixture f;
+    // a copy of the array shares its block; it must not move
+    EntityId twin;
+    {
+        Transaction tx = f.doc.begin("copy");
+        Entity e = *f.doc.find(f.arr);
+        e.common.id = {};
+        entityAs<InsertData>(e)->position = {0, 100};
+        twin = tx.add(std::move(e)).value();
+        tx.commit();
+    }
+    const BBox2 before = blocks::insertBounds(f.doc, *f.doc.find(f.arr));
+    const BBox2 twinBefore = blocks::insertBounds(f.doc, *f.doc.find(twin));
+    f.host->run("ARRAYEDIT", {cmd::ScriptItem::pick(f.arr), "Base", "10,10", "X"});
+    const auto* ins = entityAs<InsertData>(*f.doc.find(f.arr));
+    CHECK(near(ins->position, {10, 10}));
+    CHECK(near(geom::gripPoints(*f.doc.find(f.arr))[0], {10, 10}));
+    const BBox2 after = blocks::insertBounds(f.doc, *f.doc.find(f.arr));
+    CHECK(near(after.min, before.min, 1e-9));
+    CHECK(near(after.max, before.max, 1e-9));
+    const BBox2 twinAfter = blocks::insertBounds(f.doc, *f.doc.find(twin));
+    CHECK(near(twinAfter.min, twinBefore.min, 1e-9));
+    CHECK(near(twinAfter.max, twinBefore.max, 1e-9));
+    CHECK(f.hasCircleAt({10, 10}));
+    CHECK(f.host->undo());
+    CHECK(near(entityAs<InsertData>(*f.doc.find(f.arr))->position, {0, 0}));
+}
+
+TEST_CASE("path array grips change the spacing and the count along the path") {
+    Fixture f;
+    EntityId c = f.addCircle(0, 0, 1);
+    EntityId path = f.addLine(0, 0, 100, 0);
+    f.host->setSelection({c});
+    // 5 items divided over the 100 mm line: 25 apart
+    f.host->run("ARRAYPATH", {cmd::ScriptItem::pick(path), "", "", "5", "N"});
+    EntityId arr{};
+    for (EntityId id : f.modelSpace())
+        if (const auto* i = entityAs<InsertData>(*f.doc.find(id)); i && i->array)
+            arr = id;
+    REQUIRE(arr);
+    Entity e = *f.doc.find(arr);
+    const auto g = geom::gripPoints(e);
+    REQUIRE(g.size() == 3);
+    CHECK(near(g[1], {25, 0}, 1e-9));
+    CHECK(near(g[2], {100, 0}, 1e-9));
+    auto spaced = geom::moveGrip(e, 1, {10, 3});  // the second item 10 along the path
+    REQUIRE(spaced.ok());
+    const ArrayInfo& s = *entityAs<InsertData>(spaced.value())->array;
+    CHECK(s.pathSpacing == doctest::Approx(10));
+    CHECK(s.count == 5);
+    auto counted = geom::moveGrip(e, 2, {50, -2});  // 25 apart up to 50: 3 items
+    REQUIRE(counted.ok());
+    CHECK(entityAs<InsertData>(counted.value())->array->count == 3);
+}
