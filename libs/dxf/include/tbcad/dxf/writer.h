@@ -50,6 +50,9 @@ struct ExportOptions {
     // Write only the objects of this level (null = every level). The file then holds a plain
     // single-level drawing.
     LevelId onlyLevel{};
+    // Threads a big drawing may be written on (0 = the machine's). The bytes written do not depend
+    // on it.
+    std::size_t maxThreads = 0;
 };
 
 struct ExportSummary {
