@@ -551,11 +551,17 @@ private:
             DimAngleFormat angleFormat = DimAngleFormat::Degrees;
             int angularPrecision = -1;
             bool commaDecimal = false;
+            double baselineSpacing = 0, centerMark = 0;
             if (flags & 8) {
                 angleFormat =
                     readEnum<DimAngleFormat>(r, static_cast<std::uint8_t>(DimAngleFormat::Radians));
                 angularPrecision = static_cast<int>(r.u8()) - 1;
                 commaDecimal = r.u8() != 0;
+                baselineSpacing = r.f64();
+                centerMark = r.f64();
+                if (!std::isfinite(baselineSpacing) || baselineSpacing < 0 ||
+                    !std::isfinite(centerMark))
+                    bad("invalid dimension style spacing");
                 if (angularPrecision < -1 || angularPrecision > 8)
                     bad("invalid dimension style angular precision");
             }
@@ -574,6 +580,8 @@ private:
                                         d.angleFormat = angleFormat;
                                         d.angularPrecision = angularPrecision;
                                         d.commaDecimal = commaDecimal;
+                                        d.baselineSpacing = baselineSpacing;
+                                        d.centerMark = centerMark;
                                         d.altScale = altScale;
                                         d.altUnit = altUnit;
                                         d.altPrecision = altPrecision;

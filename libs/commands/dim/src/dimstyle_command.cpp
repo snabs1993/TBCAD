@@ -80,16 +80,16 @@ std::string spaced(std::string_view v) {
 }
 
 const std::vector<std::string> kProps = {
-    "TextHeight",   "TextGap",       "TextStyle",     "ArrowType",   "ArrowSize",
-    "ExtOffset",    "ExtExtension",  "LineExtension", "Placement",   "Alignment",
-    "Units",        "Precision",     "Prefix",        "Suffix",      "RoundOff",
-    "Scale",        "LeadingZeros",  "TrailingZeros", "LineColor",   "ExtColor",
-    "TextColor",    "AltUnits",      "AltScale",      "AltUnit",     "AltPrecision",
-    "AltPrefix",    "AltSuffix",     "Tolerance",     "TolUpper",    "TolLower",
-    "TolPrecision", "LinearFactor",  "Fit",           "TextMove",    "AlignmentOutside",
-    "TextInside",   "ArrowsOutside", "LineInside",    "ExtLine1",    "ExtLine2",
-    "DimLine1",     "DimLine2",      "Justify",       "AngleFormat", "AngularPrecision",
-    "DecimalMark"};
+    "TextHeight",   "TextGap",         "TextStyle",     "ArrowType",   "ArrowSize",
+    "ExtOffset",    "ExtExtension",    "LineExtension", "Placement",   "Alignment",
+    "Units",        "Precision",       "Prefix",        "Suffix",      "RoundOff",
+    "Scale",        "LeadingZeros",    "TrailingZeros", "LineColor",   "ExtColor",
+    "TextColor",    "AltUnits",        "AltScale",      "AltUnit",     "AltPrecision",
+    "AltPrefix",    "AltSuffix",       "Tolerance",     "TolUpper",    "TolLower",
+    "TolPrecision", "LinearFactor",    "Fit",           "TextMove",    "AlignmentOutside",
+    "TextInside",   "ArrowsOutside",   "LineInside",    "ExtLine1",    "ExtLine2",
+    "DimLine1",     "DimLine2",        "Justify",       "AngleFormat", "AngularPrecision",
+    "DecimalMark",  "BaselineSpacing", "CenterMark"};
 
 std::string num(double v) {
     char buf[40];
@@ -169,6 +169,8 @@ std::vector<std::pair<std::string, std::string>> describe(const Document& doc, c
         {"AngleFormat", angleFormat[static_cast<int>(s.angleFormat)]},
         {"AngularPrecision", s.angularPrecision < 0 ? "Same" : std::to_string(s.angularPrecision)},
         {"DecimalMark", s.commaDecimal ? "Comma" : "Point"},
+        {"BaselineSpacing", s.baselineSpacing > 0 ? num(s.baselineSpacing) : "Auto"},
+        {"CenterMark", num(s.centerMark)},
     };
 }
 
@@ -321,6 +323,20 @@ std::string applyProperty(const Document& doc, DimStyle& s, std::string_view key
         if (!parseReal(value, v) || v < 0 || v > 8 || v != std::floor(v))
             return "AngularPrecision is Same or a whole number from 0 to 8.";
         s.angularPrecision = static_cast<int>(v);
+        return {};
+    }
+    if (same(key, "BaselineSpacing")) {
+        if (same(value, "Auto")) {
+            s.baselineSpacing = 0;
+            return {};
+        }
+        return real(s.baselineSpacing, true);
+    }
+    if (same(key, "CenterMark")) {
+        double v = 0;
+        if (!parseReal(value, v))
+            return "Not a number: " + std::string(value);
+        s.centerMark = v;
         return {};
     }
     if (same(key, "DecimalMark")) {

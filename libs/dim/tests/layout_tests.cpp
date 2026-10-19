@@ -379,3 +379,26 @@ TEST_CASE("DIMTOH turns angular text horizontal when the arc lies beyond the ext
     CHECK(std::abs(rot(false, {40, 40})) > 0.1);
     CHECK(std::abs(rot(true, {5, 5})) > 0.1);  // between the lines: follows the arc
 }
+
+TEST_CASE("DIMCEN draws a centre mark on radius and diameter dimensions") {
+    auto lines = [&](double mark, DimKind k, Vec2 a, Vec2 b) {
+        Document doc;
+        Transaction tx = doc.begin("style");
+        REQUIRE(tx.modifyDimStyle(kDimStyleStandard, [&](DimStyle& s) { s.centerMark = mark; }));
+        tx.commit();
+        return layoutDimension(doc, radial(k, a, b));
+    };
+    const Layout none = lines(0, DimKind::Radius, {0, 0}, {10, 0});
+    const Layout mark = lines(2.5, DimKind::Radius, {0, 0}, {10, 0});
+    CHECK(mark.lines.size() == none.lines.size() + 2);
+    const Layout centerLines = lines(-2.5, DimKind::Radius, {0, 0}, {10, 0});
+    CHECK(centerLines.lines.size() == none.lines.size() + 2 + 4);
+    // A diameter marks the middle of the circle, not its end.
+    const Layout dia = lines(2.5, DimKind::Diameter, {-10, 0}, {10, 0});
+    bool atMiddle = false;
+    for (const auto& l : dia.lines)
+        if (l.pts.size() == 2 && std::abs(l.pts[0].x + 2.5) < 1e-9 &&
+            std::abs(l.pts[1].x - 2.5) < 1e-9)
+            atMiddle = true;
+    CHECK(atMiddle);
+}

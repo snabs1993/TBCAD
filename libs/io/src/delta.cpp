@@ -15,7 +15,7 @@ namespace {
 
 constexpr std::uint8_t kDeltaMagic[4] = {'T', 'B', 'D', 'L'};
 // 3: text style rows carry the fixed height. Version 2 records are still read.
-constexpr std::uint8_t kDeltaVersion = 8;
+constexpr std::uint8_t kDeltaVersion = 9;
 
 [[noreturn]] void bad(const char* msg) {
     throw FormatError(msg);
@@ -122,6 +122,9 @@ void putRow(ByteWriter& w, StringTable& st, const DimStyle& r) {
     w.u8(static_cast<std::uint8_t>(r.angleFormat));
     w.u8(static_cast<std::uint8_t>(r.angularPrecision + 1));
     w.u8(r.commaDecimal ? 1 : 0);
+    // (version 9) baseline spacing, centre mark
+    w.f64(r.baselineSpacing);
+    w.f64(r.centerMark);
 }
 
 void putRow(ByteWriter& w, StringTable& st, const BlockDef& r) {
@@ -315,6 +318,13 @@ struct Reader {
             d.angleFormat = enumeration(DimAngleFormat::Radians);
             d.angularPrecision = std::clamp(static_cast<int>(r.u8()) - 1, -1, 8);
             d.commaDecimal = r.u8() != 0;
+        }
+        if (version >= 9) {
+            d.baselineSpacing = r.f64();
+            d.centerMark = r.f64();
+            if (!std::isfinite(d.baselineSpacing) || d.baselineSpacing < 0 ||
+                !std::isfinite(d.centerMark))
+                bad("invalid dimension style spacing");
         }
     }
     void row(BlockDef& b) {
