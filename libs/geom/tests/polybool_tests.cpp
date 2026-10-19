@@ -1,8 +1,8 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
+#include <ctime>
 
 #include "tbcad/geom/geom.h"
 #include "tbcad/geom/polybool.h"
@@ -242,12 +242,13 @@ TEST_CASE("boolean operations on rings of tens of thousands of vertices stay fas
     };
     const Region a = reg({circle({0, 0}, 100, 20000, 0)});
     const Region b = reg({circle({60, 10}, 90, 25000, 0.1)});
-    const auto t0 = std::chrono::steady_clock::now();
+    // Processor time, not wall time: ctest runs many test processes at once, and a busy machine
+    // must not fail a speed check (MSVC's std::clock is wall time, which is no worse than before).
+    const std::clock_t t0 = std::clock();
     const Region u = boolean(a, b, BoolOp::Union);
     const Region i = boolean(a, b, BoolOp::Intersect);
     const Region d = boolean(a, b, BoolOp::Subtract);
-    const double sec =
-        std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    const double sec = static_cast<double>(std::clock() - t0) / CLOCKS_PER_SEC;
     CHECK(sec < 3.0);
     CHECK(area(u) + area(i) == doctest::Approx(area(a) + area(b)).epsilon(1e-9));
     CHECK(area(d) == doctest::Approx(area(a) - area(i)).epsilon(1e-9));
