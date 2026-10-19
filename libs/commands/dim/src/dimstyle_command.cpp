@@ -89,7 +89,8 @@ const std::vector<std::string> kProps = {
     "TolPrecision", "LinearFactor",    "Fit",           "TextMove",    "AlignmentOutside",
     "TextInside",   "ArrowsOutside",   "LineInside",    "ExtLine1",    "ExtLine2",
     "DimLine1",     "DimLine2",        "Justify",       "AngleFormat", "AngularPrecision",
-    "DecimalMark",  "BaselineSpacing", "CenterMark"};
+    "DecimalMark",  "BaselineSpacing", "CenterMark",    "TextFill",    "TextFillColor",
+    "TextFrame"};
 
 std::string num(double v) {
     char buf[40];
@@ -171,6 +172,11 @@ std::vector<std::pair<std::string, std::string>> describe(const Document& doc, c
         {"DecimalMark", s.commaDecimal ? "Comma" : "Point"},
         {"BaselineSpacing", s.baselineSpacing > 0 ? num(s.baselineSpacing) : "Auto"},
         {"CenterMark", num(s.centerMark)},
+        {"TextFill", s.textFill == 1   ? "Background"
+                     : s.textFill == 2 ? "Color"
+                                       : "None"},
+        {"TextFillColor", std::to_string(s.textFillColor)},
+        {"TextFrame", s.textFrame ? "Yes" : "No"},
     };
 }
 
@@ -331,6 +337,33 @@ std::string applyProperty(const Document& doc, DimStyle& s, std::string_view key
             return {};
         }
         return real(s.baselineSpacing, true);
+    }
+    if (same(key, "TextFill")) {
+        if (same(value, "None"))
+            s.textFill = 0;
+        else if (same(value, "Background"))
+            s.textFill = 1;
+        else if (same(value, "Color"))
+            s.textFill = 2;
+        else
+            return "TextFill is None, Background or Color.";
+        return {};
+    }
+    if (same(key, "TextFillColor")) {
+        double v = 0;
+        if (!parseReal(value, v) || v < 0 || v > 255 || v != std::floor(v))
+            return "TextFillColor is a colour index from 0 to 255.";
+        s.textFillColor = static_cast<int>(v);
+        return {};
+    }
+    if (same(key, "TextFrame")) {
+        if (same(value, "Yes"))
+            s.textFrame = true;
+        else if (same(value, "No"))
+            s.textFrame = false;
+        else
+            return "TextFrame is Yes or No.";
+        return {};
     }
     if (same(key, "CenterMark")) {
         double v = 0;

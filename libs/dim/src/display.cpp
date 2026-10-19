@@ -102,6 +102,14 @@ std::optional<Entity> blockContent(const Document& doc, const Entity& e, double 
     return out;
 }
 
+// The display style of the dimension's text, for the fill behind it.
+DisplayStyle textStyleFor(const Document& doc, const Entity& e, const DimStyle& st,
+                          const geom::DisplayContext& ctx) {
+    Entity tmp;
+    tmp.common = commonFor(e, st, Role::Text);
+    return geom::resolveStyle(doc, tmp, ctx);
+}
+
 }  // namespace
 
 void buildDimensionDisplay(const Document& doc, const Entity& e, const geom::DisplayContext& ctx,
@@ -136,6 +144,24 @@ void buildDimensionDisplay(const Document& doc, const Entity& e, const geom::Dis
         f.style = lineStyle;
         f.style.pattern = nullptr;
         out.items.emplace_back(std::move(f));
+    }
+    // DIMTFILL: the text sits on a box in the drawing background or a chosen colour, hiding
+    // the dimension line behind it.
+    if (st.textFill != 0 && L.text.valid() && L.text.width > 0 && !L.text.mtext) {
+        const Vec2 ux{std::cos(L.text.rotation), std::sin(L.text.rotation)};
+        const Vec2 uy{-ux.y, ux.x};
+        const double k = std::max(0.0, st.textGap * (st.overallScale > 0 ? st.overallScale : 1.0));
+        const double hw = L.text.width / 2 + k, hh = L.text.height / 2 + k;
+        DisplayFill bg;
+        bg.style = textStyleFor(doc, e, st, ctx);
+        bg.style.pattern = nullptr;
+        bg.style.color = st.textFill == 2 && st.textFillColor >= 1 && st.textFillColor <= 255
+                             ? paletteColor(static_cast<std::uint8_t>(st.textFillColor))
+                             : kBackgroundColor;
+        const Vec2 m = L.text.center;
+        bg.rings.push_back({m - ux * hw - uy * hh, m + ux * hw - uy * hh, m + ux * hw + uy * hh,
+                            m - ux * hw + uy * hh});
+        out.items.emplace_back(std::move(bg));
     }
     if (L.text.valid())
         text::buildTextDisplay(doc, textEntity(e, st, L.text, textStyleOf(st)), ctx, out);

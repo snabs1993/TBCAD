@@ -1620,7 +1620,23 @@ void Importer::readDimStyle(const Record& r) {
                 ds.arrowType = static_cast<ArrowType>(a);
         }
     }
-    nonNegative(147, k_, ds.textGap);                                   // DIMGAP
+    if (const Group* g = r.find(147); g && std::isfinite(g->number())) {  // DIMGAP
+        ds.textGap = std::abs(g->number()) * k_;
+        ds.textFrame = g->number() < 0;  // a negative gap draws a box round the text
+    }
+    if (const Group* g = r.find(69))  // DIMTFILL
+        ds.textFill = static_cast<int>(std::clamp<std::int64_t>(g->integer(), 0, 2));
+    {
+        // DIMTFILLCLR is the second group 70 of the record; the first is the table flags.
+        int seen = 0;
+        for (const Group& g : r.g) {
+            if (g.code != 70 || ++seen < 2)
+                continue;
+            const std::int64_t c = g.integer();
+            ds.textFillColor = c >= 1 && c <= 255 ? static_cast<int>(c) : 0;
+            break;
+        }
+    }
     nonNegative(42, k_, ds.extLineOffset);                              // DIMEXO
     nonNegative(44, k_, ds.extLineExtension);                           // DIMEXE
     nonNegative(46, k_, ds.dimLineExtension);                           // DIMDLE
