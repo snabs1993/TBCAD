@@ -219,13 +219,39 @@ public:
                 continue;
             }
             if (r.status == Status::Keyword && r.keyword == "Reference") {
-                AngleOptions ro;
-                ro.base = b;
-                ro.defaultValue = 0.0;
-                auto ref = co_await ctx.getAngle("Specify the reference angle <0>", std::move(ro));
-                if (!ref.ok())
-                    co_return;
-                const double refAngle = ref.value;
+                // An angle, or two points that give the direction (the way AutoCAD asks); Enter
+                // on the second point measures the first one from the base point.
+                double refAngle = 0;
+                for (bool have = false; !have;) {
+                    PointOptions ro;
+                    ro.base = b;
+                    ro.freeText = true;
+                    auto first = co_await ctx.getPoint(
+                        "Specify the reference angle <0> or first point", std::move(ro));
+                    if (first.status == Status::Cancel)
+                        co_return;
+                    if (first.status == Status::None) {
+                        have = true;
+                    } else if (first.status == Status::Keyword) {
+                        auto ang = parseAngle(first.keyword);
+                        if (ang) {
+                            refAngle = ang.value();
+                            have = true;
+                        } else {
+                            ctx.message("Enter an angle or pick two points.");
+                        }
+                    } else {
+                        PointOptions so;
+                        so.base = first.point;
+                        auto second = co_await ctx.getPoint("Specify second point", std::move(so));
+                        if (second.status == Status::Cancel)
+                            co_return;
+                        const Vec2 from = second.status == Status::Ok ? first.point : b;
+                        const Vec2 to = second.status == Status::Ok ? second.point : first.point;
+                        refAngle = std::atan2(to.y - from.y, to.x - from.x);
+                        have = true;
+                    }
+                }
                 AngleOptions no;
                 no.base = b;
                 no.preview =
@@ -284,14 +310,39 @@ public:
                 continue;
             }
             if (r.status == Status::Keyword && r.keyword == "Reference") {
-                DistanceOptions ro;
-                ro.base = b;
-                ro.defaultValue = 1.0;
-                ro.allowZero = false;
-                auto ref = co_await ctx.getDistance("Specify reference length <1>", std::move(ro));
-                if (!ref.ok())
-                    co_return;
-                const double refLen = ref.value;
+                // A number, or two points whose distance is the reference length (the way AutoCAD
+                // asks); Enter on the second point measures the first one from the base point.
+                double refLen = 0;
+                while (refLen <= 0) {
+                    PointOptions ro;
+                    ro.base = b;
+                    ro.freeText = true;
+                    auto first = co_await ctx.getPoint(
+                        "Specify reference length <1> or first point", std::move(ro));
+                    if (first.status == Status::Cancel)
+                        co_return;
+                    if (first.status == Status::None) {
+                        refLen = 1;
+                    } else if (first.status == Status::Keyword) {
+                        auto len = parseLength(first.keyword, ctx.doc().header().units);
+                        if (len && len.value() > 0)
+                            refLen = len.value();
+                        else
+                            ctx.message("Enter a positive length or pick two points.");
+                    } else {
+                        PointOptions so;
+                        so.base = first.point;
+                        auto second = co_await ctx.getPoint("Specify second point", std::move(so));
+                        if (second.status == Status::Cancel)
+                            co_return;
+                        refLen = second.status == Status::Ok ? distance(first.point, second.point)
+                                                             : distance(b, first.point);
+                        if (refLen <= 0) {
+                            refLen = 0;
+                            ctx.message("The reference length must not be zero.");
+                        }
+                    }
+                }
                 DistanceOptions no;
                 no.base = b;
                 no.allowZero = false;
