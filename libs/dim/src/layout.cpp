@@ -18,6 +18,10 @@ struct Ctx {
     double tol;
     const TextStyle* tstyle;
     double th, arrow, gap, off, ext, dext;  // style values times the overall scale
+    // The width of the text when it holds a stacked tolerance (measured from its parts), for the
+    // plain text `stackedPlain`; < 0 when nothing is stacked.
+    double stackedWidth = -1;
+    std::string stackedPlain{};
 
     Ctx(const Document& d, const DimStyle& s, double t) : doc(d), st(s), tol(t) {
         const double k = s.overallScale > 0 ? s.overallScale : 1.0;
@@ -59,6 +63,8 @@ double halfExtent(Vec2 dir, double rot, double tw, double th) {
 }
 
 double textWidth(const Ctx& c, const std::string& s) {
+    if (c.stackedWidth >= 0 && s == c.stackedPlain)
+        return c.stackedWidth;
     return s.empty() ? 0 : text::measureWidth(c.tstyle, s, c.th);
 }
 
@@ -826,6 +832,16 @@ Layout layoutDimension(const Document& doc, const DimensionData& d, double toler
     if (text::hasFields(shown.textOverride))
         shown.textOverride = text::expandFields(doc, shown.textOverride);
     const std::string txt = dimensionText(st, shown);
+    const std::optional<StackedText> stacked = stackedDimensionText(st, shown);
+    if (stacked) {
+        // The stack is 0.7 of the text height (as MTEXT draws \S), as wide as its wider part.
+        const double sh = c.th * 0.7;
+        c.stackedWidth =
+            textWidth(c, stacked->before) + textWidth(c, stacked->after) +
+            std::max(text::measureWidth(c.tstyle, stacked->up, sh),
+                     text::measureWidth(c.tstyle, stacked->down, sh));
+        c.stackedPlain = txt;
+    }
     switch (d.kind) {
         case DimKind::Linear:
         case DimKind::Aligned:
@@ -848,6 +864,10 @@ Layout layoutDimension(const Document& doc, const DimensionData& d, double toler
         case DimKind::Jogged:
             layoutJogged(c, d, txt, L);
             break;
+    }
+    if (stacked && L.text.utf8 == txt) {
+        L.text.utf8 = stacked->markup;
+        L.text.stacked = true;
     }
     if (!d.breaks.empty())
         applyBreaks(L, d.breaks);

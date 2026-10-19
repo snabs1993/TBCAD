@@ -11,6 +11,7 @@
 
 #include "../src/dim_internal.h"
 #include "tbcad/dim/dim.h"
+#include "tbcad/text/text.h"
 #include "tbcad/ui/ui_registry.h"
 
 namespace tbcad::dimcmd {
@@ -114,9 +115,12 @@ void drawPreview(ui::PanelContext& pc, const DimStyle& style) {
             }
         }
         if (L.text.valid()) {
-            ImVec2 sz = ImGui::CalcTextSize(L.text.utf8.c_str());
+            // A stacked tolerance is markup: the preview shows it on one line.
+            const std::string shown =
+                L.text.stacked ? text::plainText(L.text.utf8) : L.text.utf8;
+            ImVec2 sz = ImGui::CalcTextSize(shown.c_str());
             ImVec2 p = map(L.text.center);
-            dl->AddText(ImVec2(p.x - sz.x / 2, p.y - sz.y / 2), col, L.text.utf8.c_str());
+            dl->AddText(ImVec2(p.x - sz.x / 2, p.y - sz.y / 2), col, shown.c_str());
         }
     }
     ImGui::Dummy(size);

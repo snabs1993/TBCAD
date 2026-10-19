@@ -50,8 +50,10 @@ millimetres first), `AltPrecision`, `AltPrefix` and `AltSuffix`: the text gets `
 measurement (length dimensions only). `Tolerance` is None, Symmetrical (`100.00 ±0.05`), Deviation
 (`100.00 +0.05 -0.02`) or Limits (`100.05 / 99.98`, replacing the measurement), with `TolUpper`, `TolLower`
 (millimetres; degrees for angular dimensions) and `TolPrecision`. The order is kind prefix, style prefix,
-measurement, style suffix, tolerance, alternate; `<>` in a text override stands for all of it. The text is
-one line (not stacked), so the fit rules use its real width. Files: `.tbcad` keeps both in an extra DSTX chunk
+measurement, style suffix, tolerance, alternate; `<>` in a text override stands for all of it. On the
+drawing, Deviation and Limits are stacked like AutoCAD draws them (upper over lower, 0.7 of the text
+height, as an MTEXT `\S+0.05^-0.02;` stack when exploded or exported); the fit rules use the stacked
+width. `dimensionText` (the style editor, tests) gives the one-line form. Files: `.tbcad` keeps both in an extra DSTX chunk
 older programs skip; DXF writes DIMTOL/DIMLIM/DIMTP/DIMTM/DIMTDEC and DIMALT/DIMALTF/DIMALTD/DIMAPOST and reads
 them (also in a dimension's own DSTYLE overrides). DXF cannot say "inches" for the alternate value, so it comes
 back as millimetres times a factor with the same text.

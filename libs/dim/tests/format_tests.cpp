@@ -125,6 +125,34 @@ TEST_CASE("tolerances: symmetrical, deviation and limits") {
     CHECK(dimensionText(s, a) == "90.50\xC2\xB0 / 89.75\xC2\xB0");
 }
 
+TEST_CASE("deviation and limits tolerances are stacked upper over lower") {
+    DimensionData d = aligned({0, 0}, {100, 0}, {0, 10});
+    DimStyle s;
+    s.tolUpper = 0.05;
+    s.tolLower = 0.02;
+    s.tolerance = DimTolerance::Symmetrical;
+    CHECK_FALSE(stackedDimensionText(s, d));
+    s.tolerance = DimTolerance::Deviation;
+    auto dev = stackedDimensionText(s, d);
+    REQUIRE(dev);
+    CHECK(dev->markup == "100.00 \\S+0.05^-0.02;");
+    CHECK(dev->up == "+0.05");
+    CHECK(dev->down == "-0.02");
+    s.tolerance = DimTolerance::Limits;
+    s.prefix = "L=";
+    auto lim = stackedDimensionText(s, d);
+    REQUIRE(lim);
+    CHECK(lim->markup == "L=\\S100.05^99.98;");
+    // An override keeps its text round the stack; one without "<>" has nothing to stack.
+    d.textOverride = "(<>) TYP";
+    lim = stackedDimensionText(s, d);
+    REQUIRE(lim);
+    CHECK(lim->before == "(L=");
+    CHECK(lim->after == ") TYP");
+    d.textOverride = "FREE";
+    CHECK_FALSE(stackedDimensionText(s, d));
+}
+
 TEST_CASE("alternate units follow the measurement in brackets") {
     DimensionData d = aligned({0, 0}, {254, 0}, {0, 10});
     DimStyle s;
