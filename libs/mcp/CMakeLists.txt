@@ -32,6 +32,17 @@ tbcad_add_library(mcp
 target_include_directories(tbcad_mcp PRIVATE src)
 target_link_libraries(tbcad_mcp PRIVATE miniz)
 
+# Optional libFuzzer build (clang only): cmake -DTBCAD_MCP_FUZZ=ON
+option(TBCAD_MCP_FUZZ "Build the MCP server fuzz target with libFuzzer + ASan/UBSan" OFF)
+if(TBCAD_MCP_FUZZ)
+  set(_fuzz_flags -fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=undefined)
+  target_compile_options(tbcad_mcp PRIVATE ${_fuzz_flags})
+  add_executable(tbcad_mcp_fuzz tests/fuzz_mcp.cpp)
+  target_link_libraries(tbcad_mcp_fuzz PRIVATE tbcad::mcp)
+  target_compile_options(tbcad_mcp_fuzz PRIVATE ${_fuzz_flags})
+  target_link_options(tbcad_mcp_fuzz PRIVATE -fsanitize=fuzzer,address,undefined)
+endif()
+
 tbcad_add_tests(mcp
   SOURCES
     tests/main.cpp
