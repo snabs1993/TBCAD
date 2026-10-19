@@ -122,7 +122,8 @@ TEST_CASE("DIMDISASSOC and DIMREASSOC with edits in between") {
     // Move the line back and relink: the points sit on its ends again.
     r.host.setSelection({r.line});
     REQUIRE(r.host.run("MOVE", {"0,10", "0,0"}).finished);
-    r.host.run("DIMREASSOC", {ScriptItem::select({r.dim}), ScriptItem::enter()});
+    r.host.run("DIMREASSOC", {ScriptItem::select({r.dim}), ScriptItem::enter(), ScriptItem::enter(),
+                              ScriptItem::enter()});
     CHECK(r.d().assoc[0].target == r.line);
     CHECK(r.d().assoc[1].index == 1);
     r.host.setSelection({r.line});
