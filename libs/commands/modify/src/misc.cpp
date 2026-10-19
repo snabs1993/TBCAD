@@ -3,6 +3,7 @@
 #include <cmath>
 #include <unordered_set>
 
+#include "tbcad/transform/apply.h"
 #include "commands.h"
 #include "tbcad/blocks/tbcad_blocks.h"
 #include "util.h"
@@ -392,8 +393,16 @@ public:
         auto s1 = co_await ctx.getPoint("Specify first source point");
         if (!s1.ok())
             co_return;
+        // Live preview: the selection as it would sit with the cursor as the destination.
+        const std::vector<EntityId>& picked = sel.ids;
+        auto show = [&ctx, &picked](const Transform2& t, DisplayList& out) {
+            transform::buildPreview(ctx.doc(), picked, t, ctx.host().view().scale, out);
+        };
         cmd::PointOptions po1;
         po1.base = s1.point;
+        po1.preview = [show, a = s1.point](Vec2 c, DisplayList& out) {
+            show(Transform2::translate(c - a), out);
+        };
         auto d1 = co_await ctx.getPoint("Specify first destination point", po1);
         if (!d1.ok())
             co_return;
@@ -405,6 +414,12 @@ public:
         if (s2.status == cmd::Status::Ok) {
             cmd::PointOptions po3;
             po3.base = s2.point;
+            po3.preview = [show, a = s1.point, b = d1.point, c2 = s2.point](Vec2 c,
+                                                                           DisplayList& out) {
+                auto t = modify::alignTransform(a, b, c2, c, false);
+                if (t)
+                    show(t.value(), out);
+            };
             auto d2 = co_await ctx.getPoint("Specify second destination point", po3);
             if (!d2.ok())
                 co_return;

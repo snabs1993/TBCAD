@@ -308,3 +308,17 @@ TEST_CASE("SCALE by reference with two points, a typed length, or Enter after on
     f.host.run("SCALE", {"0,0", "Reference", "4,4", "4,4", "10", "25"});
     CHECK(near(get<LineData>(f.doc, a).b, {25, 0}));
 }
+
+TEST_CASE("ALIGN previews the object at both destination prompts") {
+    Fixture f;
+    auto a = add(f.doc, LineData{{0, 0}, {10, 0}});
+    f.host.setSelection({a});
+    f.host.run("ALIGN", {"0,0"});
+    f.host.runner().pointerMoved(cmd::RawInput{{5, 5}, {5, 5}, 1});
+    CHECK_FALSE(f.host.preview().items.empty());
+    f.host.feed({"5,5", "10,0"});
+    f.host.runner().pointerMoved(cmd::RawInput{{5, 25}, {5, 25}, 1});
+    CHECK_FALSE(f.host.preview().items.empty());
+    f.host.feed({ScriptItem::esc()});
+    CHECK(near(get<LineData>(f.doc, a).b, {10, 0}));
+}
