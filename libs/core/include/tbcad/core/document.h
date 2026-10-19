@@ -521,6 +521,11 @@ private:
     void followAssociations();  // associative dimensions, at the start of commit()
     void touchBlock(BlockId id);
     void touchOrder(EntityId id);
+    // The next draw-order key past the front-most / back-most override, found by one scan and then
+    // advanced per call, so bringing 100k objects to the front is not 100k scans. Only a cache:
+    // dropped by a move, and a key left too far out by an erase only leaves a gap in the order.
+    std::optional<std::int64_t> nextFront_{};
+    std::optional<std::int64_t> nextBack_{};
     Document& doc() const;
     const detail::ObjectRefs* objectRefs();
     Result<void> eraseEntityInternal(EntityId id);

@@ -1,5 +1,8 @@
 #include <doctest/doctest.h>
 
+#include <chrono>
+#include <cstdio>
+
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/modify/modify.h"
@@ -1638,4 +1641,31 @@ TEST_CASE("FIND searches the layout sheets too") {
     (void)f.host.run("FIND", {"Door", "Gate", "No"});
     CHECK(entityAs<TextData>(f.get(model))->utf8 == "Gate in model");
     CHECK(entityAs<TextData>(f.get(sheet))->utf8 == "Gate on sheet");
+}
+
+TEST_CASE("DRAWORDER of many objects keeps their order and stays fast") {
+    Fixture f;
+    std::vector<EntityId> ids;
+    for (int i = 0; i < 30000; ++i)
+        ids.push_back(f.add(LineData{{double(i), 0}, {i + 1.0, 1}}));
+    std::vector<EntityId> some;
+    for (int i = 0; i < 30000; i += 3)
+        some.push_back(ids[i]);
+    const auto t = std::chrono::steady_clock::now();
+    f.host.setSelection(some);
+    f.host.run("DRAWORDER", {ScriptItem::enter(), "Back"});
+    f.host.run("DRAWORDER", {ScriptItem::enter(), "Front"});
+    const double took = std::chrono::duration<double>(std::chrono::steady_clock::now() - t).count();
+    // The selected third went to the back and then to the front, in their old relative order.
+    const auto order = f.doc.modelSpace();
+    REQUIRE(order.size() == ids.size());
+    CHECK(std::vector<EntityId>(order.end() - static_cast<long>(some.size()), order.end()) == some);
+    CHECK(order.front() == ids[1]);
+    std::printf("[draworder] 2 x %zu objects: %.2f s\n", some.size(), took);
+#ifdef NDEBUG
+    CHECK(took < 3.0);
+#endif
+    CHECK(f.host.undo());
+    CHECK(f.host.undo());
+    CHECK(f.doc.modelSpace() == ids);
 }
