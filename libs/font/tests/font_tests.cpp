@@ -422,7 +422,7 @@ TEST_CASE("bundled stroke font: ป ฝ ฟ ฬ rise on the right, ห has no as
     // The x of the highest point, and the height, of a glyph.
     auto top = [&](char32_t c) {
         double x = 0, y = -1e9;
-        for (const StrokePath& p : lib.strokes(f, c).paths)
+        for (const auto& p : lib.strokes(f, c).paths)
             for (const FPoint& q : p.points)
                 if (q.y > y) {
                     y = q.y;

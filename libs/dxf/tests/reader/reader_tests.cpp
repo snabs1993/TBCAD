@@ -1175,6 +1175,57 @@ TEST_CASE("an AutoCAD TABLE entity shows the lines and text of its anonymous blo
     CHECK(texts == 1);
 }
 
+TEST_CASE("an AutoCAD TABLE with its cell data becomes an editable table") {
+    Pairs p;
+    p.section("BLOCKS").g(0, "BLOCK").g(2, "*T2").g(70, 1).g(10, 0.0).g(20, 0.0).g(30, 0.0);
+    p.g(0, "LINE").g(8, "0").g(10, 100.0).g(20, 100.0).g(11, 200.0).g(21, 100.0);
+    p.g(0, "ENDBLK").end();
+    p.section("ENTITIES");
+    p.g(0, "ACAD_TABLE").g(8, "0").g(100, "AcDbBlockReference").g(2, "*T2");
+    p.g(10, 100.0).g(20, 200.0).g(30, 0.0);
+    p.g(100, "AcDbTable").g(280, 0).g(11, 1.0).g(21, 0.0).g(31, 0.0).g(90, 22).g(91, 3).g(92, 2);
+    p.g(141, 10.0).g(141, 8.0).g(141, 8.0).g(142, 40.0).g(142, 25.0);
+    auto cell = [&](const char* text, int cols, int align, double h) {
+        p.g(171, 1).g(172, 0).g(173, cols > 1 ? 1 : 0).g(174, 0).g(175, cols).g(176, 1);
+        p.g(91, 0).g(178, 0).g(145, 0.0);
+        if (text)
+            p.g(1, text);
+        p.g(7, "Standard").g(140, h).g(170, align);
+    };
+    cell("SCHEDULE", 2, 5, 4.0);
+    cell(nullptr, 1, 5, 4.0);  // covered by the title
+    cell("Mark", 1, 5, 2.5);
+    cell("Size", 1, 5, 2.5);
+    cell("C1", 1, 2, 2.5);
+    // A newer file keeps the text in the cell value instead of group 1.
+    p.g(171, 1).g(175, 1).g(176, 1).g(140, 2.5).g(170, 2).g(301, "CELL_VALUE").g(93, 6).g(90, 4);
+    p.g(1, "").g(302, "300x300").g(304, "ACVALUE_END");
+    p.g(0, "ENDSEC").g(0, "EOF");
+    Loaded l = load(p.text);
+    CHECK(modelEntities<InsertData>(l.doc()).empty());
+    const auto tables = modelEntities<TableData>(l.doc());
+    REQUIRE(tables.size() == 1);
+    const TableData& t = *tables[0];
+    CHECK(near(t.origin, Vec2{100, 200}));
+    REQUIRE(t.rowHeights.size() == 3);
+    REQUIRE(t.colWidths.size() == 2);
+    CHECK(t.rowHeights[0] == doctest::Approx(10));
+    CHECK(t.colWidths[1] == doctest::Approx(25));
+    REQUIRE(t.cells.size() == 6);
+    CHECK(t.cells[0].utf8 == "SCHEDULE");
+    CHECK(t.cells[0].colSpan == 2);
+    CHECK(t.cells[1].covered);
+    CHECK(t.cells[2].utf8 == "Mark");
+    CHECK(t.cells[4].utf8 == "C1");
+    CHECK(t.cells[5].utf8 == "300x300");
+    CHECK(t.titleRow);
+    CHECK(t.textHeight == doctest::Approx(2.5));
+    CHECK(t.titleStyle.textHeight == doctest::Approx(4));
+    CHECK(t.dataStyle.align == 1);  // centred (170 = 2 and 5)
+    // The anonymous block is not kept once nothing inserts it.
+    CHECK_FALSE(l.doc().blockByName("*T2"));
+}
+
 TEST_CASE("dimension: number format, rules and colours overridden in its extended data") {
     Pairs p;
     p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE");
