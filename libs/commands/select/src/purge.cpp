@@ -21,15 +21,21 @@ PurgeCounts purgeUnused(const Document& doc, Transaction& tx, unsigned kinds) {
                 }
         }
         if (want(PurgeKind::Blocks)) {
-            std::vector<BlockId> ids;
-            for (const auto& [id, row] : doc.blocks())
-                if (!row.anonymous)
-                    ids.push_back(id);
-            for (BlockId id : ids)
-                if (tx.eraseBlock(id)) {
-                    ++n.blocks;
-                    progress = true;
-                }
+            // A block that holds the last insert of another frees it as it goes, so keep going
+            // round the blocks until none can go (cheap: no rescan of the objects).
+            for (bool again = true; again;) {
+                again = false;
+                std::vector<BlockId> ids;
+                for (const auto& [id, row] : doc.blocks())
+                    if (!row.anonymous)
+                        ids.push_back(id);
+                for (BlockId id : ids)
+                    if (tx.eraseBlock(id)) {
+                        ++n.blocks;
+                        progress = true;
+                        again = true;
+                    }
+            }
         }
         if (want(PurgeKind::Layers)) {
             std::vector<LayerId> ids;
