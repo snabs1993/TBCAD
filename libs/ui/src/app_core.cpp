@@ -981,8 +981,9 @@ void AppCore::openLap(const std::string& name) {
 
 Result<void> AppCore::openDxf(const fs::path& path) {
     auto lap = [&](const char* name) { openLap(name); };
+    std::error_code isDirEc;
     std::ifstream in(platform::longPath(path), std::ios::binary);
-    if (!in) {
+    if (!in || fs::is_directory(platform::longPath(path), isDirEc)) {
         printOpenFailure("Cannot open " + path.string());
         settings_.removeRecentFile(platform::pathToUtf8(path));
         return makeError(ErrorCode::Io, "Cannot read " + path.string());
