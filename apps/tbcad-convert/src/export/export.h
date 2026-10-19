@@ -14,6 +14,7 @@ struct ExportArgs {
     std::string reportPath{};
     dxf::ExportOptions options{};
     bool quiet = false;
+    bool timing = false;
 };
 
 // Exit codes as in cli.h: 0 written, 1 written with warnings, 2 failed.

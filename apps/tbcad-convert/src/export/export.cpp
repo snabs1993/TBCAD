@@ -1,5 +1,7 @@
 #include "export.h"
 
+#include "../timing.h"
+
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -8,6 +10,7 @@
 #include "tbcad/convert/cli.h"
 #include "tbcad/dxf/report.h"
 #include "tbcad/io/tbcad.h"
+#include "tbcad/platform/paths.h"
 
 namespace tbcad::convert {
 
@@ -15,7 +18,9 @@ namespace {
 
 bool writeFile(const std::string& path, const std::string& bytes) {
     // Write next to the target first so an interrupted run never leaves half a DXF behind.
-    std::string tmp = path + ".tmp";
+    // (UTF-8 names, so Thai file names work on Windows)
+    const std::filesystem::path target = platform::longPath(platform::pathFromUtf8(path));
+    const std::filesystem::path tmp = platform::longPath(platform::pathFromUtf8(path + ".tmp"));
     {
         std::ofstream f(tmp, std::ios::binary);
         if (!f)
@@ -25,10 +30,10 @@ bool writeFile(const std::string& path, const std::string& bytes) {
             return false;
     }
     std::error_code ec;
-    std::filesystem::rename(tmp, path, ec);
+    std::filesystem::rename(tmp, target, ec);
     if (ec) {
-        std::filesystem::remove(path, ec);
-        std::filesystem::rename(tmp, path, ec);
+        std::filesystem::remove(target, ec);
+        std::filesystem::rename(tmp, target, ec);
     }
     return !ec;
 }
@@ -60,19 +65,23 @@ int runExport(const ExportArgs& args, std::ostream& out, std::ostream& err) {
         return kExitFailed;
     };
 
+    PhaseTimer timer(err, args.timing);
     io::IoReport ioReport;
     Result<std::unique_ptr<Document>> doc =
-        io::readTbcad(std::filesystem::path(args.input), ioReport);
+        io::readTbcad(platform::pathFromUtf8(args.input), ioReport);
     if (!doc)
         return fail("cannot read " + args.input + ": " + doc.error().message);
+    timer.phase("read tbcad");
 
     dxf::Report report;
     Result<dxf::ExportResult> result = dxf::exportDxf(*doc.value(), args.options, report);
     if (!result)
         return fail(result.error().message);
+    timer.phase("export dxf");
 
     if (!writeFile(args.output, result.value().bytes))
         return fail("cannot write " + args.output);
+    timer.phase("write");
 
     const dxf::ExportSummary& summary = result.value().summary;
     if (!args.reportPath.empty()) {
