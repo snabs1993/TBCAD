@@ -1765,13 +1765,19 @@ private:
         out_.spatialFilters[self] = std::move(f);
     }
 
-    // SORTENTSTABLE: the draw order of a block. The main data is a count; the handle stream holds
-    // the block owner and then pairs of (sort handle, entity handle). Entities sort by the sort
-    // handle, those not listed by their own handle.
+    // SORTENTSTABLE: the draw order of a block. The main data is a count and then the sort
+    // handles; the handle stream holds the block owner and then the entity handles, in the same
+    // order. Entities sort by the sort handle, those not listed by their own handle.
     void decodeSortEnts(BitReader& r, std::size_t objBits, Bytes body, std::uint64_t self) {
         std::uint32_t reactors = 0;
         commonObjectPrefix(r, reactors);
         const std::uint32_t n = r.bl();
+        std::vector<std::uint64_t> sortHandles;
+        if (!r.failed() && n <= 2000000) {
+            sortHandles.reserve(n);
+            for (std::uint32_t i = 0; i < n && !r.failed(); ++i)
+                sortHandles.push_back(resolveHandle(r.handle(), self));
+        }
         tally(kSortEnts, r);
         BitReader h(body, objBits);
         leadingHandles(h, self, reactors, true);
@@ -1779,24 +1785,23 @@ private:
         while (!h.failed() && h.bitsLeft() >= 8 && rest.size() < 2000000)
             rest.push_back(resolveHandle(h.handle(), self));
         // Trailing padding can read as a few null handles.
-        while (!rest.empty() && rest.back() == 0)
+        while (rest.size() > n + 1ull && rest.back() == 0)
             rest.pop_back();
-        const bool okLayout = !r.failed() && n <= 2000000 &&
-                              (!fmt_.r2007 || r.bitPos() == mainEnd_) && rest.size() >= 2ull * n;
+        const bool okLayout = !r.failed() && n <= 2000000 && sortHandles.size() == n &&
+                              (!fmt_.r2007 || r.bitPos() == mainEnd_) &&
+                              rest.size() == n + 1ull;
         if (!okLayout) {
             note("sort table " + hex(self) + " has an unexpected layout (" + std::to_string(n) +
                  " entries, " + std::to_string(rest.size()) + " handles)" +
                  (failDumps_[kSortEnts]++ < 2 ? ", bits " + dumpCurrent() : std::string()));
             return;
         }
-        // The block owner comes first when one handle is left over after the pairs.
-        const std::size_t lead = rest.size() - 2ull * n;
-        const std::uint64_t block = lead >= 1 ? rest[lead - 1] : 0;
+        const std::uint64_t block = rest[0];
         if (block == 0)
             return;
         auto& keys = out_.sortKeys[block];
         for (std::uint32_t i = 0; i < n; ++i)
-            keys[rest[lead + 2ull * i + 1]] = rest[lead + 2ull * i];
+            keys[rest[1 + i]] = sortHandles[i];
     }
 
     // LAYOUT object (ODA spec 20.4.84): the name, paper size and paper space block of a layout.
