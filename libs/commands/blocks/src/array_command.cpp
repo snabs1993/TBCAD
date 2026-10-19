@@ -66,7 +66,8 @@ bool pathVertices(const Entity& e, std::vector<PolyVertex>& v, bool& closed) {
         if (sweep <= 0)
             sweep += kTwoPi;
         closed = std::abs(sweep - kTwoPi) < 1e-9;
-        curve = geom::CurveRef::ellipse(el->center, el->majorAxis, el->ratio, el->startParam, sweep);
+        curve =
+            geom::CurveRef::ellipse(el->center, el->majorAxis, el->ratio, el->startParam, sweep);
     } else if (const auto* sp = entityAs<SplineData>(e)) {
         auto c = geom::CurveRef::spline(*sp);
         if (!c)
@@ -239,8 +240,8 @@ private:
             bool closed = false;
             return pathVertices(e, v, closed);
         };
-        auto picked =
-            co_await ctx.getEntity("Select path curve (line, arc, circle, polyline, ellipse or spline)", eo);
+        auto picked = co_await ctx.getEntity(
+            "Select path curve (line, arc, circle, polyline, ellipse or spline)", eo);
         if (!picked.ok())
             co_return;
         info.kind = ArrayInfo::Kind::Path;
@@ -317,10 +318,10 @@ private:
             auto opt = co_await ctx.getKeyword(
                 "Polar array of " + std::to_string(n) + " items over " +
                     niceNumber(fillAngle * 180 / kPi) +
-                    " degrees [Items/Angle/Rotate/Associative] <Accept>",
-                cmd::KeywordOptions{
-                    .keywords = {"Accept", "Items", "Angle", "Rotate", "Associative"},
-                    .defaultKeyword = "Accept"});
+                    " degrees [Items/Angle/Between/Rotate/Associative] <Accept>",
+                cmd::KeywordOptions{.keywords = {"Accept", "Items", "Angle", "Fill", "Between",
+                                                 "Rotate", "Associative"},
+                                    .defaultKeyword = "Accept"});
             if (!opt.ok())
                 co_return;
             if (opt.keyword == "Accept")
@@ -333,7 +334,30 @@ private:
                 if (!v.ok())
                     co_return;
                 n = static_cast<int>(v.value);
-            } else if (opt.keyword == "Angle") {
+            } else if (opt.keyword == "Between") {
+                // AutoCAD's "Angle between items": the fill follows from it and the item count;
+                // a step that goes round exactly once makes a full circle.
+                const bool full = std::abs(std::abs(fillAngle) - kTwoPi) < 1e-9;
+                const double step = full ? fillAngle / n : fillAngle / (n - 1);
+                auto b = co_await ctx.getAngle(
+                    "Specify the angle between items <" + niceNumber(step * 180 / kPi) + ">",
+                    cmd::AngleOptions{.base = c, .defaultValue = step});
+                if (!b.ok())
+                    co_return;
+                double between = std::remainder(b.value, kTwoPi);
+                if (std::abs(between) < 1e-9) {
+                    ctx.message("The angle between items must not be zero.");
+                    continue;
+                }
+                if (std::abs(std::abs(between * n) - kTwoPi) < 1e-6) {
+                    fillAngle = between > 0 ? kTwoPi : -kTwoPi;
+                } else if (std::abs(between * (n - 1)) > kTwoPi + 1e-9) {
+                    ctx.message("The items would overlap: lower the angle or the item count.");
+                    continue;
+                } else {
+                    fillAngle = between * (n - 1);
+                }
+            } else if (opt.keyword == "Angle" || opt.keyword == "Fill") {
                 const double pixel = ctx.host().view().scale;
                 const int items = n;
                 auto preview = [&doc, source, c, items, pixel](Vec2 cursor, DisplayList& out) {
@@ -402,14 +426,32 @@ private:
                 std::to_string(spec.rows) + " rows x " + std::to_string(spec.columns) +
                     " columns, spacing " + niceNumber(spec.columnSpacing) + " x " +
                     niceNumber(spec.rowSpacing) + ", angle " + niceNumber(spec.angle * 180 / kPi) +
-                    " [Rows/Columns/Spacing/Angle/Associative] <Accept>",
-                cmd::KeywordOptions{
-                    .keywords = {"Accept", "Rows", "Columns", "Spacing", "Angle", "Associative"},
-                    .defaultKeyword = "Accept"});
+                    " [COUnt/Rows/Columns/Spacing/Angle/Associative] <Accept>",
+                cmd::KeywordOptions{.keywords = {"Accept", "COUnt", "Rows", "Columns", "Spacing",
+                                                 "Angle", "Associative"},
+                                    .defaultKeyword = "Accept"});
             if (!opt.ok())
                 co_return;
             if (opt.keyword == "Accept")
                 break;
+            if (opt.keyword == "COUnt") {
+                // As AutoCAD: columns, then rows, in one go.
+                auto cols = co_await ctx.getInteger(
+                    "Enter the number of columns <" + std::to_string(spec.columns) + ">",
+                    cmd::IntOptions{
+                        .defaultValue = spec.columns, .min = 1, .max = blocks::kMaxArrayItems});
+                if (!cols.ok())
+                    co_return;
+                auto rows = co_await ctx.getInteger(
+                    "Enter the number of rows <" + std::to_string(spec.rows) + ">",
+                    cmd::IntOptions{
+                        .defaultValue = spec.rows, .min = 1, .max = blocks::kMaxArrayItems});
+                if (!rows.ok())
+                    co_return;
+                spec.columns = static_cast<int>(cols.value);
+                spec.rows = static_cast<int>(rows.value);
+                continue;
+            }
             if (opt.keyword == "Rows" || opt.keyword == "Columns") {
                 const bool rows = opt.keyword == "Rows";
                 const int other = rows ? spec.columns : spec.rows;
@@ -585,9 +627,8 @@ public:
                 ArrayInfo a = *ins->array;
                 if (!blocks::removeArrayItem(a, *item))
                     continue;
-                const bool empty =
-                    a.swaps.empty() &&
-                    static_cast<long long>(a.removed.size()) >= blocks::arrayItemCount(a);
+                const bool empty = a.swaps.empty() && static_cast<long long>(a.removed.size()) >=
+                                                          blocks::arrayItemCount(a);
                 if (empty) {
                     (void)ctx.tx().erase(id);
                     ctx.message("That was the last item: the array was erased.");
@@ -683,7 +724,8 @@ Result<void> moveBasePoint(cmd::CommandContext& ctx, EntityId id, ArrayInfo& a, 
 // Angle between, Fill angle, ROTate items. Path: Method (Divide or Measure), Items, Align items.
 // All kinds: Base (moves the array's base grip, not its items), Source (edit the source objects
 // in place, as BEDIT; BSAVE or BCLOSE updates every item), REPlace (show chosen items as other
-// objects) and RESet (bring back removed and replaced items). Every change shows at once and the whole edit is one undo step.
+// objects) and RESet (bring back removed and replaced items). Every change shows at once and the
+// whole edit is one undo step.
 class ArrayEditCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "ARRAYEDIT"; }
@@ -733,7 +775,7 @@ public:
                     ko.keywords = {"Source", "REPlace", "Base", "Rows", "Columns", "RESet", "eXit"};
                     break;
                 case ArrayInfo::Kind::Polar:
-                    ko.keywords = {"Source", "REPlace", "Base", "Items", "Angle",
+                    ko.keywords = {"Source", "REPlace", "Base",  "Items", "Angle",
                                    "Fill",   "ROTate",  "RESet", "eXit"};
                     break;
                 case ArrayInfo::Kind::Path:
@@ -810,9 +852,9 @@ public:
                     continue;
                 }
                 const Vec2 centroid = detail::boundsOf(doc, objs).center();
-                auto basePt = co_await ctx.getPoint(
-                    "Select base point of replacement objects <centroid>",
-                    cmd::PointOptions{.allowNone = true});
+                auto basePt =
+                    co_await ctx.getPoint("Select base point of replacement objects <centroid>",
+                                          cmd::PointOptions{.allowNone = true});
                 if (basePt.status != cmd::Status::None && !basePt.ok())
                     co_return;
                 const Vec2 base = basePt.ok() ? basePt.point : centroid;
@@ -902,17 +944,17 @@ public:
                 auto n = co_await ctx.getInteger(
                     std::string("Enter the number of ") + (rows ? "rows" : "columns") + " <" +
                         std::to_string(count) + ">",
-                    cmd::IntOptions{.defaultValue = count, .min = 1,
-                                    .max = blocks::kMaxArrayItems});
+                    cmd::IntOptions{
+                        .defaultValue = count, .min = 1, .max = blocks::kMaxArrayItems});
                 if (!n.ok())
                     co_return;
-                cmd::DistanceOptions dso{.defaultValue = spacing, .allowZero = false,
-                                         .allowNegative = true};
+                cmd::DistanceOptions dso{
+                    .defaultValue = spacing, .allowZero = false, .allowNegative = true};
                 dso.keywords = {"Total"};
-                auto sp = co_await ctx.getDistance(
-                    std::string("Specify the distance between ") + (rows ? "rows" : "columns") +
-                        " or [Total] <" + niceNumber(spacing) + ">",
-                    dso);
+                auto sp = co_await ctx.getDistance(std::string("Specify the distance between ") +
+                                                       (rows ? "rows" : "columns") +
+                                                       " or [Total] <" + niceNumber(spacing) + ">",
+                                                   dso);
                 double newSpacing = sp.value;
                 if (sp.status == cmd::Status::Keyword) {
                     // the distance from the first to the last row or column
@@ -937,8 +979,8 @@ public:
                     continue;
                 a = next;
             } else if (k == "Items") {
-                cmd::IntOptions io{.defaultValue = a.count, .min = 1,
-                                   .max = blocks::kMaxArrayItems};
+                cmd::IntOptions io{
+                    .defaultValue = a.count, .min = 1, .max = blocks::kMaxArrayItems};
                 if (a.kind == ArrayInfo::Kind::Path && a.pathSpacing > 0) {
                     // Measure: the spacing first, then how many fit (as AutoCAD asks)
                     auto sp = co_await ctx.getDistance(
@@ -957,8 +999,7 @@ public:
             } else if (k == "Angle") {  // angle between items
                 const double step = a.count > 1 ? a.fillAngle / (a.count - 1) : a.fillAngle;
                 auto ang = co_await ctx.getAngle(
-                    "Specify the angle between items <" +
-                        niceNumber(step * 180.0 / kPi) + ">",
+                    "Specify the angle between items <" + niceNumber(step * 180.0 / kPi) + ">",
                     cmd::AngleOptions{.defaultValue = step});
                 if (!ang.ok())
                     co_return;
