@@ -2,6 +2,7 @@
 #include <atomic>
 #include <cctype>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <functional>
@@ -371,6 +372,7 @@ font::FontId fontForStyle(const TextStyle* style, bool bold, bool italic) {
 
     font::FontLibrary& lib = fonts();
     std::optional<font::FontId> found;
+    const auto lookupStart = std::chrono::steady_clock::now();
     if (style) {
         const std::string shx = shxNameOf(*style);
         if (!shx.empty()) {
@@ -420,6 +422,25 @@ font::FontId fontForStyle(const TextStyle* style, bool bold, bool italic) {
             found = r.value();
     }
     font::FontId id = found.value_or(kNoFont);
+    // TBCAD_FONT_PROFILE / TBCAD_INDEX_PROFILE: a font lookup that took long, on stderr.
+    static const bool profile = [] {
+        for (const char* var : {"TBCAD_FONT_PROFILE", "TBCAD_INDEX_PROFILE"})
+            if (const char* v = std::getenv(var); v && *v && *v != '0')
+                return true;
+        return false;
+    }();
+    if (profile) {
+        const double ms = std::chrono::duration<double, std::milli>(
+                              std::chrono::steady_clock::now() - lookupStart)
+                              .count();
+        if (ms > 20)
+            std::fprintf(stderr,
+                         "font profile: style '%s' (family '%s', file '%s', shx '%s'%s%s) took "
+                         "%.1f ms\n",
+                         style ? style->name.c_str() : "", family.c_str(), file.c_str(),
+                         style ? style->shxFile.c_str() : "", bold ? ", bold" : "",
+                         italic ? ", italic" : "", ms);
+    }
     cache.emplace(std::move(key), id);
     return id;
 }
