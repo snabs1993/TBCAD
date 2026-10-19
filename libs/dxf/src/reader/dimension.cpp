@@ -429,9 +429,10 @@ bool Importer::convDimension(const Record& r, std::vector<Entity>& out, BlockId 
                 break;
         }
     }
-    // Group 11 is where AutoCAD shows the text: its middle point, written whether or not the
-    // text was moved by hand (AutoCAD's own fit rules and font widths put it there, a radius
-    // dimension's text goes where it was picked). Text that is not where TBCAD would put it
+    // Group 11 is where AutoCAD shows the text: its middle point (or the point on the dimension
+    // line under text lifted above it), written whether or not the text was moved by hand
+    // (AutoCAD's own fit rules and font widths put it there, a radius dimension's text goes where
+    // it was picked). Text that is not where TBCAD would put it
     // counts as placed; a file TBCAD wrote keeps its text where TBCAD puts it anyway. A point
     // far from the dimension is not trusted (some writers leave it at the origin).
     const bool textAtPoint = d.kind == DimKind::Linear || d.kind == DimKind::Aligned ||
@@ -445,7 +446,7 @@ bool Importer::convDimension(const Record& r, std::vector<Entity>& out, BlockId 
             near.expand(d.defPts[static_cast<std::size_t>(i)]);
         near = near.inflated(std::max(near.width(), near.height()) + 50 * h);
         if (near.contains(d.textPos) &&
-            (!auto_.text.valid() || distance(auto_.text.center, d.textPos) > 0.01 * h))
+            (!auto_.text.valid() || distance(auto_.text.point, d.textPos) > 0.01 * h))
             d.textPosUser = true;
     }
     Entity e;

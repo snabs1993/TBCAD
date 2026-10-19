@@ -157,7 +157,10 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
     const double ss[2] = {s1, s2};
     for (int i = 0; i < 2; ++i) {
         double dist = std::abs(ss[i]);
-        if (dist <= c.off || (i == 0 ? c.st.suppressExt1 : c.st.suppressExt2))
+        // An offset longer than the distance to the dimension line still leaves the part beyond
+        // it, as AutoCAD draws it.
+        if (dist <= c.tol || dist + c.ext <= c.off ||
+            (i == 0 ? c.st.suppressExt1 : c.st.suppressExt2))
             continue;
         double sg = ss[i] >= 0 ? 1 : -1;
         // A fixed length runs from the dimension line back toward the origin.
@@ -189,50 +192,9 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
     };
 
     bool arrowsIn = false, textIn = true;
-    Vec2 center{};
-    double lineEnd = 0;
-    double textBeforeA = 0;  // how far the dimension line runs before A to text placed there
-    std::vector<Vec2> leader;
-    if (d.textPosUser) {
-        arrowsIn = len >= 2 * c.arrow;
-        center = d.textPos;
-        double tc = dot(center - A, uu);
-        textIn = tc > 0 && tc < len;
-        if (!textIn)
-            textOutside();
-        lineEnd = (arrowsIn ? len : len + stub) + c.dext;
-        const double lateral = std::abs(dot(center - A, perp(uu)));
-        if (c.st.textMove == DimTextMove::Leader && tw > 0 && lateral > c.gap + 1.5 * c.th) {
-            // Moved away with a leader (DIMTMOVE 1), as AutoCAD draws it: the point is where the
-            // text starts; a leader runs from the middle of the dimension line to a landing line
-            // under the text (or to the text's edge when the text is centred on its line).
-            textOutside();
-            const Vec2 t = unit(rotText), up = perp(t);
-            const Vec2 mid = A + uu * (len / 2);
-            const double side = dot(d.textPos - mid, t) >= 0 ? 1 : -1;
-            const double raise = lift.centered ? 0
-                                 : c.st.textPlacement == DimTextPlacement::Below
-                                     ? -(c.gap + c.th / 2)
-                                     : c.gap + c.th / 2;
-            center = d.textPos + t * (side * tw / 2);
-            const Vec2 l0 = d.textPos - t * (side * c.gap) - up * raise;
-            leader = {mid, l0};
-            if (raise != 0)
-                leader.push_back(d.textPos + t * (side * (tw + c.gap)) - up * raise);
-            textIn = false;
-        } else if (!textIn && tw > 0 && c.st.textMove != DimTextMove::Free) {
-            Vec2 E = tc <= 0 ? A - uu * (arrowsIn ? 0 : stub) : B + uu * (arrowsIn ? 0 : stub);
-            Vec2 v = center - E;
-            double dl = length(v);
-            if (dl > tol::kLinear) {
-                Vec2 q = v / dl;
-                double reach = halfExtent(q, rotText, tw, c.th) + c.gap;
-                if (dl > reach)
-                    leader = {E, center - q * reach};
-            }
-        }
-    } else {
-        // DIMATFIT decides what leaves first when text and arrows do not fit together.
+    // DIMATFIT decides what leaves first when text and arrows do not fit together; text placed
+    // by hand keeps the arrows where they would be with the text in its own place.
+    auto decideFit = [&] {
         const DimFit fit = c.st.fit;
         if (len >= textW + 2 * c.arrow) {
             arrowsIn = true;
@@ -264,6 +226,55 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
             arrowsIn = false;
             textIn = false;
         }
+    };
+    Vec2 center{};
+    double lineEnd = 0;
+    double textBeforeA = 0;  // how far the dimension line runs before A to text placed there
+    std::vector<Vec2> leader;
+    Vec2 point{};  // the text point (DXF group 11)
+    if (d.textPosUser) {
+        decideFit();
+        center = point = d.textPos;
+        double tc = dot(center - A, uu);
+        textIn = tc > 0 && tc < len;
+        if (!textIn)
+            textOutside();
+        // DIMTMOVE 0: the point is on the dimension line, the text sits above it (DIMTAD).
+        if (c.st.textMove == DimTextMove::WithLine)
+            center += lift.offset;
+        lineEnd = (arrowsIn ? len : len + stub) + c.dext;
+        const double lateral = std::abs(dot(point - A, perp(uu)));
+        if (c.st.textMove == DimTextMove::Leader && tw > 0 && lateral > c.gap + 1.5 * c.th) {
+            // Moved away with a leader (DIMTMOVE 1), as AutoCAD draws it: the point is where the
+            // text starts; a leader runs from the middle of the dimension line to a landing line
+            // under the text (or to the text's edge when the text is centred on its line).
+            textOutside();
+            const Vec2 t = unit(rotText), up = perp(t);
+            const Vec2 mid = A + uu * (len / 2);
+            const double side = dot(d.textPos - mid, t) >= 0 ? 1 : -1;
+            const double raise = lift.centered ? 0
+                                 : c.st.textPlacement == DimTextPlacement::Below
+                                     ? -(c.gap + c.th / 2)
+                                     : c.gap + c.th / 2;
+            center = d.textPos + t * (side * tw / 2);
+            const Vec2 l0 = d.textPos - t * (side * c.gap) - up * raise;
+            leader = {mid, l0};
+            if (raise != 0)
+                leader.push_back(d.textPos + t * (side * (tw + c.gap)) - up * raise);
+            textIn = false;
+        } else if (!textIn && tw > 0 && c.st.textMove != DimTextMove::Free) {
+            Vec2 E = tc <= 0 ? A - uu * (arrowsIn ? 0 : stub) : B + uu * (arrowsIn ? 0 : stub);
+            Vec2 v = center - E;
+            double dl = length(v);
+            if (dl > tol::kLinear) {
+                Vec2 q = v / dl;
+                double reach = halfExtent(q, rotText, tw, c.th) + c.gap;
+                if (dl > reach)
+                    leader = {E, center - q * reach};
+            }
+        }
+    } else {
+        decideFit();
         if (textIn) {
             double along = len / 2;
             // DIMJUST: next to one extension line, when the text fits there with the arrows.
@@ -343,8 +354,10 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
         if (!hideB)
             addArrow(L, c, B, arrowsIn ? -uu : uu);
     }
-    if (tw > 0 || !txt.empty())
+    if (tw > 0 || !txt.empty()) {
         L.text = {txt, center, rotText, c.th, false, false, tw};
+        L.text.point = d.textPosUser ? point : center - lift.offset;
+    }
 }
 
 // ---- radius and diameter -----------------------------------------------------------------------
@@ -898,6 +911,8 @@ Layout layoutDimension(const Document& doc, const DimensionData& d, double toler
             layoutJogged(c, d, txt, L);
             break;
     }
+    if (d.kind != DimKind::Linear && d.kind != DimKind::Aligned)
+        L.text.point = L.text.center;
     if (stacked && L.text.utf8 == txt) {
         L.text.utf8 = stacked->markup;
         L.text.stacked = true;
@@ -971,7 +986,7 @@ void refresh(const Document& doc, DimensionData& d) {
         return;
     Layout L = layoutDimension(doc, d);
     if (L.text.valid())
-        d.textPos = L.text.center;
+        d.textPos = L.text.point;
 }
 
 std::vector<Vec2> arcPoints(const Layout::Arc& a, double tolerance) {

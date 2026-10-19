@@ -264,7 +264,7 @@ TEST_CASE("refresh recomputes the measurement and the default text position") {
     DimensionData d = linear({0, 0}, {100, 0}, {50, 10});
     refresh(doc, d);
     CHECK(d.measurement == doctest::Approx(100));
-    CHECK(near(d.textPos, {50, 11.875}));
+    CHECK(near(d.textPos, {50, 10}));  // on the dimension line, under the text
     d.textPosUser = true;
     d.textPos = {1, 2};
     d.defPts[1] = {200, 0};
@@ -498,4 +498,65 @@ TEST_CASE("DIMTMOVE 1: text moved away hangs on a leader from the middle with a 
     d.textPos = {50, 12};
     Layout onLine = withStyle([](DimStyle& s) { s.textMove = DimTextMove::Leader; }, d);
     CHECK(onLine.text.center.x == doctest::Approx(50));
+}
+
+TEST_CASE("text above the line: its point is on the dimension line, moved text stays above it") {
+    // AutoCAD writes the point on the dimension line under text lifted above it (DIMTAD 1).
+    DimensionData d = linear({0, 0}, {100, 0}, {50, 10});
+    Layout L = withStyle([](DimStyle&) {}, d);
+    CHECK(near(L.text.center, {50, 11.875}));
+    CHECK(near(L.text.point, {50, 10}));
+    // Moved by hand (DIMTMOVE 0): the point stays on the line, the text sits above it.
+    d.textPosUser = true;
+    d.textPos = {30, 10};
+    Layout moved = withStyle([](DimStyle&) {}, d);
+    CHECK(near(moved.text.center, {30, 11.875}));
+    CHECK(near(moved.text.point, {30, 10}));
+    // Centred text is on its point.
+    Layout centred =
+        withStyle([](DimStyle& s) { s.textPlacement = DimTextPlacement::Centered; }, d);
+    CHECK(near(centred.text.center, {30, 10}));
+}
+
+TEST_CASE("an extension line offset past the dimension line leaves the part beyond it") {
+    // The origin is 5 from the dimension line, the offset 8: AutoCAD still draws from 8 beyond
+    // the origin to the extension past the dimension line.
+    DimensionData d = linear({0, 0}, {100, 0}, {50, -5});
+    Layout L = withStyle(
+        [](DimStyle& s) {
+            s.extLineOffset = 8;
+            s.extLineExtension = 5;
+        },
+        d);
+    int ext = 0;
+    for (const auto& l : L.lines) {
+        if (l.role != Role::ExtLine)
+            continue;
+        ++ext;
+        CHECK(l.pts.front().y == doctest::Approx(-8));
+        CHECK(l.pts.back().y == doctest::Approx(-10));
+    }
+    CHECK(ext == 2);
+}
+
+TEST_CASE("text moved by hand keeps the arrows where the fit rules put them") {
+    // DIMTIX: the text is forced between the extension lines, so the arrows go outside, even
+    // when the text was then moved above the dimension.
+    DimensionData d = linear({0, 0}, {6, 0}, {3, 10});
+    d.textOverride = "TOO LONG TO FIT";
+    d.textPosUser = true;
+    d.textPos = {3, 20};
+    Layout tix = withStyle([](DimStyle& s) { s.textInsideForced = true; }, d);
+    Layout plain = withStyle([](DimStyle&) {}, d);
+    REQUIRE(tix.arrows.size() == 2);
+    REQUIRE(plain.arrows.size() == 2);
+    // Arrow at x = 0: inside its tail is at +2.5, outside at -2.5.
+    auto tailOfArrowAt0 = [](const Layout& L) {
+        for (const auto& a : L.arrows)
+            if (std::abs(a.ring[0].x) < 1e-9)
+                return a.ring[1].x;
+        return 0.0;
+    };
+    CHECK(tailOfArrowAt0(tix) < 0);
+    CHECK(tailOfArrowAt0(plain) > 0);
 }
