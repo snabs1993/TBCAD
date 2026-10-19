@@ -369,7 +369,7 @@ TEST_CASE("polylines: LWPOLYLINE and 2D POLYLINE keep bulges, widths and the clo
     CHECK(polys[2]->v.size() == 3);
 }
 
-TEST_CASE("polylines: old-style POLYLINE reads its VERTEX records; 3D polylines are drawn flat, meshes skipped") {
+TEST_CASE("polylines: old-style POLYLINE reads its VERTEX records, 3D polylines are drawn flat, meshes skipped") {
     Pairs p;
     p.g(0, "POLYLINE").g(8, "0").g(66, 1).g(70, 1);
     p.g(0, "VERTEX").g(8, "0").g(10, 0.0).g(20, 0.0).g(42, 1.0);
