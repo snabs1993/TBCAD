@@ -1468,3 +1468,79 @@ TEST_CASE("FILLET and CHAMFER between a ray, a construction line and a line") {
     k.host.run("FILLET", {"R", "1", ScriptItem::pick(p1, {3, 0}), ScriptItem::pick(p2, {3, 5})});
     CHECK(k.count(EntityKind::Arc) == 0);
 }
+
+TEST_CASE("DIVIDE and MEASURE space blocks by length along a spline and a polyline with arcs") {
+    SplineData sp;
+    sp.knots = {0, 0, 0, 0, 1, 2, 2, 2, 2};
+    sp.control = {{0, 50}, {10, 70}, {30, 30}, {50, 60}, {60, 50}};
+    const std::vector<EntityData> shapes{Indirect<SplineData>(sp),
+                                         PolylineData{{{{0, 200}, 0.5, 0, 0},
+                                                       {{20, 200}, 0, 0, 0},
+                                                       {{20, 230}, -0.4, 0, 0},
+                                                       {{45, 230}, 0, 0, 0}},
+                                                      false}};
+    for (const EntityData& shape : shapes) {
+        Fixture f;
+        {
+            auto tx = f.doc.begin("block");
+            (void)tx.addBlock(BlockDef{.name = "Tag"}).value();
+            tx.commit();
+        }
+        EntityId id = f.add(shape);
+        std::vector<geom::CurveRef> cs;
+        geom::curvesOf(f.get(id), cs);
+        // The curves in the direction of travel (an arc with a negative bulge is stored the other
+        // way round), and the point at a length along them.
+        std::vector<bool> reversed;
+        Vec2 at{};
+        double total = 0;
+        for (std::size_t i = 0; i < cs.size(); ++i) {
+            if (i == 0) {
+                at = cs[i].startPoint();
+                reversed.push_back(false);
+            } else {
+                reversed.push_back(distance(at, cs[i].endPoint()) <
+                                   distance(at, cs[i].startPoint()));
+            }
+            at = reversed.back() ? cs[i].startPoint() : cs[i].endPoint();
+            total += cs[i].length();
+        }
+        auto pointAtLength = [&](double s) {
+            for (std::size_t i = 0; i < cs.size(); ++i) {
+                const double len = cs[i].length();
+                if (s <= len + 1e-9 || i + 1 == cs.size()) {
+                    const double local = reversed[i] ? len - s : s;
+                    return cs[i].pointAt(cs[i].paramAtLength(std::clamp(local, 0.0, len)));
+                }
+                s -= len;
+            }
+            return Vec2{};
+        };
+        auto placed = [&] {
+            std::vector<Vec2> out;
+            f.doc.forEachEntity([&](const Entity& e) {
+                if (const auto* ins = entityAs<InsertData>(e))
+                    out.push_back(ins->position);
+            });
+            return out;
+        };
+        auto expectAt = [&](const std::vector<Vec2>& got, double step) {
+            REQUIRE(got.size() == 5);
+            for (int k = 1; k <= 5; ++k) {
+                const Vec2 want = pointAtLength(step * k);
+                bool found = false;
+                for (const Vec2& g : got)
+                    found = found || distance(g, want) < 1e-3;
+                CHECK(found);
+            }
+        };
+        const Vec2 start = cs.front().pointAt(cs.front().t0());
+        f.host.run("DIVIDE", {ScriptItem::pick(id, start), "Block", "Tag", "Yes", "6"});
+        expectAt(placed(), total / 6.0);
+        f.host.undo();
+        const double step = total / 5.5;
+        f.host.run("MEASURE",
+                   {ScriptItem::pick(id, start), "Block", "Tag", "Yes", std::to_string(step)});
+        expectAt(placed(), step);
+    }
+}
