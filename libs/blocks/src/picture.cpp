@@ -6,7 +6,9 @@
 #include <optional>
 
 #include "tbcad/blocks/blocks.h"
+#include "tbcad/geom/geom.h"
 #include "tbcad/underlay/image.h"
+#include "tbcad/underlay/pdf.h"
 
 namespace tbcad::blocks {
 
@@ -16,7 +18,20 @@ namespace {
 std::optional<std::array<Vec2, 4>> frameCorners(const Document& doc, const InsertData& ins,
                                                 const BlockDef*& def) {
     def = doc.block(ins.block);
-    if (!def || def->xrefPath.empty() || !underlay::isImagePath(def->xrefPath) || ins.array)
+    if (!def || def->xrefPath.empty() || ins.array)
+        return std::nullopt;
+    if (underlay::isPdfPath(def->xrefPath)) {
+        // A PDF page: the corners of what the page drew.
+        BBox2 box;
+        for (EntityId id : def->entities)
+            if (const Entity* e = doc.find(id))
+                box.merge(geom::bounds(*e, doc));
+        if (!(box.max.x > box.min.x) || !(box.max.y > box.min.y))
+            return std::nullopt;
+        return std::array<Vec2, 4>{Vec2{box.min.x, box.min.y}, Vec2{box.max.x, box.min.y},
+                                   Vec2{box.max.x, box.max.y}, Vec2{box.min.x, box.max.y}};
+    }
+    if (!underlay::isImagePath(def->xrefPath))
         return std::nullopt;
     for (EntityId id : def->entities) {
         const Entity* e = doc.find(id);
