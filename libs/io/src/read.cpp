@@ -1,6 +1,9 @@
 #include <algorithm>
 #include <cmath>
+#include <deque>
 #include <fstream>
+#include <future>
+#include <thread>
 #include <limits>
 #include <unordered_set>
 
@@ -888,12 +891,60 @@ private:
             bad("trailing data in ASMB");
     }
 
+    // What one ENTS chunk holds once inflated and decoded; if it is damaged, the objects before
+    // the damage and what is wrong.
+    struct DecodedChunk {
+        std::vector<DecodedEntity> items{};
+        std::string error{};
+        bool failed = false;
+    };
+
+    DecodedChunk decodeChunk(const RawChunk& chunk) const {
+        DecodedChunk out;
+        try {
+            Payload p(chunk);
+            ByteReader r(p.data);
+            const std::size_t n = r.count(8);
+            out.items.reserve(n);
+            for (std::size_t i = 0; i < n; ++i)
+                out.items.push_back(decodeEntity(r, strings_));
+            if (!r.atEnd())
+                bad("trailing data in ENTS");
+        } catch (const FormatError& e) {
+            out.failed = true;
+            out.error = e.what();
+        }
+        return out;
+    }
+
+    // The chunks are inflated and decoded on worker threads a few ahead of the one being added
+    // (adding to the document has to follow the file's order); a big drawing is mostly this work.
     void loadEntities(Transaction& tx) {
         std::uint64_t next = 1;
-        for (const RawChunk* c : ents_) {
+        const std::size_t ahead = std::max(1u, std::min(8u, std::thread::hardware_concurrency()));
+        std::deque<std::future<DecodedChunk>> running;
+        std::size_t started = 0;
+        auto fill = [&] {
+            while (started < ents_.size() && running.size() < ahead) {
+                const RawChunk* c = ents_[started++];
+                if (ents_.size() == 1) {
+                    std::promise<DecodedChunk> pr;
+                    pr.set_value(decodeChunk(*c));
+                    running.push_back(pr.get_future());
+                } else {
+                    running.push_back(std::async(std::launch::async,
+                                                 [this, c] { return decodeChunk(*c); }));
+                }
+            }
+        };
+        fill();
+        while (!running.empty()) {
+            DecodedChunk d = running.front().get();
+            running.pop_front();
+            fill();
             if (salvage_) {
                 try {
-                    loadEntityChunk(tx, *c, next);
+                    loadEntityChunk(tx, std::move(d), next);
                 } catch (const FormatError& e) {
                     report_.warnings.push_back(
                         std::string("damaged ENTS chunk: the rest of its objects were lost (") +
@@ -901,18 +952,13 @@ private:
                 }
                 continue;
             }
-            loadEntityChunk(tx, *c, next);
+            loadEntityChunk(tx, std::move(d), next);
         }
     }
 
-    void loadEntityChunk(Transaction& tx, const RawChunk& chunk, std::uint64_t& next) {
-        const RawChunk* c = &chunk;
+    void loadEntityChunk(Transaction& tx, DecodedChunk&& chunk, std::uint64_t& next) {
         {
-            Payload p(*c);
-            ByteReader r(p.data);
-            std::size_t n = r.count(8);
-            for (std::size_t i = 0; i < n; ++i) {
-                DecodedEntity d = decodeEntity(r, strings_);
+            for (DecodedEntity& d : chunk.items) {
                 std::uint64_t id = d.entity.common.id.value;
                 if (id < next)
                     bad("entity ids must be unique and ascending");
@@ -950,8 +996,8 @@ private:
                 ++next;
                 ++report_.entityCount;
             }
-            if (!r.atEnd())
-                bad("trailing data in ENTS");
+            if (chunk.failed)
+                bad(chunk.error);
         }
     }
 
