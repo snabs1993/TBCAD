@@ -291,6 +291,21 @@ void Importer::compareDimension(const Record& r, const Entity& dim) {
                (storedCenter ? pt(*storedCenter) : std::string("none")) +
                " generatedText@" + pt(L.text.center) + " storedBox=" + box(storedBox) +
                " generatedBox=" + box(generatedBox) + " dstyle={" + dstyleGroups(r) + "}";
+    if (r.has(12))
+        c.detail += " p12=" + pt(P(r, 12, 22));
+    // The lines themselves (the longest first, at most twelve of each), so a difference can be
+    // located without the file.
+    auto segments = [](std::vector<Segment> v) {
+        std::sort(v.begin(), v.end(), [](const Segment& a, const Segment& b) {
+            return distance(a.a, a.b) > distance(b.a, b.b);
+        });
+        std::string o = std::to_string(v.size()) + ":";
+        for (std::size_t i = 0; i < v.size() && i < 12; ++i)
+            o += " " + pt(v[i].a) + pt(v[i].b);
+        return o;
+    };
+    c.detail += " storedLines=[" + segments(stored) + "] generatedLines=[" +
+                segments(generatedLines) + "]";
     sum_.dimCompare.push_back(std::move(c));
 }
 

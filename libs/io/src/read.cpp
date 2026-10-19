@@ -519,7 +519,7 @@ private:
         for (std::size_t i = 0; i < n; ++i) {
             const DimStyleId id{id32(r)};
             const std::uint8_t flags = r.u8();
-            if (flags > 127 || ((flags & 64) && !(flags & 32)))
+            if ((flags & 64) && !(flags & 32))
                 bad("invalid dimension style flags");
             const double altScale = r.f64();
             const auto altUnit =
@@ -584,6 +584,14 @@ private:
                 if (!std::isfinite(tolHeightFactor) || !(tolHeightFactor > 0))
                     bad("invalid dimension style tolerance height");
             }
+            bool fixedExtLines = false;
+            double fixedExtLength = 1;
+            if (flags & 128) {
+                fixedExtLines = r.u8() != 0;
+                fixedExtLength = r.f64();
+                if (!std::isfinite(fixedExtLength) || fixedExtLength < 0)
+                    bad("invalid dimension style extension line length");
+            }
             if (!std::isfinite(altScale) || !(altScale > 0) || !std::isfinite(upper) ||
                 !std::isfinite(lower) || upper < 0 || lower < 0)
                 bad("invalid dimension style tolerance");
@@ -606,6 +614,8 @@ private:
                                         d.textFrame = textFrame;
                                         d.linearFormat = linearFormat;
                                         d.tolHeightFactor = tolHeightFactor;
+                                        d.fixedExtLines = fixedExtLines;
+                                        d.fixedExtLength = fixedExtLength;
                                         d.altScale = altScale;
                                         d.altUnit = altUnit;
                                         d.altPrecision = altPrecision;

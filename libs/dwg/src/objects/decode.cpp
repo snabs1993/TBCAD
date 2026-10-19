@@ -2359,8 +2359,8 @@ private:
         for (int code : {40, 41, 42, 43, 44, 45, 46, 47, 48})
             bd(code);
         if (fmt_.r2007) {
-            bd(0);
-            bd(0);
+            bd(49);  // DIMFXL
+            bd(0);   // DIMJOGANG
             bs(0);
             cmc(0);
         }
