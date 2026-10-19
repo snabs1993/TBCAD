@@ -420,7 +420,16 @@ LayoutLine emitLine(const TextStyle* style, const Line& line, double baseline,
             const Stack& st = *it.stack;
             const Attr sa = stackAttr(it.attr);
             const double H = it.attr.height;
-            const double mid = baseline + 0.5 * H;
+            // \A: a stack on a line of taller text sits on its bottom, middle or top as well.
+            double lift = 0;
+            if (it.attr.valign > 0) {
+                double tall = 0;
+                for (const Item& other : line)
+                    tall = std::max(tall, other.attr.height);
+                lift = std::max(0.0, tall - H) * (it.attr.valign == 1 ? 0.5 : 1.0);
+            }
+            const double base = baseline + lift;
+            const double mid = base + 0.5 * H;
             const Chunk num = shapeChunk(style, st.num, sa);
             const Chunk den = shapeChunk(style, st.den, sa);
             const double w = it.width;
@@ -434,8 +443,8 @@ LayoutLine emitLine(const TextStyle* style, const Line& line, double baseline,
             };
             if (st.bar == '#') {
                 // Diagonal bar: numerator high-left, denominator low-right.
-                put(num, pen, baseline + 0.5 * H + kStackGap * H);
-                put(den, pen + w - den.advance, baseline - 0.3 * H);
+                put(num, pen, base + 0.5 * H + kStackGap * H);
+                put(den, pen + w - den.advance, base - 0.3 * H);
                 out.rules.push_back({pen, pen + w, mid});  // drawn level; no slanted rules exist
             } else {
                 put(num, pen + (w - num.advance) / 2, mid + kStackGap * H);

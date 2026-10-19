@@ -135,14 +135,19 @@ TEST_CASE("deviation and limits tolerances are stacked upper over lower") {
     s.tolerance = DimTolerance::Deviation;
     auto dev = stackedDimensionText(s, d);
     REQUIRE(dev);
-    CHECK(dev->markup == "100.00 \\S+0.05^-0.02;");
+    CHECK(dev->markup == "\\A1;100.00 {\\H1.42857x;\\S+0.05^-0.02;}");
     CHECK(dev->up == "+0.05");
     CHECK(dev->down == "-0.02");
     s.tolerance = DimTolerance::Limits;
     s.prefix = "L=";
     auto lim = stackedDimensionText(s, d);
     REQUIRE(lim);
-    CHECK(lim->markup == "L=\\S100.05^99.98;");
+    CHECK(lim->markup == "\\A1;L={\\H1.42857x;\\S100.05^99.98;}");
+    // DIMTFAC 0.7 is the plain MTEXT stack size.
+    s.tolHeightFactor = 0.7;
+    lim = stackedDimensionText(s, d);
+    REQUIRE(lim);
+    CHECK(lim->markup == "\\A1;L=\\S100.05^99.98;");
     // An override keeps its text round the stack; one without "<>" has nothing to stack.
     d.textOverride = "(<>) TYP";
     lim = stackedDimensionText(s, d);
