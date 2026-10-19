@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <mutex>
 #include <random>
 
 #include "tbcad/core/core.h"
@@ -207,5 +208,32 @@ TEST_CASE("erasing a third of a big drawing keeps the index right, and so does i
     checkSame(doc, idx);
     doc.apply(erased, Direction::Undo);
     CHECK(idx.size() == 6000);
+    checkSame(doc, idx);
+}
+
+TEST_CASE("a big load measured on several threads gives the same index") {
+    Document doc;
+    std::mt19937_64 rng(9);
+    std::uniform_real_distribution<double> u(0, 1000);
+    {
+        Transaction tx = doc.begin("seed");
+        for (int i = 0; i < 40000; ++i)
+            REQUIRE(tx.add(i % 7 == 0 ? Entity{{}, CircleData{{u(rng), u(rng)}, 5}}
+                                      : line(u(rng), u(rng), u(rng), u(rng))));
+        tx.commit();
+    }
+    int scopes = 0;
+    std::mutex m;
+    SpatialIndex idx;
+    DocumentIndexer indexer(
+        doc, idx, boundsOf, {},
+        [&]() -> std::shared_ptr<void> {
+            std::lock_guard<std::mutex> lock(m);
+            ++scopes;
+            return {};
+        },
+        4);
+    CHECK(scopes >= 2);
+    CHECK(idx.size() == 40000);
     checkSame(doc, idx);
 }

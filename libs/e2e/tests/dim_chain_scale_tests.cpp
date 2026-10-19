@@ -99,7 +99,7 @@ TEST_CASE("DIMSPACE evens out the spacing of a thousand parallel dimensions and 
         REQUIRE(r.host.run("DIMLINEAR", {"0,0", "50,0", pt(25, y)}).finished);
     }
     REQUIRE(r.count() == static_cast<std::size_t>(kN));
-    std::vector<EntityId> all(r.doc.modelSpace().begin(), r.doc.modelSpace().end());
+    const std::vector<EntityId> all = r.doc.modelSpace();
     auto heights = [&] {
         std::vector<double> h;
         for (const auto* d : r.dims())
