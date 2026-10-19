@@ -33,6 +33,14 @@ accept, Esc to cancel, and Enter on an empty line to repeat the last command.
 
 `POLAR` sets the increment angles, `Additional` angles that are tracked on their own (not their
 multiples), and whether angles count from the X axis or from the last segment (`Relative`).
+The Extension object snap works like AutoCAD's: rest the cursor on the end of a line, an open
+polyline or an arc, then move along its extension (or the arc's circle). Two acquired line ends
+also snap to where their extensions cross.
+
+With dynamic input (F12), a whole coordinate typed into a field places the point: after the
+first point `10,5` and `20<45` are relative to it and `#10,5` is absolute (the Dynamic Input
+settings tab can make plain `x,y` absolute).
+
 `SNAP` sets the spacing (`Aspect` for different X and Y), the `Base` point the lattice passes
 through, and the `Type`: grid snap, or polar snap (steps of a distance along tracking lines only).
 `GRID Spacing 0` makes the grid follow the snap spacing.

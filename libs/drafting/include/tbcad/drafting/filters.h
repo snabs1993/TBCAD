@@ -26,7 +26,10 @@ std::optional<Vec2> orthoPolarDirection(const DraftingEnv* env, const cmd::Point
 // Snaps to the best object snap candidate under the cursor when OSNAP is on. FilterFeedback:
 // marker = the mode name ("endpoint" ...), markerPos, tooltip = the mode label. With PARallel on
 // and a base point, resting on a straight edge acquires its direction; moving the rubber band
-// close to parallel to it then snaps onto the parallel line through the base point.
+// close to parallel to it then snaps onto the parallel line through the base point. With
+// EXTension on, resting on the end of a line, an open polyline's straight end segment or an arc
+// acquires that end (two at most); the cursor then snaps onto the line's extension past the end,
+// onto the rest of the arc's circle, or onto where two acquired extensions cross.
 class OsnapFilter final : public cmd::PointFilter {
 public:
     explicit OsnapFilter(const DraftingEnv* env, const SnapGeometryRegistry* providers = nullptr);
@@ -41,6 +44,17 @@ public:
 private:
     std::optional<Vec2> parallel(const cmd::PointQuery& query, Vec2 raw, double aperture,
                                  cmd::FilterFeedback& feedback);
+    std::optional<Vec2> extension(const cmd::PointQuery& query, Vec2 raw, double aperture,
+                                  cmd::FilterFeedback& feedback);
+
+    // An acquired EXTension end: a line end (dir = outward unit direction) or an arc end.
+    struct ExtEnd {
+        Vec2 end{};
+        Vec2 dir{};
+        bool arc = false;
+        Vec2 center{};
+        double radius = 0, startAngle = 0, endAngle = 0;
+    };
 
     const DraftingEnv* env_;
     const SnapGeometryRegistry* providers_;
@@ -48,6 +62,7 @@ private:
     std::size_t cycle_ = 0;
     // PARallel: the straight edge the cursor last rested on (kept until the point is picked).
     std::optional<std::pair<Vec2, Vec2>> parallelEdge_{};
+    std::vector<ExtEnd> extEnds_{};  // newest last, at most two; cleared by a click
 };
 
 // Object snap tracking (OTRACK). Hovering an osnap candidate acquires its point (at most three are

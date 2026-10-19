@@ -5,6 +5,7 @@
 
 #include "tbcad/core/units.h"
 #include "tbcad/drafting/filters.h"
+#include "tbcad/drafting/point_parser.h"
 #include "tbcad/drafting/settings.h"
 
 namespace tbcad::drafting {
@@ -158,6 +159,36 @@ bool DynamicInput::edit(std::size_t index, std::string_view text) {
         t.remove_suffix(1);
     if (t.empty()) {
         slot->reset();
+        return true;
+    }
+    // A whole coordinate typed into a field ("10,5", "@3<45", "#0,0") fixes the point, as in
+    // AutoCAD. After the first point it is relative to the base unless it starts with # (or the
+    // absolute setting is on); @ is always relative.
+    if (t.find(',') != std::string_view::npos || t.find('<') != std::string_view::npos) {
+        std::string expr(t);
+        const bool absolute =
+            env_ && env_->host && DraftingSettings::read(*env_->host).dynInputAbsolute;
+        if (base_ && !absolute && expr.front() != '#' && expr.front() != '@')
+            expr = "@" + expr;
+        cmd::PointParseContext pc;
+        pc.base = base_;
+        if (base_)
+            pc.lastPoint = *base_;
+        pc.unit = unitOf(env_);
+        TypedPointParser parser(env_);
+        std::optional<Vec2> p = parser.parsePoint(expr, pc);
+        if (!p)
+            p = cmd::parsePointText(expr, pc);
+        if (!p)
+            return false;
+        if (base_) {
+            const Vec2 v = *p - *base_;
+            dist_ = length(v);
+            angle_ = length(v) > 1e-12 ? std::atan2(v.y, v.x) : 0.0;
+        } else {
+            x_ = p->x;
+            y_ = p->y;
+        }
         return true;
     }
     if (base_ && index == 1) {

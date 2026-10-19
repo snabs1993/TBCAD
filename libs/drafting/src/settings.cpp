@@ -241,6 +241,7 @@ DraftingSettings DraftingSettings::read(const cmd::IHost& host) {
                 s.isoPlane = *plane;
     }
     s.dynInput = boolOf(keys::dynInput, true);
+    s.dynInputAbsolute = boolOf(keys::dynInputAbsolute, false);
     if (auto m = get(keys::osnapModes))
         if (auto mask = parseSnapModes(*m))
             s.modes = *mask;

@@ -19,6 +19,7 @@ Ucs DraftingEnv::effectiveUcs() const {
 
 namespace {
 bool nearestEdge(const Entity& e, Vec2 p, Vec2& a, Vec2& b, double& dist);
+std::string formatDistance(const DraftingEnv& env, double mm);
 }  // namespace
 
 OsnapFilter::OsnapFilter(const DraftingEnv* env, const SnapGeometryRegistry* providers)
@@ -47,10 +48,22 @@ std::optional<Vec2> OsnapFilter::filter(const cmd::PointQuery& query, Vec2 raw,
     if (!same)
         cycle_ = 0;
     candidates_ = std::move(found);
+    if (s.modes & maskOf(SnapMode::Extension)) {
+        // Resting on an end acquires it even while an endpoint snap shows there; a real
+        // candidate beats the extension.
+        cmd::FilterFeedback ext;
+        auto p = extension(query, raw, rq.apertureMm, ext);
+        if (p && candidates_.empty()) {
+            feedback = std::move(ext);
+            return p;
+        }
+    }
     if (candidates_.empty() && (s.modes & maskOf(SnapMode::Parallel)) && query.base)
         return parallel(query, raw, rq.apertureMm, feedback);
-    if (query.click)
+    if (query.click) {
         parallelEdge_.reset();
+        extEnds_.clear();
+    }
     if (candidates_.empty())
         return std::nullopt;
     const SnapCandidate& c = candidates_[cycle_ % candidates_.size()];
@@ -93,6 +106,119 @@ std::optional<Vec2> OsnapFilter::parallel(const cmd::PointQuery& query, Vec2 raw
     feedback.tooltip = std::string(snapModeLabel(SnapMode::Parallel));
     feedback.guide = std::make_pair(base, base + s * (std::abs(t) + reach));
     return p;
+}
+
+std::optional<Vec2> OsnapFilter::extension(const cmd::PointQuery& query, Vec2 raw, double aperture,
+                                           cmd::FilterFeedback& feedback) {
+    // Acquire the end the cursor rests on.
+    auto acquire = [&](const ExtEnd& x) {
+        for (const ExtEnd& e : extEnds_)
+            if (distance(e.end, x.end) < 1e-9 && e.arc == x.arc)
+                return;
+        extEnds_.push_back(x);
+        if (extEnds_.size() > 2)
+            extEnds_.erase(extEnds_.begin());
+    };
+    env_->index->queryPoint(raw, aperture, [&](EntityId id, const BBox2&) {
+        const Entity* e = env_->doc->find(id);
+        if (!e)
+            return true;
+        auto lineEnd = [&](Vec2 from, Vec2 end) {
+            if (distance(raw, end) <= aperture && distance(from, end) > 1e-9)
+                acquire(ExtEnd{end, normalized(end - from)});
+        };
+        if (const auto* l = entityAs<LineData>(*e)) {
+            lineEnd(l->a, l->b);
+            lineEnd(l->b, l->a);
+        } else if (const auto* pl = entityAs<PolylineData>(*e)) {
+            const auto& v = pl->v;
+            if (!pl->closed && v.size() >= 2) {
+                if (std::abs(v[0].bulge) < 1e-12)
+                    lineEnd(v[1].p, v[0].p);
+                if (std::abs(v[v.size() - 2].bulge) < 1e-12)
+                    lineEnd(v[v.size() - 2].p, v.back().p);
+            }
+        } else if (const auto* a = entityAs<ArcData>(*e)) {
+            for (double ang : {a->startAngle, a->endAngle}) {
+                const Vec2 end = a->center + Vec2{std::cos(ang), std::sin(ang)} * a->radius;
+                if (distance(raw, end) <= aperture) {
+                    ExtEnd x{end, {}, true, a->center, a->radius, a->startAngle, a->endAngle};
+                    acquire(x);
+                }
+            }
+        }
+        return true;
+    });
+    const std::vector<ExtEnd> ends = extEnds_;
+    if (query.click)
+        extEnds_.clear();
+    if (ends.empty())
+        return std::nullopt;
+
+    // Each end's path: the line beyond the end, or the circle outside the arc.
+    struct Hit {
+        Vec2 p;
+        double off;
+        const ExtEnd* e;
+    };
+    std::vector<Hit> hits;
+    for (const ExtEnd& e : ends) {
+        if (!e.arc) {
+            const double t = dot(raw - e.end, e.dir);
+            if (t <= aperture)  // on the object itself, or behind it
+                continue;
+            const Vec2 p = e.end + e.dir * t;
+            hits.push_back({p, distance(raw, p), &e});
+        } else {
+            const Vec2 r = raw - e.center;
+            const double len = length(r);
+            if (len < 1e-12)
+                continue;
+            const Vec2 p = e.center + r * (e.radius / len);
+            // Inside the arc's sweep it is the arc itself, not its extension.
+            double ang = std::atan2(r.y, r.x) - e.startAngle;
+            double sweep = e.endAngle - e.startAngle;
+            const double tau = 2 * kPi;
+            ang = std::fmod(std::fmod(ang, tau) + tau, tau);
+            sweep = std::fmod(std::fmod(sweep, tau) + tau, tau);
+            if (ang <= sweep || distance(p, e.end) <= aperture)
+                continue;
+            hits.push_back({p, distance(raw, p), &e});
+        }
+    }
+    // Two straight extensions that cross near the cursor: their crossing.
+    if (ends.size() == 2 && !ends[0].arc && !ends[1].arc) {
+        const double den = cross(ends[0].dir, ends[1].dir);
+        if (std::abs(den) > 1e-9) {
+            const double t = cross(ends[1].end - ends[0].end, ends[1].dir) / den;
+            const double u = cross(ends[1].end - ends[0].end, ends[0].dir) / den;
+            const Vec2 x = ends[0].end + ends[0].dir * t;
+            if (t > 0 && u > 0 && distance(raw, x) <= aperture) {
+                feedback.marker = std::string(snapModeName(SnapMode::Extension));
+                feedback.markerPos = x;
+                feedback.tooltip = "Extension intersection";
+                feedback.guide = std::make_pair(ends[0].end, x);
+                return x;
+            }
+        }
+    }
+    const Hit* best = nullptr;
+    for (const Hit& h : hits)
+        if (h.off <= aperture && (!best || h.off < best->off))
+            best = &h;
+    if (!best)
+        return std::nullopt;
+    feedback.marker = std::string(snapModeName(SnapMode::Extension));
+    feedback.markerPos = best->p;
+    char buf[64];
+    if (best->e->arc) {
+        std::snprintf(buf, sizeof buf, "Extension: R %.4g", best->e->radius);
+        feedback.tooltip = buf;
+    } else {
+        feedback.tooltip = "Extension: " + formatDistance(*env_, distance(best->e->end, best->p));
+        feedback.guide = std::make_pair(best->e->end, best->p);
+    }
+    return best->p;
 }
 
 void OsnapFilter::cycle() {
