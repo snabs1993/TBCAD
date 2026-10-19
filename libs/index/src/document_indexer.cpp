@@ -50,6 +50,7 @@ void DocumentIndexer::rebuildKeeping(const ChangeSet* changes) {
         std::uint32_t addedAs = kNoSnapshot;
     };
     std::vector<Touched> touched;
+    std::size_t unmeasured = 0;  // entities that come back without a remembered box
     auto byId = [](const Touched& a, const Touched& b) { return a.id < b.id; };
     auto touchedOf = [&](EntityId id) -> const Touched* {
         auto it = std::lower_bound(touched.begin(), touched.end(), Touched{id}, byId);
@@ -64,6 +65,8 @@ void DocumentIndexer::rebuildKeeping(const ChangeSet* changes) {
                 t.addedAs = c.after;
                 if (const BBox2* known = changes->memoBox(c.after))
                     t.known = *known;
+                else
+                    ++unmeasured;
             }
             touched.push_back(t);
         }
@@ -78,9 +81,24 @@ void DocumentIndexer::rebuildKeeping(const ChangeSet* changes) {
     });
     std::vector<BBox2> boxes(todo.size());
     auto measure = [&](std::size_t a, std::size_t b) {
+        // Entities usually come in id order, so a cursor along the sorted list beats a search each.
+        std::size_t cur = 0;
+        EntityId last{};
         for (std::size_t i = a; i < b; ++i) {
             const Entity& e = *todo[i];
-            const Touched* t = changes ? touchedOf(e.common.id) : nullptr;
+            const Touched* t = nullptr;
+            if (changes) {
+                const EntityId id = e.common.id;
+                if (i == a || id < last)
+                    cur = std::lower_bound(touched.begin(), touched.end(), Touched{id}, byId) -
+                          touched.begin();
+                else
+                    while (cur < touched.size() && touched[cur].id < id)
+                        ++cur;
+                last = id;
+                if (cur < touched.size() && touched[cur].id == id)
+                    t = &touched[cur];
+            }
             if (changes && !t && index_.contains(e.common.id))
                 boxes[i] = index_.boxOf(e.common.id);
             else if (t && t->known)
@@ -111,7 +129,7 @@ void DocumentIndexer::rebuildKeeping(const ChangeSet* changes) {
         for (auto& j : jobs)
             j.get();
     }
-    if (changes)  // (here, not in the lanes: the memo is not safe to fill from several threads)
+    if (unmeasured)  // (here, not in the lanes: the memo is not safe to fill from several threads)
         for (std::size_t i = 0; i < todo.size(); ++i)
             if (const Touched* t = touchedOf(todo[i]->common.id); t && !t->known)
                 changes->memoizeBox(t->addedAs, boxes[i]);
