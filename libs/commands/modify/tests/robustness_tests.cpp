@@ -3,6 +3,7 @@
 #include <cctype>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <memory>
 #include <random>
 #include <string>
@@ -473,4 +474,91 @@ TEST_CASE("EXTEND by the index gives the same result as testing every object") {
         }
     }
     CHECK(extended > 10);  // the scenes do extend now and then
+}
+
+TEST_CASE("random sequences of modify commands stay finite and undo step by step") {
+    std::mt19937 rng(std::getenv("TBCAD_FUZZ_SEED") ? std::strtoul(std::getenv("TBCAD_FUZZ_SEED"), nullptr, 10) : 20261019u);
+    auto rnd = [&](double lo, double hi) { return std::uniform_real_distribution<double>(lo, hi)(rng); };
+    int steps = 0, changedSteps = 0;
+    for (int round = 0; round < 12; ++round) {
+        Rig r;
+        std::vector<EntityId> ids;
+        const auto ss = samples();
+        for (const auto& s : ss) {
+            // Each sample at its own random place, so edges cross some of the others.
+            const Vec2 shift{rnd(-8, 8), rnd(-8, 8)};
+            EntityData d = s.data;
+            ids.push_back(r.add(d));
+            if (auto* l = std::get_if<LineData>(&d); l)
+                (void)shift;
+        }
+        const auto pickOn = [&](std::size_t k) {
+            return rng() % 2 ? ss[k].p1 : ss[k].p2;
+        };
+        // A command that waits for more input is cancelled so the next one can start.
+        const auto go = [&](std::string_view name, std::vector<ScriptItem> items) {
+            if (!r.host.run(name, items).finished)
+                r.host.feed({ScriptItem::esc(), ScriptItem::esc(), ScriptItem::esc()});
+        };
+        std::vector<std::string> history{canonicalDump(r.doc)};
+        for (int step = 0; step < 40; ++step) {
+            const std::size_t a = rng() % ids.size(), b = rng() % ids.size();
+            const std::string ra = std::to_string(rnd(0.2, 6.0)), rb = std::to_string(rnd(0.2, 6.0));
+            switch (rng() % 8) {
+                case 0:
+                    go("TRIM", {ScriptItem::enter(), ScriptItem::pick(ids[a], pickOn(a % ss.size())),
+                                        ScriptItem::enter()});
+                    break;
+                case 1:
+                    go("EXTEND", {ScriptItem::enter(),
+                                          ScriptItem::pick(ids[a], pickOn(a % ss.size())),
+                                          ScriptItem::enter()});
+                    break;
+                case 2:
+                    go("FILLET", {"R", ra, ScriptItem::pick(ids[a], pickOn(a % ss.size())),
+                                          ScriptItem::pick(ids[b], pickOn(b % ss.size()))});
+                    break;
+                case 3:
+                    go("CHAMFER", {"D", ra, rb, ScriptItem::pick(ids[a], pickOn(a % ss.size())),
+                                           ScriptItem::pick(ids[b], pickOn(b % ss.size()))});
+                    break;
+                case 4:
+                    go("OFFSET", {ra, ScriptItem::pick(ids[a], pickOn(a % ss.size())),
+                                          std::to_string(rnd(-10, 25)) + "," + std::to_string(rnd(-10, 20)),
+                                          ScriptItem::enter()});
+                    break;
+                case 5:
+                    go("BREAK", {ScriptItem::pick(ids[a], pickOn(a % ss.size())),
+                                         std::to_string(rnd(-5, 25)) + "," + std::to_string(rnd(-5, 15))});
+                    break;
+                case 6:
+                    go("EXPLODE", {ScriptItem::select({ids[a]}), ScriptItem::enter()});
+                    break;
+                default:
+                    go("JOIN", {ScriptItem::select({ids[a], ids[b]}), ScriptItem::enter()});
+                    break;
+            }
+            ++steps;
+            const std::string now = canonicalDump(r.doc);
+            CHECK(finiteDump(now));
+            const std::size_t depth = r.host.undoStack().undoCount();
+            CHECK(depth + 1 >= history.size());
+            if (depth == history.size()) {  // one new undo step
+                if (now != history.back())
+                    ++changedSteps;
+                history.push_back(now);
+            } else {
+                // Nothing was recorded: the drawing must not have changed either.
+                CHECK(depth == history.size() - 1);
+                CHECK(now == history.back());
+            }
+        }
+        // Undo one step at a time: each state must be the one before it.
+        for (std::size_t k = history.size() - 1; k > 0; --k) {
+            CHECK(r.host.undo());
+            CHECK(canonicalDump(r.doc) == history[k - 1]);
+        }
+    }
+    MESSAGE(steps << " commands, " << changedSteps << " changed the drawing");
+    CHECK(changedSteps > 30);
 }
