@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <chrono>
 #include <random>
 
 #include "test_support.h"
@@ -175,4 +176,32 @@ TEST_CASE("join of thousands of pieces finds every partner, in any order") {
     CHECK(pieces == 3001);
     CHECK(lines == 1);
     CHECK(r.consumed.size() == 3400);
+}
+
+TEST_CASE("joining 30000 separate parallel lines fuses only the overlapping ones, quickly") {
+    std::vector<Entity> v;
+    // 30000 short lines in one direction, none touching another.
+    for (int i = 0; i < 30000; ++i) {
+        const double x = (i % 300) * 30.0, y = (i / 300) * 30.0;
+        v.push_back(line({x, y}, {x + 20, y + 10}));
+    }
+    // 100 collinear pairs that overlap, and 100 that only touch, far from the rest.
+    for (int k = 0; k < 200; ++k) {
+        const double y = 100000.0 + k * 50.0;
+        v.push_back(line({0, y}, {10, y + 5}));
+        v.push_back(k < 100 ? line({6, y + 3}, {20, y + 10}) : line({10, y + 5}, {20, y + 10}));
+    }
+    const auto t = std::chrono::steady_clock::now();
+    const auto bridged = joinEntities(ptrs(v), 1e-4, true);
+    const auto plain = joinEntities(ptrs(v), 1e-4, false);
+    const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t).count();
+    CHECK(plain.consumed.size() == 400);
+    CHECK(plain.created.size() == 200);
+    // Bridging also fuses lines on one line with a gap between them, which the grid has plenty of.
+    CHECK(bridged.consumed.size() > 400);
+#ifdef NDEBUG
+    CHECK(secs < 5.0);
+#else
+    (void)secs;
+#endif
 }

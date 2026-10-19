@@ -44,12 +44,10 @@ public:
         g.name = chosen;
         // Members of a group made earlier move into the new one, so a pick never selects two
         // overlapping groups.
-        for (EntityId id : sel.ids) {
-            g.members.push_back(id);
-            for (Group& other : groups)
-                other.members.erase(std::remove(other.members.begin(), other.members.end(), id),
-                                    other.members.end());
-        }
+        g.members = sel.ids;
+        const std::unordered_set<EntityId> taken(sel.ids.begin(), sel.ids.end());
+        for (Group& other : groups)
+            std::erase_if(other.members, [&](EntityId id) { return taken.count(id) != 0; });
         groups.push_back(std::move(g));
         if (auto r = writeGroups(ctx.tx(), groups); !r) {
             ctx.message(r.error().message);

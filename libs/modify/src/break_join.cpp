@@ -422,22 +422,74 @@ void fuseLines(std::vector<LineItem>& lines, double tolerance, bool bridgeGaps) 
     }
     std::vector<char> gone(n, 0);
     std::vector<std::uint32_t> cand;
+
+    // Without bridging, two lines can only fuse when their boxes (grown by the tolerance) meet, so
+    // a grid over the boxes finds the few that are near: a drawing of 100k separate lines in one
+    // direction would otherwise compare every pair. Lines that cover many cells are checked
+    // against everything.
+    constexpr int kMaxSpan = 8;
+    const double reach = 2 * tolerance;
+    double cell = 0;
+    for (const LineItem& l : lines)
+        cell += length(l.b - l.a);
+    cell = std::max(2 * cell / static_cast<double>(n), 10 * tolerance);
+    auto cellOf = [&](double v) { return static_cast<std::int64_t>(std::floor(v / cell)); };
+    auto cellKey = [](std::int64_t x, std::int64_t y) {
+        return static_cast<std::uint64_t>(x) * 0x9E3779B97F4A7C15ull ^
+               (static_cast<std::uint64_t>(y) + 0x7F4A7C15ull) * 0xC2B2AE3D27D4EB4Full;
+    };
+    struct Span {
+        std::int64_t x0, x1, y0, y1;
+    };
+    auto spanOf = [&](const LineItem& l) {
+        return Span{cellOf(std::min(l.a.x, l.b.x) - reach), cellOf(std::max(l.a.x, l.b.x) + reach),
+                    cellOf(std::min(l.a.y, l.b.y) - reach), cellOf(std::max(l.a.y, l.b.y) + reach)};
+    };
+    auto small = [&](const Span& s) { return s.x1 - s.x0 < kMaxSpan && s.y1 - s.y0 < kMaxSpan; };
+    std::unordered_map<std::uint64_t, std::vector<std::uint32_t>> grid;
+    std::vector<std::uint32_t> large;
+    if (!bridgeGaps) {
+        for (std::size_t i = 0; i < n; ++i) {
+            const Span s = spanOf(lines[i]);
+            if (!small(s)) {
+                large.push_back(static_cast<std::uint32_t>(i));
+                continue;
+            }
+            for (std::int64_t x = s.x0; x <= s.x1; ++x)
+                for (std::int64_t y = s.y0; y <= s.y1; ++y)
+                    grid[cellKey(x, y)].push_back(static_cast<std::uint32_t>(i));
+        }
+    }
     for (std::size_t i = 0; i < n; ++i) {
         if (gone[i])
             continue;
-        cand.clear();
-        for (int d = -1; d <= 1; ++d) {
-            const auto& v = byDir[static_cast<std::size_t>((bucket[i] + d + kBuckets) % kBuckets)];
-            for (std::uint32_t j : v)
-                if (j > i)
-                    cand.push_back(j);
-        }
-        for (std::uint32_t j : shorts)
-            if (j > i)
-                cand.push_back(j);
-        std::sort(cand.begin(), cand.end());
-        cand.erase(std::unique(cand.begin(), cand.end()), cand.end());
         for (bool changed = true; changed;) {
+            cand.clear();
+            const Span s = spanOf(lines[i]);
+            if (!bridgeGaps && small(s)) {
+                for (std::int64_t x = s.x0; x <= s.x1; ++x)
+                    for (std::int64_t y = s.y0; y <= s.y1; ++y)
+                        if (auto it = grid.find(cellKey(x, y)); it != grid.end())
+                            for (std::uint32_t j : it->second)
+                                if (j > i)
+                                    cand.push_back(j);
+                for (std::uint32_t j : large)
+                    if (j > i)
+                        cand.push_back(j);
+            } else {
+                for (int d = -1; d <= 1; ++d) {
+                    const auto& v =
+                        byDir[static_cast<std::size_t>((bucket[i] + d + kBuckets) % kBuckets)];
+                    for (std::uint32_t j : v)
+                        if (j > i)
+                            cand.push_back(j);
+                }
+                for (std::uint32_t j : shorts)
+                    if (j > i)
+                        cand.push_back(j);
+            }
+            std::sort(cand.begin(), cand.end());
+            cand.erase(std::unique(cand.begin(), cand.end()), cand.end());
             changed = false;
             for (std::uint32_t j : cand) {
                 if (gone[j])
