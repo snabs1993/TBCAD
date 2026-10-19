@@ -371,6 +371,8 @@ TEST_CASE("a drawing that outgrew its tiles is re-tiled once") {
     CHECK(before >= 512);  // generated into the default small tiles
     f.core->updateFrame();
     CHECK(f.core->scene().tiles().size() < before / 4);
+    while (f.core->sceneBuilding())  // (the rest of a big drawing is built in the next frames)
+        f.core->updateFrame();
     CHECK(f.core->scene().entityCount() == 40000);
     const double tile = f.core->scene().tileSize();
     f.core->updateFrame();  // settled: no further re-tiling

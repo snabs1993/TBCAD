@@ -1238,6 +1238,7 @@ Result<void> AppCore::openFile(const fs::path& path) {
     }
     io::IoReport report;
     auto doc = io::readTbcad(path, report);
+    openLap("read file");
     bool salvaged = false;
     if (!doc) {
         // A damaged file: keep whatever can still be read, as an untitled drawing so the
@@ -1260,6 +1261,7 @@ Result<void> AppCore::openFile(const fs::path& path) {
         salvaged = true;
     }
     addSession(std::move(doc.value()), salvaged ? fs::path{} : path);
+    openLap("index, scene, zoom");
     if (salvaged)
         session_->savedRevision = ~std::uint64_t{0};  // unsaved: the rescued content is not on disk
     for (const auto& w : report.warnings) {

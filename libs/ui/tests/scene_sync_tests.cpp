@@ -406,6 +406,8 @@ TEST_CASE("a scene built on several threads equals the one built on one") {
     b.setPixelSize(0.5);
     a.rebuildAll(500);
     b.rebuildAll(500);
+    a.flushPending();  // (a big drawing is queued and built in the frames after)
+    b.flushPending();
     CHECK(one.entityCount() == 60000);
     CHECK(sameScene(one, many));
 }

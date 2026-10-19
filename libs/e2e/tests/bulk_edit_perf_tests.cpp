@@ -3,6 +3,7 @@
 // (default 100,000 polylines and 100,000 lines). Prints; the checks only guard the results.
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -206,9 +207,24 @@ TEST_CASE("perf: save and open of a big drawing keep every object") {
     fresh.setViewportSize(1400, 900);
     t = std::chrono::steady_clock::now();
     auto opened = fresh.openFile(path);
+    const double readMs = ms(t);
+    for (const auto& [what, took] : fresh.openTimings())
+        std::printf("    %s: %.0f ms\n", what.c_str(), took);
     fresh.updateFrame();
     const double openMs = ms(t);
     REQUIRE(opened.ok());
+    // What the first frame left unbuilt is drawn in the frames after it; none of them may take
+    // long, or the window would stall while the drawing fills in.
+    double worstFrameMs = 0;
+    int frames = 0;
+    while (fresh.sceneBuilding() && frames < 10000) {
+        auto tf = std::chrono::steady_clock::now();
+        fresh.updateFrame();
+        worstFrameMs = std::max(worstFrameMs, ms(tf));
+        ++frames;
+    }
+    std::printf("  open: read %.0f ms, first frame %.0f ms; %d more frames, worst %.0f ms\n",
+                readMs, openMs - readMs, frames, worstFrameMs);
     std::printf("save %zu objects: %.0f ms (%.1f MB)   open: %.0f ms\n", count, saveMs,
                 static_cast<double>(std::filesystem::file_size(path)) / 1e6, openMs);
     CHECK(fresh.document().modelSpaceCount() == count);
