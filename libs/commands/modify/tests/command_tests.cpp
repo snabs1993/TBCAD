@@ -1339,3 +1339,28 @@ TEST_CASE("SPLINEDIT edits the control vertices of a CV spline and converts it t
     CHECK(f.count(EntityKind::Polyline) == 1);
     CHECK(f.count(EntityKind::Spline) == 0);
 }
+
+TEST_CASE("SPLINEDIT and PEDIT Tolerance refit a spline through fewer fit points") {
+    Fixture f;
+    SplineData sp;
+    sp.degree = 3;
+    for (int i = 0; i <= 40; ++i)
+        sp.fit.push_back({i * 2.5, 10 * std::sin(i * 2.5 / 20)});
+    auto made = modify::polylineToSpline(Entity{{}, [&] {
+                                                    PolylineData p;
+                                                    for (const Vec2& q : sp.fit)
+                                                        p.v.push_back({q, 0, 0, 0});
+                                                    return p;
+                                                }()});
+    REQUIRE(made.ok());
+    EntityId id = f.add(Indirect<SplineData>(*entityAs<SplineData>(made.value())));
+    std::size_t before = entityAs<SplineData>(f.get(id))->fit.size();
+    f.host.run("SPLINEDIT", {ScriptItem::pick(id, {10, 5}), "Tolerance", "0.05", "Exit"});
+    std::size_t after = entityAs<SplineData>(f.get(id))->fit.size();
+    CHECK(after < before);
+    CHECK(f.host.logContains("Fitted again through"));
+    f.host.undo();
+    CHECK(entityAs<SplineData>(f.get(id))->fit.size() == before);
+    f.host.run("PEDIT", {ScriptItem::pick(id, {10, 5}), "Tolerance", "0.05", "Exit"});
+    CHECK(entityAs<SplineData>(f.get(id))->fit.size() == after);
+}
