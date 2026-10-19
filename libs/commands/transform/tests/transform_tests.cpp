@@ -121,8 +121,16 @@ TEST_CASE("ROTATE by reference with points") {
     auto a = add(f.doc, LineData{{10, 0}, {20, 0}});
     f.host.setSelection({a});
     // reference direction along +x (angle 0), new direction along +y: rotates 90 degrees
-    f.host.run("ROTATE", {"0,0", "Reference", "10,0", "0,10"});
+    f.host.run("ROTATE", {"0,0", "Reference", "0,0", "10,0", "0,10"});
     CHECK(near(get<LineData>(f.doc, a).b, {0, 20}));
+    // A first point and Enter measures that point from the base point.
+    CHECK(f.host.undo());
+    f.host.run("ROTATE", {"0,0", "Reference", "10,0", "", "0,10"});
+    CHECK(near(get<LineData>(f.doc, a).b, {0, 20}));
+    // The direction of two points away from the base: 45 degrees to 135.
+    CHECK(f.host.undo());
+    f.host.run("ROTATE", {"0,0", "Reference", "5,5", "9,9", "-20,0"});
+    CHECK(near(get<LineData>(f.doc, a).b, {20 * std::cos(kPi * 3 / 4), 20 * std::sin(kPi * 3 / 4)}));
 }
 
 TEST_CASE("SCALE by factor, Copy, and Reference") {
@@ -282,4 +290,21 @@ TEST_CASE("MOVE and COPY Displacement take a vector instead of two points") {
             ++lines;
     });
     CHECK(lines == 1);
+}
+
+TEST_CASE("SCALE by reference with two points, a typed length, or Enter after one point") {
+    Fixture f;
+    auto a = add(f.doc, LineData{{0, 0}, {10, 0}});
+    f.host.setSelection({a});
+    // Two points 5 apart, away from the base: 5 becomes 20, so the 10 long line becomes 40.
+    f.host.run("SCALE", {"0,0", "Reference", "3,3", "8,3", "20,0"});
+    CHECK(near(get<LineData>(f.doc, a).b, {40, 0}));
+    CHECK(f.host.undo());
+    // One point and Enter measures from the base point: 5 becomes 10 -> factor 2.
+    f.host.run("SCALE", {"0,0", "Reference", "5,0", "", "10,0"});
+    CHECK(near(get<LineData>(f.doc, a).b, {20, 0}));
+    CHECK(f.host.undo());
+    // Two identical points give no length; the prompt asks again.
+    f.host.run("SCALE", {"0,0", "Reference", "4,4", "4,4", "10", "25"});
+    CHECK(near(get<LineData>(f.doc, a).b, {25, 0}));
 }

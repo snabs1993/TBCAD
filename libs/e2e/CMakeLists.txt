@@ -19,6 +19,7 @@ tbcad_add_tests(e2e
     tests/dim_hard_geometry_tests.cpp
     tests/dim_perf_tests.cpp
     tests/ucs_world_tests.cpp
+    tests/align_snap_tests.cpp
     tests/stretch_assoc_tests.cpp
     tests/attrib_robust_tests.cpp
     tests/mirrtext_tests.cpp
