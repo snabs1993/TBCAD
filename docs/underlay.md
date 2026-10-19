@@ -78,3 +78,12 @@ file, how much to fade it (0 to 95 percent, default 30), a name and the insertio
 * DXF: a picture is written as `IMAGE` + `IMAGEDEF` (rectangle clip and fade kept; the file path
   is stored as given) and read back the same way, so logos and site photos in a drawing from
   another program come in. A polygon clip is not supported (the whole picture shows).
+
+## PDF layers
+
+A PDF page with optional-content layers (PDF "layers") keeps them: each becomes a layer below the
+underlay's own layer (for a block `plan`: `plan|Walls`, `plan|Furniture`), so it can be switched off
+or frozen in the layer list and stays off in plots. Layers the file hides by default start off.
+Content outside any layer is on the `PDF` layer. `XCLIP` clips a PDF underlay like any block, and
+plots honour the clip and the layer state. Pictures plot with their polygon clip, brightness and
+contrast, and with the frame when `IMAGEFRAME Plot` is set.

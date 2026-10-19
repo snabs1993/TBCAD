@@ -72,6 +72,7 @@ public:
     };
     const std::vector<Page>& pages() const { return pages_; }
     std::string_view bytes() const { return bytes_; }
+    const Obj& root() const { return root_; }
 
 private:
     void readObjectStreams();

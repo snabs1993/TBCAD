@@ -165,6 +165,52 @@ TEST_CASE("PDFATTACH attaches a PDF page as a faded underlay - the fade is store
     CHECK(f.doc.blockByName("site") == nullptr);
 }
 
+TEST_CASE("a PDF underlay keeps its PDF layers - a hidden one starts off - and XCLIP clips it") {
+    Dir dir;
+    const std::string content =
+        "0 0 0 RG /OC /A BDC 0 0 m 72 0 l S EMC /OC /B BDC 0 20 m 72 20 l S EMC "
+        "100 0 m 172 0 l S";
+    std::string p = "%PDF-1.5\n";
+    p += "1 0 obj\n<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [5 0 R 6 0 R] "
+         "/D << /OFF [6 0 R] >> >> >>\nendobj\n";
+    p += "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 288 144] >>\nendobj\n";
+    p += "3 0 obj\n<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /Properties "
+         "<< /A 5 0 R /B 6 0 R >> >> >>\nendobj\n";
+    p += "4 0 obj\n<< /Length " + std::to_string(content.size()) + " >>\nstream\n" + content +
+         "\nendstream\nendobj\n5 0 obj\n<< /Type /OCG /Name (Walls) >>\nendobj\n"
+         "6 0 obj\n<< /Type /OCG /Name (Furniture) >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n";
+    fs::path file = dir.path / "plan.pdf";
+    std::ofstream(file, std::ios::binary) << p;
+    Fixture f;
+    f.host->run("PDFATTACH", {file.string(), "0", "", "", "0,0"});
+    const BlockDef* def = f.doc.blockByName("plan");
+    REQUIRE(def);
+    const Layer* root = f.doc.layerByName("plan");
+    REQUIRE(root);
+    const Layer* walls = f.doc.layerByName(root->id, "Walls");
+    const Layer* furniture = f.doc.layerByName(root->id, "Furniture");
+    REQUIRE(walls);
+    REQUIRE(furniture);
+    CHECK(walls->on);
+    CHECK_FALSE(furniture->on);
+
+    auto shown = [&] {
+        DisplayList out;
+        geom::DisplayContext ctx;
+        geom::buildDisplay(f.doc, *f.doc.find(f.modelSpace()[0]), ctx, out);
+        std::size_t n = 0;  // the scene hides the parts on layers that are off
+        for (const DisplayItem& it : out.items)
+            if (const auto* pl = std::get_if<DisplayPolyline>(&it))
+                n += f.doc.effective(pl->style.layer).visible() ? 1 : 0;
+        return n;
+    };
+    CHECK(shown() == 2);  // the walls and the line outside any layer; the furniture is off
+    // Clip to x 0..30 mm: only the walls line (0..25 mm) is left of it... the third starts at 35
+    // mm.
+    f.host->run("XCLIP", {cmd::ScriptItem::pick(f.modelSpace()[0]), "", "", "-1,-1", "30,30"});
+    CHECK(shown() == 1);
+}
+
 TEST_CASE("XATTACH takes a PDF too, and XRELOAD keeps the page and fade of the stored path") {
     Dir dir;
     fs::path file = writePdf(dir.path, "a.pdf", "0 0 m 10 10 l S");
