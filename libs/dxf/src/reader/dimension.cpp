@@ -259,6 +259,11 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
                                  : whole == 3 ? DimAngleFormat::Radians
                                               : DimAngleFormat::Degrees;
                 break;
+            case 277:
+                ds.linearFormat = whole == 4   ? DimLinearFormat::Architectural
+                                  : whole == 5 ? DimLinearFormat::Fractional
+                                               : DimLinearFormat::Decimal;
+                break;
             case 179:
                 ds.angularPrecision = static_cast<int>(std::clamp<std::int64_t>(whole, -1, 8));
                 break;

@@ -1651,6 +1651,12 @@ void Importer::readDimStyle(const Record& r) {
                          : u == 3 ? DimAngleFormat::Radians
                                   : DimAngleFormat::Degrees;
     }
+    if (const Group* g = r.find(277)) {  // DIMLUNIT: 4 architectural, 5 fractional
+        const std::int64_t u = g->integer();
+        ds.linearFormat = u == 4   ? DimLinearFormat::Architectural
+                          : u == 5 ? DimLinearFormat::Fractional
+                                   : DimLinearFormat::Decimal;
+    }
     if (const Group* g = r.find(179))  // DIMADEC: -1 means the same as DIMDEC
         ds.angularPrecision = static_cast<int>(std::clamp<std::int64_t>(g->integer(), -1, 8));
     if (const Group* g = r.find(278))  // DIMDSEP: the character code of the decimal mark

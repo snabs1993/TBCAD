@@ -745,6 +745,9 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
             o.i(271, std::clamp(ds.precision, 0, 16));
             o.i(280, ds.textJustify);                    // DIMJUST
             o.i(275, static_cast<int>(ds.angleFormat));  // DIMAUNIT (same numbering)
+            o.i(277, ds.linearFormat == DimLinearFormat::Architectural ? 4
+                     : ds.linearFormat == DimLinearFormat::Fractional  ? 5
+                                                                       : 2);  // DIMLUNIT
             if (ds.angularPrecision >= 0)
                 o.i(179, ds.angularPrecision);      // DIMADEC (absent: the same as DIMDEC)
             o.i(278, ds.commaDecimal ? ',' : '.');  // DIMDSEP

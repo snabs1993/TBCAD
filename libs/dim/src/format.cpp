@@ -105,6 +105,37 @@ static std::string formatDms(double radians, int decimals) {
     return out;
 }
 
+// Inches the way an architect writes them: whole inches and a reduced fraction of 1/2^precision.
+// `feet` splits off the feet (12'-6 1/2"); otherwise everything stays in inches (150 1/2").
+static std::string formatImperial(double mm, int precision, bool feet) {
+    const int denom = 1 << std::clamp(precision, 0, 8);
+    const bool neg = mm < 0;
+    long long parts = std::llround(std::abs(mm) / 25.4 * denom);
+    long long whole = parts / denom;
+    long long num = parts % denom;
+    long long den = denom;
+    while (num != 0 && num % 2 == 0) {
+        num /= 2;
+        den /= 2;
+    }
+    std::string out = neg && parts != 0 ? "-" : "";
+    std::string frac = num != 0 ? std::to_string(num) + "/" + std::to_string(den) : "";
+    if (feet) {
+        const long long ft = whole / 12;
+        whole %= 12;
+        out += std::to_string(ft) + "'-" + std::to_string(whole);
+        if (!frac.empty())
+            out += " " + frac;
+    } else if (whole != 0 || frac.empty()) {
+        out += std::to_string(whole);
+        if (!frac.empty())
+            out += " " + frac;
+    } else {
+        out += frac;
+    }
+    return out + "\"";
+}
+
 std::string formatNumber(const DimStyle& style, double value, bool angular) {
     std::string s;
     if (angular) {
@@ -125,6 +156,9 @@ std::string formatNumber(const DimStyle& style, double value, bool angular) {
     } else {
         if (style.roundOff > 0)
             value = std::round(value / style.roundOff) * style.roundOff;
+        if (style.linearFormat != DimLinearFormat::Decimal)
+            return formatImperial(value, style.precision,
+                                  style.linearFormat == DimLinearFormat::Architectural);
         UnitFormat f;
         f.unit = style.units;
         s = formatLength(value, style.precision, f);
