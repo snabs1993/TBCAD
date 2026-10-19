@@ -2629,8 +2629,16 @@ bool Importer::convForeign(const Record& r, std::vector<Entity>& out) {
         }
     }
 
-    // The record itself, to be written back unchanged.
-    const std::string kept = keptRecord(r);
+    // The record itself, to be written back unchanged, except for the texts of its proxy
+    // graphics: they live on as Text entities, and would be read again as more of them.
+    Record withoutText;
+    const Record* keep = &r;
+    if (!texts.empty()) {
+        withoutText = r;
+        if (stripProxyText(withoutText))
+            keep = &withoutText;
+    }
+    const std::string kept = keptRecord(*keep);
     if (!kept.empty())
         d.raw.assign(kept.begin(), kept.end());
     if (d.graphics.items.empty() && texts.empty() && kept.empty())
