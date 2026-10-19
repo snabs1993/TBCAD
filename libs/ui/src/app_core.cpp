@@ -70,6 +70,8 @@ public:
     ~AppObserver() override { doc_.removeObserver(this); }
 
     void onChanged(const ChangeSet& cs) override {
+        if (!app_.session_)
+            return;  // the program is closing: a running command is being undone
         app_.pruneSelection();
         if (!app_.inUndo_ && !cs.entities.empty() && cs.entities.size() <= 12) {
             std::vector<EntityId> added;

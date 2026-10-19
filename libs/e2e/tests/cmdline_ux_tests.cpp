@@ -221,3 +221,25 @@ TEST_CASE("Escape cancels and Enter at the first prompt of LINE ends it, undo ta
     c.say({"U"});
     CHECK(c.lines().empty());
 }
+
+TEST_CASE("a drawing command drops the selection, an editing command takes it") {
+    Cli c;
+    c.say({"LINE", "0,0", "100,0", ""});
+    c.say({"LINE", "0,50", "100,50", ""});
+    c.core->submitText("SELECTALL");
+    CHECK(c.core->selection().size() == 2);
+    c.core->submitText("CIRCLE");  // starts with a point: the grips go away
+    CHECK(c.core->selection().empty());
+    c.core->pressEscape();
+    c.core->submitText("SELECTALL");
+    c.core->submitText("MOVE");  // takes the two lines as its objects
+    CHECK(c.core->selection().size() == 2);
+    c.core->pressEscape();
+}
+
+TEST_CASE("closing the program in the middle of a command does not crash") {
+    Cli c;
+    c.say({"LINE", "0,0", "100,0", "100,50"});  // three points drawn, the command still runs
+    CHECK(c.core->runner().active());
+    c.core.reset();  // the destructor undoes the unfinished command
+}
