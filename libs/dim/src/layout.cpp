@@ -201,7 +201,26 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
         if (!textIn)
             textOutside();
         lineEnd = (arrowsIn ? len : len + stub) + c.dext;
-        if (!textIn && tw > 0 && c.st.textMove != DimTextMove::Free) {
+        const double lateral = std::abs(dot(center - A, perp(uu)));
+        if (c.st.textMove == DimTextMove::Leader && tw > 0 && lateral > c.gap + 1.5 * c.th) {
+            // Moved away with a leader (DIMTMOVE 1), as AutoCAD draws it: the point is where the
+            // text starts; a leader runs from the middle of the dimension line to a landing line
+            // under the text (or to the text's edge when the text is centred on its line).
+            textOutside();
+            const Vec2 t = unit(rotText), up = perp(t);
+            const Vec2 mid = A + uu * (len / 2);
+            const double side = dot(d.textPos - mid, t) >= 0 ? 1 : -1;
+            const double raise = lift.centered ? 0
+                                 : c.st.textPlacement == DimTextPlacement::Below
+                                     ? -(c.gap + c.th / 2)
+                                     : c.gap + c.th / 2;
+            center = d.textPos + t * (side * tw / 2);
+            const Vec2 l0 = d.textPos - t * (side * c.gap) - up * raise;
+            leader = {mid, l0};
+            if (raise != 0)
+                leader.push_back(d.textPos + t * (side * (tw + c.gap)) - up * raise);
+            textIn = false;
+        } else if (!textIn && tw > 0 && c.st.textMove != DimTextMove::Free) {
             Vec2 E = tc <= 0 ? A - uu * (arrowsIn ? 0 : stub) : B + uu * (arrowsIn ? 0 : stub);
             Vec2 v = center - E;
             double dl = length(v);
@@ -272,9 +291,11 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
     }
     // DIMSOXD: arrows that do not fit are left out (with their stubs).
     const bool noArrows = !arrowsIn && c.st.suppressArrowsOutside;
-    const double lineStart = textBeforeA > 0
-                                 ? -textBeforeA
-                                 : (arrowsIn ? 0 : noArrows ? 0 : -stub) - (arrowsIn ? c.dext : 0);
+    const double lineStart = textBeforeA > 0 ? -textBeforeA
+                                             : (arrowsIn   ? 0
+                                                : noArrows ? 0
+                                                           : -stub) -
+                                                   (arrowsIn ? c.dext : 0);
     if (noArrows && textIn)
         lineEnd = len;
     // DIMTOFL off: arrows outside leave nothing between the extension lines.
@@ -313,8 +334,8 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
     } else {
         seg(lineStart, lineEnd);
     }
-    if (leader.size() == 2)
-        addSeg(L, leader[0], leader[1], Role::DimLine, c.tol);
+    for (std::size_t i = 0; i + 1 < leader.size(); ++i)
+        addSeg(L, leader[i], leader[i + 1], Role::DimLine, c.tol);
 
     if (!noArrows) {
         if (!hideA)
@@ -849,10 +870,9 @@ Layout layoutDimension(const Document& doc, const DimensionData& d, double toler
     if (stacked) {
         // Each line of the stack is DIMTFAC times the text height; it is as wide as its wider part.
         const double sh = c.th * st.tolHeightFactor;
-        c.stackedWidth =
-            textWidth(c, stacked->before) + textWidth(c, stacked->after) +
-            std::max(text::measureWidth(c.tstyle, stacked->up, sh),
-                     text::measureWidth(c.tstyle, stacked->down, sh));
+        c.stackedWidth = textWidth(c, stacked->before) + textWidth(c, stacked->after) +
+                         std::max(text::measureWidth(c.tstyle, stacked->up, sh),
+                                  text::measureWidth(c.tstyle, stacked->down, sh));
         c.stackedPlain = txt;
     }
     switch (d.kind) {

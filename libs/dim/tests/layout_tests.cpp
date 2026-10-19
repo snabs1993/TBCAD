@@ -472,3 +472,30 @@ TEST_CASE("a text frame (DIMGAP below zero) draws a closed box round the dimensi
     CHECK(w > framed.text.width);
     CHECK((box.pts[0].x + box.pts[2].x) / 2 == doctest::Approx(framed.text.center.x));
 }
+
+TEST_CASE("DIMTMOVE 1: text moved away hangs on a leader from the middle with a landing") {
+    // As AutoCAD draws it: the text point is where the text starts; the leader runs from the
+    // middle of the dimension line to a landing line under the text.
+    DimensionData d = linear({0, 0}, {100, 0}, {50, 10});
+    d.textPosUser = true;
+    d.textPos = {150, -40};
+    Layout L = withStyle([](DimStyle& s) { s.textMove = DimTextMove::Leader; }, d);
+    const double raise = 0.625 + 1.25;  // gap + half the text height
+    CHECK(L.text.center.x == doctest::Approx(150 + L.text.width / 2));
+    CHECK(L.text.center.y == doctest::Approx(-40));
+    bool leader = false, landing = false;
+    for (const auto& l : L.lines) {
+        if (l.role != Role::DimLine)
+            continue;
+        leader =
+            leader || (near(l.pts.front(), {50, 10}) && near(l.pts.back(), {149.375, -40 - raise}));
+        landing = landing || (near(l.pts.front(), {149.375, -40 - raise}) &&
+                              l.pts.back().x == doctest::Approx(150 + L.text.width + 0.625));
+    }
+    CHECK(leader);
+    CHECK(landing);
+    // Text kept near the dimension line is not moved away: no leader.
+    d.textPos = {50, 12};
+    Layout onLine = withStyle([](DimStyle& s) { s.textMove = DimTextMove::Leader; }, d);
+    CHECK(onLine.text.center.x == doctest::Approx(50));
+}
