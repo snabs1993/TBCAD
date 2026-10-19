@@ -12,6 +12,7 @@
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/core/dump.h"
+#include "tbcad/io/tbcad.h"
 #include "tbcad/modify/modify.h"
 
 using namespace tbcad;
@@ -673,6 +674,14 @@ TEST_CASE("degenerate and huge geometry: modify commands never crash, stay finit
             }
             const std::string now = canonicalDump(r.doc);
             CHECK(finiteDump(now));
+            if (step % 8 == 7) {
+                auto bytes = io::writeTbcadToMemory(r.doc);
+                REQUIRE(bytes.ok());
+                io::IoReport rep;
+                auto back = io::readTbcad(std::span<const std::uint8_t>(bytes.value()), rep);
+                REQUIRE(back.ok());
+                CHECK(canonicalDump(*back.value()) == now);
+            }
             const std::size_t depth = r.host.undoStack().undoCount();
             CHECK(depth + 1 >= history.size());
             if (depth == history.size()) {
@@ -748,6 +757,14 @@ TEST_CASE("scenes with blocks, hatches and wide polylines: modify commands stay 
             }
             const std::string now = canonicalDump(r.doc);
             CHECK(finiteDump(now));
+            if (step % 8 == 7) {  // what is in memory must survive saving and loading
+                auto bytes = io::writeTbcadToMemory(r.doc);
+                REQUIRE(bytes.ok());
+                io::IoReport rep;
+                auto back = io::readTbcad(std::span<const std::uint8_t>(bytes.value()), rep);
+                REQUIRE(back.ok());
+                CHECK(canonicalDump(*back.value()) == now);
+            }
             const std::size_t depth = r.host.undoStack().undoCount() - base;
             CHECK(depth + 1 >= history.size());
             if (depth == history.size()) {
