@@ -482,3 +482,35 @@ TEST_CASE("multileader: add a bend to a leader line, remove one, the landing end
     CHECK(f.host.undo());
     CHECK(get<MLeaderData>(f.doc, id).lines[0].size() == 3);
 }
+
+TEST_CASE("multiline: add and remove a vertex keep the cuts of the other segments") {
+    Fixture f;
+    MlineData m;
+    m.v = {{0, 0}, {10, 0}, {20, 0}, {30, 0}};
+    m.cuts = {{0, 0.2, 0.4, 0, 255}, {1, 0.2, 0.4, 0, 255}, {2, 0.2, 0.4, 0, 255}};
+    auto id = add(f.doc, m);
+    CHECK(offers(f.doc, id, 1, GripAction::AddVertex));
+    CHECK(offers(f.doc, id, 1, GripAction::RemoveVertex));
+    // Add after vertex 1: segment 1 is reshaped and loses its cut, segment 2 becomes 3.
+    auto r = tf::applyGripAction(*f.doc.find(id), 1, GripAction::AddVertex, {15, 5});
+    REQUIRE(r.ok());
+    const auto& a = *entityAs<MlineData>(r.value());
+    REQUIRE(a.v.size() == 5);
+    CHECK(near(a.v[2], {15, 5}));
+    REQUIRE(a.cuts.size() == 2);
+    CHECK(a.cuts[0].seg == 0);
+    CHECK(a.cuts[1].seg == 3);
+    // Remove vertex 2: segments 1 and 2 merge and lose theirs.
+    auto q = tf::applyGripAction(*f.doc.find(id), 2, GripAction::RemoveVertex, {});
+    REQUIRE(q.ok());
+    const auto& b = *entityAs<MlineData>(q.value());
+    CHECK(b.v.size() == 3);
+    REQUIRE(b.cuts.size() == 1);
+    CHECK(b.cuts[0].seg == 0);
+    // Never below two vertices.
+    MlineData two;
+    two.v = {{0, 0}, {10, 0}};
+    auto id2 = add(f.doc, two);
+    CHECK_FALSE(offers(f.doc, id2, 0, GripAction::RemoveVertex));
+    CHECK_FALSE(tf::applyGripAction(*f.doc.find(id2), 0, GripAction::RemoveVertex, {}).ok());
+}
