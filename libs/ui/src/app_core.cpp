@@ -2202,7 +2202,8 @@ void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
             lastTessellatedFor_.center = camera_.center;
     }
     // Geometry of a drawing-sized edit is built a slice per frame, what the camera sees first.
-    if (session_->sync->pumpPending(camera_) > 0) {
+    // (about two frames' worth: the rest follows over the next frames)
+    if (session_->sync->pumpPending(camera_, 8000, 30.0) > 0) {
         ++generation_;
         trimWhenSettled_ = true;
     }

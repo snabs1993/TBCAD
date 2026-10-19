@@ -9,9 +9,11 @@
 #include <limits>
 #include <new>
 #include <stdexcept>
+#include <typeinfo>
 #include <unordered_set>
 
 #include "tbcad/core/dim_assoc.h"
+#include "tbcad/core/profile.h"
 
 namespace tbcad {
 
@@ -1008,7 +1010,8 @@ std::vector<EntityId> Document::inDrawOrder(std::span<const EntityId> ids) const
             continue;
         keyed.emplace_back(orderOverride_.empty() ? 0 : orderKey(id), id);
     }
-    std::sort(keyed.begin(), keyed.end());  // (key, id): what the stable sort over ascending ids does
+    std::sort(keyed.begin(),
+              keyed.end());  // (key, id): what the stable sort over ascending ids does
     keyed.erase(std::unique(keyed.begin(), keyed.end()), keyed.end());
     std::vector<EntityId> out;
     out.reserve(keyed.size());
@@ -1128,6 +1131,7 @@ void Document::notify(const ChangeSet& cs) {
     auto copy = observers_;
     for (DocumentObserver* o : copy) {
         if (std::find(observers_.begin(), observers_.end(), o) != observers_.end()) {
+            profile::EditTimer t(profile::editOn() ? typeid(*o).name() : "", cs.entities.size());
             o->onChanged(cs);
         }
     }
@@ -1180,13 +1184,20 @@ void Document::apply(const ChangeSet& changes, Direction direction) {
     if (active_)
         throw std::logic_error("cannot undo or redo while a transaction is open");
     if (direction == Direction::Redo) {
-        applyForward(changes);
+        {
+            profile::EditTimer t("redo: apply", changes.entities.size());
+            applyForward(changes);
+        }
         ++revision_;
         if (!changes.empty())
             notify(changes);
     } else {
-        ChangeSet inv = changes.inverted();
-        applyForward(inv);
+        ChangeSet inv;
+        {
+            profile::EditTimer t("undo: invert and apply", changes.entities.size());
+            inv = changes.inverted();
+            applyForward(inv);
+        }
         ++revision_;
         if (!inv.empty())
             notify(inv);
@@ -2041,6 +2052,8 @@ void Transaction::followAssociations() {
 
 ChangeSet Transaction::commit() {
     Document& d = doc();
+    std::optional<profile::EditTimer> timer;
+    timer.emplace("commit '" + name_ + "'", beforeSnaps_.size());
     if (!touched_.empty() || d.allocCursor() > startNextId_)
         followAssociations();
     ChangeSet cs;
@@ -2126,6 +2139,7 @@ ChangeSet Transaction::commit() {
     d.active_ = nullptr;
     doc_ = nullptr;
     ++d.revision_;
+    timer.reset();
     if (!cs.empty())
         d.notify(cs);
     return cs;

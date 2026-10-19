@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <unordered_set>
 
+#include "tbcad/core/profile.h"
+
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -106,6 +108,7 @@ void UndoStack::push(std::string label, std::vector<ChangeSet> sets, std::size_t
     if (sets.empty())
         return;
     if (bytes == 0) {
+        profile::EditTimer t("undo history: measure '" + label + "'");
         std::unordered_set<const void*> seen;  // snapshots are shared between sets
         for (const ChangeSet& cs : sets) {
             std::size_t b = estimateBytes(cs);
@@ -124,7 +127,10 @@ void UndoStack::push(std::string label, std::vector<ChangeSet> sets, std::size_t
 }
 
 void UndoStack::record(Entry e) {
-    redo_.clear();
+    {
+        profile::EditTimer t("undo history: drop redo steps");
+        redo_.clear();
+    }
     used_ += e.bytes;
     undo_.push_back(std::move(e));
     trim();

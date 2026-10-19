@@ -7,6 +7,7 @@ tbcad_add_library(core
     src/ext_data.cpp
     src/groups.cpp
     src/math.cpp
+    src/profile.cpp
     src/units.cpp)
 if(TBCAD_HARDEN_EDITS)
   target_compile_definitions(tbcad_core PRIVATE TBCAD_HARDEN_EDITS)

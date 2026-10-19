@@ -1,10 +1,12 @@
 #include "tbcad/ui/scene_sync.h"
 
 #include <algorithm>
+#include <chrono>
 #include <future>
 #include <thread>
 #include <unordered_set>
 
+#include "tbcad/core/profile.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/render/layer_sync.h"
 #include "tbcad/text/text.h"
@@ -246,11 +248,13 @@ void SceneSync::packInserts(std::vector<Prepared>& chunk, std::size_t lanes) {
 }
 
 void SceneSync::upsertParallel(const std::vector<const Entity*>& list,
-                               const std::vector<std::uint32_t>& orders) {
+                               const std::vector<std::uint32_t>& orders, std::size_t minParallel,
+                               std::size_t maxLanes) {
     constexpr std::size_t kChunk = 8192;
-    const std::size_t lanes = std::clamp<std::size_t>(
-        maxThreads_ ? maxThreads_ : std::thread::hardware_concurrency(), 1, 16);
-    if (list.size() < 2 * kChunk || lanes < 2) {
+    const std::size_t lanes =
+        std::clamp<std::size_t>(maxThreads_ ? maxThreads_ : std::thread::hardware_concurrency(), 1,
+                                std::min<std::size_t>(16, maxLanes));
+    if (list.size() < minParallel || lanes < 2) {
         for (std::size_t i = 0; i < list.size(); ++i)
             upsertEntity(*list[i], orders[i]);
         return;
@@ -315,6 +319,12 @@ std::optional<std::uint32_t> SceneSync::takePending(EntityId id) {
 }
 
 // Many objects went away at once: when both lists are in id order, one pass marks them.
+bool SceneSync::pendingHas(EntityId id) const {
+    auto it = std::lower_bound(pending_.begin(), pending_.end(), id,
+                               [](const PendingRec& r, EntityId v) { return r.id < v; });
+    return it != pending_.end() && it->id == id && !it->dead;
+}
+
 void SceneSync::dropPending(const std::vector<EntityId>& ids) {
     if (ids.size() < 64 || !std::is_sorted(ids.begin(), ids.end())) {
         for (EntityId id : ids)
@@ -417,7 +427,8 @@ void SceneSync::buildPending(PendingRec& rec) {
         upsertEntity(*e, rec.order);
 }
 
-std::size_t SceneSync::pumpPending(const render::Camera2D& camera, std::size_t limit) {
+std::size_t SceneSync::pumpPending(const render::Camera2D& camera, std::size_t limit,
+                                   double budgetMs) {
     if (pendingCount() == 0) {
         std::vector<PendingRec>().swap(pending_);
         pendingDead_ = 0;
@@ -427,24 +438,70 @@ std::size_t SceneSync::pumpPending(const render::Camera2D& camera, std::size_t l
     BBox2 view = camera.visibleWorld();
     const double pad = 0.1 * std::max(view.width(), view.height());
     view = view.inflated(pad);
+    // Built a chunk at a time on all cores, as a big edit is, until the limit or the frame's time
+    // is used up (a frame of a MOVE of everything took 200-300 ms on one core).
+    const auto start = std::chrono::steady_clock::now();
+    auto outOfTime = [&] {
+        return budgetMs > 0 &&
+               std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
+                       .count() >= budgetMs;
+    };
+    constexpr std::size_t kChunk = 1024;
+    std::vector<const Entity*> slice;
+    std::vector<std::uint32_t> orders;
+    std::vector<EntityId> ids;
+    auto take = [&](PendingRec& rec) {
+        rec.dead = true;
+        ++pendingDead_;
+        if (const Entity* e = doc_.find(rec.id)) {
+            slice.push_back(e);
+            orders.push_back(rec.order);
+            ids.push_back(rec.id);
+        }
+    };
     std::size_t built = 0;
+    auto buildSlice = [&] {
+        if (slice.empty())
+            return;
+        built += slice.size();
+        scene_.removeMany(ids);
+        // (half the cores: the frame shares the machine with whatever else runs)
+        upsertParallel(slice, orders, 512,
+                       std::max<std::size_t>(2, std::thread::hardware_concurrency() / 2));
+        slice.clear();
+        orders.clear();
+        ids.clear();
+    };
+    bool stopped = false;
     for (PendingRec& rec : pending_) {
-        if (built >= limit)
+        if (built + slice.size() >= limit)
             break;
         if (!rec.dead && (rec.box.empty() || view.intersects(rec.box))) {
-            buildPending(rec);
-            ++built;
-        }
-    }
-    if (built == 0) {  // nothing in view: use the time to catch up on the rest
-        for (PendingRec& rec : pending_) {
-            if (built >= limit / 2)
-                break;
-            if (!rec.dead) {
-                buildPending(rec);
-                ++built;
+            take(rec);
+            if (slice.size() >= kChunk) {
+                buildSlice();
+                if (outOfTime()) {
+                    stopped = true;
+                    break;
+                }
             }
         }
+    }
+    buildSlice();
+    if (built == 0 && !stopped) {  // nothing in view: use the time to catch up on the rest
+        for (PendingRec& rec : pending_) {
+            if (built + slice.size() >= limit / 2)
+                break;
+            if (!rec.dead) {
+                take(rec);
+                if (slice.size() >= kChunk) {
+                    buildSlice();
+                    if (outOfTime())
+                        break;
+                }
+            }
+        }
+        buildSlice();
     }
     if (pendingDead_ * 2 > pending_.size())
         compactPending();
@@ -645,8 +702,11 @@ void SceneSync::onChanged(const ChangeSet& cs) {
     for (const EntityChange& c : cs.entities)
         if (!cs.after(c))
             removed.push_back(cs.idOf(c));
-    if (!scene_.removeAllOf(removed))
-        scene_.removeMany(removed);
+    {
+        profile::EditTimer t("scene: remove", removed.size());
+        if (!scene_.removeAllOf(removed))
+            scene_.removeMany(removed);
+    }
     if (!pending_.empty())
         dropPending(removed);
     std::vector<const Entity*> redraw;
@@ -674,19 +734,28 @@ void SceneSync::onChanged(const ChangeSet& cs) {
     // Changes of what is already drawn wait. New objects are built at once, so the scene does
     // not lag behind a paste, unless there are so many (an undo of ERASE ALL) that building them
     // all in one go is a long stall: those wait too, camera first.
-    constexpr std::size_t kNewWaitMin = 100000;
-    const bool lazy = lazyOk(redraw.size()) &&
-                      std::none_of(redraw.begin(), redraw.end(),
-                                   [](const Entity* e) { return e->common.wipeout; }) &&
-                      (redraw.size() >= kNewWaitMin ||
-                       2 * static_cast<std::size_t>(std::count_if(
-                               redraw.begin(), redraw.end(),
-                               [&](const Entity* e) { return scene_.contains(e->common.id); })) >=
-                           redraw.size());
-    if (lazy)
-        queueLazy(redraw, &known);
-    else
-        upsertMany(redraw);
+    constexpr std::size_t kNewWaitMin = 50000;
+    const bool lazy =
+        lazyOk(redraw.size()) &&
+        std::none_of(redraw.begin(), redraw.end(),
+                     [](const Entity* e) { return e->common.wipeout; }) &&
+        (redraw.size() >= kNewWaitMin ||
+         2 * static_cast<std::size_t>(std::count_if(redraw.begin(), redraw.end(),
+                                                    [&](const Entity* e) {
+                                                        // (still waiting from the last big change:
+                                                        // drawn soon anyway)
+                                                        return scene_.contains(e->common.id) ||
+                                                               pendingHas(e->common.id);
+                                                    })) >=
+             redraw.size());
+    {
+        profile::EditTimer t(lazy ? "scene: queue changed objects" : "scene: build changed objects",
+                             redraw.size());
+        if (lazy)
+            queueLazy(redraw, &known);
+        else
+            upsertMany(redraw);
+    }
     if (!fieldTexts_.empty() && (!cs.entities.empty() || cs.header)) {
         std::vector<EntityId> ids(fieldTexts_.begin(), fieldTexts_.end());
         for (EntityId id : ids)
