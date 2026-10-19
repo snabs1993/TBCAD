@@ -237,9 +237,10 @@ std::vector<GripAction> gripActions(const Document& doc, const Grip& grip) {
         }
         case EntityKind::Dimension: {
             const auto& d = *entityAs<DimensionData>(*e);
-            if (grip.index == 4 && d.textPosUser)
+            if (grip.index == geom::dimTextGrip(d) && d.textPosUser)
                 out.push_back(GripAction::ResetText);
-            if ((d.kind == DimKind::Linear || d.kind == DimKind::Aligned) && grip.index < 2) {
+            // Continue and Baseline from an extension line origin or a dimension line end.
+            if ((d.kind == DimKind::Linear || d.kind == DimKind::Aligned) && grip.index < 4) {
                 out.push_back(GripAction::Continue);
                 out.push_back(GripAction::Baseline);
             }
@@ -510,8 +511,8 @@ Result<Entity> applyGripAction(const Entity& e, int index, GripAction action, Ve
             return out;
         }
         case EntityKind::Dimension: {
-            if (action == GripAction::ResetText && index == 4) {
-                auto& d = *entityAs<DimensionData>(out);
+            auto& d = *entityAs<DimensionData>(out);
+            if (action == GripAction::ResetText && index == geom::dimTextGrip(d)) {
                 d.textPosUser = false;
                 return out;
             }

@@ -168,6 +168,8 @@ Result<Entity> transformed(const Entity& e, const Transform2& t);
 // Grip points in a fixed order per kind (documented in docs/geom.md).
 std::vector<Vec2> gripPoints(const Entity& e);
 Result<Entity> moveGrip(const Entity& e, int index, Vec2 to);
+// The index of a dimension's text grip (its last grip).
+int dimTextGrip(const DimensionData& d);
 
 // After the parameters of an associative array were changed from `from` to `to`: the removed and
 // replaced items of `from` keep their row and column (rectangular) or their index (polar, path);

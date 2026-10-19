@@ -993,6 +993,22 @@ void refresh(const Document& doc, DimensionData& d) {
         d.textPos = L.text.point;
 }
 
+void placeText(const Document& doc, DimensionData& d, Vec2 at) {
+    d.textPos = at;
+    d.textPosUser = true;
+    if ((d.kind != DimKind::Linear && d.kind != DimKind::Aligned) ||
+        styleOf(doc, d.style).textMove != DimTextMove::WithLine)
+        return;
+    Vec2 u = d.kind == DimKind::Linear ? unit(d.rotation) : normalized(d.defPts[1] - d.defPts[0]);
+    if (tol::isZeroLength(u))
+        u = {1, 0};
+    const Vec2 n = perp(u);
+    d.defPts[2] = d.defPts[2] + n * dot(at - d.defPts[2], n);
+    // With the line through the point the text sits lifted from it; move the line back by that.
+    const Vec2 lifted = layoutDimension(doc, d).text.center;
+    d.defPts[2] = d.defPts[2] - n * dot(lifted - at, n);
+}
+
 std::vector<Vec2> arcPoints(const Layout::Arc& a, double tolerance) {
     double sweep = normalizeAngle(a.endAngle - a.startAngle);
     if (sweep < 1e-12)

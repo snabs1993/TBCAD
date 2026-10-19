@@ -532,8 +532,8 @@ TEST_CASE("dimension grips: an extension origin changes the measurement, the lin
     f.host.run("GRIPEDIT", {"10,0", "20,0"});
     CHECK(get<DimensionData>(f.doc, dimId).measurement == doctest::Approx(20));
     CHECK(near(get<DimensionData>(f.doc, dimId).defPts[1], {20, 0}));
-    // The dimension line grip moves the line, the measurement stays.
-    f.host.run("GRIPEDIT", {"5,5", "5,9"});
+    // A dimension line end grip moves the line, the measurement stays.
+    f.host.run("GRIPEDIT", {"20,5", "20,9"});
     CHECK(get<DimensionData>(f.doc, dimId).measurement == doctest::Approx(20));
     CHECK(get<DimensionData>(f.doc, dimId).defPts[2].y == doctest::Approx(9));
     CHECK_FALSE(get<DimensionData>(f.doc, dimId).textPosUser);
@@ -649,4 +649,43 @@ TEST_CASE("spline grips add and remove fit points, and remove control vertices")
     auto rc = tf::applyGripAction(*f.doc.find(c), 2, GripAction::RemoveVertex, {});
     REQUIRE(rc);
     CHECK(entityAs<SplineData>(rc.value())->control.size() == 4);
+}
+
+TEST_CASE("dimension grips as in AutoCAD: line ends, no stray grip, the text drags the line") {
+    Fixture f;
+    f.host.run("DIMLINEAR", {"0,0", "10,0", "5,5"});
+    EntityId dimId{};
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (entityAs<DimensionData>(e))
+            dimId = e.common.id;
+    });
+    REQUIRE(dimId);
+    const auto grips = tf::collectGrips(f.doc, std::vector<EntityId>{dimId});
+    REQUIRE(grips.size() == 5);
+    CHECK(near(grips[0].pos, {0, 0}));
+    CHECK(near(grips[1].pos, {10, 0}));
+    CHECK(near(grips[2].pos, {0, 5}));
+    CHECK(near(grips[3].pos, {10, 5}));
+    // Continue and Baseline from a dimension line end too, not from the text.
+    CHECK(offers(f.doc, dimId, 3, GripAction::Continue));
+    CHECK_FALSE(offers(f.doc, dimId, 4, GripAction::Baseline));
+    // Dragging the text up drags the dimension line with it; the text keeps its lift.
+    f.host.setSelection({dimId});
+    f.host.run("GRIPEDIT",
+               {ScriptItem(std::to_string(grips[4].pos.x) + "," + std::to_string(grips[4].pos.y)),
+                "7,15"});
+    const auto& d = get<DimensionData>(f.doc, dimId);
+    CHECK(d.textPosUser);
+    CHECK(d.defPts[2].y == doctest::Approx(15 - 1.875));
+    CHECK(d.measurement == doctest::Approx(10));
+
+    // A radius dimension has its centre, circle point and text grips only.
+    DimensionData r;
+    r.kind = DimKind::Radius;
+    r.defPts = {Vec2{0, 0}, Vec2{5, 0}, Vec2{}, Vec2{}};
+    r.textPos = {8, 0};
+    Entity re;
+    re.data = Indirect<DimensionData>(r);
+    CHECK(geom::gripPoints(re).size() == 3);
+    CHECK(geom::dimTextGrip(r) == 2);
 }
