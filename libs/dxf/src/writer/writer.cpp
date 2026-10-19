@@ -1738,12 +1738,37 @@ std::string Writer::headerSection(std::uint64_t handSeed) {
         o.i(70, 1);
         var("$INSUNITS");
         o.i(70, 4);  // millimetres: every TBCAD length is in mm
+        // The unit the drawing shows lengths in, as a note TBCAD reads back (USERI5 is free for
+        // applications; AutoCAD ignores the value).
+        const LengthUnit shown = doc_.header().units;
+        const char* slot = nullptr;  // the first of USERI5..1 the file did not use itself
+        for (const char* n : {"$USERI5", "$USERI4", "$USERI3", "$USERI2", "$USERI1"}) {
+            const auto it = custom.find(std::string(kKeptVarPrefix) + n);
+            bool free = it == custom.end();
+            if (!free) {  // a variable the file left at its default is as good as absent
+                const KeptGroups g = unpackGroups(it->second);
+                free = g.size() == 1 && g[0].first == 70 && g[0].second == "0";
+            }
+            if (free) {
+                slot = n;
+                break;
+            }
+        }
+        if (shown != LengthUnit::Millimeter && slot) {
+            var(slot);
+            o.i(70, 8100 + (shown == LengthUnit::Inch     ? 1
+                             : shown == LengthUnit::Foot   ? 2
+                             : shown == LengthUnit::Centimeter ? 5
+                                                           : 6));
+        }
         for (const auto& [key, value] : custom) {
             if (key.compare(0, kKeptVarPrefix.size(), kKeptVarPrefix) != 0)
                 continue;
             const std::string name = key.substr(kKeptVarPrefix.size());
             if (ownedHeaderVar(name))
                 continue;
+            if (shown != LengthUnit::Millimeter && slot && name == slot)
+                continue;  // the note about the shown unit took its place
             kept(name.c_str());
         }
     }

@@ -15,6 +15,8 @@
 #include <filesystem>
 
 #include "tbcad/cmd/register_all.h"
+#include "tbcad/core/dump.h"
+#include "tbcad/io/tbcad.h"
 #include "tbcad/ui/app_core.h"
 #include "tbcad/ui/ui_registry.h"
 
@@ -663,4 +665,31 @@ TEST_CASE("perf: everyday interactions on a drawing of 100k objects") {
     step("undo erase all", [&] { (void)c.undo(); });
     while (c.sceneBuilding())
         c.updateFrame();
+}
+
+// Saving and opening the native file on a mixed drawing: exact, and fast enough to never be the
+// reason someone waits.
+TEST_CASE("perf: .tbcad save and load of a mixed drawing is exact and quick") {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
+    Site s;
+    const Document& doc = s.core->document();
+    const auto file = s.dir / "mixed.tbcad";
+    auto t0 = std::chrono::steady_clock::now();
+    REQUIRE(io::writeTbcad(doc, file).ok());
+    const double saveMs =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    io::IoReport report;
+    t0 = std::chrono::steady_clock::now();
+    auto back = io::readTbcad(file, report);
+    const double loadMs =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    REQUIRE(back.ok());
+    std::printf("%zu objects: save %.0f ms, load %.0f ms, file %.1f MB\n", doc.modelSpaceCount(),
+                saveMs, loadMs, std::filesystem::file_size(file) / 1048576.0);
+    CHECK(back.value()->modelSpaceCount() == doc.modelSpaceCount());
+    CHECK(canonicalDump(*back.value()) == canonicalDump(doc));
+#ifdef NDEBUG
+    CHECK(saveMs < 8000);
+    CHECK(loadMs < 8000);
+#endif
 }

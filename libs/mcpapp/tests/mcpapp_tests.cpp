@@ -37,9 +37,10 @@ struct Fixture {
         mcp->registerCommands(registry);
     }
 
-    // Runs `client` on its own thread while this (the owner) thread pumps.
-    template <class F>
-    void withClient(F&& client) {
+    // Runs `client` on its own thread while this (the owner) thread pumps. `onPump` runs on the
+    // owner thread before each pump, for changes the owner makes (settings are not thread-safe).
+    template <class F, class G = void (*)()>
+    void withClient(F&& client, G&& onPump = +[] {}) {
         std::atomic<bool> done{false};
         std::thread t([&] {
             client();
@@ -47,6 +48,7 @@ struct Fixture {
         });
         const auto limit = std::chrono::steady_clock::now() + std::chrono::seconds(20);
         while (!done && std::chrono::steady_clock::now() < limit) {
+            onPump();
             mcp->pump();
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
@@ -194,18 +196,23 @@ TEST_CASE("stopping the server answers a waiting permission request") {
     Fixture f("stopask", "ask");
     f.core->settings().setBool(kSettingEnabled, true);
     f.mcp->pump();
-    f.withClient([&] {
-        Rpc rpc(f.mcp->server()->port(), f.mcp->token());
-        rpc.init();
-        std::thread stopper([&] {
-            while (!f.mcp->pendingRequest())
-                std::this_thread::sleep_for(std::chrono::milliseconds(2));
-            f.core->settings().setBool(kSettingEnabled,
-                                       false);  // owner thread picks it up in pump()
+    std::atomic<bool> stopWanted{false};
+    f.withClient(
+        [&] {
+            Rpc rpc(f.mcp->server()->port(), f.mcp->token());
+            rpc.init();
+            std::thread stopper([&] {
+                while (!f.mcp->pendingRequest())
+                    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                stopWanted = true;  // the owner thread switches the setting off in its loop
+            });
+            rpc.call("add_entities", R"({"entities":[{"kind":"line","start":[0,0],"end":[1,1]}]})");
+            stopper.join();
+        },
+        [&] {
+            if (stopWanted.exchange(false))
+                f.core->settings().setBool(kSettingEnabled, false);
         });
-        rpc.call("add_entities", R"({"entities":[{"kind":"line","start":[0,0],"end":[1,1]}]})");
-        stopper.join();
-    });
     CHECK_FALSE(f.mcp->running());
     CHECK(f.core->document().modelSpaceCount() == 0);
 }
