@@ -290,8 +290,9 @@ void CommandRunner::refreshPrompt() {
     host_.promptChanged(&*prompt_);
 }
 
-Vec2 CommandRunner::filtered(const RawInput& raw, bool click, const std::optional<Vec2>& base) {
-    if (!chain_) {
+Vec2 CommandRunner::filtered(const RawInput& raw, bool click, const std::optional<Vec2>& base,
+                             bool snap) {
+    if (!chain_ || !snap) {
         feedback_ = FilterFeedback{};
         feedback_.hasPoint = true;
         feedback_.base = base;
@@ -333,7 +334,7 @@ void CommandRunner::pointerMoved(const RawInput& raw) {
                           req.kind == detail::PromptKind::Angle;
     if (!pointish)
         return;
-    Vec2 p = filtered(raw, false, req.base);
+    Vec2 p = filtered(raw, false, req.base, req.snap);
     host_.feedbackChanged(feedback_);
     if (req.preview) {
         previewList_.items.clear();
@@ -850,7 +851,7 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
             }
             if (req.kind != K::Point && req.kind != K::Distance && req.kind != K::Angle)
                 return SubmitResult::Ignored;
-            const Vec2 p = filtered(in.raw, true, req.base);
+            const Vec2 p = filtered(in.raw, true, req.base, req.snap);
             lastPoint_ = p;
             ans.status = Status::Ok;
             if (req.kind == K::Point) {

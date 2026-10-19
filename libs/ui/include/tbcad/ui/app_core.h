@@ -398,7 +398,7 @@ private:
     Vec2 viewportOrigin_{};
     bool haveOrigin_ = false;
     bool trimWhenSettled_ = false;  // a big build ran: trim the scene's spare memory when done
-    int fitPending_ = 0;  // re-fits left after a drawing opened, see setViewportSize
+    int fitPending_ = 0;            // re-fits left after a drawing opened, see setViewportSize
     std::chrono::steady_clock::time_point fitUntil_{};  // re-fits only count until this time
     void applyPick(const std::vector<EntityId>& ids, bool remove);
     // A click or window on the idle drawing, honouring PICKADD (0: replaces; Shift toggles).
@@ -521,6 +521,11 @@ private:
     double pendingZoomXp_ = 0;   // ZOOM nXP: the viewport scale as a fraction of paper space
     std::string editingLayout_;  // the viewport being edited from model space, if any
     int editingViewport_ = 0;
+    // The view when the viewport was entered: zooms and pans made since go back into the
+    // viewport (its scale and centre) when the sheet is shown again, as in AutoCAD.
+    double editEntryPixelsPerMm_ = 0;
+    Vec2 editEntryCenter_{};
+    void commitViewportView();
     void applyZoomXp();
     void followLockedViewport();
     std::uint64_t annoSyncRevision_ = 0;

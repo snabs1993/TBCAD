@@ -1,0 +1,88 @@
+# A full sheet plot through an office-style colour table: lines plot black, the grey column
+# fill (ACI 253) keeps its own grey, and the PDF lands where it was asked.
+FILEDIA
+0
+HPLAYER
+.
+-LAYER
+Make
+S-GRID
+Color
+1
+S-GRID
+Make
+S-COLN
+Color
+2
+S-COLN
+Make
+S-COLNHATC
+Color
+253
+S-COLNHATC
+Set
+S-COLN
+
+RECTANG
+-200,-200
+200,200
+RECTANG
+5800,-200
+6200,200
+-LAYER
+Set
+S-GRID
+
+LINE
+-1000,0
+7000,0
+
+-LAYER
+Off
+S-GRID
+Set
+S-COLNHATC
+
+@zoom -500 -500 6500 500
+HATCH
+Pattern
+SOLID
+@clickw 0 100
+@clickw 6000 100
+
+@expect on-layer hatch S-COLNHATC 2
+-LAYER
+On
+S-GRID
+
+LAYOUT
+New
+S2312
+A3
+Landscape
+LAYOUT
+Set
+S2312
+MVIEW
+20,20
+400,277
+1:50
+3000,0
+@frames 3
+PLOT
+Style
+{dir}/data/ep-test.ctb
+Layout
+S2312
+Format
+Pdf
+Export
+{out}/09_s2312.pdf
+@frames 3
+@expect file 09_s2312.pdf
+# The table's pens: ACI 253 keeps its grey (186 = 0.7294), yellow and red lines plot black.
+@expect contains 09_s2312.pdf 0.7294 0.7294 0.7294 rg
+@expect contains 09_s2312.pdf 0 0 0 RG
+@expect lacks 09_s2312.pdf 1 1 0 RG
+@expect lacks 09_s2312.pdf 1 0 0 RG
+@expect prompt Command

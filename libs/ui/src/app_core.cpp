@@ -327,6 +327,7 @@ void AppCore::leavePaper() {
 bool AppCore::setActiveLayout(const std::string& name) {
     if (!session_)
         return false;
+    commitViewportView();
     if (name.empty() || !layout::findLayout(session_->doc, name)) {
         leavePaper();
         return name.empty();
@@ -1643,6 +1644,9 @@ void AppCore::setViewportSize(int w, int h) {
         // (the panels sit at the right and bottom), so the drawing does not jump.
         camera_.center.x += (nw - oldW) / 2.0 / camera_.pixelsPerMm;
         camera_.center.y -= (nh - oldH) / 2.0 / camera_.pixelsPerMm;
+        // (not a pan of the viewport being edited)
+        editEntryCenter_.x += (nw - oldW) / 2.0 / camera_.pixelsPerMm;
+        editEntryCenter_.y -= (nh - oldH) / 2.0 / camera_.pixelsPerMm;
     }
 }
 
@@ -1852,7 +1856,39 @@ void AppCore::enterViewport(const std::string& layoutName, const layout::Viewpor
     zoomToBox({{center.x - halfW, center.y - halfH}, {center.x + halfW, center.y + halfH}});
     editingLayout_ = layoutName;
     editingViewport_ = vp.id;
+    editEntryPixelsPerMm_ = camera_.pixelsPerMm;
+    editEntryCenter_ = camera_.center;
     annoSyncRevision_ = 0;
+}
+
+void AppCore::commitViewportView() {
+    if (editingLayout_.empty() || !session_ || !(editEntryPixelsPerMm_ > 0))
+        return;
+    const std::string name = editingLayout_;
+    const int id = editingViewport_;
+    const auto lay = layout::findLayout(session_->doc, name);
+    const layout::Viewport* vp = lay ? lay->findViewport(id) : nullptr;
+    if (!vp || vp->locked || !(camera_.pixelsPerMm > 0))
+        return;
+    const double k = editEntryPixelsPerMm_ / camera_.pixelsPerMm;
+    const Vec2 moved{camera_.center.x - editEntryCenter_.x, camera_.center.y - editEntryCenter_.y};
+    const double pixel = 1.0 / camera_.pixelsPerMm;  // under a pixel of panning is no change
+    if (std::abs(k - 1) < 1e-9 && std::abs(moved.x) < pixel && std::abs(moved.y) < pixel)
+        return;
+    const double scaleN = vp->scaleN * k;
+    const Vec2 center{vp->center.x + moved.x, vp->center.y + moved.y};
+    auto tx = session_->doc.begin("Viewport view");
+    if (auto r = layout::setViewportScale(tx, name, id, scaleN); !r) {
+        print(r.error().message);
+        return;
+    }
+    if (auto r = layout::setViewportCenter(tx, name, id, center); !r) {
+        print(r.error().message);
+        return;
+    }
+    ChangeSet cs = tx.commit();
+    if (!cs.empty())
+        undoStack().push("Viewport view", {std::move(cs)});
 }
 
 // While a locked viewport is being edited its scale is fixed, so the annotation scale follows it:

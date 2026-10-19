@@ -140,6 +140,59 @@ TEST_CASE("MSPACE enters the model through a viewport and PSPACE returns to the 
     CHECK(core.inPaperSpace());
 }
 
+TEST_CASE("zooming and panning inside a viewport changes its view, unless it is locked") {
+    auto registry = makeRegistry();
+    AppCore core(*registry,
+                 platform::AppPaths{tempDir("paper_vz") / "cfg", tempDir("paper_vz") / "data"});
+    core.setViewportSize(1000, 800);
+    {
+        auto tx = core.document().begin("layout");
+        REQUIRE(layout::createLayout(tx, "A", "A3").ok());
+        REQUIRE(layout::addViewport(tx, "A", BBox2{{20, 20}, {220, 170}}, {5000, 3000}, 50).ok());
+        tx.commit();
+    }
+    const auto vp = [&] { return layout::findLayout(core.document(), "A")->viewports.front(); };
+    REQUIRE(core.setActiveLayout("A"));
+    core.submitText("MSPACE");
+    REQUIRE_FALSE(core.inPaperSpace());
+    core.submitText("ZOOM");
+    core.submitText("2X");
+    render::Camera2D cam = core.camera();
+    cam.center.x += 400;  // a pan of 400 model units
+    core.setCamera(cam);
+    core.setViewportSize(800, 800);  // a panel opening is not a pan
+    core.submitText("PSPACE");
+    core.updateFrame(std::chrono::steady_clock::now());
+    REQUIRE(core.inPaperSpace());
+    CHECK(vp().scaleN == doctest::Approx(25));
+    CHECK(vp().center.x == doctest::Approx(5400));
+    CHECK(vp().center.y == doctest::Approx(3000));
+    // One undo step puts the view back.
+    CHECK(core.undo());
+    CHECK(vp().scaleN == doctest::Approx(50));
+    CHECK(vp().center.x == doctest::Approx(5000));
+
+    // Entering and leaving without touching the view changes nothing.
+    const std::size_t steps = core.undoStack().undoCount();
+    core.submitText("MSPACE");
+    core.submitText("PSPACE");
+    core.updateFrame(std::chrono::steady_clock::now());
+    CHECK(core.undoStack().undoCount() == steps);
+
+    // A locked viewport keeps its view.
+    {
+        auto tx = core.document().begin("lock");
+        REQUIRE(layout::setViewportLocked(tx, "A", vp().id, true).ok());
+        tx.commit();
+    }
+    core.submitText("MSPACE");
+    core.submitText("ZOOM");
+    core.submitText("2X");
+    core.submitText("PSPACE");
+    core.updateFrame(std::chrono::steady_clock::now());
+    CHECK(vp().scaleN == doctest::Approx(50));
+}
+
 TEST_CASE("ZOOM nXP sets the viewport scale, from the sheet and from model space") {
     auto registry = makeRegistry();
     AppCore core(*registry,

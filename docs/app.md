@@ -116,23 +116,30 @@ objects), `@zoom-dense [N]` (the busiest cell of an N x N grid, default 40), `@z
 in draw order, shown `factor` times its size) and `@stats` (prints how many objects of each kind
 are in view and in the drawing, and how many are selected; it is also printed after every shot),
 `@deselect` (clear the selection) and the shot line itself: an older file of the same name is
-deleted first, and a warning is printed when a step before the shot failed. A byte order mark at the start of the script is ignored. Open a drawing with `tbcad file.dxf --capture-script ...`; zoom and selection are
+deleted first, and a warning is printed when a step before the shot failed. A byte order mark at
+the start of the script is ignored. Open a drawing with `tbcad file.dxf --capture-script ...`;
+zoom and selection are ordinary commands (`ZOOM`, `W`, `SELECT`) or a `@drag` across the view. A shot waits until the
+drawing has finished building. The program exits when the script ends (status 1 if a line failed).
 
 Scenario scripts drive whole workflows like a user and check the result: `@mousew X Y`,
-`@clickw X Y` and `@dragw X0 Y0 X1 Y1` act at drawing coordinates (a click lands on the nearest
-pixel, so exact points are typed or picked with an object snap), `@key [ctrl+|shift+]NAME`
-(Enter, Escape, Delete, Tab, Space, arrows, F1-F12, A-Z), `@type TEXT` (characters into the focused
-field), `@wait`, `@dump` (prints the first objects with their points) and `@expect`:
-`objects N`, `selected N`, `KIND N` (line, circle, hatch, ...), `endpoint X Y N` (line ends and
-polyline vertices at a point), `layer NAME on|off|frozen|thawed|locked|unlocked`, `file NAME`
-(exists and is not empty) and `prompt TEXT` (the current prompt contains it). A failed check
-prints `FAILED line N` and the exit status is 1. Lines like `@10,5` or `@20<45` are relative
-points, not capture lines. `{out}` in a line is replaced by the output folder (`--capture-out`,
-default the script's folder). The scenarios in `apps/tbcad/tests/scenarios` run as ctest
-`tbcad_scenario_*` (skipped without a display); each gets fresh settings through
-`TBCAD_CONFIG_DIR`.
-ordinary commands (`ZOOM`, `W`, `SELECT`) or a `@drag` across the view. A shot waits until the
-drawing has finished building. The program exits when the script ends (status 1 if a line failed).
+`@clickw X Y`, `@dblclickw X Y` and `@dragw X0 Y0 X1 Y1` act at drawing coordinates (sheet
+millimetres on a layout; a click lands on the nearest pixel, so exact points are typed or picked
+with an object snap), `@clickitem LABEL [| WINDOW [| N]]`, `@dblclickitem` and `@rclickitem` click
+a widget by its label like the GUI tests do (`@items [WINDOW]` lists the labels), `@key
+[ctrl+|shift+]NAME` (Enter, Escape, Delete, Tab, Space, arrows, F1-F12, A-Z), `@type TEXT`
+(characters into the focused field), `@wait`, `@dump` (prints the first objects with their points)
+and `@expect`: `objects N`, `selected N`, `KIND N` (line, circle, hatch, ...), `endpoint X Y N`
+(line ends and polyline vertices at a point), `layer NAME on|off|frozen|thawed|locked|unlocked`,
+`on-layer KIND LAYER N` and `color KIND ACI N` (KIND `any` counts all), `text N SUBSTRING` (TEXT
+and MTEXT holding it), `layout NAME` (`Model` in model space), `viewport LAYOUT ID scale N` and
+`viewport LAYOUT ID center X Y`, `file NAME` (exists and is not empty), `contains NAME TEXT` (the
+file holds the text) and `prompt TEXT` (the current prompt contains it). The command line's history
+is printed with a `| ` prefix. A failed check prints `FAILED line N` and the exit status is 1.
+Lines like `@10,5` or `@20<45` are relative points, not capture lines. `{out}` in a line is
+replaced by the output folder (`--capture-out`, default the script's folder) and `{dir}` by the
+script's folder. The scenarios in `apps/tbcad/tests/scenarios` run as ctest `tbcad_scenario_*`
+(skipped without a display); each gets fresh settings through `TBCAD_CONFIG_DIR`. Their test
+plot style table `data/ep-test.ctb` is made by `tools/make_test_ctb.py`.
 
 `--self-test` opens a hidden window, runs the script, draws the frames and checks that something
 was drawn; it exits with 77 (skipped by ctest) when there is no display or OpenGL 3.3, unless

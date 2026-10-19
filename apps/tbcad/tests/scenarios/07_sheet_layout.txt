@@ -1,0 +1,155 @@
+# A structural sheet like the office's S2312: grid lines, columns with a grey solid fill,
+# dimensions picked with object snaps, saved as DXF and opened again, then a layout with a
+# viewport that is zoomed and panned from inside.
+FILEDIA
+0
+# New dimensions and hatches go on the current layer (the built-in template has its own).
+DIMLAYER
+.
+HPLAYER
+.
+-LAYER
+Make
+S-GRID
+Color
+1
+S-GRID
+Make
+S-COLN
+Color
+7
+S-COLN
+Make
+S-COLNHATC
+Color
+253
+S-COLNHATC
+Make
+S-DIM
+Set
+S-GRID
+
+# Grid lines A-C and 1-2 (6 m bays).
+LINE
+-1000,0
+13000,0
+
+LINE
+-1000,6000
+13000,6000
+
+LINE
+0,-1000
+0,7000
+
+LINE
+6000,-1000
+6000,7000
+
+LINE
+12000,-1000
+12000,7000
+
+@expect on-layer line S-GRID 5
+# 400 x 400 columns on the grid crossings.
+-LAYER
+Set
+S-COLN
+
+RECTANG
+-200,-200
+200,200
+RECTANG
+5800,-200
+6200,200
+RECTANG
+11800,-200
+12200,200
+RECTANG
+-200,5800
+200,6200
+@expect on-layer polyline S-COLN 4
+# The grey fill by picking inside each column, with the grid out of the way like on the job.
+-LAYER
+Off
+S-GRID
+Set
+S-COLNHATC
+
+@expect layer S-GRID off
+@zoom -500 -500 12500 6500
+HATCH
+Pattern
+SOLID
+@clickw 0 100
+@clickw 6000 100
+@clickw 12000 100
+@clickw 0 6100
+
+@expect on-layer hatch S-COLNHATC 4
+-LAYER
+On
+S-GRID
+
+# A dimension between two column faces, both points taken by the endpoint snap.
+-LAYER
+Set
+S-DIM
+
+@zoom -500 -1500 6500 1000
+DIMLINEAR
+@clickw 199 -195
+@clickw 5801 -196
+@clickw 3000 -900
+@expect dimension 1
+@expect on-layer dimension S-DIM 1
+@shot 07_plan.png
+# Save as DXF, start afresh and open it again: everything comes back.
+SAVEAS
+{out}/07_sheet.dxf
+@frames 5
+@expect file 07_sheet.dxf
+NEW
+@frames 5
+@expect objects 0
+OPEN
+{out}/07_sheet.dxf
+@frames 10
+@expect objects 14
+@expect on-layer hatch S-COLNHATC 4
+@expect dimension 1
+# A layout with one viewport at 1:100 on the middle of the plan.
+LAYOUT
+New
+S2312
+A3
+Landscape
+LAYOUT
+Set
+S2312
+@frames 5
+@expect layout S2312
+MVIEW
+20,20
+400,277
+1:100
+6000,3000
+@expect viewport S2312 1 scale 100
+@expect viewport S2312 1 center 6000 3000
+@shot 07_layout.png
+# Into the viewport with a double click inside it: zoom in 2x and pan 1 m to the right, then
+# back to the sheet.
+@dblclickw 300 150
+@frames 3
+@expect layout Model
+ZOOM
+2X
+PAN
+0,0
+1000,0
+PSPACE
+@frames 3
+@expect layout S2312
+@expect viewport S2312 1 scale 50
+@expect viewport S2312 1 center 5000 3000
+@shot 07_layout_zoomed.png
