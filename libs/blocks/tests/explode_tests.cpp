@@ -194,3 +194,133 @@ TEST_CASE("kinds without a hook cannot be exploded - hooks plug in") {
     ExplodeRegistry::clear(EntityKind::Point);
     CHECK_FALSE(canExplode(EntityKind::Point));
 }
+
+TEST_CASE("mirrored and rotated inserts put every point where the transform sends it") {
+    Document doc;
+    BlockId b = addBlock(doc, "M", {line(1, 0, 3, 0), circle(2, 1, 0.5)});
+    {  // mirrored in x
+        EntityId i = addEntity(doc, insertOf(b, {10, 10}, {-1, 1}));
+        auto r = explode(doc, *doc.find(i));
+        REQUIRE(r.ok());
+        REQUIRE(r.value().entities.size() == 2);
+        const auto* ln = entityAs<LineData>(r.value().entities[0]);
+        REQUIRE(ln);
+        CHECK(near(ln->a, {9, 10}));
+        CHECK(near(ln->b, {7, 10}));
+        const auto* c = entityAs<CircleData>(r.value().entities[1]);
+        REQUIRE(c);
+        CHECK(near(c->center, {8, 11}));
+        CHECK(c->radius == doctest::Approx(0.5));
+    }
+    {  // mirrored in y and turned 90 degrees
+        EntityId i = addEntity(doc, insertOf(b, {10, 10}, {1, -1}, kPi / 2));
+        auto r = explode(doc, *doc.find(i));
+        REQUIRE(r.ok());
+        const auto* ln = entityAs<LineData>(r.value().entities[0]);
+        REQUIRE(ln);
+        CHECK(near(ln->a, {10, 11}, 1e-9));
+        CHECK(near(ln->b, {10, 13}, 1e-9));
+        const auto* c = entityAs<CircleData>(r.value().entities[1]);
+        REQUIRE(c);
+        CHECK(near(c->center, {11, 12}, 1e-9));
+    }
+}
+
+TEST_CASE("an arc in a mirrored insert keeps its middle point and stays counter-clockwise") {
+    Document doc;
+    Entity arc;
+    arc.data = ArcData{{0, 0}, 2, 0, kPi / 2};
+    BlockId b = addBlock(doc, "A", {arc});
+    const double h = std::sqrt(2.0);
+    for (Vec2 s : {Vec2{-1, 1}, Vec2{1, -1}, Vec2{-2, 2}}) {
+        CAPTURE(s.x);
+        CAPTURE(s.y);
+        EntityId i = addEntity(doc, insertOf(b, {10, 0}, s));
+        auto r = explode(doc, *doc.find(i));
+        REQUIRE(r.ok());
+        REQUIRE(r.value().entities.size() == 1);
+        const auto* a = entityAs<ArcData>(r.value().entities[0]);
+        REQUIRE(a);
+        double sweep = std::fmod(a->endAngle - a->startAngle, 2 * kPi);
+        if (sweep < 0)
+            sweep += 2 * kPi;
+        CHECK(sweep == doctest::Approx(kPi / 2));
+        const double mid = a->startAngle + sweep / 2;
+        const Vec2 got = a->center + Vec2{std::cos(mid), std::sin(mid)} * a->radius;
+        CHECK(near(got, {10 + s.x * h, s.y * h}, 1e-9));
+        CHECK(a->radius == doctest::Approx(2 * std::abs(s.x)));
+    }
+}
+
+TEST_CASE("attributes of nested inserts take the value of their own insert") {
+    Document doc;
+    TextData td;
+    td.position = {0, 1};
+    td.utf8 = "TAG";
+    td.attdef = AttDefInfo{"TAG", "", "default", false, false, false, false};
+    Entity def;
+    def.data = Indirect<TextData>(std::move(td));
+    BlockId inner = addBlock(doc, "Inner", {line(0, 0, 1, 0), def});
+    BlockId outer = addBlock(doc, "Outer", {insertOf(inner, {5, 0}), insertOf(inner, {0, 5})});
+    // The inner inserts inside the block keep their own values when the outer one is exploded twice.
+    EntityId o = addEntity(doc, insertOf(outer, {100, 0}, {-1, 1}));
+    auto one = explode(doc, *doc.find(o));
+    REQUIRE(one.ok());
+    REQUIRE(one.value().entities.size() == 2);
+    for (const Entity& e : one.value().entities) {
+        const auto* ins = entityAs<InsertData>(e);
+        REQUIRE(ins);
+        CHECK(ins->block == inner);
+    }
+    CHECK(near(entityAs<InsertData>(one.value().entities[0])->position, {95, 0}));
+    CHECK(near(entityAs<InsertData>(one.value().entities[1])->position, {100, 5}));
+    // (-1, 1) and (1, -1) turned half a circle are the same mirror: look at what comes out.
+    const Entity ins0 = one.value().entities[0];
+    EntityId i0 = addEntity(doc, ins0);
+    auto two = explode(doc, *doc.find(i0));
+    REQUIRE(two.ok());
+    const auto* ln = entityAs<LineData>(two.value().entities[0]);
+    REQUIRE(ln);
+    CHECK(near(ln->a, {95, 0}));
+    CHECK(near(ln->b, {94, 0}));
+    const auto* tx = entityAs<TextData>(two.value().entities[1]);
+    REQUIRE(tx);
+    CHECK(tx->utf8 == "default");
+    CHECK(near(tx->position, {95, 1}));
+}
+
+TEST_CASE("a dimension and a multileader in a scaled, mirrored insert follow the transform") {
+    Document doc;
+    DimensionData d;
+    d.kind = DimKind::Linear;
+    d.defPts = {Vec2{0, 0}, Vec2{4, 0}, Vec2{4, 2}, Vec2{}};
+    d.textPos = {2, 2};
+    d.measurement = 4;
+    Entity dim;
+    dim.data = Indirect<DimensionData>(d);
+    MLeaderData ml;
+    ml.lines = {{{0, 0}, {1, 1}}};
+    ml.landing = {1, 1};
+    ml.contentPos = {2, 1};
+    ml.utf8 = "note";
+    Entity lead;
+    lead.data = Indirect<MLeaderData>(ml);
+    BlockId b = addBlock(doc, "D", {dim, lead});
+    EntityId i = addEntity(doc, insertOf(b, {10, 0}, {-2, 2}));
+    auto r = explode(doc, *doc.find(i));
+    REQUIRE(r.ok());
+    REQUIRE(r.value().entities.size() == 2);
+    const auto* dd = entityAs<DimensionData>(r.value().entities[0]);
+    REQUIRE(dd);
+    CHECK(near(dd->defPts[0], {10, 0}));
+    CHECK(near(dd->defPts[1], {2, 0}));
+    CHECK(near(dd->textPos, {6, 4}));
+    CHECK(dd->measurement == doctest::Approx(8));
+    const auto* mm = entityAs<MLeaderData>(r.value().entities[1]);
+    REQUIRE(mm);
+    REQUIRE(mm->lines.size() == 1);
+    CHECK(near(mm->lines[0][0], {10, 0}));
+    CHECK(near(mm->lines[0][1], {8, 2}));
+    CHECK(near(mm->landing, {8, 2}));
+    CHECK(near(mm->contentPos, {6, 2}));
+}
