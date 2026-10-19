@@ -22,7 +22,7 @@ inline constexpr std::size_t kChunkHeaderSize = 16;  // fourcc + flags + length
 inline constexpr std::uint32_t kChunkDeflate = 1;
 inline constexpr std::uint16_t kRecordVersion = 1;
 inline constexpr std::size_t kMaxChunkRaw = std::size_t{1} << 30;  // sanity cap per chunk
-inline constexpr std::size_t kEntsChunkTarget = std::size_t{4} << 20;
+inline constexpr std::size_t kEntsChunkTarget = std::size_t{1} << 20;
 
 inline constexpr std::uint32_t kHead = fourcc("HEAD");
 inline constexpr std::uint32_t kStrs = fourcc("STRS");

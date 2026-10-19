@@ -74,7 +74,8 @@ struct Payload {
 
 class Loader {
 public:
-    Loader(const ParsedFile& f, IoReport& report) : file_(f), report_(report) {}
+    Loader(const ParsedFile& f, IoReport& report, bool salvage = false)
+        : file_(f), report_(report), salvage_(salvage) {}
 
     std::unique_ptr<Document> run() {
         classify();
@@ -82,30 +83,46 @@ public:
         Header header = loadHead();
         doc_ = std::make_unique<Document>();
         Transaction tx = doc_->begin("load");
-        loadLinetypes(tx);
-        loadLinetypeMarks(tx);
-        loadTextStyles(tx);
-        loadTextStyleExtras(tx);
-        loadTextHeights(tx);
-        loadDimStyles(tx);
-        loadDimStyleExtras(tx);
-        loadLayers(tx);
-        loadLevels(tx);
-        loadEntityLevels();
-        loadBlocks(tx);
-        loadXrefs(tx);
-        loadXrefOverlays(tx);
-        loadDynamic(tx);
-        loadAssemblies(tx);
+        step("linetypes", [&] { loadLinetypes(tx); });
+        step("linetype marks", [&] { loadLinetypeMarks(tx); });
+        step("text styles", [&] { loadTextStyles(tx); });
+        step("text style extras", [&] { loadTextStyleExtras(tx); });
+        step("text heights", [&] { loadTextHeights(tx); });
+        step("dimension styles", [&] { loadDimStyles(tx); });
+        step("dimension style extras", [&] { loadDimStyleExtras(tx); });
+        step("layers", [&] { loadLayers(tx); });
+        step("levels", [&] { loadLevels(tx); });
+        step("entity levels", [&] { loadEntityLevels(); });
+        step("blocks", [&] { loadBlocks(tx); });
+        step("external references", [&] { loadXrefs(tx); });
+        step("xref overlays", [&] { loadXrefOverlays(tx); });
+        step("dynamic blocks", [&] { loadDynamic(tx); });
+        step("assemblies", [&] { loadAssemblies(tx); });
         check(tx.modifyHeader([&](Header& h) { h = header; }), "header");
-        loadEntities(tx);
-        loadOrder(tx);
+        step("entities", [&] { loadEntities(tx); });
+        step("draw order", [&] { loadOrder(tx); });
         tx.commit();
         check(doc_->reserveIds(nextIds_), "next ids");
         return std::move(doc_);
     }
 
 private:
+    // In salvage mode a table that does not parse is skipped (with a warning) instead of failing
+    // the whole file.
+    template <class Fn>
+    void step(const char* what, Fn&& fn) {
+        if (!salvage_) {
+            fn();
+            return;
+        }
+        try {
+            fn();
+        } catch (const FormatError& e) {
+            report_.warnings.push_back(std::string("damaged ") + what +
+                                       " could not be read in full (" + e.what() + ")");
+        }
+    }
+
     void classify() {
         for (const RawChunk& c : file_.chunks) {
             switch (c.type) {
@@ -127,8 +144,13 @@ private:
                 case kDynb:
                 case kAsmb:
                 case kOrdr:
-                    if (std::exchange(seen_[c.type], true))
-                        bad("duplicate chunk " + fourccName(c.type));
+                    if (std::exchange(seen_[c.type], true)) {
+                        if (!salvage_)
+                            bad("duplicate chunk " + fourccName(c.type));
+                        report_.warnings.push_back("ignored a repeated " + fourccName(c.type) +
+                                                   " chunk");
+                        break;
+                    }
                     single_[c.type] = &c;
                     break;
                 case kEnts:
@@ -849,6 +871,23 @@ private:
     void loadEntities(Transaction& tx) {
         std::uint64_t next = 1;
         for (const RawChunk* c : ents_) {
+            if (salvage_) {
+                try {
+                    loadEntityChunk(tx, *c, next);
+                } catch (const FormatError& e) {
+                    report_.warnings.push_back(
+                        std::string("damaged ENTS chunk: the rest of its objects were lost (") +
+                        e.what() + ")");
+                }
+                continue;
+            }
+            loadEntityChunk(tx, *c, next);
+        }
+    }
+
+    void loadEntityChunk(Transaction& tx, const RawChunk& chunk, std::uint64_t& next) {
+        const RawChunk* c = &chunk;
+        {
             Payload p(*c);
             ByteReader r(p.data);
             std::size_t n = r.count(8);
@@ -936,6 +975,7 @@ private:
 
     const ParsedFile& file_;
     IoReport& report_;
+    bool salvage_ = false;
     std::unique_ptr<Document> doc_{};
     std::vector<std::string> strings_{};
     std::unordered_map<std::uint32_t, bool> seen_{};
@@ -950,12 +990,13 @@ Result<std::unique_ptr<Document>> readTbcad(std::span<const std::uint8_t> bytes,
                                             const ReadOptions& options) {
     report = IoReport{};
     try {
-        ParsedFile f = parseFile(bytes, options.verifyCrc);
+        ParsedFile f =
+            parseFile(bytes, options.verifyCrc, options.salvage ? &report.warnings : nullptr);
         report.formatMajor = f.major;
         report.formatMinor = f.minor;
         if (f.trailingBytes != 0)
             report.warnings.push_back("ignored data after the END chunk");
-        Loader loader(f, report);
+        Loader loader(f, report, options.salvage);
         return loader.run();
     } catch (const FormatError& e) {
         return makeError(ErrorCode::Parse, e.what());

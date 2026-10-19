@@ -360,3 +360,118 @@ TEST_CASE("files that are not .tbcad at all give a clear error, not a crash") {
             CHECK_FALSE(r.error().message.empty());
     }
 }
+
+namespace {
+
+std::unique_ptr<Document> manyEntitiesDocument(int n) {
+    auto doc = makeRichDocument();
+    Transaction tx = doc->begin("many");
+    for (int i = 0; i < n; ++i) {
+        Entity e;
+        PolylineData p;
+        for (int k = 0; k < 6; ++k)
+            p.v.push_back({{double(i + k) * 1.25, double(k) * 0.7}, 0.0, 0, 0});
+        e.data = std::move(p);
+        (void)tx.add(std::move(e));
+    }
+    tx.commit();
+    return doc;
+}
+
+}  // namespace
+
+TEST_CASE("salvage keeps what it can of a cut-off or damaged file") {
+    auto doc = manyEntitiesDocument(60000);
+    io::WriteOptions wo;
+    wo.compress = false;
+    const auto original = writeOrFail(*doc, wo);
+    io::IoReport full;
+    auto whole = io::readTbcad(original, full);
+    REQUIRE(whole.ok());
+    const std::size_t total = full.entityCount;
+    REQUIRE(total > 60000);
+
+    io::ReadOptions salvage;
+    salvage.salvage = true;
+
+    SUBCASE("the tail is cut off") {
+        std::vector<std::uint8_t> cut(
+            original.begin(),
+            original.begin() + static_cast<std::ptrdiff_t>(original.size() * 7 / 10));
+        io::IoReport r0;
+        CHECK_FALSE(io::readTbcad(cut, r0).ok());
+        io::IoReport r;
+        auto got = io::readTbcad(cut, r, salvage);
+        REQUIRE(got.ok());
+        CHECK(r.entityCount > total / 4);
+        CHECK(r.entityCount < total);
+        CHECK_FALSE(r.warnings.empty());
+        (void)canonicalDump(*got.value());
+    }
+    SUBCASE("one chunk in the middle fails its checksum") {
+        auto chunks = io::listChunks(original);
+        REQUIRE(chunks.ok());
+        // Walk the chunk headers to find the middle ENTS chunk (magic 8, version 12).
+        std::size_t pos = 20, seen = 0, ents = 0;
+        for (const auto& c : chunks.value())
+            ents += c.type == "ENTS" ? 1 : 0;
+        REQUIRE(ents >= 3);
+        auto bytes = original;
+        for (const auto& c : chunks.value()) {
+            if (c.type == "ENTS" && ++seen == ents / 2 + 1) {
+                bytes[pos + 16 + static_cast<std::size_t>(c.storedSize / 2)] ^= 0x5A;
+                break;
+            }
+            pos += 16 + static_cast<std::size_t>(c.storedSize) + 4;
+        }
+        io::IoReport r0;
+        CHECK_FALSE(io::readTbcad(bytes, r0).ok());
+        io::IoReport r;
+        auto got = io::readTbcad(bytes, r, salvage);
+        REQUIRE(got.ok());
+        CHECK(r.entityCount > total / 2);
+        CHECK(r.entityCount < total);
+        CHECK_FALSE(r.warnings.empty());
+        (void)canonicalDump(*got.value());
+    }
+    SUBCASE("without the signature there is nothing to save") {
+        auto bytes = original;
+        bytes[0] = 'X';
+        io::IoReport r;
+        CHECK_FALSE(io::readTbcad(bytes, r, salvage).ok());
+    }
+}
+
+TEST_CASE("salvage mode never crashes on mutated files") {
+    auto doc = makeRichDocument();
+    const auto original = writeOrFail(*doc, io::WriteOptions{});
+    std::mt19937 rng(4242);
+    int loaded = 0;
+    for (int i = 0; i < 4000; ++i) {
+        auto bytes = original;
+        for (int k = 0, n = 1 + static_cast<int>(rng() % 4); k < n; ++k) {
+            const std::size_t at = rng() % bytes.size();
+            switch (rng() % 3) {
+                case 0:
+                    bytes[at] = static_cast<std::uint8_t>(rng());
+                    break;
+                case 1:
+                    bytes.resize(at + 1);
+                    break;
+                default:
+                    bytes[at] ^= static_cast<std::uint8_t>(1u << (rng() % 8));
+            }
+        }
+        io::IoReport r;
+        io::ReadOptions o;
+        o.salvage = true;
+        auto got = io::readTbcad(bytes, r, o);
+        if (got.ok()) {
+            ++loaded;
+            (void)canonicalDump(*got.value());
+        } else {
+            CHECK_FALSE(got.error().message.empty());
+        }
+    }
+    CHECK(loaded > 500);
+}

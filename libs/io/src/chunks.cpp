@@ -61,7 +61,8 @@ void appendChunk(ByteWriter& out, std::uint32_t type, std::span<const std::uint8
     appendPrepared(out, type, prepareChunk(raw, compress));
 }
 
-ParsedFile parseFile(std::span<const std::uint8_t> bytes, bool verifyCrc) {
+ParsedFile parseFile(std::span<const std::uint8_t> bytes, bool verifyCrc,
+                     std::vector<std::string>* salvage) {
     if (bytes.size() < sizeof kMagic ||
         !std::equal(std::begin(kMagic), std::end(kMagic), bytes.begin())) {
         if (bytes.size() >= 8 && bytes[1] == 'T' && bytes[2] == 'B' && bytes[3] == 'C') {
@@ -86,24 +87,39 @@ ParsedFile parseFile(std::span<const std::uint8_t> bytes, bool verifyCrc) {
                           std::to_string(kFormatMajor) + "); please update TBCAD");
     }
     for (;;) {
-        if (r.remaining() == 0)
-            throw FormatError("file is truncated (no END chunk)");
-        if (r.remaining() < kChunkHeaderSize)
+        if (r.remaining() == 0 || r.remaining() < kChunkHeaderSize) {
+            if (salvage) {
+                salvage->push_back("the file ends early (no END chunk): what came before is kept");
+                return f;
+            }
+            if (r.remaining() == 0)
+                throw FormatError("file is truncated (no END chunk)");
             throw FormatError("file is truncated inside a chunk header");
+        }
         RawChunk c;
         c.type = r.u32();
         c.flags = r.u32();
         std::uint64_t len = r.u64();
-        if (len > r.remaining() || r.remaining() - len < 4)
+        if (len > r.remaining() || r.remaining() - len < 4) {
+            if (salvage) {
+                salvage->push_back("the file is cut off inside chunk " + fourccName(c.type) +
+                                   ": that chunk and everything after it is lost");
+                return f;
+            }
             throw FormatError("file is truncated inside chunk " + fourccName(c.type));
+        }
         c.stored = r.bytes(static_cast<std::size_t>(len));
         std::uint32_t crc = r.u32();
         c.crcOk = crc == tbcadCrc32(c.stored);
-        if (!c.crcOk && verifyCrc)
+        if (!c.crcOk && verifyCrc && !salvage)
             throw FormatError("checksum mismatch in chunk " + fourccName(c.type));
         if (c.type == kEnd) {
             f.trailingBytes = r.remaining();
             return f;
+        }
+        if (!c.crcOk && verifyCrc) {
+            salvage->push_back("damaged chunk " + fourccName(c.type) + " was dropped");
+            continue;
         }
         f.chunks.push_back(c);
     }
