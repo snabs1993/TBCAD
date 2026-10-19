@@ -1447,6 +1447,21 @@ void Importer::readStyle(const Record& r) {
                          (big.empty() ? std::string() : " (big font \"" + big + "\" is not read)"),
                      r.line);
     }
+    // A TrueType style often names no file, only the family, in "ACAD" extended data: 1000 Arial,
+    // 1071 flags. The family also finds the font when the named file is not on this machine.
+    if (ts.shxFile.empty()) {
+        bool inAcad = false;
+        for (const Group& g : r.g) {
+            if (g.code == 1001) {
+                inAcad = g.str() == "ACAD";
+            } else if (inAcad && g.code == 1000) {
+                std::string family = dec(g.str());
+                if (!family.empty() && ts.fontFamily.empty())
+                    ts.fontFamily = family;
+                break;
+            }
+        }
+    }
     // AcadAnnotative extended data: "AnnotativeData", { 1070 1 (on) 1070 0 }.
     {
         bool inAnno = false, seenData = false;

@@ -301,6 +301,25 @@ TEST_CASE("text styles: SHX fonts map to the TBCAD Stroke font and are reported"
     CHECK(l.report.countCode(code::kShxFont) == 2);
 }
 
+TEST_CASE("text styles: a TrueType family in ACAD extended data is kept") {
+    Pairs p;
+    p.section("TABLES").g(0, "TABLE").g(2, "STYLE").g(70, 2);
+    p.g(0, "STYLE").g(2, "Ar").g(70, 0).g(40, 0.0).g(41, 1.0).g(3, "");
+    p.g(1001, "ACAD").g(1000, "Arial").g(1071, 34).g(0, "STYLE");
+    p.g(2, "Bd").g(70, 0).g(40, 0.0).g(41, 1.0).g(3, "arialbd.ttf");
+    p.g(1001, "ACAD").g(1000, "Arial").g(1071, 33554466);
+    p.g(0, "ENDTAB").end();
+    Loaded l = load(p.text + Pairs().g(0, "EOF").text);
+    const TextStyle* a = l.doc().textStyleByName("Ar");
+    const TextStyle* b = l.doc().textStyleByName("Bd");
+    REQUIRE(a);
+    REQUIRE(b);
+    CHECK(a->fontFamily == "Arial");
+    CHECK(a->fontFile.empty());
+    CHECK(b->fontFamily == "Arial");
+    CHECK(b->fontFile == "arialbd.ttf");  // the file decides; the family finds a stand-in
+}
+
 TEST_CASE("text styles: a shape font named without its extension is the stroke font too") {
     Pairs p;
     p.section("TABLES").g(0, "TABLE").g(2, "STYLE").g(70, 1);

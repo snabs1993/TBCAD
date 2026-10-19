@@ -286,8 +286,10 @@ PlotSettings loadSettings(const cmd::IHost& h) {
         else if (*v == "grey")
             s.color = ColorMode::Greyscale;
     }
-    if (auto t = resolveStyleTable(h, plotStyleName(h)))
-        s.styleTable = t.value();
+    timePhase("load settings: style table", [&] {
+        if (auto t = resolveStyleTable(h, plotStyleName(h)))
+            s.styleTable = t.value();
+    });
     return s;
 }
 

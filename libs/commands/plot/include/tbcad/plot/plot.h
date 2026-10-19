@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -99,6 +100,9 @@ std::string scaleText(const exportlib::PlotSettings& settings);
 
 // The sheet the plot settings describe: the chosen layout, or model space. Display areas are
 // resolved from the host's view.
+// Runs fn; with TBCAD_PLOT_TIMING set, writes "plot timing: <name> <ms>" to stderr.
+void timePhase(const char* name, const std::function<void()>& fn);
+
 Result<exportlib::PlotSheet> buildPlotSheet(const Document& doc, const cmd::IHost& host,
                                             exportlib::PlotSettings settings);
 
