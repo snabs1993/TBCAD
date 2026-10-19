@@ -179,6 +179,59 @@ TEST_CASE("plotting a layout: a 10,000 mm model line in a 1:100 viewport is 100 
     CHECK(std::abs((std::stod(m[3]) - std::stod(m[1])) - 100.0) <= 0.01);
 }
 
+TEST_CASE("a viewport over many objects plots them in order with the right layer names") {
+    // Enough objects for the viewport to be plotted on several threads: the result must read as
+    // if plotted in one go.
+    Document doc;
+    LayerId a, b;
+    {
+        auto tx = doc.begin("model");
+        Layer la;
+        la.name = "Alpha";
+        a = tx.addLayer(la).value();
+        Layer lb;
+        lb.name = "Beta";
+        b = tx.addLayer(lb).value();
+        for (int i = 0; i < 40000; ++i) {
+            Entity e = line({double(i), 0}, {double(i), 10});
+            // The first half on Beta, so Beta is the first layer used.
+            e.common.layer = i < 20000 ? b : a;
+            REQUIRE(tx.add(e).ok());
+        }
+        tx.commit();
+    }
+    run(doc, "layout", [](Transaction& tx) {
+        if (auto r = createLayout(tx, "S", "A3"); !r)
+            return r;
+        BBox2 r;
+        r.expand({10, 10});
+        r.expand({410, 287});
+        auto id = addViewport(tx, "S", r, {20000, 5}, 100);
+        return id ? Result<void>() : Result<void>(id.error());
+    });
+    auto sheet = buildLayoutSheet(doc, "S");
+    REQUIRE(sheet.ok());
+    const auto& names = sheet.value().layerNames;
+    REQUIRE(names.size() == 2);
+    CHECK(names[0] == "Beta");
+    CHECK(names[1] == "Alpha");
+    std::size_t lines = 0;
+    double lastX = -1e300;
+    bool ordered = true, layered = true;
+    for (const auto& p : sheet.value().prims)
+        if (const auto* pp = std::get_if<exportlib::PlotPath>(&p); pp && !pp->closed) {
+            ++lines;
+            ordered = ordered && pp->pts[0].x >= lastX;
+            lastX = pp->pts[0].x;
+            // Model x 20000 is the middle of the sheet (210 mm).
+            layered = layered && pp->style.layer == (pp->pts[0].x < 210 ? 1u : 2u);
+        }
+    CHECK(lines == 40000);
+    CHECK(sheet.value().entityCount == 40000);
+    CHECK(ordered);
+    CHECK(layered);
+}
+
 TEST_CASE("a viewport can show one level only - the choice is saved and plotted") {
     Document doc;
     LevelId upper;

@@ -25,8 +25,8 @@
 
 #include "gui.h"
 #include "tbcad/cmd/register_all.h"
-#include "tbcad/dwgopen/dwgopen.h"
 #include "tbcad/core/units.h"
+#include "tbcad/dwgopen/dwgopen.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/layout/layout.h"
 #include "tbcad/mcp/png.h"
@@ -732,8 +732,8 @@ int App::runCapture() {
                 label.erase(0, 1);
             got = "not drawn";
             for (const imgui_items::Item& it : imgui_items::items())
-                if (!label.empty() && (it.label == label ||
-                                       it.label.substr(0, it.label.find("##")) == label)) {
+                if (!label.empty() &&
+                    (it.label == label || it.label.substr(0, it.label.find("##")) == label)) {
                     got = "in " + it.window;
                     ok = true;
                 }
@@ -1064,8 +1064,8 @@ int App::runCapture() {
             std::vector<Vec2> tries{{(box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2}};
             for (int gy = 1; gy < 6; ++gy)
                 for (int gx = 1; gx < 6; ++gx)
-                    tries.push_back({box.min.x + box.width() * gx / 6,
-                                     box.min.y + box.height() * gy / 6});
+                    tries.push_back(
+                        {box.min.x + box.width() * gx / 6, box.min.y + box.height() * gy / 6});
             int attempts = 0;
             for (const Vec2 at : tries) {
                 if (!core_->inPaperSpace() || attempts == 6)
@@ -1074,14 +1074,14 @@ int App::runCapture() {
                     continue;
                 if (attempts == 0)
                     if (auto id = ui::pickEntity(core_->document(), core_->spatialIndex(), at,
-                                             core_->apertureMm()))
+                                                 core_->apertureMm()))
                         if (const Entity* e = core_->document().find(*id)) {
                             const Layer* l = core_->document().layer(e->common.layer);
-                            std::printf("enter-viewport: a %s on layer %s is under %.6g,%.6g\n",
-                                        kKindNames[std::min<std::size_t>(
-                                            static_cast<std::size_t>(kind(*e)),
-                                            std::size(kKindNames) - 1)],
-                                        l ? l->name.c_str() : "?", at.x, at.y);
+                            std::printf(
+                                "enter-viewport: a %s on layer %s is under %.6g,%.6g\n",
+                                kKindNames[std::min<std::size_t>(static_cast<std::size_t>(kind(*e)),
+                                                                 std::size(kKindNames) - 1)],
+                                l ? l->name.c_str() : "?", at.x, at.y);
                         }
                 ++attempts;
                 const ImVec2 w = toWindow(at.x, at.y);
@@ -1092,17 +1092,18 @@ int App::runCapture() {
                     const ViewportRect& r = gui_->lastViewportRect();
                     const bool inside =
                         w.x >= r.x && w.y >= r.y && w.x < r.x + r.w && w.y < r.y + r.h;
-                    std::printf("enter-viewport: a double click at %.6g,%.6g stayed on the sheet "
-                                "(window %.0f,%.0f, drawing area %.0f,%.0f %.0fx%.0f%s)\n",
-                                at.x, at.y, w.x, w.y, r.x, r.y, r.w, r.h,
-                                inside ? "" : ", outside it");
+                    std::printf(
+                        "enter-viewport: a double click at %.6g,%.6g stayed on the sheet "
+                        "(window %.0f,%.0f, drawing area %.0f,%.0f %.0fx%.0f%s)\n",
+                        at.x, at.y, w.x, w.y, r.x, r.y, r.w, r.h, inside ? "" : ", outside it");
                 }
             }
-            std::printf("enter-viewport: layout \"%s\" viewport %d at 1:%.6g%s, on the sheet "
-                        "%.6g,%.6g to %.6g,%.6g%s\n",
-                        name.c_str(), pick->id, pick->scaleN, pick->locked ? " (locked)" : "",
-                        pick->paper.min.x, pick->paper.min.y, pick->paper.max.x, pick->paper.max.y,
-                        pick->clip.empty() ? "" : " (clipped)");
+            std::printf(
+                "enter-viewport: layout \"%s\" viewport %d at 1:%.6g%s, on the sheet "
+                "%.6g,%.6g to %.6g,%.6g%s\n",
+                name.c_str(), pick->id, pick->scaleN, pick->locked ? " (locked)" : "",
+                pick->paper.min.x, pick->paper.min.y, pick->paper.max.x, pick->paper.max.y,
+                pick->clip.empty() ? "" : " (clipped)");
             for (const layout::Layout& l : all)
                 if (l.name == name) {
                     const bool onPaper = pick->paper.max.x > 0 && pick->paper.max.y > 0 &&

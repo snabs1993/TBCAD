@@ -148,9 +148,9 @@ AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
         fs::path kept = paths_.settingsFile();
         kept += ".bad";
         fs::rename(paths_.settingsFile(), kept, ec);
-        startupWarnings_.push_back(r.error().message + " (using default settings" +
-                                   (ec ? std::string(")") : "; the file was kept as " +
-                                                                kept.filename().string() + ")"));
+        startupWarnings_.push_back(
+            r.error().message + " (using default settings" +
+            (ec ? std::string(")") : "; the file was kept as " + kept.filename().string() + ")"));
     }
     for (auto& w : settings_.repair())
         startupWarnings_.push_back(std::move(w));
@@ -426,7 +426,11 @@ bool AppCore::setActiveLayout(const std::string& name) {
     paperRevision_ = session_->doc.revision();
     rebuildPaperIndex();
     notifySessionHooks();
-    camera_.fit(paper_.sheet());
+    // The sheet and whatever is drawn on it: some drawings keep their title blocks and viewports
+    // well away from the paper.
+    BBox2 shown = paper_.sheet();
+    shown.merge(paper_.scene().bounds());
+    camera_.fit(shown);
     return true;
 }
 

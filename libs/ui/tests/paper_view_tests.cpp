@@ -1,6 +1,7 @@
-#include <algorithm>
-
 #include <doctest/doctest.h>
+
+#include <algorithm>
+#include <chrono>
 
 #include "tbcad/hatch/hatch.h"
 #include "tbcad/layout/layout.h"
@@ -164,7 +165,8 @@ TEST_CASE("a hatch on the sheet over a viewport does not stop a double click ent
     REQUIRE(core.setActiveLayout("A"));
     core.zoomExtents();
     core.updateFrame();
-    // On the note (its outline): the note keeps the double click (it opens its editor), the sheet stays.
+    // On the note (its outline): the note keeps the double click (it opens its editor), the sheet
+    // stays.
     core.doubleClick({core.camera().worldToScreen({150, 152}), false, false});
     CHECK(core.inPaperSpace());
     core.pressEscape();
@@ -363,7 +365,8 @@ TEST_CASE("ZOOM Extents and ZOOM All frame the sheet while a layout is active") 
     }
 }
 
-TEST_CASE("layers frozen in a viewport are hidden and unpickable while it is edited from model space") {
+TEST_CASE(
+    "layers frozen in a viewport are hidden and unpickable while it is edited from model space") {
     auto registry = makeRegistry();
     AppCore core(*registry,
                  platform::AppPaths{tempDir("paper6") / "cfg", tempDir("paper6") / "data"});
@@ -420,4 +423,51 @@ TEST_CASE("layers frozen in a viewport are hidden and unpickable while it is edi
     CHECK(core.scene().layerVisible(walls));
     CHECK_FALSE(core.setting("tmp.layout.editing").has_value());
     CHECK(isSelectable(core.document(), *core.document().find(wall)));
+}
+
+TEST_CASE("performance: a layout showing 300k objects opens and redraws quickly") {
+    auto registry = makeRegistry();
+    AppCore core(*registry,
+                 platform::AppPaths{tempDir("paper_perf") / "cfg", tempDir("paper_perf") / "data"});
+    core.setViewportSize(1000, 800);
+    core.submitText("DEVGEN LINES 300000");
+    {
+        auto tx = core.document().begin("layout");
+        REQUIRE(layout::createLayout(tx, "A", "A3").ok());
+        REQUIRE(
+            layout::addViewport(tx, "A", BBox2{{10, 10}, {410, 287}}, {50000, 50000}, 400).ok());
+        tx.commit();
+    }
+    using clock = std::chrono::steady_clock;
+    auto ms = [](clock::time_point a) {
+        return std::chrono::duration<double, std::milli>(clock::now() - a).count();
+    };
+    const auto t = clock::now();
+    REQUIRE(core.setActiveLayout("A"));
+    const double open = ms(t);
+    MESSAGE("layout with 300k objects opened in " << open << " ms");
+#ifdef NDEBUG
+    CHECK(open < 1500);
+#endif
+}
+
+TEST_CASE("a layout whose viewport lies off the paper opens with the viewport in view") {
+    auto registry = makeRegistry();
+    AppCore core(*registry,
+                 platform::AppPaths{tempDir("paper_off") / "cfg", tempDir("paper_off") / "data"});
+    core.setViewportSize(1000, 800);
+    {
+        auto tx = core.document().begin("layout");
+        REQUIRE(layout::createLayout(tx, "A", "A3").ok());
+        REQUIRE(layout::addViewport(tx, "A", BBox2{{5766, -477}, {6156, -227}}, {0, 0}, 100).ok());
+        tx.commit();
+    }
+    REQUIRE(core.setActiveLayout("A"));
+    for (const Vec2 p : {Vec2{5961, -352}, Vec2{210, 148}}) {
+        const Vec2 s = core.camera().worldToScreen(p);
+        CHECK(s.x >= 0);
+        CHECK(s.x <= 1000);
+        CHECK(s.y >= 0);
+        CHECK(s.y <= 800);
+    }
 }
