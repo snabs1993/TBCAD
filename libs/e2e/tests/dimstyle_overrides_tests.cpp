@@ -83,7 +83,7 @@ bool textInside(const dim::Layout& L, double lenX) {
 
 }  // namespace
 
-TEST_CASE("DIMLFAC scales the measurement shown, never the geometry; it undoes and round trips") {
+TEST_CASE("DIMLFAC scales the measurement shown, never the geometry, it undoes and round trips") {
     Rig r;
     REQUIRE(r.host.run("DIMLINEAR", {"0,0", "100,0", "50,20"}).finished);
     const EntityId id = r.dimension();
@@ -180,7 +180,7 @@ TEST_CASE("DIMATFIT decides what leaves the extension lines first when nothing f
     REQUIRE(r.host.undo());
 }
 
-TEST_CASE("DIMTMOVE Free drops the leader of text dragged away; the setting round trips") {
+TEST_CASE("DIMTMOVE Free drops the leader of text dragged away, the setting round trips") {
     Rig r;
     REQUIRE(r.host.run("DIMLINEAR", {"0,0", "100,0", "50,20"}).finished);
     const EntityId id = r.dimension();

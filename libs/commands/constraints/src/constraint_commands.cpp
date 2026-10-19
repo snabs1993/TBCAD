@@ -494,8 +494,11 @@ public:
                 continue;
             }
             const Parameter* old = params.find(n);
-            auto formula = co_await ctx.getString(old ? "Formula for " + n + " <" + old->expr + ">"
-                                                      : "Formula for " + n);
+            // (the prompt is built first: GCC mishandles temporaries of a conditional inside co_await)
+            std::string formulaPrompt = "Formula for " + n;
+            if (old)
+                formulaPrompt += " <" + old->expr + ">";
+            auto formula = co_await ctx.getString(std::move(formulaPrompt));
             if (!formula.ok())
                 co_return;
             std::string src = cmd::trim(formula.text);

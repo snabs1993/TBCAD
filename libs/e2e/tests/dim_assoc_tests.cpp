@@ -131,7 +131,7 @@ TEST_CASE("DIMDISASSOC and DIMREASSOC with edits in between") {
     CHECK(r.d().assoc[0].kind == DimAssoc::Kind::None);
 }
 
-TEST_CASE("copies of a dimension are not linked to the original; the link survives save and load") {
+TEST_CASE("copies of a dimension are not linked to the original, the link survives save and load") {
     Rig r;
     r.host.setSelection({r.line, r.dim});
     REQUIRE(r.host.run("COPY", {"0,0", "0,100", ScriptItem::enter()}).finished);

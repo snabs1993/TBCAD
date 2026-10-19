@@ -104,7 +104,7 @@ TEST_CASE("BSAVE keeps objects drawn during BEDIT and BEDIT takes a typed block 
     CHECK(f.def().entities.size() == 2);
 }
 
-TEST_CASE("REFEDIT and REFCLOSE work like BEDIT and BCLOSE; closing undoes in one step") {
+TEST_CASE("REFEDIT and REFCLOSE work like BEDIT and BCLOSE, closing undoes in one step") {
     BEditFixture f;
     f.host->run("REFEDIT", {cmd::ScriptItem::pick(f.second)});
     REQUIRE(f.lines() == 1);
@@ -124,7 +124,7 @@ TEST_CASE("REFEDIT and REFCLOSE work like BEDIT and BCLOSE; closing undoes in on
     CHECK(near(entityAs<LineData>(*f.doc.find(f.def().entities[0]))->b, {10, 0}));
 }
 
-TEST_CASE("REFSET Add moves a drawing object into the block on BCLOSE; Remove keeps it out") {
+TEST_CASE("REFSET Add moves a drawing object into the block on BCLOSE, Remove keeps it out") {
     BEditFixture f;
     EntityId extra = f.addLine(200, 0, 210, 0);
     EntityId drawn = f.addLine(300, 0, 310, 0);

@@ -435,7 +435,7 @@ TEST_CASE("CELTSCALE reaches new objects") {
     CHECK(ceLtScale(Header{}) == 1);
 }
 
-TEST_CASE("PLINEGEN is the default of new polylines; a dashed polyline restarts at each vertex") {
+TEST_CASE("PLINEGEN is the default of new polylines, a dashed polyline restarts at each vertex") {
     LinetypeId dashed;
     Document doc;
     addDashed(doc, dashed);

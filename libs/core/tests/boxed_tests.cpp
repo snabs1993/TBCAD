@@ -6,8 +6,10 @@ using namespace tbcad;
 
 TEST_CASE("Boxed holds an optional value on the heap and copies it deeply") {
     static_assert(sizeof(Boxed<AttDefInfo>) == sizeof(void*));
+#ifndef _GLIBCXX_DEBUG  // checked containers are larger
     static_assert(sizeof(TextData) < 140);
     static_assert(sizeof(InsertData) < 200);
+#endif
 
     Boxed<AttDefInfo> a;
     CHECK(!a);

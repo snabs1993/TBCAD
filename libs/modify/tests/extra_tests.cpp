@@ -217,8 +217,8 @@ TEST_CASE("overkill optimizes polylines and drops duplicate text, inserts and sp
     CHECK(overkill({&clean}, o).created.empty());
     // A closed polyline keeps three vertices.
     Entity tri = poly(pts({{0, 0}, {5, 0}, {10, 0}, {5, 5}}), true);
-    const auto& tv = as<PolylineData>(overkill({&tri}, o).created.at(0)).v;
-    CHECK(tv.size() == 3);
+    const OverkillResult triResult = overkill({&tri}, o);
+    CHECK(as<PolylineData>(triResult.created.at(0)).v.size() == 3);
 
     TextData t;
     t.position = {1, 2};

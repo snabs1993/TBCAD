@@ -441,7 +441,7 @@ TEST_CASE("A grip that was not picked drags alone even when others are picked") 
     tf::clearWarmGrips();
 }
 
-TEST_CASE("Picking a picked grip again lets it go; two grips of one polyline move together") {
+TEST_CASE("Picking a picked grip again lets it go, two grips of one polyline move together") {
     tf::clearWarmGrips();
     tf::toggleWarmGrip({1, 1});
     tf::toggleWarmGrip({2, 2});

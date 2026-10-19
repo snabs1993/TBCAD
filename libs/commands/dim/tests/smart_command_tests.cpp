@@ -146,7 +146,7 @@ TEST_CASE("MLEADER: block content inserts the block at the landing point") {
     CHECK(f.all<MLeaderData>().size() == 1);
 }
 
-TEST_CASE("MLEADER: arrow, landing, then the note; text typed at the landing prompt is the note") {
+TEST_CASE("MLEADER: arrow, landing, then the note, text typed at the landing prompt is the note") {
     Fix f;
     auto r = f.host->run("MLEADER", {"0,0", "40,30", "Beam B1"});
     CHECK(r.finished);

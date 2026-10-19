@@ -261,7 +261,7 @@ TEST_CASE("two elliptical arcs that close up join into a full ellipse") {
     CHECK(joinEntities(in2, 1e-3).created.empty());
 }
 
-TEST_CASE("splines joined end to end keep their shape; either direction, any order") {
+TEST_CASE("splines joined end to end keep their shape, either direction, any order") {
     Rng r(7);
     for (int rep = 0; rep < 50; ++rep) {
         Entity whole = openCurve(r);

@@ -167,7 +167,7 @@ TEST_CASE("DIMLAYER and TEXTLAYER send new dimensions and text to their layer, '
     CHECK(onCurrent == 1);
 }
 
-TEST_CASE("LAYTRANS renames, merges and restyles layers from a CSV standard; Export writes one") {
+TEST_CASE("LAYTRANS renames, merges and restyles layers from a CSV standard, Export writes one") {
     namespace fs = std::filesystem;
     const fs::path dir = fs::temp_directory_path() / "tbcad_laytrans";
     fs::create_directories(dir);

@@ -66,7 +66,7 @@ TEST_CASE("explode an angular dimension keeps its arc as an arc - a leader gives
     CHECK(!explodeDimension(doc, line).ok());
 }
 
-TEST_CASE("a multileader lays out its lines, arrowheads, dogleg and note; its block shows too") {
+TEST_CASE("a multileader lays out its lines, arrowheads, dogleg and note, its block shows too") {
     Document doc;
     BlockId tag;
     {

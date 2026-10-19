@@ -96,7 +96,7 @@ TEST_CASE("groups, multiline styles and multilines survive the .tbcad and DXF ro
     CHECK(groups3[0].members.size() == 2);
 }
 
-TEST_CASE("shape linetypes keep their shape number and shape file; a layout keeps its page setup") {
+TEST_CASE("shape linetypes keep their shape number and shape file, a layout keeps its page setup") {
     const char* src =
         "  0\nSECTION\n  2\nHEADER\n  9\n$ACADVER\n  1\nAC1015\n  9\n$INSUNITS\n 70\n     4\n"
         "  0\nENDSEC\n  0\nSECTION\n  2\nTABLES\n"

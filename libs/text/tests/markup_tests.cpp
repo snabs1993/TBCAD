@@ -70,7 +70,7 @@ TEST_CASE("markup: stacked fractions") {
     CHECK(b[0].attr.bold);
 }
 
-TEST_CASE("markup: paragraph codes such as \\pxqc; are read and not shown") {
+TEST_CASE("markup: paragraph codes such as \\pxqc, are read and not shown") {
     CHECK(plainText("\\pxqc;centred") == "centred");
     CHECK(plainText("\\pxqr;a\\Pb") == "a\nb");
     CHECK(plainText("tail \\pxqc") == "tail \\pxqc");  // no ';': the backslash stays

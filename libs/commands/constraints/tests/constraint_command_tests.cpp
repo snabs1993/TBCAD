@@ -227,7 +227,7 @@ TEST_CASE("AUTOCONSTRAIN adds what the sketch already satisfies, and one undo re
     CHECK(f.host->logContains("No new constraints"));
 }
 
-TEST_CASE("PARAMETERS drive a DIMCON formula; editing a parameter moves the geometry; saved") {
+TEST_CASE("PARAMETERS drive a DIMCON formula, editing a parameter moves the geometry, saved") {
     Fixture f;
     f.host->run("GEOMCON", {"Fix", f.pick(f.l1, {5, 0})});
     f.host->run("GEOMCON", {"Horizontal", f.pick(f.l2, {5, 5.7})});
@@ -263,12 +263,13 @@ TEST_CASE("PARAMETERS drive a DIMCON formula; editing a parameter moves the geom
     CHECK(params.all().size() == 2);
     CHECK(params.values().value().at("Half") == doctest::Approx(20));
     bool kept = false;
-    for (const auto& c : constraints::load(*reopened.value()).all())
+    const auto reloaded = constraints::load(*reopened.value());
+    for (const auto& c : reloaded.all())
         kept = kept || c.expr == "Half * 3";
     CHECK(kept);
 }
 
-TEST_CASE("GEOMCON on a polyline uses the segment next to the click; DIMCON Length takes it too") {
+TEST_CASE("GEOMCON on a polyline uses the segment next to the click, DIMCON Length takes it too") {
     Fixture f;
     EntityId pl;
     {
@@ -295,7 +296,7 @@ TEST_CASE("GEOMCON on a polyline uses the segment next to the click; DIMCON Leng
     CHECK(length(p2->v[1].p - p2->v[0].p) == doctest::Approx(12).epsilon(1e-6));
 }
 
-TEST_CASE("constraints survive MOVE, STRETCH and undo; erased objects drop theirs") {
+TEST_CASE("constraints survive MOVE, STRETCH and undo, erased objects drop theirs") {
     Fixture f;
     // l1's end and l2's start are joined (the two lines meet halfway)
     REQUIRE(f.host->run("GEOMCON", {"Coincident", f.pick(f.l1, {10, 0}), f.pick(f.l2, {0, 5})})
@@ -324,7 +325,7 @@ TEST_CASE("constraints survive MOVE, STRETCH and undo; erased objects drop their
     CHECK(f.line(f.l1).b.x == doctest::Approx(keep));
 }
 
-TEST_CASE("SHOWCON and CONSTRAINTBAR report the state; DELCONSTRAINT removes by number") {
+TEST_CASE("SHOWCON and CONSTRAINTBAR report the state, DELCONSTRAINT removes by number") {
     Fixture f;
     REQUIRE(f.host->run("GEOMCON", {"Parallel", f.pick(f.l1, {5, 0}), f.pick(f.l2, {5, 5.7})})
                 .finished);
@@ -339,7 +340,7 @@ TEST_CASE("SHOWCON and CONSTRAINTBAR report the state; DELCONSTRAINT removes by 
     CHECK(constraints::load(f.doc).empty());
 }
 
-TEST_CASE("JOINT Revolute pins two block inserts at the connection points; undo removes it") {
+TEST_CASE("JOINT Revolute pins two block inserts at the connection points, undo removes it") {
     Fixture f;
     BlockId arm;
     {
