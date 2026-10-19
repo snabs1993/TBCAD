@@ -1707,3 +1707,31 @@ TEST_CASE("keyboard: layer dialogs close on Esc and take typing on open") {
         CHECK_FALSE(h.windowOpen(win));
     }
 }
+
+TEST_CASE("dimension styles panel: linear factor, fit and dragged text fields") {
+    Harness h(1920, 1500);
+    h.core().openPanel("dimstyles");
+    h.frame(3);
+    h.click("Dimension Styles", "DockSpace");
+    h.frame(3);
+    REQUIRE(h.click("Standard  (current)", "Dimension Styles"));
+    h.frame(2);
+    auto style = [&]() -> const DimStyle& {
+        return *h.core().document().dimStyleByName("Standard");
+    };
+    REQUIRE(h.enterText("##Linear factor", "2", "Dimension Styles"));
+    h.frame(3);
+    CHECK(style().linearFactor == doctest::Approx(2.0));
+
+    REQUIRE(h.click("##Fit", "Dimension Styles"));
+    h.frame(2);
+    REQUIRE(h.click("Text first", "Combo"));
+    h.frame(3);
+    CHECK(style().fit == DimFit::TextFirst);
+
+    REQUIRE(h.click("##Dragged text", "Dimension Styles"));
+    h.frame(2);
+    REQUIRE(h.click("Move freely", "Combo"));
+    h.frame(3);
+    CHECK(style().textMove == DimTextMove::Free);
+}
