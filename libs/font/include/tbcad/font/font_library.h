@@ -58,7 +58,26 @@ public:
     // Finds an installed font by family name (case-insensitive) without any
     // Win32 font API: Windows scans C:\Windows\Fonts, Linux /usr/share/fonts.
     // Prefers an exact bold/italic match, else any face of that family.
+    // The folders are read once per process for every library (see warmSystemFonts).
     std::optional<FontId> findSystem(std::string_view family, bool bold, bool italic);
+
+    // One face of an installed font file.
+    struct SystemFace {
+        std::filesystem::path path;
+        int index = 0;
+        std::string family;  // lower-case
+        bool bold = false;
+        bool italic = false;
+    };
+    // The faces of the font files under `roots`. Opening every file is slow on Windows (seconds
+    // for a full Fonts folder), so what `cacheFile` says about a file whose size and time have
+    // not changed is used as is; the cache is written back when anything changed. An empty
+    // `cacheFile` reads every file.
+    static std::vector<SystemFace> scanFontFolders(const std::vector<std::filesystem::path>& roots,
+                                                   const std::filesystem::path& cacheFile);
+    // Starts reading the installed fonts on a background thread, so that the first drawing
+    // opened does not wait for it. Safe to call more than once.
+    static void warmSystemFonts();
 
     // Shapes UTF-8 text. Characters the requested font lacks are taken from
     // the bundled Thai font, then the bundled Latin font, so the result can
