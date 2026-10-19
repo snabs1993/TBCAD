@@ -105,8 +105,12 @@ public:
                 break;
             ctx.message("No block named \"" + text + "\". Blocks: " + blockNames(doc));
         }
+        // Id and name only from here on: placements commit at each prompt (Multiple), and the
+        // commit hooks may rewrite rows, so `def` is not kept across them.
         const BlockId block = def->id;
-        ctx.host().setSetting(kLastBlockSetting, def->name);
+        const std::string blockName = def->name;
+        def = nullptr;
+        ctx.host().setSetting(kLastBlockSetting, blockName);
 
         // Placement. Scale and rotation can be changed before the point is picked.
         InsertData data{block, {}, {1, 1}, ctx.host().ucsAngle()};  // squared to the UCS
@@ -237,7 +241,7 @@ public:
                                       v.value + "\x1e";
                 }
                 if (!fields.empty()) {
-                    ctx.host().setSetting("tmp.insatt.block", def->name);
+                    ctx.host().setSetting("tmp.insatt.block", blockName);
                     ctx.host().setSetting("tmp.insatt.fields", fields);
                     ctx.host().setSetting("tmp.insatt.result", "");
                     ctx.host().openPanel("attvalues");
@@ -323,8 +327,8 @@ public:
                             if (auto a = ctx.tx().add(std::move(part)))
                                 ids.push_back(a.value());
                         ctx.host().setSelection(ids);
-                        ctx.setUndoLabel("Insert " + def->name + " exploded");
-                        ctx.message("Block \"" + def->name + "\" inserted and exploded");
+                        ctx.setUndoLabel("Insert " + blockName + " exploded");
+                        ctx.message("Block \"" + blockName + "\" inserted and exploded");
                         if (!multiple)
                             co_return;
                         continue;
@@ -333,8 +337,8 @@ public:
                 }
             }
             ctx.host().setSelection({added.value()});
-            ctx.setUndoLabel("Insert " + def->name);
-            ctx.message("Block \"" + def->name + "\" inserted" +
+            ctx.setUndoLabel("Insert " + blockName);
+            ctx.message("Block \"" + blockName + "\" inserted" +
                         (multiple ? " (" + std::to_string(placed + 1) + ")" : ""));
             if (!multiple)
                 co_return;
