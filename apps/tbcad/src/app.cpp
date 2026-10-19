@@ -11,12 +11,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 
 #include "gui.h"
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/dwgopen/dwgopen.h"
+#include "tbcad/geom/entity.h"
 #include "tbcad/mcp/png.h"
 #include "tbcad/platform/crash.h"
 #include "tbcad/platform/paths.h"
@@ -253,11 +255,60 @@ int App::runCapture() {
         io.AddMousePosEvent(x, y);
         captureFrames(2);
     };
+    const std::filesystem::path scriptDir =
+        platform::pathFromUtf8(options_.captureScript).parent_path();
+    // Entities of the model space with a usable box, in draw order.
+    struct Item {
+        EntityKind kind;
+        BBox2 box;
+    };
+    const auto items = [&] {
+        std::vector<Item> v;
+        for (EntityId id : core_->document().modelSpace()) {
+            const Entity* e = core_->document().find(id);
+            if (!e)
+                continue;
+            const BBox2 b = geom::bounds(*e, core_->document());
+            if (b.empty() || !std::isfinite(b.min.x) || !std::isfinite(b.max.x) ||
+                !std::isfinite(b.min.y) || !std::isfinite(b.max.y))
+                continue;
+            v.push_back({kind(*e), b});
+        }
+        return v;
+    };
+    // The box of the middle 96 % of the entity centres, so a stray object far away does not
+    // decide the view.
+    const auto robustBox = [&](const std::vector<Item>& v) {
+        std::vector<double> xs, ys;
+        for (const Item& it : v) {
+            xs.push_back((it.box.min.x + it.box.max.x) / 2);
+            ys.push_back((it.box.min.y + it.box.max.y) / 2);
+        }
+        BBox2 b;
+        if (xs.empty())
+            return b;
+        std::sort(xs.begin(), xs.end());
+        std::sort(ys.begin(), ys.end());
+        const std::size_t lo = xs.size() * 2 / 100, hi = xs.size() - 1 - lo;
+        b.min = {xs[lo], ys[lo]};
+        b.max = {xs[hi], ys[hi]};
+        return b;
+    };
+    static const char* const kKindNames[] = {"line",   "circle",    "arc",    "polyline", "point",
+                                             "ellipse", "spline",    "text",   "mtext",    "hatch",
+                                             "insert", "dimension", "leader", "proxy",    "table",
+                                             "ray",    "mline",     "mleader"};
+    const auto resolveShot = [&](const std::string& name) {
+        std::filesystem::path f = platform::pathFromUtf8(name);
+        return (f.is_absolute() ? f : scriptDir / f).string();
+    };
     int failed = 0;
     std::string line;
     int lineNo = 0;
     while (std::getline(in, line)) {
         ++lineNo;
+        if (lineNo == 1 && line.size() >= 3 && line.compare(0, 3, "\xEF\xBB\xBF") == 0)
+            line.erase(0, 3);  // a byte order mark from an editor
         if (!line.empty() && line.back() == '\r')
             line.pop_back();
         if (!line.empty() && line.front() == '#')
@@ -292,6 +343,96 @@ int App::runCapture() {
             moveTo(c, d);
             io.AddMouseButtonEvent(0, false);
             captureFrames(2);
+        } else if (op == "zoom" && (ss >> a >> b >> c >> d)) {
+            core_->zoomToBox(BBox2{{std::min(a, c), std::min(b, d)}, {std::max(a, c), std::max(b, d)}});
+            captureFrames(2);
+        } else if (op == "zoom-all") {
+            const BBox2 box = robustBox(items());
+            if (box.empty())
+                ++failed;
+            else
+                core_->zoomToBox(box.inflated(0.03 * std::max(box.width(), box.height())));
+            captureFrames(2);
+        } else if (op == "zoom-dense") {
+            int n = 40;
+            ss >> n;
+            n = std::clamp(n, 2, 400);
+            const std::vector<Item> v = items();
+            BBox2 box = robustBox(v);
+            if (!box.empty() && (!(box.width() > 0) || !(box.height() > 0))) {
+                box = BBox2{};  // a handful of objects: all of them
+                for (const Item& it : v) {
+                    box.expand(it.box.min);
+                    box.expand(it.box.max);
+                }
+            }
+            if (box.empty() || !(box.width() > 0) || !(box.height() > 0)) {
+                ++failed;
+                continue;
+            }
+            std::vector<int> count(static_cast<std::size_t>(n) * n, 0);
+            for (const Item& it : v) {
+                const double cx = (it.box.min.x + it.box.max.x) / 2, cy = (it.box.min.y + it.box.max.y) / 2;
+                const int ix = static_cast<int>(std::floor((cx - box.min.x) / box.width() * n));
+                const int iy = static_cast<int>(std::floor((cy - box.min.y) / box.height() * n));
+                if (ix >= 0 && ix < n && iy >= 0 && iy < n)
+                    ++count[static_cast<std::size_t>(iy) * n + ix];
+            }
+            const auto best = std::max_element(count.begin(), count.end()) - count.begin();
+            const double cw = box.width() / n, ch = box.height() / n;
+            const double x0 = box.min.x + (best % n) * cw, y0 = box.min.y + (best / n) * ch;
+            std::printf("zoom-dense: %d objects in the cell at %.3f,%.3f (cell %.3f x %.3f)\n",
+                        count[static_cast<std::size_t>(best)], x0, y0, cw, ch);
+            core_->zoomToBox(BBox2{{x0, y0}, {x0 + cw, y0 + ch}});
+            captureFrames(2);
+        } else if (op == "zoom-kind") {
+            std::string kn;
+            int index = 0;
+            double factor = 3.0;
+            ss >> kn >> index >> factor;
+            int want = -1;
+            for (std::size_t k = 0; k < std::size(kKindNames); ++k)
+                if (kn == kKindNames[k])
+                    want = static_cast<int>(k);
+            if (want < 0) {
+                std::fprintf(stderr, "tbcad: line %d: unknown kind '%s'\n", lineNo, kn.c_str());
+                ++failed;
+                continue;
+            }
+            int seen = 0;
+            bool found = false;
+            for (const Item& it : items()) {
+                if (static_cast<int>(it.kind) != want || seen++ != index)
+                    continue;
+                const double w = std::max({it.box.width(), it.box.height(), 1e-3});
+                const Vec2 mid{(it.box.min.x + it.box.max.x) / 2, (it.box.min.y + it.box.max.y) / 2};
+                const double half = w * std::max(factor, 1.0) / 2;
+                core_->zoomToBox(BBox2{{mid.x - half, mid.y - half}, {mid.x + half, mid.y + half}});
+                std::printf("zoom-kind %s %d: box %.3f,%.3f to %.3f,%.3f\n", kn.c_str(), index,
+                            it.box.min.x, it.box.min.y, it.box.max.x, it.box.max.y);
+                found = true;
+                break;
+            }
+            if (!found) {
+                std::fprintf(stderr, "tbcad: line %d: no %s number %d\n", lineNo, kn.c_str(), index);
+                ++failed;
+            }
+            captureFrames(2);
+        } else if (op == "stats") {
+            const BBox2 view = core_->camera().visibleWorld();
+            std::size_t total[kEntityKindCount] = {}, inView[kEntityKindCount] = {};
+            for (const Item& it : items()) {
+                ++total[static_cast<std::size_t>(it.kind)];
+                if (it.box.intersects(view))
+                    ++inView[static_cast<std::size_t>(it.kind)];
+            }
+            std::printf("stats: view %.3f,%.3f to %.3f,%.3f; in view / in drawing:", view.min.x,
+                        view.min.y, view.max.x, view.max.y);
+            for (std::size_t k = 0; k < kEntityKindCount; ++k)
+                if (total[k] > 0)
+                    std::printf(" %s %zu/%zu", kKindNames[k], inView[k], total[k]);
+            std::printf("\n");
+            std::fflush(stdout);
         } else if (op == "shot") {
             std::string name;
             ss >> name;
@@ -300,7 +441,7 @@ int App::runCapture() {
             glfwPollEvents();
             mcp_->pump();
             frame();
-            if (name.empty() || !saveScreenshot(name)) {
+            if (name.empty() || !saveScreenshot(resolveShot(name))) {
                 std::fprintf(stderr, "tbcad: line %d: cannot write %s\n", lineNo, name.c_str());
                 ++failed;
             }

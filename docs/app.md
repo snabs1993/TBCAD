@@ -108,8 +108,13 @@ tbcad [file.tbcad|file.dxf] [--script "CMD;CMD"] [--frames N] [--screenshot out.
 `--capture-script` is for pictures of the real program without anyone at the screen: the window is
 hidden and never takes focus, the script runs, and each `@shot` line writes a PNG of the whole
 window. A line is a command line (an empty line is Enter, `#` starts a comment) or one of
-`@size W H`, `@frames N`, `@mouse X Y`, `@click X Y`, `@drag X0 Y0 X1 Y1` (window pixels) and
-`@shot name.png`. Open a drawing with `tbcad file.dxf --capture-script ...`; zoom and selection are
+`@size W H`, `@frames N`, `@mouse X Y`, `@click X Y`, `@drag X0 Y0 X1 Y1` (window pixels),
+`@shot name.png` (a relative name is placed beside the script), and the view helpers
+`@zoom X0 Y0 X1 Y1` (world box), `@zoom-all` (extents without the outliers: the middle 96 % of the
+objects), `@zoom-dense [N]` (the busiest cell of an N x N grid, default 40), `@zoom-kind KIND
+[index [factor]]` (the index-th hatch, dimension, text, mtext, insert, leader, mleader, table, ...
+in draw order, shown `factor` times its size) and `@stats` (prints how many objects of each kind
+are in view and in the drawing). A byte order mark at the start of the script is ignored. Open a drawing with `tbcad file.dxf --capture-script ...`; zoom and selection are
 ordinary commands (`ZOOM`, `W`, `SELECT`) or a `@drag` across the view. A shot waits until the
 drawing has finished building. The program exits when the script ends (status 1 if a line failed).
 
