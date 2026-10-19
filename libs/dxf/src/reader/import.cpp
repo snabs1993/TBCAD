@@ -2817,21 +2817,21 @@ Result<ImportResult> Importer::run() {
                         });
                     continue;
                 }
-                Entity merged = *first;
-                merged.common.id = {};
-                {
-                    ExtData x = merged.common.ext.get();
+                // The item with the parameters becomes the array, where it stands in the drawing
+                // order; the other items go.
+                (void)tx.modify(g.anchor, [&](Entity& e) {
+                    ExtData x = e.common.ext.get();
                     std::erase_if(x.xdata,
                                   [](const XdataApp& a) { return a.app == "TBCAD_ARRAY"; });
-                    merged.common.ext = ExtDataPtr(std::move(x));
-                }
-                auto* ins = entityAs<InsertData>(merged);
-                ins->position = ins->position + g.dpos;
-                ins->rotation += g.drot;
-                ins->array = *info;
+                    e.common.ext = ExtDataPtr(std::move(x));
+                    auto* ins = entityAs<InsertData>(e);
+                    ins->position = ins->position + g.dpos;
+                    ins->rotation += g.drot;
+                    ins->array = *info;
+                });
                 for (const Item& it : g.items)
-                    (void)tx.erase(it.id);
-                (void)tx.add(std::move(merged));
+                    if (it.id != g.anchor)
+                        (void)tx.erase(it.id);
             }
             tx.commit();
         }

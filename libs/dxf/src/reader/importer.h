@@ -402,7 +402,7 @@ private:
     std::size_t paperSpace_ = 0;
     int firstFlattenedLine_ = 0;
     std::size_t mirroredText_ = 0;
-    bool emptyRecord_ = false;  // the record converted was a text without a string
+    bool emptyRecord_ = false;
     int firstMirroredLine_ = 0;
 };
 
