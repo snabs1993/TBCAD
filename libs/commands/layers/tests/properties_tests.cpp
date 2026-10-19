@@ -317,6 +317,23 @@ std::vector<EntityId> sampleKinds(Document& doc) {
     RayData rd;
     rd.dir = {1, 0};
     ids.push_back(addEntity(doc, Indirect<RayData>(rd)));
+    DimensionData dd;
+    dd.kind = DimKind::Aligned;
+    dd.defPts = {Vec2{0, 0}, Vec2{40, 0}, Vec2{20, 10}, Vec2{}};
+    dd.textPos = {20, 10};
+    ids.push_back(addEntity(doc, Indirect<DimensionData>(dd)));
+    TableData tb;
+    tb.origin = {0, 50};
+    tb.colWidths = {20, 30};
+    tb.rowHeights = {8, 8, 8};
+    tb.cells.resize(6);
+    ids.push_back(addEntity(doc, Indirect<TableData>(tb)));
+    MLeaderData mld;
+    mld.lines = {{Vec2{0, 0}, Vec2{10, 10}}};
+    mld.landing = {10, 10};
+    mld.contentPos = {12, 10};
+    mld.utf8 = "Note";
+    ids.push_back(addEntity(doc, Indirect<MLeaderData>(mld)));
     return ids;
 }
 
@@ -460,4 +477,131 @@ TEST_CASE("read-only fields: deltas of a line, area of an arc and ellipse") {
     CHECK(val(ids[2], "area") == doctest::Approx(0.5 * 25 * 1.8));
     CHECK(val(ids[5], "area") == doctest::Approx(kPi * 36 * 0.5));
     CHECK(val(ids[2], "endx") == doctest::Approx(5 * std::cos(2.0)));
+}
+
+TEST_CASE("polyline Current vertex: vertex X and Y and segment widths edit one vertex") {
+    Document doc;
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    cmd::ScriptHost host(doc, reg);
+    EntityId pl = addEntity(
+        doc, PolylineData{
+                 {{{0, 0}, 0, 0, 0}, {{10, 0}, 0, 0, 0}, {{10, 5}, 0, 0, 0}}, false, false, 0.5});
+    auto field = [&](const std::string& id, int vertex) {
+        for (const GeometryField& f : geometryFields(*doc.find(pl), vertex))
+            if (f.id == id)
+                return f.value;
+        return -1e30;
+    };
+    CHECK(field("vertex", 1) == 2);
+    CHECK(field("vertexx", 1) == 10);
+    CHECK(field("vertexy", 2) == 5);
+    CHECK(field("vertex", 9) == 3);  // clamped to the last vertex
+    host.setSelection({pl});
+    host.run("-PROP", {"Set", "vertexy@2", "7", cmd::ScriptItem::enter()});
+    const auto* p = entityAs<PolylineData>(*doc.find(pl));
+    CHECK(p->v[1].p.y == 7);
+    CHECK(p->v[0].p.y == 0);
+    CHECK(host.undo());
+    CHECK(entityAs<PolylineData>(*doc.find(pl))->v[1].p.y == 0);
+    // a segment width takes over from the global width, the other segments keep 0.5
+    host.run("-PROP", {"Set", "endwidth@1", "2", cmd::ScriptItem::enter()});
+    p = entityAs<PolylineData>(*doc.find(pl));
+    CHECK(p->constantWidth == 0);
+    CHECK(p->v[0].startWidth == 0.5);
+    CHECK(p->v[0].endWidth == 2);
+    CHECK(p->v[1].startWidth == 0.5);
+    host.clearLog();
+    host.run("-PROP", {"Set", "vertexx@4", "1", cmd::ScriptItem::enter()});
+    CHECK(host.logContains("3 vertices"));
+    host.clearLog();
+    host.run("-PROP", {"Set", "vertexx@0", "1", cmd::ScriptItem::enter()});
+    CHECK(host.logContains("counted from 1"));
+}
+
+TEST_CASE("Properties show hatch area, dimension measurement, table size and multileader rows") {
+    Document doc;
+    const auto ids = sampleKinds(doc);
+    auto field = [&](EntityId id, const std::string& name) {
+        for (const GeometryField& f : geometryFields(*doc.find(id)))
+            if (f.id == name)
+                return f.value;
+        return -1e30;
+    };
+    const EntityId dimId = ids[9], table = ids[10], mleader = ids[11];
+    CHECK(field(dimId, "measurement") == doctest::Approx(40));
+    CHECK(field(table, "tablewidth") == doctest::Approx(50));
+    CHECK(field(table, "tableheight") == doctest::Approx(24));
+    CHECK(field(table, "rows") == 3);
+    CHECK(field(table, "columns") == 2);
+    CHECK(field(mleader, "landingx") == doctest::Approx(10));
+    HatchData h;
+    HatchLoop loop;
+    loop.edges.push_back(HatchPolylineEdge{
+        {{{0, 0}, 0, 0, 0}, {{4, 0}, 0, 0, 0}, {{4, 4}, 0, 0, 0}, {{0, 4}, 0, 0, 0}}, true});
+    h.loops.push_back(loop);
+    EntityId hatchId = addEntity(doc, Indirect<HatchData>(h));
+    CHECK(field(hatchId, "area") == doctest::Approx(16));
+
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    cmd::ScriptHost host(doc, reg);
+    host.setSelection({mleader});
+    host.run("-PROP", {"Set", "landingx", "20", cmd::ScriptItem::enter()});
+    const auto* ml = entityAs<MLeaderData>(*doc.find(mleader));
+    CHECK(ml->landing.x == 20);
+    CHECK(ml->contentPos.x == 22);  // the note goes with the landing
+    host.setSelection({dimId});
+    host.run("-PROP", {"Set", "textrotation", "30", cmd::ScriptItem::enter()});
+    const auto* d = entityAs<DimensionData>(*doc.find(dimId));
+    CHECK(d->textRotated);
+    CHECK(d->textRotation == doctest::Approx(kPi / 6));
+}
+
+TEST_CASE("Properties edit attribute values, dimension override and style, table text style") {
+    Document doc;
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    cmd::ScriptHost host(doc, reg);
+    const auto ids = sampleKinds(doc);
+    const EntityId dimId = ids[9], table = ids[10], mleader = ids[11];
+    auto word = [&](EntityId id, const std::string& name) {
+        for (const StringField& f : stringFields(doc, *doc.find(id)))
+            if (f.id == name)
+                return f.value;
+        return std::string("<none>");
+    };
+    host.setSelection({dimId});
+    host.run("-PROP", {"Set", "textoverride", "<> TYP.", cmd::ScriptItem::enter()});
+    CHECK(entityAs<DimensionData>(*doc.find(dimId))->textOverride == "<> TYP.");
+    host.clearLog();
+    host.run("-PROP", {"Set", "dimstyle", "NoSuchStyle", cmd::ScriptItem::enter()});
+    CHECK(host.logContains("not a choice"));
+    CHECK(word(dimId, "dimstyle") == word(mleader, "dimstyle"));
+    host.setSelection({mleader});
+    host.run("-PROP", {"Set", "contents", "Changed note", cmd::ScriptItem::enter()});
+    CHECK(entityAs<MLeaderData>(*doc.find(mleader))->utf8 == "Changed note");
+    CHECK(word(table, "style") == "Standard");
+
+    // an insert with two attributes
+    BlockId blk;
+    {
+        auto tx = doc.begin("block");
+        BlockDef def;
+        def.name = "TAG";
+        blk = tx.addBlock(std::move(def)).value();
+        tx.commit();
+    }
+    InsertData in;
+    in.block = blk;
+    in.attribs = {{"ROOM", "101", {}}, {"Area", "12", {}}};
+    EntityId ins = addEntity(doc, Indirect<InsertData>(in));
+    CHECK(word(ins, "att:room") == "101");
+    CHECK(word(ins, "att:area") == "12");
+    host.setSelection({ins});
+    host.run("-PROP", {"Set", "att:ROOM", "102", cmd::ScriptItem::enter()});
+    CHECK(entityAs<InsertData>(*doc.find(ins))->attribs[0].value == "102");
+    CHECK(entityAs<InsertData>(*doc.find(ins))->attribs[1].value == "12");
+    CHECK(host.undo());
+    CHECK(entityAs<InsertData>(*doc.find(ins))->attribs[0].value == "101");
 }

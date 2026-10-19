@@ -1719,6 +1719,27 @@ bool Importer::convInsert(const Record& r, RecordReader& rr, const Frame& f,
         if (clip.size() < 3)
             clip.clear();
     }
+    if (rows * cols > 1 && values.empty() && clip.empty()) {
+        // A MINSERT is one object, as in AutoCAD: a rectangular array on the insert. The array
+        // lives in the block's own coordinates, so its spacing is divided by the scale (signed:
+        // a mirrored insert flips the columns' direction with it).
+        InsertData d;
+        d.block = block;
+        d.position = f.p(pos);
+        d.scale = f.mirror ? Vec2{-sx, sy} : Vec2{sx, sy};
+        d.rotation = f.rot + (f.mirror ? -rot : rot);
+        ArrayInfo a;
+        a.kind = ArrayInfo::Kind::Rectangular;
+        a.rows = static_cast<int>(rows);
+        a.columns = static_cast<int>(cols);
+        a.rowSpacing = rs / sy;
+        a.columnSpacing = cs / sx;
+        d.array = a;
+        out.push_back(makeEntity(std::move(d)));
+        for (Entity& e : loose)
+            out.push_back(std::move(e));
+        return true;
+    }
     double cr = std::cos(rot), sr = std::sin(rot);
     for (std::int64_t row = 0; row < rows; ++row) {
         for (std::int64_t col = 0; col < cols; ++col) {
@@ -2608,8 +2629,16 @@ bool Importer::convForeign(const Record& r, std::vector<Entity>& out) {
         }
     }
 
-    // The record itself, to be written back unchanged.
-    const std::string kept = keptRecord(r);
+    // The record itself, to be written back unchanged, except for the texts of its proxy
+    // graphics: they live on as Text entities, and would be read again as more of them.
+    Record withoutText;
+    const Record* keep = &r;
+    if (!texts.empty()) {
+        withoutText = r;
+        if (stripProxyText(withoutText))
+            keep = &withoutText;
+    }
+    const std::string kept = keptRecord(*keep);
     if (!kept.empty())
         d.raw.assign(kept.begin(), kept.end());
     if (d.graphics.items.empty() && texts.empty() && kept.empty())

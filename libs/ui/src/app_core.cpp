@@ -11,6 +11,7 @@
 #include <future>
 #include <iterator>
 #include <map>
+#include <mutex>
 #include <sstream>
 #include <unordered_set>
 
@@ -271,6 +272,40 @@ std::string ucsFromHeader(const Document& doc) {
     return u.isWorld() ? "World" : drafting::unnamedUcsSetting(u);
 }
 
+// The slowest objects to measure, and the time by kind (TBCAD_INDEX_PROFILE).
+void printIndexProfile(const Document& d, std::vector<std::pair<double, const Entity*>>& times) {
+    double total = 0;
+    std::map<int, std::pair<double, std::size_t>> byKind;
+    for (const auto& [ms, e] : times) {
+        total += ms;
+        auto& k = byKind[static_cast<int>(kind(*e))];
+        k.first += ms;
+        ++k.second;
+    }
+    std::fprintf(stderr, "index profile: %zu objects, %.0f ms measuring (all threads)\n",
+                 times.size(), total);
+    for (const auto& [k, v] : byKind)
+        if (v.first >= total * 0.01)
+            std::fprintf(stderr, "  kind %-3d %8.0f ms  %zu objects\n", k, v.first, v.second);
+    const std::size_t top = std::min<std::size_t>(20, times.size());
+    std::partial_sort(times.begin(), times.begin() + static_cast<std::ptrdiff_t>(top), times.end(),
+                      [](const auto& a, const auto& b) { return a.first > b.first; });
+    for (std::size_t i = 0; i < top; ++i) {
+        const Entity& e = *times[i].second;
+        std::string what = "kind " + std::to_string(static_cast<int>(kind(e)));
+        if (const auto* ins = entityAs<InsertData>(e)) {
+            const BlockDef* b = d.block(ins->block);
+            what = "insert of " + (b ? b->name : std::string("?")) +
+                   (ins->attribs.empty() ? "" : " (attributes)") +
+                   (std::abs(ins->rotation) > 1e-9 ? " (turned)" : "");
+        } else if (const auto* h = entityAs<HatchData>(e)) {
+            what = "hatch " + h->pattern + " with " + std::to_string(h->loops.size()) + " loops";
+        }
+        std::fprintf(stderr, "  %8.1f ms  #%llu %s\n", times[i].first,
+                     static_cast<unsigned long long>(e.common.id.value), what.c_str());
+    }
+}
+
 }  // namespace
 
 std::unique_ptr<AppCore::Session> AppCore::makeSession(std::unique_ptr<Document> doc,
@@ -280,8 +315,29 @@ std::unique_ptr<AppCore::Session> AppCore::makeSession(std::unique_ptr<Document>
     // The new session can take the address of one just closed, at the same revision number: the
     // extents remembered for that one must not be taken for this one's.
     extentsCache_ = {};
+    // TBCAD_INDEX_PROFILE=1: time each object's box and print the slowest (to find what makes a
+    // drawing slow to open).
+    struct IndexProfile {
+        std::mutex lock;
+        std::vector<std::pair<double, const Entity*>> times;
+    };
+    std::shared_ptr<IndexProfile> profile;
+    if (const char* v = std::getenv("TBCAD_INDEX_PROFILE"); v && *v && *v != '0')
+        profile = std::make_shared<IndexProfile>();
     s->indexer = std::make_unique<index::DocumentIndexer>(
-        d, s->index, [&d](const Entity& e) { return geom::bounds(e, d); },
+        d, s->index,
+        [&d, profile](const Entity& e) {
+            if (!profile)
+                return geom::bounds(e, d);
+            const auto t0 = std::chrono::steady_clock::now();
+            const BBox2 b = geom::bounds(e, d);
+            const double ms =
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0)
+                    .count();
+            std::lock_guard g(profile->lock);
+            profile->times.emplace_back(ms, &e);
+            return b;
+        },
         [] { return std::make_shared<blocks::BoundsMemoScope>(); },
         [] {
             // Boxes are measured on several threads: each has its own block memo and fonts.
@@ -292,6 +348,8 @@ std::unique_ptr<AppCore::Session> AppCore::makeSession(std::unique_ptr<Document>
             return std::make_shared<Scope>();
         });
     openStep("  index the objects");
+    if (profile && !profile->times.empty())
+        printIndexProfile(d, profile->times);
     s->blockRefresher = std::make_unique<blocks::BlockIndexRefresher>(d, *s->indexer);
     openStep("  index the blocks");
     s->sync = std::make_unique<SceneSync>(d, scene_);

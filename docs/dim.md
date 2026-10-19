@@ -145,13 +145,16 @@ edits through the same command line; it is listed under the panels menu.
 The preview follows the cursor while the location is chosen. All dimensions of one DIM run are one undo step.
 
 **MLEADER** (alias MLD) takes an arrowhead point and a landing point, then asks for the note straight away. Text
-typed at either point prompt is the note itself. The first prompt has the option **Content** (**Text**,
-**Block**, an existing block inserted at the landing point, or **None**; the multileader style's type is the
-default) and the landing prompt has **Add** for further arrowheads. It uses the current dimension style for arrow and text. The result is one
+typed at either point prompt is the note itself. As in AutoCAD the first prompt also offers **leader Landing first**
+(the landing point, then one or more arrowheads, Enter ends), **Content first** (the note or block name, where it goes,
+then the arrowheads) and **Options**: **Type** of content (**Text**, **Block**, an existing block inserted at the
+landing point, or **None**; the multileader style's type is the default), **Maxpoints** (how many points a leader line
+has, arrowhead and landing included: with more than two, each further pick is a bend and Enter makes the last bend the
+landing) and **Dogleg** (Yes / No). The landing prompt has **Add** for further arrowheads. It uses the current dimension style for arrow and text. The result is one
 multileader object (`MLeader`): all leader lines, the landing point where they meet, a dogleg of one arrow
 length to the note, and the note or block at its end. It moves, copies, scales, grips and erases as one
 object, and its lines, landing point and note each have a grip. **MLEADERALIGN** (MLA) lines up the landing
-ends of several multileaders (or plain leaders) in a column or a row with a reference one. **MLEADERCOLLECT** (MLC) merges several multileaders with a text note into the first one: every arrow stays, all lines end at its landing and the notes are joined one per line (block notes are left alone). Everything from
+ends of several multileaders (or plain leaders) in a column or a row with a reference one; **Spacing** sets the distance between them, **Distribute** spreads the landings evenly between two picked points and **Parallel** turns the last segment of every leader line parallel to the reference's, keeping its length. **MLEADERCOLLECT** (MLC) merges several multileaders with a text note into the first one: every arrow stays, all lines end at its landing and the notes are joined one per line (block notes are left alone). Everything from
 one MLEADER run is one undo step. To DXF a multileader is written as one LEADER per line, a line for the
 dogleg and the note as MTEXT (or a block as INSERT): other programs show it, but it is no longer one object
 there.
@@ -171,24 +174,26 @@ moves, scales and saves with it.
 - **DIMORDINATE** (DOR) dimensions the X or Y distance of a point from the origin (0,0). Pick the feature, then the
   leader end: moving mostly up or down measures X, mostly sideways measures Y; **Xdatum** / **Ydatum** force the axis.
   Ordinate dimensions round trip through DXF (type 6, bit 64 = X datum).
-- **QDIM** dimensions the key points (line ends, polyline vertices, centres) of the selected objects as one chain of linear
-  dimensions. Click above or below the objects for horizontal dimensions, beside them for vertical ones. At the position prompt the options are **Continuous** (the default, a chain), **Baseline** (every dimension starts at the first key point and each line sits one step further out) and **Radius** / **Diameter** (one dimension for every circle and arc of the selection).
+- **QDIM** dimensions the key points (line ends, polyline vertices, centres) of the selected objects in one go. Click above or below the objects for horizontal dimensions, beside them for vertical ones. At the position prompt the options are **Continuous** (the default, a chain), **Staggered** (pairs nested from the outside in: the innermost pair sits at the picked line, each outer pair one step further out), **Baseline** (every dimension starts at the first key point and each line sits one step further out), **Ordinate** (one ordinate dimension per key point, the leaders ending on the picked line), **Radius** / **Diameter** (one dimension for every circle and arc of the selection) and **datumPoint** (the point Baseline starts at and Ordinate measures from; the origin by default).
 
 ## Chains and text editing (Q67)
 
-- **DIMCONTINUE** (DCO) continues from the last linear or aligned dimension: the new one starts at the previous
-  second extension line and shares its dimension line. Keep picking points; Enter ends. **Select** chooses another
-  base dimension.
-- **DIMBASELINE** (DBA) starts every new dimension at the base dimension's first extension line and stacks each one
-  further out, by 2.5 text heights (scaled by the style's overall scale).
+- **DIMCONTINUE** (DCO) continues from the last linear, aligned, angular or ordinate dimension. A linear or aligned
+  one starts at the previous second extension line and shares its dimension line; an angular one goes on around the
+  same vertex at the same radius, from the side of the previous arc nearest the pick; an ordinate one keeps the datum
+  and axis and lines its leader end up with the previous one. Keep picking points; Enter ends. **Undo** takes back the
+  last dimension of the run and **Select** chooses another base dimension.
+- **DIMBASELINE** (DBA) starts every new dimension at the base dimension's first extension line (for an angular one,
+  the side away from the pick) and stacks each one further out by the style's baseline spacing (DIMDLI), or
+  2.5 text heights when that is 0, scaled by the overall scale. It has the same **Undo** and **Select** options.
 - **DIMTEDIT** (DTE) moves the text of a picked dimension to a new point; **Home** puts it back at its automatic place.
 - **DIMEDIT** (DED) works on several dimensions at once: **New** gives them the text you type (`<>` = the measurement), **Home** restores the measured text, the automatic text place and the automatic text angle. **Rotate** fixes the text angle (0 = automatic again). **Oblique** leans the extension lines of linear and aligned dimensions to an angle measured from the X axis (Enter = square again; within 85 degrees of the perpendicular). Both are stored with the dimension (`DimensionData::oblique`, `textRotated`/`textRotation`; file format minor 10, tag 2 of the dimension tail).
-- **DIMBREAK** (DBR) opens gaps in the dimension and extension lines where other objects cross them: pick the dimensions, then **Auto** (pick the objects to break with, or Enter / **All** for every object of the drawing) or **Remove**. The gap is 1.5 arrow sizes wide. Gaps are stored with the dimension (a new optional part of the dimension record, file format minor 9; older builds open the file and show the dimension without gaps). They sit at fixed points of the sheet: after the dimension is moved or edited run DIMBREAK again. DXF export and EXPLODE keep the gaps.
+- **DIMBREAK** (DBR) opens gaps in the dimension and extension lines where other objects cross them: pick the dimensions, then **Auto** (pick the objects to break with, or Enter / **All** for every object of the drawing) **Manual** (one dimension: pick two points on a dimension or extension line; the gap between them is added to the breaks it already has) or **Remove**. An automatic gap is 1.5 arrow sizes wide. Gaps are stored with the dimension (a new optional part of the dimension record, file format minor 9; older builds open the file and show the dimension without gaps). They sit at fixed points of the sheet: after the dimension is moved or edited run DIMBREAK again. DXF export and EXPLODE keep the gaps.
 - **DIMSPACE** (DSP) evens out the gaps between parallel linear or aligned dimensions: pick the base dimension, select the
   others, then type the spacing or **Auto** (two text heights). A spacing of 0 lines them up with the base.
 
 **MLEADEREDIT** (MLE) adds leader lines to a multileader (**Add**: pick arrowhead points, Enter ends) or removes the
-one whose arrowhead is nearest to a pick (**Remove**); one leader line always stays.
+one whose arrowhead is nearest to a pick (**Remove**); one leader line always stays. **AIMLEADEREDITADD** and **AIMLEADEREDITREMOVE** are the same with the choice already made.
 
 ## What the commands accept
 

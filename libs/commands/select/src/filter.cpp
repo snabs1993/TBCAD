@@ -12,30 +12,43 @@ constexpr const char* kPrefix = "filter.";
 
 std::optional<std::vector<EntityId>> filterEntities(const Document& doc,
                                                     const std::vector<Query>& queries) {
-    std::optional<std::vector<EntityId>> acc;
+    std::vector<EntityId> out;
+    std::unordered_set<EntityId> taken;
+    std::optional<std::vector<EntityId>> group;  // what the current AND group still matches
+    auto close = [&] {
+        if (group)
+            for (EntityId id : *group)
+                if (taken.insert(id).second)
+                    out.push_back(id);
+        group.reset();
+    };
     for (const Query& q : queries) {
         auto r = queryEntities(doc, q);
         if (!r)
             return std::nullopt;
-        if (!acc) {
-            acc = std::move(r);
+        if (q.orPrevious)
+            close();
+        if (!group) {
+            group = std::move(r);
             continue;
         }
         const std::unordered_set<EntityId> in(r->begin(), r->end());
         std::vector<EntityId> keep;
-        for (EntityId id : *acc)
+        for (EntityId id : *group)
             if (in.count(id))
                 keep.push_back(id);
-        acc = std::move(keep);
+        group = std::move(keep);
     }
-    return acc ? acc : std::vector<EntityId>{};
+    close();
+    return out;
 }
 
-// One condition per line: property index, '!' when negated, then the value.
+// One condition per line: '|' when it starts an OR group, property index, '!' when negated (or
+// the comparison), then the value.
 std::string encodeFilter(const std::vector<Query>& queries) {
     std::string s;
     for (const Query& q : queries)
-        s += std::string(1, static_cast<char>(static_cast<int>(q.property) < 10
+        s += std::string(q.orPrevious ? "|" : "") + std::string(1, static_cast<char>(static_cast<int>(q.property) < 10
                                                   ? '0' + static_cast<int>(q.property)
                                                   : 'a' + static_cast<int>(q.property) - 10)) +
              (q.negate                        ? "!"
@@ -52,6 +65,9 @@ std::vector<Query> decodeFilter(const std::string& text) {
     std::istringstream in(text);
     std::string line;
     while (std::getline(in, line)) {
+        const bool orPrevious = !line.empty() && line[0] == '|';
+        if (orPrevious)
+            line.erase(0, 1);
         if (line.size() < 2)
             continue;
         const int idx = line[0] >= '0' && line[0] <= '9'   ? line[0] - '0'
@@ -67,6 +83,7 @@ std::vector<Query> decodeFilter(const std::string& text) {
                     : line[1] == '~' ? Compare::Wildcard
                                      : Compare::Equals;
         q.value = line.substr(2);
+        q.orPrevious = orPrevious;
         out.push_back(std::move(q));
     }
     return out;
@@ -94,8 +111,10 @@ std::string describeQuery(const Query& q) {
            q.value;
 }
 
-// FILTER [FI]: build a list of conditions (all must hold), select what matches, and optionally
-// save the list under a name for later.
+// FILTER [FI]: build a list of conditions, select what matches, and optionally save the list
+// under a name for later. Add joins a condition with AND, Or starts a new group joined with OR
+// (AutoCAD's "** Begin OR"). Apply selects the matches in the whole drawing; SElect asks for the
+// objects to look in first, as AutoCAD's Apply does.
 class Filter final : public cmd::Command {
 public:
     std::string_view name() const override { return "FILTER"; }
@@ -108,18 +127,22 @@ public:
         std::vector<Query> conds;
         for (;;) {
             cmd::KeywordOptions ko;
-            ko.keywords = {"Add", "Remove", "Apply", "Save", "Use"};
+            ko.keywords = {"Add", "Or", "Remove", "Apply", "SElect", "Save", "Use"};
             const std::string def = conds.empty() ? "Add" : "Apply";
             ko.defaultKeyword = def;
             std::string head = conds.empty() ? "No conditions." : "";
             for (std::size_t i = 0; i < conds.size(); ++i)
-                head += (i ? " AND " : "") + describeQuery(conds[i]);
-            auto k = co_await ctx.getKeyword(head + " [Add/Remove/Apply/Save/Use] <" + def + ">",
-                                             std::move(ko));
+                head += (i == 0 ? "" : conds[i].orPrevious ? " OR " : " AND ") +
+                        describeQuery(conds[i]);
+            auto k = co_await ctx.getKeyword(
+                head + " [Add/Or/Remove/Apply/SElect/Save/Use] <" + def + ">", std::move(ko));
             if (!k.ok())
                 co_return;
-            if (k.keyword == "Add") {
+            if (k.keyword == "Add" || k.keyword == "Or") {
+                const std::size_t before = conds.size();
                 co_await add(ctx, conds);
+                if (k.keyword == "Or" && conds.size() > before && before > 0)
+                    conds.back().orPrevious = true;
             } else if (k.keyword == "Remove") {
                 if (!conds.empty())
                     conds.pop_back();
@@ -154,7 +177,7 @@ public:
                     continue;
                 }
                 conds = decodeFilter(it->second);
-            } else {  // Apply
+            } else {  // Apply, Select
                 if (conds.empty()) {
                     ctx.message("Add a condition first.");
                     continue;
@@ -163,6 +186,15 @@ public:
                 if (!ids) {
                     ctx.message("A condition has a value that cannot be read.");
                     continue;
+                }
+                if (k.keyword == "SElect") {
+                    cmd::SelectionOptions so;
+                    so.allowPreselection = false;
+                    auto sel = co_await ctx.getSelection("Select objects to filter", so);
+                    if (!sel.ok())
+                        co_return;
+                    const std::unordered_set<EntityId> within(sel.ids.begin(), sel.ids.end());
+                    std::erase_if(*ids, [&](EntityId id) { return !within.count(id); });
                 }
                 ctx.host().setSelection(*ids);
                 ctx.message(std::to_string(ids->size()) + " object(s) found.");

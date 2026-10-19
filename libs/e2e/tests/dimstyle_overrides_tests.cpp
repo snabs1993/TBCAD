@@ -203,9 +203,12 @@ TEST_CASE("DIMTMOVE Free drops the leader of text dragged away, the setting roun
     REQUIRE(r.edit("TextMove", "Leader"));
     const std::size_t withLeader = dimLines();
     REQUIRE(r.edit("TextMove", "WithLine"));
-    CHECK(dimLines() == withLeader);  // WithLine keeps the leader as before
+    const std::size_t withLine = dimLines();
+    // Leader: AutoCAD's leader from the middle of the dimension line plus a landing under the
+    // text; WithLine keeps its short leader from the line's end.
+    CHECK(withLeader == withLine + 1);
     REQUIRE(r.edit("TextMove", "Free"));
-    CHECK(dimLines() + 1 == withLeader);  // no leader line
+    CHECK(dimLines() + 1 == withLine);  // no leader line
     CHECK(r.doc.dimStyleByName("S")->textMove == DimTextMove::Free);
 
     CHECK(canonicalDump(*viaTbcad(r.doc)) == canonicalDump(r.doc));

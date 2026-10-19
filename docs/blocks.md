@@ -128,7 +128,7 @@ See `docs/assembly.md` for parametric assemblies (named parameters, formulas, pr
 | `BPARAM` | | Block name, type (`Linear`, `Rotation`, `Flip`, `Visibility`), parameter name, then its points (and limits, or the states with the window of objects each shows). |
 | `BACTION` | | Block name, parameter, action (`Stretch`/`Move`/`Scale` for linear), the stretch frame (stretch only) and the window of objects it changes. |
 | `DYNSET` | | Pick a dynamic Insert, name a parameter and give its value (distance, angle, `Yes`/`No`, or a state name). |
-| `ARRAYEDIT` | | Pick an associative array, then choose options until eXit (or Enter), as in AutoCAD: rectangular `Rows` and `Columns` (count, then spacing or `Total`); polar `Items`, `Angle` between items, `Fill` angle and `ROTate` items; path `Method` (Divide or Measure), `Items` and `Align` items. Each change shows at once; the whole edit is one undo step. Selecting an array also shows grips besides its base: on a rectangular array the last and second column and row change the count and the spacing, on a polar array the second and the last item change the angle between items and the fill angle. Every kind also has `Source` (edit the source objects in place, as `BEDIT` at the first item; `BSAVE` or `BCLOSE` updates every item), `REPlace` (select replacement objects and their base point, default the centroid; then pick the items that show them, or `Source objects` for every item still showing the source; the objects are copied into a block of their own, the originals stay) and `RESet` (brings back removed and replaced items). Removed and replaced items keep their row and column when the counts change. |
+| `ARRAYEDIT` | | Pick an associative array, then choose options until eXit (or Enter), as in AutoCAD: rectangular `Rows` and `Columns` (count, then spacing or `Total`); polar `Items`, `Angle` between items, `Fill` angle and `ROTate` items; path `Method` (Divide or Measure), `Items` and `Align` items. Each change shows at once; the whole edit is one undo step. Selecting an array also shows grips besides its base: on a rectangular array the last and second column and row change the count and the spacing, on a polar array the second and the last item change the angle between items and the fill angle, on a path array the second item sets the distance between items and the last item the count (both measured along the path, so the array switches to Measure). Every kind also has `Base` (a new base point: the base grip moves, the items stay; a copied array that shares the objects is left alone), `Source` (edit the source objects in place, as `BEDIT` at the first item; `BSAVE` or `BCLOSE` updates every item), `REPlace` (select replacement objects and their base point, default the centroid; then pick the items that show them, or `Source objects` for every item still showing the source; the objects are copied into a block of their own, the originals stay) and `RESet` (brings back removed and replaced items). Removed and replaced items keep their row and column when the counts change. |
 | `ARRAYREMOVE` | | Ctrl+click an item of an associative array: it is taken out, and further picks take out more until Enter; one undo step. Taking out the last item erases the array. |
 
 Defaults are 3 x 4 for rectangular arrays (spacing 1.5 x the selection's size) and 6 items over
@@ -182,7 +182,9 @@ readers see an ATTDEF as plain text showing its tag.
 * `INSERT` asks for each attribute that is not constant or preset (twice for Verify). Setting
   `block.attreq` = `0` skips the questions and keeps the defaults.
 * `ATTEDIT` (`ATE`) changes the values of one insert; `ATTSYNC` brings every insert of a block in
-  line with its current definitions (new tags get the default, removed tags are dropped).
+  line with its current definitions (new tags get the default, removed tags are dropped). As in
+  AutoCAD the block is picked through one of its inserts, typed, or named with `Name`; `?` lists
+  the blocks that have attributes.
 * Display: the block's shared display cache leaves definitions out; `buildInsertDisplay` draws
   each visible attribute with the insert's value, on the definition's own layer rules. Bounds
   include the attribute text. `EXPLODE` turns attributes into plain text with the values
@@ -227,7 +229,7 @@ the parts get; **Explode** (the default) then does it. Without an option the par
 
 ## BATTMAN
 
-**BATTMAN** lists the attribute definitions of a block (tag, prompt, default, invisible). **Edit** a tag to change its **Tag**,
-**Prompt**, **Default** or **Invisible** flag; when you finish, the inserts of the block are brought in line like ATTSYNC does.
+**BATTMAN** lists the attribute definitions of a block (tag, prompt, default and modes); pick the block through an insert or type its name, as for ATTSYNC. **Edit** a tag to change its **Tag**,
+**Prompt**, **Default** or the **Invisible**, **Constant**, **Verify** and **Preset** modes; **Remove** deletes an attribute; **Up** and **Down** change the order inserts ask for and keep the values; **List** shows them again. When you finish, the inserts of the block are brought in line like ATTSYNC does, and the whole session is one undo step.
 
 `BLOCKREPLACE` swaps the block of the selected inserts for another block you name. Each insert keeps its position, scale and rotation; attribute values, dynamic values and clipping are reset for the new block.

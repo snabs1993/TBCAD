@@ -185,3 +185,23 @@ TEST_CASE("syncInserts follows a redefined block") {
     CHECK(syncInserts(again, doc, b) == 0);
     again.rollback();
 }
+
+TEST_CASE("bounds measured once per block still follow each insert's own attribute values") {
+    registerFakeText();
+    Document doc;
+    BlockId b = addBlock(doc, "B", {line(0, 0, 1, 0), attdef("A", "dd", {0, 5})});
+    // An outer block holding B with a long value of its own.
+    Entity inner = insertWith(b, {100, 0}, {{"A", "abcdefghij"}});
+    BlockId outer = addBlock(doc, "OUT", {inner, line(0, 0, 0, 1)});
+    EntityId one = addEntity(doc, insertWith(b, {10, 0}, {{"A", "ab"}}));
+    EntityId two = addEntity(doc, insertWith(b, {20, 0}, {{"A", "abcd"}}));
+    EntityId three = addEntity(doc, insertOf(outer, {0, 50}));
+    BoundsMemoScope memo;  // as the spatial index measures: one memo for every reference
+    CHECK(insertBounds(doc, *doc.find(one)).max.x == doctest::Approx(12));
+    CHECK(insertBounds(doc, *doc.find(two)).max.x == doctest::Approx(24));
+    const BBox2 nested = insertBounds(doc, *doc.find(three));
+    CHECK(nested.max.x == doctest::Approx(110));
+    CHECK(nested.max.y == doctest::Approx(55));
+    CHECK(insertBounds(doc, *doc.find(one)).max.x == doctest::Approx(12));
+    geom::DisplayRegistry::clear(EntityKind::Text);
+}

@@ -5,7 +5,9 @@
 #include <cmath>
 #include <cstdlib>
 
+#include "tbcad/dim/dim.h"
 #include "tbcad/geom/entity.h"
+#include "tbcad/hatch/fill.h"
 #include "tbcad/text/text.h"
 
 namespace tbcad::layers {
@@ -141,7 +143,7 @@ Result<EditSummary> applyCommon(const Document& doc, Transaction& tx,
     return sum;
 }
 
-std::vector<GeometryField> geometryFields(const Entity& e) {
+std::vector<GeometryField> geometryFields(const Entity& e, int vertex) {
     using F = GeometryField;
     std::vector<F> out;
     auto num = [&](const char* id, const char* label, double v, bool editable = true) {
@@ -182,6 +184,18 @@ std::vector<GeometryField> geometryFields(const Entity& e) {
     } else if (const auto* p = entityAs<PolylineData>(e)) {
         out.push_back(
             {"vertices", "Vertices", FieldType::Count, false, static_cast<double>(p->v.size())});
+        if (!p->v.empty()) {
+            // As AutoCAD: one vertex at a time, picked with "Current vertex".
+            const auto i =
+                static_cast<std::size_t>(std::clamp(vertex, 0, static_cast<int>(p->v.size()) - 1));
+            const PolyVertex& pv = p->v[i];
+            out.push_back(
+                {"vertex", "Current vertex", FieldType::Count, true, static_cast<double>(i + 1)});
+            num("vertexx", "Vertex X", pv.p.x);
+            num("vertexy", "Vertex Y", pv.p.y);
+            num("startwidth", "Start segment width", pv.startWidth);
+            num("endwidth", "End segment width", pv.endWidth);
+        }
         out.push_back({"closed", "Closed", FieldType::Flag, true, p->closed ? 1.0 : 0.0});
         num("length", "Length", geom::length(*p), false);
         num("area", "Area", geom::area(*p), false);
@@ -234,6 +248,50 @@ std::vector<GeometryField> geometryFields(const Entity& e) {
         num("y", "Base Y", ray->origin.y);
         out.push_back({"angle", "Angle", FieldType::Angle, true,
                        deg(normalizeAngle(std::atan2(ray->dir.y, ray->dir.x)))});
+    } else if (const auto* h = entityAs<HatchData>(e)) {
+        out.push_back(
+            {"loops", "Boundaries", FieldType::Count, false, static_cast<double>(h->loops.size())});
+        num("area", "Area", hatch::hatchArea(*h), false);
+    } else if (const auto* d = entityAs<DimensionData>(e)) {
+        const bool angular = d->kind == DimKind::Angular2Line || d->kind == DimKind::Angular3Point;
+        const double m = dim::measurement(*d);
+        if (angular)
+            out.push_back({"measurement", "Measurement", FieldType::Angle, false, deg(m)});
+        else
+            num("measurement", "Measurement", m, false);
+        num("textx", "Text position X", d->textPos.x);
+        num("texty", "Text position Y", d->textPos.y);
+        out.push_back({"textrotation", "Text rotation", FieldType::Angle, true,
+                       d->textRotated ? deg(d->textRotation) : 0.0});
+    } else if (const auto* tb = entityAs<TableData>(e)) {
+        double w = 0, hgt = 0;
+        for (double x : tb->colWidths)
+            w += x;
+        for (double y : tb->rowHeights)
+            hgt += y;
+        num("x", "Position X", tb->origin.x);
+        num("y", "Position Y", tb->origin.y);
+        out.push_back({"rotation", "Rotation", FieldType::Angle, true, deg(tb->rotation)});
+        out.push_back(
+            {"rows", "Rows", FieldType::Count, false, static_cast<double>(tb->rowHeights.size())});
+        out.push_back({"columns", "Columns", FieldType::Count, false,
+                       static_cast<double>(tb->colWidths.size())});
+        num("tablewidth", "Table width", w, false);
+        num("tableheight", "Table height", hgt, false);
+        num("textheight", "Text height", tb->textHeight);
+        num("margin", "Cell margin", tb->margin);
+    } else if (const auto* ml = entityAs<MLeaderData>(e)) {
+        out.push_back({"leaders", "Leader lines", FieldType::Count, false,
+                       static_cast<double>(ml->lines.size())});
+        num("landingx", "Landing X", ml->landing.x);
+        num("landingy", "Landing Y", ml->landing.y);
+        if (ml->content == MLeaderData::Content::Block) {
+            num("blockscale", "Block scale", ml->blockScale);
+            out.push_back({"blockrotation", "Block rotation", FieldType::Angle, true,
+                           deg(ml->blockRotation)});
+        } else {
+            num("textheight", "Text height", ml->textHeight);
+        }
     } else if (const auto* ld = entityAs<LeaderData>(e)) {
         out.push_back({"vertices", "Vertices", FieldType::Count, false,
                        static_cast<double>(ld->vertices.size())});
@@ -246,7 +304,25 @@ std::vector<GeometryField> geometryFields(const Entity& e) {
     return out;
 }
 
-Result<void> setGeometryField(Transaction& tx, EntityId id, const std::string& f, double v) {
+std::pair<std::string, int> splitFieldVertex(const std::string& fieldId) {
+    const auto at = fieldId.find('@');
+    if (at == std::string::npos)
+        return {fieldId, 0};
+    const std::string n = fieldId.substr(at + 1);
+    int index = -1;
+    if (!n.empty() && n.size() < 9 &&
+        std::all_of(n.begin(), n.end(), [](char c) { return c >= '0' && c <= '9'; }))
+        index = std::atoi(n.c_str()) - 1;
+    return {fieldId.substr(0, at), index};
+}
+
+Result<void> setGeometryField(Transaction& tx, EntityId id, const std::string& field, double v) {
+    // Plain variables, not a structured binding: the lambda below captures them.
+    const auto split = splitFieldVertex(field);
+    const std::string& f = split.first;
+    const int vertex = split.second;
+    if (vertex < 0)
+        return makeError(ErrorCode::InvalidArgument, "Vertices are counted from 1.");
     if (!std::isfinite(v))
         return makeError(ErrorCode::InvalidArgument, "Value is not a finite number.");
     auto bad = [](const std::string& m) { return makeError(ErrorCode::InvalidArgument, m); };
@@ -306,9 +382,30 @@ Result<void> setGeometryField(Transaction& tx, EntityId id, const std::string& f
             } else
                 return fail(bad("An arc has no editable field \"" + f + "\"."));
         } else if (auto* p = entityAs<PolylineData>(e)) {
+            const bool perVertex =
+                f == "vertexx" || f == "vertexy" || f == "startwidth" || f == "endwidth";
+            if (perVertex && static_cast<std::size_t>(vertex) >= p->v.size())
+                return fail(bad("The polyline has " + std::to_string(p->v.size()) + " vertices."));
             if (f == "closed")
                 p->closed = v != 0;
-            else if (f == "width") {
+            else if (f == "vertexx")
+                p->v[static_cast<std::size_t>(vertex)].p.x = v;
+            else if (f == "vertexy")
+                p->v[static_cast<std::size_t>(vertex)].p.y = v;
+            else if (f == "startwidth" || f == "endwidth") {
+                if (v < 0)
+                    return fail(bad("Width cannot be negative."));
+                PolyVertex& pv = p->v[static_cast<std::size_t>(vertex)];
+                (f == "startwidth" ? pv.startWidth : pv.endWidth) = v;
+                // Segment widths win over the global width, as in AutoCAD.
+                if (p->constantWidth != 0) {
+                    for (PolyVertex& o : p->v)
+                        if (&o != &pv)
+                            o.startWidth = o.endWidth = p->constantWidth;
+                    (f == "startwidth" ? pv.endWidth : pv.startWidth) = p->constantWidth;
+                    p->constantWidth = 0;
+                }
+            } else if (f == "width") {
                 if (v < 0)
                     return fail(bad("Width cannot be negative."));
                 p->constantWidth = v;
@@ -410,6 +507,50 @@ Result<void> setGeometryField(Transaction& tx, EntityId id, const std::string& f
                 ray->dir = Vec2{std::cos(rad(v)), std::sin(rad(v))};
             else
                 return fail(bad("A ray has no editable field \"" + f + "\"."));
+        } else if (auto* d = entityAs<DimensionData>(e)) {
+            if (f == "textx" || f == "texty") {
+                (f == "textx" ? d->textPos.x : d->textPos.y) = v;
+                d->textPosUser = true;
+            } else if (f == "textrotation") {
+                d->textRotated = true;
+                d->textRotation = rad(v);
+            } else
+                return fail(bad("A dimension has no editable field \"" + f + "\"."));
+        } else if (auto* tb = entityAs<TableData>(e)) {
+            if (f == "x")
+                tb->origin.x = v;
+            else if (f == "y")
+                tb->origin.y = v;
+            else if (f == "rotation")
+                tb->rotation = rad(v);
+            else if (f == "textheight") {
+                if (v <= 0)
+                    return fail(bad("Height must be greater than zero."));
+                tb->textHeight = v;
+            } else if (f == "margin") {
+                if (v < 0)
+                    return fail(bad("The margin cannot be negative."));
+                tb->margin = v;
+            } else
+                return fail(bad("A table has no editable field \"" + f + "\"."));
+        } else if (auto* mld = entityAs<MLeaderData>(e)) {
+            if (f == "landingx" || f == "landingy") {
+                // The note and its dogleg travel with the landing.
+                const Vec2 before = mld->landing;
+                (f == "landingx" ? mld->landing.x : mld->landing.y) = v;
+                mld->contentPos = mld->contentPos + (mld->landing - before);
+            } else if (f == "textheight") {
+                if (v < 0)
+                    return fail(bad("Height cannot be negative."));
+                mld->textHeight = v;
+            } else if (f == "blockscale") {
+                if (v <= 0)
+                    return fail(bad("The scale must be greater than zero."));
+                mld->blockScale = v;
+            } else if (f == "blockrotation")
+                mld->blockRotation = rad(v);
+            else
+                return fail(bad("A multileader has no editable field \"" + f + "\"."));
         } else if (auto* ml = entityAs<MlineData>(e)) {
             if (f == "closed")
                 ml->closed = v != 0;
@@ -475,6 +616,17 @@ std::string styleNameOf(const Document& doc, TextStyleId id) {
     return "Standard";
 }
 
+std::vector<std::string> dimStyleNames(const Document& doc) {
+    std::vector<std::string> out;
+    for (const auto& [id, st] : doc.dimStyles())
+        out.push_back(st.name);
+    return out;
+}
+
+std::string dimStyleNameOf(const Document& doc, DimStyleId id) {
+    return dim::styleOf(doc, id).name;
+}
+
 }  // namespace
 
 std::vector<StringField> stringFields(const Document& doc, const Entity& e) {
@@ -512,6 +664,24 @@ std::vector<StringField> stringFields(const Document& doc, const Entity& e) {
     } else if (const auto* in = entityAs<InsertData>(e)) {
         const BlockDef* b = doc.block(in->block);
         out.push_back({"name", "Block name", b ? b->name : "?", false, {}});
+        // The attribute values, one row each, as AutoCAD's Attributes section.
+        for (const AttribValue& a : in->attribs)
+            out.push_back({"att:" + lowerWord(a.tag), a.tag, a.value, true, {}});
+    } else if (const auto* d = entityAs<DimensionData>(e)) {
+        out.push_back({"textoverride", "Text override", d->textOverride, true, {}});
+        out.push_back(
+            {"dimstyle", "Dim style", dimStyleNameOf(doc, d->style), true, dimStyleNames(doc)});
+    } else if (const auto* ld = entityAs<LeaderData>(e)) {
+        out.push_back({"contents", "Contents", ld->utf8, true, {}});
+        out.push_back(
+            {"dimstyle", "Dim style", dimStyleNameOf(doc, ld->style), true, dimStyleNames(doc)});
+    } else if (const auto* ml = entityAs<MLeaderData>(e)) {
+        if (ml->content == MLeaderData::Content::Text)
+            out.push_back({"contents", "Contents", ml->utf8, true, {}});
+        out.push_back(
+            {"dimstyle", "Style", dimStyleNameOf(doc, ml->style), true, dimStyleNames(doc)});
+    } else if (const auto* tb = entityAs<TableData>(e)) {
+        out.push_back({"style", "Text style", styleNameOf(doc, tb->style), true, styleNames(doc)});
     }
     return out;
 }
@@ -541,9 +711,18 @@ Result<void> setStringField(const Document& doc, Transaction& tx, EntityId id, c
                              "\"" + value + "\" is not a choice for " + it->label + ".");
         chosen = *hit;
     }
-    if (f == "contents" && chosen.empty())
+    if (f == "contents" && chosen.empty() && kind(*cur) != EntityKind::Leader &&
+        kind(*cur) != EntityKind::MLeader)
         return makeError(ErrorCode::InvalidArgument, "The text cannot be empty.");
     Entity next = *cur;
+    auto dimStyleId = [&](DimStyleId& out) -> Result<void> {
+        const DimStyle* st = doc.dimStyleByName(chosen);
+        if (!st)
+            return makeError(ErrorCode::NotFound, "No such dimension style.");
+        out = st->id;
+        return {};
+    };
+    Result<void> sub{};
     if (auto* t = entityAs<TextData>(next)) {
         if (f == "contents") {
             t->utf8 = chosen;
@@ -556,14 +735,28 @@ Result<void> setStringField(const Document& doc, Transaction& tx, EntityId id, c
             for (const JustRow& r : kJustify) {
                 if (chosen != r.name)
                     continue;
-                if (t->h == HAlign::Aligned || t->h == HAlign::Fit || r.h == HAlign::Aligned ||
-                    r.h == HAlign::Fit) {
-                    // Two-point justifications need a second point; only the plain ones convert.
-                    return makeError(ErrorCode::InvalidArgument,
-                                     "Aligned and Fit text is changed with the grips.");
-                }
                 text::TextLayout before = text::layoutEntity(doc, *cur);
-                t->h = r.h;
+                if (t->h == HAlign::Aligned || t->h == HAlign::Fit) {
+                    // Keep its look: Aligned text grows with its width, Fit text stretches.
+                    TextData plain = *t;
+                    plain.h = HAlign::Left;
+                    plain.v = VAlign::Baseline;
+                    plain.alignPoint = plain.position;
+                    const auto pc = text::layoutText(doc, plain).frameCorners();
+                    const double natural = distance(pc[0], pc[1]);
+                    const Vec2 span = t->alignPoint - t->position;
+                    const double D = length(span);
+                    if (natural > tol::kLinear && D > tol::kLinear) {
+                        if (t->h == HAlign::Aligned)
+                            t->height *= D / natural;
+                        else
+                            t->widthFactor *= D / natural;
+                        t->rotation = std::atan2(span.y, span.x);
+                    }
+                }
+                // Aligned and Fit span the text from where it now starts to where it ends.
+                const bool toSpan = r.h == HAlign::Aligned || r.h == HAlign::Fit;
+                t->h = toSpan ? HAlign::Left : r.h;
                 t->v = r.v;
                 t->position = t->alignPoint = {0, 0};
                 text::TextLayout after = text::layoutEntity(doc, next);
@@ -572,6 +765,11 @@ Result<void> setStringField(const Document& doc, Transaction& tx, EntityId id, c
                         before.frameCorners()[0] - after.frameCorners()[0];
                 else
                     t->position = t->alignPoint = entityAs<TextData>(*cur)->position;
+                if (toSpan && !after.empty()) {
+                    const auto c = after.frameCorners();
+                    t->h = r.h;
+                    t->alignPoint = t->position + (c[1] - c[0]);
+                }
                 break;
             }
         }
@@ -598,7 +796,33 @@ Result<void> setStringField(const Document& doc, Transaction& tx, EntityId id, c
                 break;
             }
         }
+    } else if (auto* in = entityAs<InsertData>(next)) {
+        for (AttribValue& a : in->attribs)
+            if ("att:" + lowerWord(a.tag) == f)
+                a.value = chosen;
+    } else if (auto* d = entityAs<DimensionData>(next)) {
+        if (f == "textoverride")
+            d->textOverride = chosen;
+        else if (f == "dimstyle")
+            sub = dimStyleId(d->style);
+    } else if (auto* ld = entityAs<LeaderData>(next)) {
+        if (f == "contents")
+            ld->utf8 = chosen;
+        else if (f == "dimstyle")
+            sub = dimStyleId(ld->style);
+    } else if (auto* ml = entityAs<MLeaderData>(next)) {
+        if (f == "contents")
+            ml->utf8 = chosen;
+        else if (f == "dimstyle")
+            sub = dimStyleId(ml->style);
+    } else if (auto* tb = entityAs<TableData>(next)) {
+        const TextStyle* st = doc.textStyleByName(chosen);
+        if (!st)
+            return makeError(ErrorCode::NotFound, "No such text style.");
+        tb->style = st->id;
     }
+    if (!sub)
+        return sub.error();
     auto r = tx.modify(id, [&](Entity& x) { x = std::move(next); });
     if (!r)
         return r.error();

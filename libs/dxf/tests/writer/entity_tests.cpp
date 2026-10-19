@@ -880,20 +880,91 @@ TEST_CASE("a multileader is exported as leaders, a dogleg line and its note") {
     Result<ExportResult> out = exportDxf(doc, ExportOptions{}, exportReport);
     REQUIRE(out.ok());
     CHECK(exportReport.countCode(wcode::kDowngraded) >= 1);
+    // Other programs see the pieces.
+    const std::string& bytes = out.value().bytes;
+    std::size_t leaders = 0;
+    for (std::size_t at = bytes.find("\nLEADER\r"); at != std::string::npos;
+         at = bytes.find("\nLEADER\r", at + 1))
+        ++leaders;
+    CHECK(leaders == 2);
+    CHECK(bytes.find("Steel beam") != std::string::npos);
+    CHECK(bytes.find("TBCAD_MLEADER") != std::string::npos);
+
+    // This program reads one multileader back: saving and opening again adds no objects.
+    Report report;
+    Result<ImportResult> in = importDxf(testing::bytesOf(bytes), ImportOptions{}, report);
+    REQUIRE(in.ok());
+    const Document& back = *in.value().document;
+    CHECK(back.modelSpaceCount() == 1);
+    const MLeaderData* m = nullptr;
+    back.forEachEntity([&](const Entity& e) {
+        if (const auto* x = entityAs<MLeaderData>(e))
+            m = x;
+        CHECK(e.common.ext.get().xdata.empty());
+    });
+    REQUIRE(m);
+    CHECK(m->lines.size() == 2);
+    CHECK(m->lines[1][0].y == doctest::Approx(30));
+    CHECK(m->landing.x == doctest::Approx(20));
+    CHECK(m->contentPos.x == doctest::Approx(22.5));
+    CHECK(m->utf8 == "Steel beam");
+    CHECK(m->style == kDimStyleStandard);
+}
+
+TEST_CASE("multileaders in a block, with a Thai note, and pieces lost in another program") {
+    Document doc;
+    BlockId b;
+    {
+        Transaction tx = doc.begin("mleaders");
+        b = tx.addBlock(BlockDef{.name = "tag", .base = {0, 0}}).value();
+        MLeaderData m;
+        m.lines = {{{0, 0}, {5, 5}}};
+        m.landing = {5, 5};
+        m.contentPos = {7, 5};
+        m.utf8 = std::string(300, 'x') + " \xe0\xb8\x84\xe0\xb8\xb2\xe0\xb8\x99";  // long, then Thai
+        REQUIRE(tx.add(make(Indirect<MLeaderData>(m)), b).ok());
+        REQUIRE(tx.add(make(InsertData{b, {100, 0}, {1, 1}, 0})).ok());
+        m.utf8 = "plain";
+        REQUIRE(tx.add(make(Indirect<MLeaderData>(m))).ok());
+        tx.commit();
+    }
+    Report exportReport;
+    Result<ExportResult> out = exportDxf(doc, ExportOptions{}, exportReport);
+    REQUIRE(out.ok());
     Report report;
     Result<ImportResult> in =
         importDxf(testing::bytesOf(out.value().bytes), ImportOptions{}, report);
     REQUIRE(in.ok());
-    int leaders = 0, lines = 0, texts = 0;
-    in.value().document->forEachEntity([&](const Entity& e) {
+    const Document& back = *in.value().document;
+    CHECK(back.modelSpaceCount() == 2);
+    CHECK(back.entityCount() == 3);
+    const BlockDef* tag = back.blockByName("tag");
+    REQUIRE(tag);
+    REQUIRE(tag->entities.size() == 1);
+    const auto* inBlock = entityAs<MLeaderData>(*back.find(tag->entities[0]));
+    REQUIRE(inBlock);
+    CHECK(inBlock->utf8 == std::string(300, 'x') + " \xe0\xb8\x84\xe0\xb8\xb2\xe0\xb8\x99");
+
+    // Another program dropped the note: the pieces that are left stay plain, without the note.
+    std::string bytes = out.value().bytes;
+    const std::size_t note = bytes.rfind("plain");
+    REQUIRE(note != std::string::npos);
+    const std::size_t rec = bytes.rfind("\n0\r\n", note);
+    REQUIRE(rec != std::string::npos);
+    const std::size_t next = bytes.find("\n0\r\n", note);
+    REQUIRE(next != std::string::npos);
+    bytes.erase(rec, next - rec);
+    Report r2;
+    Result<ImportResult> in2 = importDxf(testing::bytesOf(bytes), ImportOptions{}, r2);
+    REQUIRE(in2.ok());
+    int leaders = 0, mleaders = 0;
+    in2.value().document->forEachEntity([&](const Entity& e) {
         leaders += kind(e) == EntityKind::Leader;
-        lines += kind(e) == EntityKind::Line;
-        if (const auto* t = entityAs<MTextData>(e))
-            texts += t->utf8.find("Steel beam") != std::string::npos;
+        mleaders += kind(e) == EntityKind::MLeader;
+        CHECK(e.common.ext.get().xdata.empty());
     });
-    CHECK(leaders == 2);
-    CHECK(lines == 1);
-    CHECK(texts == 1);
+    CHECK(leaders == 1);
+    CHECK(mleaders == 1);  // the one in the block
 }
 
 TEST_CASE("an xref block and an insert clipping boundary survive the DXF round trip") {

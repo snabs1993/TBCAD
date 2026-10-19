@@ -134,16 +134,61 @@ TEST_CASE("MLEADER: block content inserts the block at the landing point") {
         REQUIRE(tx.addBlock(std::move(def)));
         tx.commit();
     }
-    auto r = f.host->run("MLEADER", {"Content", "Block", "0,0", "40,30", "Tag"});
+    auto r = f.host->run("MLEADER", {"Options", "Type", "Block", "eXit", "0,0", "40,30", "Tag"});
     CHECK(r.finished);
     auto ms = f.all<MLeaderData>();
     REQUIRE(ms.size() == 1);
     CHECK(ms[0]->content == MLeaderData::Content::Block);
     CHECK(f.doc.block(ms[0]->block)->name == "Tag");
 
-    auto bad = f.host->run("MLEADER", {"Content", "Block", "0,0", "40,30", "Nope"});
+    auto bad = f.host->run("MLEADER", {"Options", "Type", "Block", "eXit", "0,0", "40,30", "Nope"});
     CHECK(bad.finished);
     CHECK(f.all<MLeaderData>().size() == 1);
+}
+
+TEST_CASE("MLEADER leader Landing first: landing, then arrowheads, then the note") {
+    Fix f;
+    auto r = f.host->run("MLEADER", {"Landing", "40,30", "0,0", "0,60", "", "Beam"});
+    CHECK(r.finished);
+    auto ms = f.all<MLeaderData>();
+    REQUIRE(ms.size() == 1);
+    CHECK(ms[0]->lines.size() == 2);
+    CHECK(ms[0]->landing.x == doctest::Approx(40));
+    CHECK(ms[0]->utf8 == "Beam");
+}
+
+TEST_CASE("MLEADER Content first: the note, where it goes, then the arrowhead") {
+    Fix f;
+    auto r = f.host->run("MLEADER", {"Content", "Pipe P1", "50,30", "0,0", ""});
+    CHECK(r.finished);
+    auto ms = f.all<MLeaderData>();
+    REQUIRE(ms.size() == 1);
+    CHECK(ms[0]->utf8 == "Pipe P1");
+    CHECK(ms[0]->contentPos.x == doctest::Approx(50));
+    CHECK(ms[0]->landing.x < 50);  // one dogleg towards the arrow
+    CHECK(ms[0]->lines[0].front().x == doctest::Approx(0));
+}
+
+TEST_CASE("MLEADER Options: Maxpoints bends the leader line, Dogleg No leaves it out") {
+    Fix f;
+    auto r = f.host->run("MLEADER", {"Options", "Maxpoints", "3", "Dogleg", "No", "eXit", "0,0",
+                                     "10,20", "30,20", "Note"});
+    CHECK(r.finished);
+    auto ms = f.all<MLeaderData>();
+    REQUIRE(ms.size() == 1);
+    REQUIRE(ms[0]->lines.size() == 1);
+    CHECK(ms[0]->lines[0].size() == 3);  // arrowhead, bend, landing
+    CHECK(ms[0]->landing.x == doctest::Approx(30));
+    CHECK_FALSE(ms[0]->dogleg);
+    CHECK(ms[0]->contentPos.x == doctest::Approx(30));
+    // Enter after a bend makes it the landing
+    auto r2 =
+        f.host->run("MLEADER", {"Options", "Maxpoints", "5", "eXit", "0,0", "10,20", "", "Two"});
+    CHECK(r2.finished);
+    ms = f.all<MLeaderData>();
+    REQUIRE(ms.size() == 2);
+    CHECK(ms[1]->lines[0].size() == 2);
+    CHECK(ms[1]->landing.y == doctest::Approx(20));
 }
 
 TEST_CASE("MLEADER: arrow, landing, then the note, text typed at the landing prompt is the note") {

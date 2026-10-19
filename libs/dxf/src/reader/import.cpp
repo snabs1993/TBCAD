@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <functional>
 #include <map>
+#include <optional>
 #include <set>
 #include <thread>
 #include <unordered_set>
@@ -2817,21 +2818,154 @@ Result<ImportResult> Importer::run() {
                         });
                     continue;
                 }
-                Entity merged = *first;
-                merged.common.id = {};
-                {
-                    ExtData x = merged.common.ext.get();
+                // The item with the parameters becomes the array, where it stands in the drawing
+                // order; the other items go.
+                (void)tx.modify(g.anchor, [&](Entity& e) {
+                    ExtData x = e.common.ext.get();
                     std::erase_if(x.xdata,
                                   [](const XdataApp& a) { return a.app == "TBCAD_ARRAY"; });
-                    merged.common.ext = ExtDataPtr(std::move(x));
-                }
-                auto* ins = entityAs<InsertData>(merged);
-                ins->position = ins->position + g.dpos;
-                ins->rotation += g.drot;
-                ins->array = *info;
+                    e.common.ext = ExtDataPtr(std::move(x));
+                    auto* ins = entityAs<InsertData>(e);
+                    ins->position = ins->position + g.dpos;
+                    ins->rotation += g.drot;
+                    ins->array = *info;
+                });
                 for (const Item& it : g.items)
-                    (void)tx.erase(it.id);
-                (void)tx.add(std::move(merged));
+                    if (it.id != g.anchor)
+                        (void)tx.erase(it.id);
+            }
+            tx.commit();
+        }
+    }
+    // A multileader is written as its leaders, dogleg line, note and block, each with a
+    // TBCAD_MLEADER note (the first one also carries the multileader); they become one again.
+    {
+        struct Part {
+            long long index = 0;
+            EntityId id{};
+        };
+        struct Group {
+            long long count = 0;
+            std::vector<Part> parts;
+            std::optional<MLeaderData> m;
+            std::string style;
+            EntityId anchor{};
+        };
+        std::map<long long, Group> groups;
+        const auto isNote = [](const XdataApp& a) { return a.app == "TBCAD_MLEADER"; };
+        doc_->forEachEntity([&](const Entity& e) {
+            for (const XdataApp& app : e.common.ext.get().xdata) {
+                if (!isNote(app) || app.items.empty() || app.items[0].code != 1000)
+                    continue;
+                long long id = -1, n = 0, i = -1;
+                (void)std::sscanf(app.items[0].text.c_str(), "a=%lld;n=%lld;i=%lld", &id, &n,
+                                  &i);
+                if (id < 0 || n < 1 || i < 0 || i >= n)
+                    continue;
+                Group& g = groups[id];
+                g.count = n;
+                g.parts.push_back({i, e.common.id});
+                if (i != 0 || app.items.size() < 2)
+                    continue;
+                // The multileader: see Writer::mleaderNote.
+                const std::vector<DataItem>& v = app.items;
+                std::size_t at = 1;
+                bool ok = true;
+                auto real = [&]() {
+                    if (at >= v.size() || v[at].code != 1040) {
+                        ok = false;
+                        return 0.0;
+                    }
+                    return v[at++].real;
+                };
+                auto count = [&]() -> std::int64_t {
+                    if (at >= v.size() || v[at].code != 1071) {
+                        ok = false;
+                        return 0;
+                    }
+                    return v[at++].integer;
+                };
+                MLeaderData m;
+                int content = 1, dogleg = 1;
+                if (v[at].code != 1000 ||
+                    std::sscanf(v[at].text.c_str(), "c=%d;d=%d", &content, &dogleg) != 2 ||
+                    content < 0 || content > 2)
+                    continue;
+                ++at;
+                m.content = static_cast<MLeaderData::Content>(content);
+                m.dogleg = dogleg != 0;
+                m.textHeight = real() * k_;
+                m.blockScale = real();
+                m.blockRotation = real();
+                m.landing = Vec2{real(), real()} * k_;
+                m.contentPos = Vec2{real(), real()} * k_;
+                const std::int64_t lines = count();
+                for (std::int64_t l = 0; ok && l < lines && l < 100000; ++l) {
+                    const std::int64_t pts = count();
+                    std::vector<Vec2> line;
+                    for (std::int64_t k = 0; ok && k < pts && k < 1000000; ++k)
+                        line.push_back(Vec2{real(), real()} * k_);
+                    m.lines.push_back(std::move(line));
+                }
+                for (; ok && at < v.size(); ++at) {
+                    const std::string& t = v[at].text;
+                    if (v[at].code != 1000)
+                        continue;
+                    if (t.rfind("style=", 0) == 0) {
+                        g.style = t.substr(6);
+                    } else if (t.rfind("t=", 0) == 0) {
+                        for (std::size_t k = 2; k + 1 < t.size(); k += 2)
+                            m.utf8.push_back(static_cast<char>(
+                                std::strtol(t.substr(k, 2).c_str(), nullptr, 16)));
+                    }
+                }
+                if (ok) {
+                    g.m = std::move(m);
+                    g.anchor = e.common.id;
+                }
+            }
+        });
+        if (!groups.empty()) {
+            Transaction tx = doc_->begin("multileaders");
+            const auto dropNote = [&](Entity& e) {
+                ExtData x = e.common.ext.get();
+                std::erase_if(x.xdata, isNote);
+                e.common.ext = ExtDataPtr(std::move(x));
+            };
+            for (auto& [gid, g] : groups) {
+                std::sort(g.parts.begin(), g.parts.end(),
+                          [](const Part& a, const Part& b) { return a.index < b.index; });
+                bool whole = g.m && static_cast<long long>(g.parts.size()) == g.count;
+                for (std::size_t k = 0; whole && k < g.parts.size(); ++k)
+                    whole = g.parts[k].index == static_cast<long long>(k) &&
+                            doc_->ownerBlock(g.parts[k].id) == doc_->ownerBlock(g.anchor);
+                if (!whole) {
+                    // Pieces missing or edited elsewhere: they stay as they are, minus the note.
+                    for (const Part& p : g.parts)
+                        (void)tx.modify(p.id, dropNote);
+                    continue;
+                }
+                MLeaderData& m = *g.m;
+                for (const Part& p : g.parts) {
+                    const Entity* e = doc_->find(p.id);
+                    if (!e)
+                        continue;
+                    if (const auto* l = entityAs<LeaderData>(*e); l && !m.style)
+                        m.style = l->style;
+                    if (const auto* ins = entityAs<InsertData>(*e))
+                        m.block = ins->block;
+                }
+                if (!m.style)
+                    if (const DimStyle* ds = doc_->dimStyleByName(g.style))
+                        m.style = ds->id;
+                // The first piece becomes the multileader, where it stands in the drawing order.
+                (void)tx.modify(g.anchor, [&](Entity& e) {
+                    dropNote(e);
+                    e.data = Indirect<MLeaderData>(std::move(m));
+                });
+                for (const Part& p : g.parts)
+                    if (p.id != g.anchor)
+                        (void)tx.erase(p.id);
             }
             tx.commit();
         }

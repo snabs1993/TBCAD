@@ -948,6 +948,8 @@ std::string Writer::tablesSection() {
                     extApps.insert(app.app);
             if (const auto* ins = entityAs<InsertData>(e); ins && ins->array)
                 extApps.insert("TBCAD_ARRAY");
+            if (kind(e) == EntityKind::MLeader)
+                extApps.insert("TBCAD_MLEADER");
         });
         bool layerNotes = false;
         for (const auto& [lid, layer] : doc_.layers())

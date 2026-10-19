@@ -66,6 +66,55 @@ TEST_CASE("DIMBASELINE stacks dimensions from the first extension line") {
     CHECK(dims[2]->defPts[2].y < dims[1]->defPts[2].y);
 }
 
+TEST_CASE("DIMCONTINUE Undo takes back the last dimension and chains from the one before") {
+    Chain f;
+    REQUIRE(f.host->run("DIMLINEAR", {"0,0", "100,0", "50,-30"}).finished);
+    auto r = f.host->run("DIMCONTINUE", {"250,0", "400,0", "Undo", "300,0", ScriptItem::enter()});
+    CHECK(r.finished);
+    auto dims = f.dims();
+    REQUIRE(dims.size() == 3);
+    CHECK(dims[2]->defPts[0].x == doctest::Approx(250));
+    CHECK(dims[2]->defPts[1].x == doctest::Approx(300));
+    CHECK(f.host->undo());  // the whole run is one undo step
+    CHECK(f.dims().size() == 1);
+}
+
+TEST_CASE("DIMCONTINUE goes on around an angular dimension at the same radius") {
+    Chain f;
+    REQUIRE(f.host->run("DIMANGULAR", {"", "0,0", "50,0", "0,50", "30,30"}).finished);
+    // from the 90 degree side on to 135 degrees
+    REQUIRE(f.host->run("DIMCONTINUE", {"-30,30", ScriptItem::enter()}).finished);
+    auto dims = f.dims();
+    REQUIRE(dims.size() == 2);
+    CHECK(dims[1]->kind == DimKind::Angular3Point);
+    CHECK(dims[1]->measurement == doctest::Approx(kPi / 4));
+    CHECK(dim::angularGeometry(*dims[1]).radius ==
+          doctest::Approx(dim::angularGeometry(*dims[0]).radius));
+}
+
+TEST_CASE("DIMBASELINE on an angular dimension measures from its first side, further out") {
+    Chain f;
+    REQUIRE(f.host->run("DIMANGULAR", {"", "0,0", "50,0", "0,50", "30,30"}).finished);
+    REQUIRE(f.host->run("DIMBASELINE", {"-30,30", ScriptItem::enter()}).finished);
+    auto dims = f.dims();
+    REQUIRE(dims.size() == 2);
+    CHECK(dims[1]->measurement == doctest::Approx(3 * kPi / 4));
+    CHECK(dim::angularGeometry(*dims[1]).radius > dim::angularGeometry(*dims[0]).radius + 1e-6);
+}
+
+TEST_CASE("DIMCONTINUE on an ordinate dimension keeps the axis and lines up the leader ends") {
+    Chain f;
+    REQUIRE(f.host->run("DIMORDINATE", {"120,45", "120,80"}).finished);
+    REQUIRE(f.host->run("DIMCONTINUE", {"200,30", "260,10", ScriptItem::enter()}).finished);
+    auto dims = f.dims();
+    REQUIRE(dims.size() == 3);
+    CHECK(dims[1]->kind == DimKind::Ordinate);
+    CHECK(dims[1]->measurement == doctest::Approx(200));
+    CHECK(dims[1]->defPts[1].y == doctest::Approx(dims[0]->defPts[1].y));
+    CHECK(dims[2]->measurement == doctest::Approx(260));
+    CHECK(dims[2]->defPts[1].x == doctest::Approx(260));
+}
+
 TEST_CASE("DIMCONTINUE without a dimension asks for one") {
     Chain f;
     auto r = f.host->run("DIMCONTINUE", {ScriptItem::esc()});
@@ -159,6 +208,74 @@ TEST_CASE("QDIM Baseline measures from the first point and steps each line outwa
     std::sort(y.begin(), y.end());
     CHECK(y[0] < y[1]);  // stepped outwards (downwards here)
     CHECK(y[2] == doctest::Approx(-20));
+}
+
+namespace {
+EntityId fourPointPolyline(Chain& f) {
+    Transaction tx = f.doc.begin("setup");
+    Entity e;
+    e.data = PolylineData{{{{0, 0}}, {{40, 0}}, {{100, 0}}, {{150, 0}}}, false};
+    EntityId id = tx.add(std::move(e)).value();
+    tx.commit();
+    return id;
+}
+std::vector<double> sortedMeasurements(const Chain& f) {
+    std::vector<double> m;
+    for (const DimensionData* d : f.dims())
+        m.push_back(d->measurement);
+    std::sort(m.begin(), m.end());
+    return m;
+}
+}  // namespace
+
+TEST_CASE("QDIM Staggered nests the pairs from the outside in") {
+    Chain f;
+    EntityId id = fourPointPolyline(f);
+    REQUIRE(
+        f.host->run("QDIM", {ScriptItem::select({id}), ScriptItem::enter(), "Staggered", "50,-20"})
+            .finished);
+    const auto m = sortedMeasurements(f);
+    REQUIRE(m.size() == 2);
+    CHECK(m[0] == doctest::Approx(60));   // 40..100, at the picked line
+    CHECK(m[1] == doctest::Approx(150));  // 0..150, one step further out
+    for (const DimensionData* d : f.dims()) {
+        if (d->measurement < 100)
+            CHECK(d->defPts[2].y == doctest::Approx(-20));
+        else
+            CHECK(d->defPts[2].y < -20 - 1);
+    }
+}
+
+TEST_CASE("QDIM Ordinate measures every key point from the datum point") {
+    Chain f;
+    EntityId id = fourPointPolyline(f);
+    REQUIRE(f.host
+                ->run("QDIM", {ScriptItem::select({id}), ScriptItem::enter(), "datumPoint", "40,0",
+                               "Ordinate", "50,-20"})
+                .finished);
+    auto dims = f.dims();
+    REQUIRE(dims.size() == 4);
+    for (const DimensionData* d : dims) {
+        CHECK(d->kind == DimKind::Ordinate);
+        CHECK(d->defPts[1].y == doctest::Approx(-20));
+    }
+    const auto m = sortedMeasurements(f);
+    CHECK(m[0] == doctest::Approx(0));  // the datum itself
+    CHECK(m[3] == doctest::Approx(110));
+}
+
+TEST_CASE("QDIM Baseline with a datum point measures from it") {
+    Chain f;
+    EntityId id = fourPointPolyline(f);
+    REQUIRE(f.host
+                ->run("QDIM", {ScriptItem::select({id}), ScriptItem::enter(), "Baseline",
+                               "datumPoint", "100,0", "50,-20"})
+                .finished);
+    const auto m = sortedMeasurements(f);
+    REQUIRE(m.size() == 3);
+    CHECK(m[0] == doctest::Approx(50));
+    CHECK(m[1] == doctest::Approx(60));
+    CHECK(m[2] == doctest::Approx(100));
 }
 
 TEST_CASE("QDIM Radius dimensions every circle of the selection") {
@@ -277,6 +394,34 @@ TEST_CASE("DIMBREAK opens a gap in the dimension line where another object cross
                 .finished);
     CHECK(entityAs<DimensionData>(*f.doc.find(id))->breaks.empty());
     CHECK(count() == before);
+}
+
+TEST_CASE("DIMBREAK Manual opens a gap between two picked points on one line") {
+    Chain f;
+    REQUIRE(f.host->run("DIMLINEAR", {"0,0", "100,0", "50,-30"}).finished);
+    EntityId id{};
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (kind(e) == EntityKind::Dimension)
+            id = e.common.id;
+    });
+    // the points snap onto the dimension line (y = -30)
+    REQUIRE(f.host
+                ->run("DIMBREAK",
+                      {ScriptItem::select({id}), ScriptItem::enter(), "Manual", "20,-29", "35,-31"})
+                .finished);
+    const auto* d = entityAs<DimensionData>(*f.doc.find(id));
+    REQUIRE(d->breaks.size() == 1);
+    CHECK(d->breaks[0].a.x == doctest::Approx(20));
+    CHECK(d->breaks[0].a.y == doctest::Approx(-30));
+    CHECK(d->breaks[0].b.x == doctest::Approx(35));
+    // a second manual break adds to the first
+    REQUIRE(f.host
+                ->run("DIMBREAK",
+                      {ScriptItem::select({id}), ScriptItem::enter(), "Manual", "60,-30", "70,-30"})
+                .finished);
+    CHECK(entityAs<DimensionData>(*f.doc.find(id))->breaks.size() == 2);
+    CHECK(f.host->undo());
+    CHECK(entityAs<DimensionData>(*f.doc.find(id))->breaks.size() == 1);
 }
 
 TEST_CASE("DIMJOGLINE puts a Z-shaped jog in the dimension line and Remove takes it out") {
