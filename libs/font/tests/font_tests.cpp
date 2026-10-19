@@ -597,3 +597,21 @@ TEST_CASE("installed fonts are read once and then taken from the cache while the
     CHECK(FontLibrary::scanFontFolders({dir / "fonts"}, cache).empty());
     fs::remove_all(dir);
 }
+
+TEST_CASE("many font files are read in parallel and listed once each") {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "tbcad_font_scan_many";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    for (int i = 0; i < 24; ++i)
+        fs::copy_file(fs::path(TBCAD_FONT_TEST_ASSETS) /
+                          (i % 2 ? "Lato-Regular.ttf" : "Sarabun-Regular.ttf"),
+                      dir / ("f" + std::to_string(i) + ".ttf"));
+    const auto faces = FontLibrary::scanFontFolders({dir}, {});
+    REQUIRE(faces.size() == 24);
+    int lato = 0;
+    for (const auto& f : faces)
+        lato += f.family == "lato";
+    CHECK(lato == 12);
+    fs::remove_all(dir);
+}
