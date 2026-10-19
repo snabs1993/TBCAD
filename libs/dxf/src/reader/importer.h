@@ -54,6 +54,7 @@ int transparencyFromGroup(std::int64_t v);
 
 struct LayerRow {
     std::string name{};
+    std::uint64_t handle = 0;  // group 5, for the frozen-layer lists of viewports (group 331)
     int flags = 0;
     int color = 7;
     std::optional<Color> trueColor{};
