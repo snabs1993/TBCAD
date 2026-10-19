@@ -71,3 +71,21 @@ TEST_CASE("long distances inside a tile keep sub-micrometre precision") {
     double x = static_cast<double>(v.hx) + static_cast<double>(v.lx);
     CHECK(std::abs(x - p.x) < 1e-8);
 }
+
+// A real drawing keeps fire-alarm symbols 36,000 km from the origin (3.6e10 mm): drawn relative to
+// their tile, they still land within a thousandth of a pixel when zoomed in to 10 px/mm.
+TEST_CASE("vertices tens of thousands of kilometres out are placed exactly") {
+    const double tileSize = 1024;
+    Camera2D cam;
+    cam.center = {-10633044836.85, 35651292622.999};
+    cam.pixelsPerMm = 10;
+    double worst = 0;
+    for (const Vec2 d : {Vec2{0, 0}, Vec2{12.345678, -98.7654321}, Vec2{-80.5, 40.25}}) {
+        const Vec2 p = cam.center + d;
+        const Vec2 origin{std::floor(p.x / tileSize) * tileSize, std::floor(p.y / tileSize) * tileSize};
+        const Vec2f rel = cameraRelative(packVertex(p, origin), tileOffset(origin, cam.center));
+        worst = std::max({worst, std::abs((static_cast<double>(rel.x) - d.x) * cam.pixelsPerMm),
+                          std::abs((static_cast<double>(rel.y) - d.y) * cam.pixelsPerMm)});
+    }
+    CHECK(worst < 1e-3);
+}

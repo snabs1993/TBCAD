@@ -12,7 +12,9 @@
 #include "../lexer/test_util.h"
 #include "semantic_dump.h"
 #include "tbcad/dxf/reader.h"
+#include "tbcad/blocks/display.h"
 #include "tbcad/dxf/writer.h"
+#include "tbcad/geom/geom.h"
 #include "tbcad/io/tbcad.h"
 
 namespace tbcad::dxf {
@@ -486,7 +488,7 @@ TEST_CASE("unit precision comes in from a DXF and goes out with the value set in
 
 namespace tbcad::dxf {
 
-// AutoCAD keeps an INSERT placed further away than TBCAD can draw (1e10 mm) and an LWPOLYLINE
+// AutoCAD keeps an INSERT placed further away than TBCAD can draw (1e12 mm) and an LWPOLYLINE
 // with a single vertex. TBCAD cannot show them, but keeps their records and writes them back.
 TEST_CASE("an object beyond the coordinate limit and a one-vertex polyline are saved back") {
     const std::string src =
@@ -583,6 +585,56 @@ TEST_CASE("a dimension's oblique extension lines and turned text survive a DXF r
     CHECK(text.find("\r\n52\r\n60.0\r\n") != std::string::npos);
     CHECK(text.find("\r\n53\r\n45.0\r\n") != std::string::npos);
     check(*load(text));
+}
+
+}  // namespace tbcad::dxf
+
+namespace tbcad::dxf {
+
+// File 057 of the OCT sweep: symbol blocks inserted 36,000 km out at scale 500. They are ordinary
+// inserts now, with bounds for zoom extents and a display at full precision.
+TEST_CASE("inserts tens of thousands of kilometres out are kept as inserts and display exactly") {
+    const std::string src =
+        "  0\nSECTION\n  2\nBLOCKS\n"
+        "  0\nBLOCK\n  8\n0\n  2\nmulti sensor detector\n 70\n0\n 10\n0\n 20\n0\n 30\n0\n"
+        "  3\nmulti sensor detector\n"
+        "  0\nCIRCLE\n  8\n0\n 10\n0\n 20\n0\n 30\n0\n 40\n1\n"
+        "  0\nENDBLK\n  8\n0\n"
+        "  0\nENDSEC\n"
+        "  0\nSECTION\n  2\nENTITIES\n"
+        "  0\nINSERT\n  8\n0\n  2\nmulti sensor detector\n 10\n-10633044836.85\n"
+        " 20\n35651292622.999\n 30\n0\n 41\n500\n 42\n500\n 43\n500\n 50\n359.97\n"
+        "  0\nLINE\n  8\n0\n 10\n0\n 20\n0\n 30\n0\n 11\n10\n 21\n0\n 31\n0\n"
+        "  0\nENDSEC\n  0\nEOF\n";
+    Report r;
+    Result<ImportResult> in = importDxf(std::as_bytes(std::span(src)), ImportOptions{}, r);
+    REQUIRE(in.ok());
+    const Document& doc = *in.value().document;
+    CHECK(in.value().summary.beyondHardCap == 0);
+    const Entity* insert = nullptr;
+    doc.forEachEntity([&](const Entity& e) {
+        if (entityAs<InsertData>(e) && !doc.ownerBlock(e.common.id))
+            insert = &e;
+    });
+    REQUIRE(insert != nullptr);
+    const Vec2 at{-10633044836.85, 35651292622.999};
+    CHECK(distance(entityAs<InsertData>(*insert)->position, at) < 1e-3);
+
+    blocks::registerInsertDisplay();
+    const BBox2 box = geom::bounds(*insert, doc);
+    REQUIRE_FALSE(box.empty());
+    CHECK(box.width() == doctest::Approx(1000).epsilon(1e-6));
+    CHECK(distance(box.center(), at) < 1e-3);
+
+    DisplayList list;
+    geom::buildDisplay(doc, *insert, geom::DisplayContext{}, list);
+    REQUIRE_FALSE(list.items.empty());
+    double worst = 0;
+    for (const DisplayItem& item : list.items)
+        if (const auto* pl = std::get_if<DisplayPolyline>(&item))
+            for (const Vec2& p : pl->pts)
+                worst = std::max(worst, std::abs(distance(p, at) - 500));
+    CHECK(worst < 0.5);  // the circle of radius 500, drawn as chords
 }
 
 }  // namespace tbcad::dxf

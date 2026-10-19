@@ -17,9 +17,12 @@
 
 namespace tbcad {
 
-// Half-extent of the default working area (+-100 km) and the hard coordinate cap, in mm.
+// Half-extent of the default working area (+-100 km) and the hard coordinate cap, in mm. The cap
+// (+-1,000,000 km) is far beyond any real site, but real drawings do keep objects tens of
+// thousands of kilometres out (a schematic drawn at 3.6e10 mm); doubles still resolve 0.0001 mm
+// there and the renderer draws relative to tile origins, so they display exactly.
 inline constexpr double kDefaultWorkArea = 1e8;
-inline constexpr double kHardCap = 1e10;
+inline constexpr double kHardCap = 1e12;
 
 // Rows every document has. They can be edited (except as noted) but never deleted.
 inline constexpr LayerId kLayerZero{1};     // name and id are fixed

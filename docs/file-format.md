@@ -247,7 +247,7 @@ table).
 *points*: `varint n` × `v2`. *string*: `varint` index into `STRS`.
 
 Entities are validated by `Document` while loading. An entity the document refuses (for example
-a negative radius or a coordinate beyond ±1e10 mm) is **skipped with a warning** and the rest of
+a negative radius or a coordinate beyond ±1e12 mm) is **skipped with a warning** and the rest of
 the file loads; its id stays unused.
 
 ## ORDR

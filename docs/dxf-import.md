@@ -89,7 +89,9 @@ definitions), the TBCAD entities produced and the records dropped.
   When a factor other than 1 is applied an info line names it. Every length is scaled: coordinates,
   radii, text heights, widths, linetype dashes, dimension sizes and measurements, block base
   points. `--units` / `ImportOptions::insunits` overrides the file.
-* **Limits.** Geometry beyond the hard cap (1e10 mm) is dropped with `dxf.reader.beyond_hard_cap`;
+* **Limits.** Geometry beyond the hard cap (1e12 mm) cannot be stored: the record is kept unshown
+  and written back unchanged on a DXF save (dropped when the units were scaled), with
+  `dxf.reader.beyond_hard_cap`;
   geometry beyond the working area (1e8 mm) is kept and one warning counts it (the document also
   flags it in its change set).
 

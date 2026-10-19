@@ -450,8 +450,8 @@ def gen_far():
                        + line("0", 1e12, 1e12, 1e12 + 1, 1e12))
              + eof())
     write("far_coordinates.dxf", ascii_dxf(pairs))
-    expect("far_coordinates", description="one line beyond the working area (kept), one beyond the hard cap (dropped)",
-           exit=1, version="AC1015", unitScale=1.0, dxf={"LINE": 3}, kinds={"Line": 2}, layers=["0"],
+    expect("far_coordinates", description="one line beyond the working area (kept), one beyond the hard cap (kept unshown, written back to DXF)",
+           exit=1, version="AC1015", unitScale=1.0, dxf={"LINE": 3}, kinds={"Line": 2, "Proxy": 1}, layers=["0"],
            warnings=["dxf.reader.beyond_hard_cap", "dxf.reader.outside_work_area"], ezdxf=False)
 
 
@@ -603,7 +603,7 @@ def gen_broken():
     write("broken_entities.dxf", ascii_dxf(pairs))
     expect("broken_entities", description="degenerate entities and an INSERT of a block that does not exist",
            exit=1, version="AC1015", dxf={"LINE": 1, "CIRCLE": 1, "ARC": 1, "LWPOLYLINE": 1, "INSERT": 1},
-           kinds={"Line": 1, "Insert": 1}, layers=["0"],
+           kinds={"Line": 1, "Insert": 1, "Proxy": 1}, layers=["0"],
            warnings=["dxf.reader.bad_entity", "dxf.reader.missing_block"], ezdxf=False)
 
 
