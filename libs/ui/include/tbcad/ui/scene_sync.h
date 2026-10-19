@@ -52,7 +52,9 @@ public:
     // a slice per call, then the rest. pumpPending() does one slice; flushPending() builds all.
     // Nothing else changes: the scene lacks those objects until they are built.
     std::size_t pendingCount() const { return pending_.size() - pendingDead_; }
-    std::size_t pumpPending(const render::Camera2D& camera, std::size_t limit = 8000);
+    // With budgetMs, stops early once that much time went by (checked after each chunk).
+    std::size_t pumpPending(const render::Camera2D& camera, std::size_t limit = 8000,
+                            double budgetMs = 0);
     void flushPending();
 
     // Bounds of the rendered geometry, for "zoom extents" on scene content.
@@ -90,8 +92,9 @@ private:
     void commit(Prepared& p);
     // Builds the display of many entities on all cores and puts them in the scene in the given
     // order, so the scene is the same as when they are added one by one.
+    // Lists shorter than minParallel are built on this thread.
     void upsertParallel(const std::vector<const Entity*>& list,
-                        const std::vector<std::uint32_t>& orders);
+                        const std::vector<std::uint32_t>& orders, std::size_t minParallel = 16384);
     // Rebuilds many entities, each keeping its place in the draw order. Taking them out of the
     // scene one by one costs a pass over their batches each (quadratic for a whole drawing), so
     // they are taken out in chunks first.
@@ -110,6 +113,7 @@ private:
     void queueLazy(const std::vector<const Entity*>& list,
                    const std::vector<const BBox2*>* known = nullptr);
     std::optional<std::uint32_t> takePending(EntityId id);
+    bool pendingHas(EntityId id) const;  // waiting to be built (counts as drawn)
     void dropPending(const std::vector<EntityId>& ids);
     std::uint32_t orderFor(EntityId id);
     void buildPending(PendingRec& rec);

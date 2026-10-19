@@ -148,9 +148,9 @@ AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
         fs::path kept = paths_.settingsFile();
         kept += ".bad";
         fs::rename(paths_.settingsFile(), kept, ec);
-        startupWarnings_.push_back(r.error().message + " (using default settings" +
-                                   (ec ? std::string(")") : "; the file was kept as " +
-                                                                kept.filename().string() + ")"));
+        startupWarnings_.push_back(
+            r.error().message + " (using default settings" +
+            (ec ? std::string(")") : "; the file was kept as " + kept.filename().string() + ")"));
     }
     for (auto& w : settings_.repair())
         startupWarnings_.push_back(std::move(w));
@@ -2198,7 +2198,8 @@ void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
             lastTessellatedFor_.center = camera_.center;
     }
     // Geometry of a drawing-sized edit is built a slice per frame, what the camera sees first.
-    if (session_->sync->pumpPending(camera_) > 0) {
+    // (about two frames' worth: the rest follows over the next frames)
+    if (session_->sync->pumpPending(camera_, 8000, 30.0) > 0) {
         ++generation_;
         trimWhenSettled_ = true;
     }
