@@ -548,6 +548,33 @@ TEST_CASE("LENGTHEN by delta, percent and total, one undo step") {
     CHECK(near(entityAs<LineData>(f.get(l))->b, {20, 0}));
 }
 
+TEST_CASE("LENGTHEN measures until a mode is chosen, Angle for arcs, Undo inside") {
+    Fixture f;
+    EntityId l = f.add(LineData{{0, 0}, {10, 0}});
+    auto r = f.host.run("LENGTHEN", {ScriptItem::pick(l, {9, 0}), ScriptItem::enter()});
+    CHECK(r.finished);
+    CHECK(near(entityAs<LineData>(f.get(l))->b, {10, 0}));  // only measured
+    CHECK(f.host.logContains("Current length: 10.0000"));
+
+    EntityId a = f.add(ArcData{{0, 0}, 10, 0, kPi / 2});
+    f.host.run("LENGTHEN", {ScriptItem::pick(a, {0, 10}), ScriptItem::enter()});
+    CHECK(f.host.logContains("included angle: 90.0000"));
+    // DElta Angle: +30 degrees at the end picked
+    f.host.run("LENGTHEN", {"DE", "A", "30", ScriptItem::pick(a, {0, 10}), ScriptItem::enter()});
+    CHECK(entityAs<ArcData>(f.get(a))->endAngle == doctest::Approx(kPi * 2 / 3));
+    // Total Angle 45
+    f.host.run("LENGTHEN", {"T", "A", "45", ScriptItem::pick(a, {0, 10}), ScriptItem::enter()});
+    CHECK(entityAs<ArcData>(f.get(a))->endAngle == doctest::Approx(kPi / 4));
+    // an angle on a line is refused, the line stays
+    f.host.run("LENGTHEN", {"DE", "A", "30", ScriptItem::pick(l, {9, 0}), ScriptItem::enter()});
+    CHECK(near(entityAs<LineData>(f.get(l))->b, {10, 0}));
+
+    // Undo inside the command takes back the last change only
+    f.host.run("LENGTHEN", {"DE", "2", ScriptItem::pick(l, {9, 0}), ScriptItem::pick(l, {11, 0}),
+                            "U", ScriptItem::enter()});
+    CHECK(near(entityAs<LineData>(f.get(l))->b, {12, 0}));
+}
+
 TEST_CASE("REVERSE and ALIGN") {
     Fixture f;
     EntityId l = f.add(LineData{{0, 0}, {10, 0}});
@@ -713,6 +740,53 @@ TEST_CASE("PEDIT Multiple joins with a fuzz distance and turns lines into polyli
     f.host.run("PEDIT", {"Multiple", ScriptItem::select({a, b}), ScriptItem::enter(), "Fuzz", "0.5",
                          "Join", "Exit"});
     CHECK(f.count(EntityKind::Polyline) == 1);
+}
+
+TEST_CASE("PEDIT Jointype: Extend meets at the corner, Add bridges, Both falls back to Add") {
+    auto run = [](const char* type) {
+        Fixture f;
+        EntityId a = f.add(LineData{{0, 0}, {10, 0}});
+        EntityId b = f.add(LineData{{10.3, 0.2}, {10.3, 10}});  // 0.36 from the end of a
+        f.host.run("PEDIT", {"Multiple", ScriptItem::select({a, b}), ScriptItem::enter(), "Yes",
+                             "Fuzz", "Jointype", type, "Fuzz", "0.5", "Join", "Exit"});
+        PolylineData out{};
+        f.doc.forEachEntity([&](const Entity& e) {
+            if (const auto* pl = entityAs<PolylineData>(e))
+                out = *pl;
+        });
+        CHECK(f.count(EntityKind::Polyline) == 1);
+        return out;
+    };
+    const PolylineData ext = run("Extend");
+    REQUIRE(ext.v.size() == 3);
+    CHECK(near(ext.v[1].p, {10.3, 0}));  // both lines reach the corner
+    const PolylineData add = run("Add");
+    REQUIRE(add.v.size() == 4);
+    CHECK(near(add.v[1].p, {10, 0}));
+    CHECK(near(add.v[2].p, {10.3, 0.2}));
+    const PolylineData both = run("Both");
+    CHECK(both.v.size() == 3);
+}
+
+TEST_CASE("PEDIT Decurve straightens a fitted polyline and Undo takes back options one by one") {
+    Fixture f;
+    EntityId a = f.add(PolylineData{
+        {{{0, 0}, 0, 0, 0}, {{10, 8}, 0, 0, 0}, {{20, 0}, 0, 0, 0}, {{30, 8}, 0, 0, 0}}, false, 0});
+    f.host.run("PEDIT", {ScriptItem::pick(a, {5, 4}), "Fit", "Decurve", "Exit"});
+    const auto* pl = entityAs<PolylineData>(f.get(a));
+    REQUIRE(pl);
+    for (const auto& v : pl->v)
+        CHECK(v.bulge == 0);
+    f.host.undo();
+    f.host.run("PEDIT", {ScriptItem::pick(a, {5, 4}), "Close", "Width", "2", "Undo", "Exit"});
+    pl = entityAs<PolylineData>(f.get(a));
+    REQUIRE(pl);
+    CHECK(pl->closed);              // Close stays
+    CHECK(pl->constantWidth == 0);  // Width was undone
+    for (const auto& v : pl->v)
+        CHECK(v.startWidth == 0);
+    f.host.run("PEDIT", {ScriptItem::pick(a, {5, 4}), "Undo", "Undo", "Exit"});
+    CHECK(f.host.logContains("Nothing to undo."));
 }
 
 TEST_CASE("PEDIT Fit makes arcs through the vertices and Ltypegen OFF is kept") {
