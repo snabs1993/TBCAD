@@ -6,6 +6,7 @@
 #include <functional>
 
 #include "commands.h"
+#include "tbcad/core/groups.h"
 #include "tbcad/layers/layer_ops.h"
 
 namespace tbcad::sysvars {
@@ -182,6 +183,14 @@ const std::vector<Var>& variables() {
              if (!parseSwitch(v, on))
                  return "MIRRTEXT is 0 or 1.";
              h.custom[kMirrTextKey] = on ? "1" : "0";
+             return {};
+         }},
+        {"PICKSTYLE", "picks select whole groups (1), associative hatch boundaries (2), both (3)",
+         [](const Document& d) { return std::to_string(pickStyle(d.header())); },
+         [](const Document&, std::string_view v, Header& h) -> std::string {
+             if (v.size() != 1 || v[0] < '0' || v[0] > '3')
+                 return "PICKSTYLE is 0, 1, 2 or 3.";
+             h.custom[kPickStyleKey] = std::string(v);
              return {};
          }},
         {"CECOLOR", "colour of new objects",

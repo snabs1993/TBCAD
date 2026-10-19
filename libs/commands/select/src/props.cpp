@@ -1,3 +1,5 @@
+#include <iterator>
+
 #include "common.h"
 
 namespace tbcad::select::detail {
@@ -22,9 +24,13 @@ LineWeight resolvedLineweight(const Document& doc, const Entity& e) {
 }
 
 std::string kindName(const Entity& e) {
-    static const char* const kNames[] = {"LINE",    "CIRCLE",    "ARC",    "POLYLINE", "POINT",
-                                         "ELLIPSE", "SPLINE",    "TEXT",   "MTEXT",    "HATCH",
-                                         "INSERT",  "DIMENSION", "LEADER", "PROXY"};
+    static const char* const kNames[] = {
+        "LINE",   "CIRCLE",    "ARC",    "POLYLINE", "POINT", "ELLIPSE", "SPLINE",
+        "TEXT",   "MTEXT",     "HATCH",  "INSERT",   "DIMENSION", "LEADER", "PROXY",
+        "TABLE",  "RAY",       "MLINE",  "MULTILEADER"};
+    static_assert(std::size(kNames) == kEntityKindCount, "a name for every entity kind");
+    if (const auto* r = entityAs<RayData>(e); r && r->infinite)
+        return "XLINE";
     return kNames[static_cast<std::size_t>(kind(e))];
 }
 

@@ -1,5 +1,7 @@
 #include <algorithm>
 #include <cmath>
+#include <span>
+#include <string>
 #include <unordered_set>
 
 #include "common.h"
@@ -100,8 +102,10 @@ std::optional<std::vector<EntityId>> queryEntities(const Document& doc, const Qu
     const std::string want = upper(q.value);
     if (q.property == Property::Type) {
         static const char* const kKnown[] = {
-            "LINE", "CIRCLE", "ARC",   "POLYLINE", "LWPOLYLINE", "POINT",     "ELLIPSE", "SPLINE",
-            "TEXT", "MTEXT",  "HATCH", "INSERT",   "BLOCK",      "DIMENSION", "LEADER"};
+            "LINE",   "CIRCLE",    "ARC",    "POLYLINE", "LWPOLYLINE", "POINT", "ELLIPSE",
+            "SPLINE", "TEXT",      "MTEXT",  "HATCH",    "INSERT",     "BLOCK", "DIMENSION",
+            "LEADER", "PROXY",     "TABLE",  "RAY",      "XLINE",      "MLINE", "MULTILEADER",
+            "MLEADER"};
         if (std::none_of(std::begin(kKnown), std::end(kKnown),
                          [&](const char* k) { return want == k; }))
             return std::nullopt;
@@ -122,7 +126,8 @@ std::optional<std::vector<EntityId>> queryEntities(const Document& doc, const Qu
             case Property::Type: {
                 const std::string k = kindName(*e);
                 hit = want == k || (k == "POLYLINE" && want == "LWPOLYLINE") ||
-                      (k == "INSERT" && want == "BLOCK");
+                      (k == "INSERT" && want == "BLOCK") ||
+                      (k == "MULTILEADER" && want == "MLEADER");
                 break;
             }
             case Property::Layer: {
@@ -207,6 +212,11 @@ std::string styleKey(const Entity& e) {
         return "D" + std::to_string(d->style.value);
     if (const auto* h = entityAs<HatchData>(e))
         return h->solid ? "SOLID" : "H" + h->pattern;
+    // A block reference's "style" is its block (AutoCAD's Name setting).
+    if (const auto* i = entityAs<InsertData>(e))
+        return "B" + std::to_string(i->block.value);
+    if (const auto* m = entityAs<MLeaderData>(e))
+        return "M" + std::to_string(m->style.value);
     return {};
 }
 
@@ -226,32 +236,64 @@ long long sizeKey(const Entity& e) {
 
 }  // namespace
 
-std::vector<EntityId> similarEntities(const Document& doc, const Entity& ref, unsigned match) {
-    using namespace detail;
+namespace {
+
+// The values of the matched properties, as one string: equal strings mean "similar".
+std::string similarKey(const Document& doc, const Entity& e, unsigned match) {
     auto has = [&](Match m) { return (match & static_cast<unsigned>(m)) != 0; };
-    std::vector<EntityId> out;
-    for (const Entity* e : shownEntities(doc)) {
-        if (has(Match::Type) && kind(*e) != kind(ref))
-            continue;
-        if (has(Match::Layer) && e->common.layer != ref.common.layer)
-            continue;
-        if (has(Match::Color) && !(resolvedColor(doc, *e) == resolvedColor(doc, ref)))
-            continue;
-        if (has(Match::Linetype) && resolvedLinetype(doc, *e) != resolvedLinetype(doc, ref))
-            continue;
-        if (has(Match::Lineweight) &&
-            !(resolvedLineweight(doc, *e) == resolvedLineweight(doc, ref)))
-            continue;
-        if (has(Match::Level) && e->common.level != ref.common.level)
-            continue;
-        if (has(Match::Transparency) && e->common.transparency != ref.common.transparency)
-            continue;
-        if (has(Match::Style) && styleKey(*e) != styleKey(ref))
-            continue;
-        if (has(Match::Size) && sizeKey(*e) != sizeKey(ref))
-            continue;
-        out.push_back(e->common.id);
+    std::string k;
+    auto put = [&](const auto& v) {
+        k += std::to_string(v);
+        k += '|';
+    };
+    if (has(Match::Type))
+        put(static_cast<int>(kind(e)));
+    if (has(Match::Layer))
+        put(e.common.layer.value);
+    if (has(Match::Color)) {
+        const Color c = detail::resolvedColor(doc, e);
+        put(static_cast<int>(c.kind));
+        put(c.r);
+        put(c.g);
+        put(c.b);
     }
+    if (has(Match::Linetype))
+        put(detail::resolvedLinetype(doc, e).value);
+    if (has(Match::Lineweight))
+        put(detail::resolvedLineweight(doc, e).v);
+    if (has(Match::Level))
+        put(e.common.level.value);
+    if (has(Match::Transparency))
+        put(static_cast<int>(e.common.transparency));
+    if (has(Match::Style)) {
+        k += styleKey(e);
+        k += '|';
+    }
+    if (has(Match::Size))
+        put(sizeKey(e));
+    return k;
+}
+
+}  // namespace
+
+std::vector<EntityId> similarEntities(const Document& doc, const Entity& ref, unsigned match) {
+    const EntityId id = ref.common.id;
+    return similarEntities(doc, std::span<const EntityId>(&id, 1), match);
+}
+
+std::vector<EntityId> similarEntities(const Document& doc, std::span<const EntityId> refs,
+                                      unsigned match) {
+    using namespace detail;
+    std::unordered_set<std::string> wanted;
+    for (EntityId id : refs)
+        if (const Entity* e = doc.find(id))
+            wanted.insert(similarKey(doc, *e, match));
+    std::vector<EntityId> out;
+    if (wanted.empty())
+        return out;
+    for (const Entity* e : shownEntities(doc))
+        if (wanted.count(similarKey(doc, *e, match)))
+            out.push_back(e->common.id);
     return out;
 }
 

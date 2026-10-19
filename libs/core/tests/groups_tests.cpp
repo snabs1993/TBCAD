@@ -88,3 +88,36 @@ TEST_CASE("expanding a big selection against a big group is linear") {
     CHECK(one.size() == 50000);
     CHECK(one.front() == ids[7]);
 }
+
+TEST_CASE("PICKSTYLE turns group selection off and associative hatch selection on") {
+    Document doc;
+    EntityId a = addLine(doc, 0), b = addLine(doc, 2);
+    EntityId h;
+    {
+        Transaction tx = doc.begin("setup");
+        REQUIRE(writeGroups(tx, {Group{"pair", {a, b}, true}}).ok());
+        HatchData hd;
+        hd.sourceBoundary = {a};
+        Entity e;
+        e.data = Indirect<HatchData>(hd);
+        h = tx.add(std::move(e)).value();
+        tx.commit();
+    }
+    auto setStyle = [&](const char* v) {
+        Transaction tx = doc.begin("pickstyle");
+        REQUIRE(tx.modifyHeader([&](Header& hd) { hd.custom[kPickStyleKey] = v; }).ok());
+        tx.commit();
+    };
+    CHECK(pickStyle(doc.header()) == 1);
+    CHECK(expandGroups(doc, std::vector<EntityId>{a}).size() == 2);
+    CHECK(expandGroups(doc, std::vector<EntityId>{h}).size() == 1);
+    setStyle("0");
+    CHECK(expandGroups(doc, std::vector<EntityId>{a}).size() == 1);
+    setStyle("2");
+    CHECK(expandGroups(doc, std::vector<EntityId>{a}).size() == 1);
+    CHECK(expandGroups(doc, std::vector<EntityId>{h}) == std::vector<EntityId>{h, a});
+    setStyle("3");
+    CHECK(expandGroups(doc, std::vector<EntityId>{h}) == std::vector<EntityId>{h, a, b});
+    setStyle("x");
+    CHECK(pickStyle(doc.header()) == 1);
+}
