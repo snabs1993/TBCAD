@@ -387,6 +387,42 @@ TEST_CASE("SPELL suggests the nearest word and does not read MTEXT codes as word
           "{\\fArial|b1;thickness} \\S1/2;\\Pdoor");
 }
 
+TEST_CASE("MTEXTFORMAT sets the background mask and the line spacing") {
+    Fixture f;
+    MTextData m;
+    m.utf8 = "note";
+    Transaction tx = f.doc.begin("setup");
+    Entity e;
+    e.data = Indirect<MTextData>(std::move(m));
+    const EntityId id = tx.add(std::move(e)).value();
+    tx.commit();
+    REQUIRE(f.host
+                .run("MTEXTFORMAT", {cmd::ScriptItem::select({id}), cmd::ScriptItem::enter(),
+                                     "Background", "Colour", "3", "2"})
+                .finished);
+    auto* d = entityAs<MTextData>(*f.doc.find(id));
+    CHECK(d->bgMode == 2);
+    CHECK(d->bgColor == 3);
+    CHECK(d->bgScale == doctest::Approx(2));
+    REQUIRE(f.host
+                .run("MTEXTFORMAT", {cmd::ScriptItem::select({id}), cmd::ScriptItem::enter(),
+                                     "Background", "Window", "9"})
+                .finished);
+    d = entityAs<MTextData>(*f.doc.find(id));
+    CHECK(d->bgMode == 1);
+    CHECK(d->bgScale == doctest::Approx(5));  // clamped
+    REQUIRE(f.host
+                .run("MTEXTFORMAT", {cmd::ScriptItem::select({id}), cmd::ScriptItem::enter(),
+                                     "LineSpacing", "1.5"})
+                .finished);
+    CHECK(entityAs<MTextData>(*f.doc.find(id))->lineSpacing == doctest::Approx(1.5));
+    REQUIRE(f.host
+                .run("MTEXTFORMAT", {cmd::ScriptItem::select({id}), cmd::ScriptItem::enter(),
+                                     "Background", "None"})
+                .finished);
+    CHECK(entityAs<MTextData>(*f.doc.find(id))->bgMode == 0);
+}
+
 TEST_CASE("MTEXT and TEXT from far away default to a height that can be read") {
     Fixture f;
     f.host.setView({{0, 0}, 10.0, {900, 600}});  // 10 mm per pixel: a plan in millimetres
