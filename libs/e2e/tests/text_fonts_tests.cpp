@@ -188,3 +188,56 @@ TEST_CASE("Thai text has the same outline on the plot as on the screen") {
     CHECK(pb.max.y - pb.min.y == doctest::Approx(sb.max.y - sb.min.y).epsilon(0.002));
     (void)off;
 }
+
+TEST_CASE("an MTEXT background mask is plotted behind its text and hides what is behind it") {
+    Document doc;
+    {
+        auto tx = doc.begin("scene");
+        Entity bar;  // a line through where the text will be
+        bar.data = LineData{{90, 105}, {260, 105}};
+        REQUIRE(tx.add(std::move(bar)).ok());
+        for (std::uint8_t mode : {std::uint8_t{1}, std::uint8_t{2}}) {
+            MTextData m;
+            m.position = {100, 100.0 + 100.0 * mode};
+            m.height = 10;
+            m.width = 120;
+            m.utf8 = "Slab S1";
+            m.bgMode = mode;
+            m.bgColor = 1;
+            Entity e;
+            e.data = Indirect<MTextData>(m);
+            REQUIRE(tx.add(std::move(e)).ok());
+        }
+        tx.commit();
+    }
+    text::registerDisplay();
+    exportlib::PlotSettings ps;
+    ps.fitToPaper = false;
+    ps.scaleN = 1;
+    ps.paperName = "A3";
+    ps.centerOnPaper = false;
+    ps.offsetMm = {0, 0};
+    ps.marginMm = 0;
+    auto sheet = exportlib::buildSheet(doc, ps);
+    REQUIRE(sheet.ok());
+    const auto& prims = sheet.value().prims;
+    // The line comes first; each mask is the first fill of its text, a plain rectangle.
+    REQUIRE(prims.size() > 3);
+    CHECK(std::holds_alternative<exportlib::PlotPath>(prims[0]));
+    std::vector<const exportlib::PlotFill*> rects;
+    for (const auto& p : prims)
+        if (const auto* f = std::get_if<exportlib::PlotFill>(&p))
+            if (f->rings.size() == 1 && f->rings[0].size() == 4)
+                rects.push_back(f);
+    REQUIRE(rects.size() == 2);
+    // Mode 1 is paper white, mode 2 is the palette colour 1 (red).
+    CHECK(rects[0]->color.r == 255);
+    CHECK(rects[0]->color.g == 255);
+    CHECK(rects[1]->color.r == 255);
+    CHECK(rects[1]->color.g < 60);
+    // The first mask covers the whole line segment under the text frame (120 wide plus margin).
+    BBox2 b;
+    for (const Vec2& p : rects[0]->rings[0])
+        b.expand(p);
+    CHECK(b.max.x - b.min.x == doctest::Approx(120 + 2 * 5).epsilon(0.03));
+}
