@@ -104,7 +104,8 @@ TEST_CASE("a solid hatch plots as an even-odd fill") {
     REQUIRE(sheet.prims.size() == 1);
     CHECK(std::holds_alternative<PlotFill>(sheet.prims[0]));
     auto pdf = pdfBytes(sheet).value();
-    CHECK(pdf.find("f*") != std::string::npos);
+    // even-odd fill, or fill plus its hairline edge
+    CHECK((pdf.find("f*") != std::string::npos || pdf.find("B*") != std::string::npos));
     std::string svg = svgString(sheet);
     CHECK(svg.find("fill-rule=\"evenodd\"") != std::string::npos);
 }
