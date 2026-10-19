@@ -625,7 +625,7 @@ private:
             row.extLineExtension = r.f64();
             row.dimLineExtension = r.f64();
             row.textPlacement = readEnum<DimTextPlacement>(
-                r, static_cast<std::uint8_t>(DimTextPlacement::Centered));
+                r, static_cast<std::uint8_t>(DimTextPlacement::Below));
             row.textAlign =
                 readEnum<DimTextAlign>(r, static_cast<std::uint8_t>(DimTextAlign::Horizontal));
             row.units = readEnum<LengthUnit>(r, static_cast<std::uint8_t>(LengthUnit::Foot));

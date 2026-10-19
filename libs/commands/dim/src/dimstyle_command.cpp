@@ -129,7 +129,9 @@ std::vector<std::pair<std::string, std::string>> describe(const Document& doc, c
         {"ExtOffset", num(s.extLineOffset)},
         {"ExtExtension", num(s.extLineExtension)},
         {"LineExtension", num(s.dimLineExtension)},
-        {"Placement", s.textPlacement == DimTextPlacement::AboveLine ? "Above" : "Centered"},
+        {"Placement", s.textPlacement == DimTextPlacement::AboveLine  ? "Above"
+                      : s.textPlacement == DimTextPlacement::Below ? "Below"
+                                                                   : "Centered"},
         {"Alignment", s.textAlign == DimTextAlign::WithDimLine ? "WithLine" : "Horizontal"},
         {"Units", unit[static_cast<int>(s.units)]},
         {"Precision", std::to_string(s.precision)},
@@ -259,8 +261,10 @@ std::string applyProperty(const Document& doc, DimStyle& s, std::string_view key
             s.textPlacement = DimTextPlacement::AboveLine;
         else if (same(value, "Centered"))
             s.textPlacement = DimTextPlacement::Centered;
+        else if (same(value, "Below"))
+            s.textPlacement = DimTextPlacement::Below;
         else
-            return "Placement is Above or Centered.";
+            return "Placement is Above, Centered or Below.";
         return {};
     }
     if (same(key, "Alignment")) {

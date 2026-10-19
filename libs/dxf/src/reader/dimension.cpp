@@ -196,7 +196,9 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
                 ds.textAlignOutside = whole ? DimTextAlign::Horizontal : DimTextAlign::WithDimLine;
                 break;
             case 77:
-                ds.textPlacement = whole ? DimTextPlacement::AboveLine : DimTextPlacement::Centered;
+                ds.textPlacement = whole == 4   ? DimTextPlacement::Below
+                                   : whole != 0 ? DimTextPlacement::AboveLine
+                                                : DimTextPlacement::Centered;
                 break;
             case 75:
                 ds.suppressExt1 = whole != 0;

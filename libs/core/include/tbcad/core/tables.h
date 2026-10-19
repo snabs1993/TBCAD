@@ -89,7 +89,8 @@ struct TextStyle {
 };
 
 enum class ArrowType { ClosedFilled, Open30, ArchTick, Dot, None };
-enum class DimTextPlacement { AboveLine, Centered };
+// Below is DIMTAD 4: the text hangs under the dimension line (linear dimensions).
+enum class DimTextPlacement { AboveLine, Centered, Below };
 enum class DimTextAlign { WithDimLine, Horizontal };
 // How a dimension shows its tolerance next to the measurement: "±0.05", "+0.05 -0.02", or the two
 // limits "100.05 / 99.98".

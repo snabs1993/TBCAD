@@ -281,7 +281,7 @@ struct Reader {
         d.extLineOffset = r.f64();
         d.extLineExtension = r.f64();
         d.dimLineExtension = r.f64();
-        d.textPlacement = enumeration(DimTextPlacement::Centered);
+        d.textPlacement = enumeration(DimTextPlacement::Below);
         d.textAlign = enumeration(DimTextAlign::Horizontal);
         d.units = enumeration(LengthUnit::Foot);
         d.precision = r.i32();

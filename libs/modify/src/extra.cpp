@@ -1651,10 +1651,7 @@ Result<EntityEdit> refitSpline(const Entity& e, double tolerance) {
     if (!(len > 0))
         return err("The spline has no length.");
     const int n = static_cast<int>(std::clamp(len / tolerance, 200.0, 2000.0));
-    std::vector<Vec2> samples;
-    samples.reserve(static_cast<std::size_t>(n) + 1);
-    for (int i = 0; i <= n; ++i)
-        samples.push_back(c.pointAt(c.paramAtLength(len * i / n)));
+    const std::vector<Vec2> samples = c.pointsAtEqualLength(n);
     const bool closed = sp->closed;
     std::vector<int> idx =
         closed ? std::vector<int>{0, n / 4, n / 2, 3 * n / 4} : std::vector<int>{0, n};
@@ -1674,13 +1671,9 @@ Result<EntityEdit> refitSpline(const Entity& e, double tolerance) {
         std::vector<CurveRef> nc;
         if (!geom::curvesOf(trial, nc) || nc.empty())
             return err("The new spline has no geometry.");
-        const double nl = nc.front().length();
         const int m =
             static_cast<int>(std::clamp(static_cast<double>(idx.size()) * 24.0, 100.0, 4000.0));
-        std::vector<Vec2> poly;
-        poly.reserve(static_cast<std::size_t>(m) + 1);
-        for (int i = 0; i <= m; ++i)
-            poly.push_back(nc.front().pointAt(nc.front().paramAtLength(nl * i / m)));
+        const std::vector<Vec2> poly = nc.front().pointsAtEqualLength(m);
         const PolylineGrid grid(poly);
         double worst = 0;
         int worstAt = -1;

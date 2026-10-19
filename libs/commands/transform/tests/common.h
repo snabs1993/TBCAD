@@ -14,8 +14,15 @@ inline bool near(Vec2 a, Vec2 b, double eps = 1e-9) {
     return distance(a, b) < eps;
 }
 
+// Block that add() fills (null = model space); tests set it to build a sheet-like owner.
+inline BlockId& addOwner() {
+    static BlockId owner{};
+    return owner;
+}
+
 inline EntityId add(Document& doc, EntityData data) {
     auto tx = doc.begin("setup");
+    tx.setDefaultOwner(addOwner());
     auto id = tx.add(Entity{{}, std::move(data)});
     tx.commit();
     return id.value();

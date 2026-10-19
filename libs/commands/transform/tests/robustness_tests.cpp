@@ -172,6 +172,38 @@ TEST_CASE("transforms keep every entity kind finite and undo back to the exact o
     }
 }
 
+TEST_CASE("transforms of entities owned by a block (a layout sheet) undo to the exact original") {
+    for (const char* cmdName : {"MOVE", "ROTATE", "SCALE", "MIRROR"}) {
+        CAPTURE(cmdName);
+        Fixture f;
+        {
+            auto tx = f.doc.begin("sheet");
+            addOwner() = tx.addBlock(BlockDef{.name = "Sheet"}).value();
+            tx.commit();
+        }
+        std::vector<EntityId> ids;
+        addSamples(f.doc, ids);
+        addOwner() = BlockId{};
+        const std::string before = canonicalDump(f.doc);
+        f.host.setSelection(ids);
+        const std::string name = cmdName;
+        std::vector<cmd::ScriptItem> in =
+            name == "MOVE"     ? std::vector<cmd::ScriptItem>{"0,0", "5,7"}
+            : name == "ROTATE" ? std::vector<cmd::ScriptItem>{"3,4", "33"}
+            : name == "SCALE"  ? std::vector<cmd::ScriptItem>{"1,1", "1.5"}
+                               : std::vector<cmd::ScriptItem>{"0,0", "10,3", "No"};
+        auto r = f.host.run(cmdName, in);
+        CHECK(r.finished);
+        const std::string after = canonicalDump(f.doc);
+        CHECK_FALSE(hasNonFinite(after));
+        CHECK(after != before);
+        CHECK(f.host.undo());
+        CHECK(canonicalDump(f.doc) == before);
+        CHECK(f.host.redo());
+        CHECK(canonicalDump(f.doc) == after);
+    }
+}
+
 TEST_CASE("rotating by 360 degrees and moving there and back restore the geometry") {
     Fixture f;
     std::vector<EntityId> ids;

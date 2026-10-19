@@ -118,7 +118,8 @@ Lift liftFor(const Ctx& c, Vec2 lineDir, double rotText,
     l.centered = c.st.textPlacement == DimTextPlacement::Centered ||
                  (al == DimTextAlign::Horizontal && std::abs(lineDir.y) > 0.5);
     if (!l.centered)
-        l.offset = perp(unit(rotText)) * (c.gap + c.th / 2);
+        l.offset = perp(unit(rotText)) *
+                   ((c.gap + c.th / 2) * (c.st.textPlacement == DimTextPlacement::Below ? -1 : 1));
     return l;
 }
 

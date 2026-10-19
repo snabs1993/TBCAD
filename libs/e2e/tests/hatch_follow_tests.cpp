@@ -189,3 +189,42 @@ TEST_CASE("dragging a corner grip or stretching the boundary updates the hatch i
         CHECK(canonicalDump(r.doc) == before);
     }
 }
+
+TEST_CASE("trimming or extending a boundary edge keeps the hatch coherent and undoes in one step") {
+    Rig r;
+    makeShape(r, 2);
+    r.host.run("HATCH", {"50,30", ScriptItem::enter()});
+    const HatchData* h = r.theHatch();
+    REQUIRE(h != nullptr);
+    REQUIRE_FALSE(h->sourceBoundary.empty());
+    const BBox2 before = hatch::hatchBounds(*h);
+    // A cutting line across the right edge at y = 30; trimming the upper half opens the boundary.
+    const EntityId cutter = r.add(LineData{{80, 30}, {120, 30}});
+    EntityId right{};
+    for (EntityId id : h->sourceBoundary)
+        if (const auto* l = entityAs<LineData>(*r.doc.find(id)); l && l->a.x == 100 && l->b.x == 100)
+            right = id;
+    REQUIRE(static_cast<bool>(right));
+    r.host.run("TRIM", {ScriptItem::select({cutter}), ScriptItem::enter(),
+                        ScriptItem::pick(right, {100, 50}), ScriptItem::enter()});
+    h = r.theHatch();
+    REQUIRE(h != nullptr);
+    // Open boundary: the hatch keeps its fill, and is no longer tied to the edges.
+    const BBox2 after = hatch::hatchBounds(*h);
+    CHECK(after.max.x == doctest::Approx(before.max.x));
+    CHECK(after.max.y == doctest::Approx(before.max.y));
+    CHECK(h->sourceBoundary.empty());
+    CHECK(r.host.undo());
+    h = r.theHatch();
+    REQUIRE(h != nullptr);
+    CHECK_FALSE(h->sourceBoundary.empty());
+    // The edge is whole again.
+    int whole = 0;
+    r.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* l = entityAs<LineData>(e); l && std::abs(l->a.x - 100) < 1e-9 &&
+                                                  std::abs(l->b.x - 100) < 1e-9 &&
+                                                  std::abs(l->a.y - l->b.y) > 59)
+            ++whole;
+    });
+    CHECK(whole == 1);
+}
