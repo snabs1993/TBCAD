@@ -315,6 +315,24 @@ std::vector<std::uint8_t> spatialFilterObj(std::uint64_t h, int type, std::uint6
     return o.finish();
 }
 
+// SORTENTSTABLE: the count and the sort handles in the main data, then the owner, the block and
+// the entity handles in the handle stream.
+std::vector<std::uint8_t> sortEntsObj(std::uint64_t h, int type, std::uint64_t owner,
+                                      std::uint64_t block,
+                                      const std::vector<std::pair<std::uint64_t, std::uint64_t>>& pairs) {
+    ObjectWriter o(type, h);
+    o.objectCommon();
+    o.main.bl(static_cast<int>(pairs.size()));
+    for (const auto& [entity, sort] : pairs)
+        o.main.handle(0, sort);
+    o.handles.handle(4, owner);
+    o.xdic();
+    o.handles.handle(4, block);
+    for (const auto& [entity, sort] : pairs)
+        o.handles.handle(4, entity);
+    return o.finish();
+}
+
 std::vector<std::uint8_t> ellipseObj(std::uint64_t h) {
     ObjectWriter o(0x23, h);
     o.entityCommon(2, 256, 0);
@@ -980,6 +998,35 @@ TEST_CASE("an XCLIP boundary on an insert comes through as the insert's clip") {
         CHECK_FALSE(d->clipInvert);
     }
     CHECK(inserts == 1);
+}
+
+TEST_CASE("a block's draw order table puts its entities in the order of the sort handles") {
+    DwgFile f;
+    const int sortType = f.addClass("SORTENTSTABLE");
+    f.add(kLtype, linetype(kLtype, "Continuous"));
+    f.add(kLayer0, layer(kLayer0, "0", 7, kLtype));
+    f.add(kStyle, style(kStyle, "Standard"));
+    f.add(kModel, blockHeader(kModel, "*Model_Space", 0, 0));
+    f.add(kPaper, blockHeader(kPaper, "*Paper_Space", 0, 0));
+    f.add(kDoor, blockHeader(kDoor, "DOOR", 0, 0));
+    f.add(0x30, line(0x30, 0, kDoor, 0, 0, 0, 10));  // the outline, first in the file
+    f.add(0x31, line(0x31, 0, kDoor, 5, 0, 5, 10));  // the fill, sent behind it
+    f.add(0x92, sortEntsObj(0x92, sortType, 0x91, kDoor, {{0x30, 0x200}, {0x31, 0x100}}));
+    dxf::Report report;
+    auto r = importDwg(asBytes(f.build()), dxf::ImportOptions{}, report);
+    REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
+    const Document& doc = *r.value().document;
+    const BlockDef* door = nullptr;
+    for (const auto& [id, b] : doc.blocks())
+        if (b.name == "DOOR")
+            door = &b;
+    REQUIRE(door);
+    REQUIRE(door->entities.size() == 2);
+    const auto* first = entityAs<LineData>(*doc.find(door->entities[0]));
+    REQUIRE(first);
+    CHECK(first->a.x == doctest::Approx(5));
+    for (const auto& w : report.diagnostics())
+        CHECK(w.message.find("sort table") == std::string::npos);
 }
 
 TEST_CASE("the linetype generation flag (128) of a lightweight and a heavy polyline is kept") {
