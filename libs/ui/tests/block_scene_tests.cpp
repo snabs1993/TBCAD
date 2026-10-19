@@ -61,6 +61,37 @@ TEST_CASE("the scene shows block contents and follows block edits") {
     CHECK(scene.bounds().width() > before + 100);
 }
 
+TEST_CASE("edits outside blocks keep the blocks' geometry, a block edit builds it again") {
+    blocks::registerInsertDisplay();
+    Document doc;
+    render::Scene scene;
+    SceneSync sync(doc, scene);
+    BlockId b = makeBlock(doc, 2);
+    addInserts(doc, b, 3);
+    const std::size_t built = sync.blockBuilds();
+    CHECK(built >= 1);
+    EntityId first{};
+    doc.forEachEntity([&](const Entity& e) {
+        if (!first && kind(e) == EntityKind::Insert)
+            first = e.common.id;
+    });
+    {
+        Transaction tx = doc.begin("model only");
+        (void)tx.add(Entity{{}, LineData{{0, 0}, {10, 10}}});
+        (void)tx.erase(first);
+        tx.commit();
+    }
+    CHECK(sync.blockBuilds() == built);
+    CHECK(scene.entityCount() == 3);
+    {
+        Transaction tx = doc.begin("block");
+        (void)tx.add(Entity{{}, LineData{{0, 0}, {0, 50}}}, b);
+        tx.commit();
+    }
+    CHECK(sync.blockBuilds() > built);
+    CHECK(scene.bounds().height() >= 50);
+}
+
 TEST_CASE("the spatial index follows block edits when the refresher is installed") {
     blocks::registerInsertDisplay();
     Document doc;

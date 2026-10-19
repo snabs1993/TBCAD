@@ -34,6 +34,10 @@ public:
 
     // Drops everything when the revision differs from the one the entries were built for.
     void sync(std::uint64_t revision);
+    // Keeps the entries for `revision`: the caller knows the change to it left every block's
+    // content and look as it was (only objects outside blocks changed).
+    void carryTo(std::uint64_t revision) { revision_ = revision; }
+    std::uint64_t revision() const { return revision_; }
     std::shared_ptr<const DisplayList> find(const Key& key) const;
     void put(const Key& key, std::shared_ptr<const DisplayList> list);
     void clear();
