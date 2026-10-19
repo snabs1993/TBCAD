@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "tbcad/core/entities.h"
@@ -393,6 +394,14 @@ public:
     const DimStyle* dimStyleByName(std::string_view n) const { return dimStyles_.findByName(n); }
     const BlockDef* blockByName(std::string_view name) const { return blocks_.findByName(name); }
 
+    // Layers hidden by the current view on top of their own state: those frozen in the layout
+    // viewport being edited from model space. Objects on them can be neither seen nor picked
+    // (ui::isVisible, ui::isSelectable). Not part of the drawing: never saved nor undone.
+    void setViewHiddenLayers(std::unordered_set<LayerId> layers) {
+        viewHidden_ = std::move(layers);
+    }
+    const std::unordered_set<LayerId>& viewHiddenLayers() const { return viewHidden_; }
+
     // Starts the only mutation path. Throws std::logic_error if a transaction is already open.
     Transaction begin(std::string name);
     // Reverts or reapplies a committed change set. Throws std::logic_error during a transaction.
@@ -462,6 +471,7 @@ private:
     mutable std::unordered_map<LayerId, EffectiveLayer> effectiveCache_{};
     mutable std::uint64_t effectiveVersion_ = 0;
     std::string filePath_{};
+    std::unordered_set<LayerId> viewHidden_{};
 
     std::vector<DocumentObserver*> observers_{};
     Transaction* active_ = nullptr;

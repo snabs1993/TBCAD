@@ -1,9 +1,12 @@
+#include <algorithm>
+
 #include <doctest/doctest.h>
 
 #include "tbcad/hatch/hatch.h"
 #include "tbcad/layout/layout.h"
 #include "tbcad/text/text.h"
 #include "tbcad/ui/app_core.h"
+#include "tbcad/ui/selection.h"
 #include "test_support.h"
 
 using namespace tbcad;
@@ -360,17 +363,21 @@ TEST_CASE("ZOOM Extents and ZOOM All frame the sheet while a layout is active") 
     }
 }
 
-TEST_CASE("layers frozen in a viewport are hidden while it is edited from model space") {
+TEST_CASE("layers frozen in a viewport are hidden and unpickable while it is edited from model space") {
     auto registry = makeRegistry();
     AppCore core(*registry,
                  platform::AppPaths{tempDir("paper6") / "cfg", tempDir("paper6") / "data"});
     core.setViewportSize(1000, 800);
     LayerId walls;
+    EntityId wall;
     {
         auto tx = core.document().begin("layout");
         Layer l;
         l.name = "VP test";
         walls = tx.addLayer(l).value();
+        Entity e{{}, LineData{{4000, 3000}, {6000, 3000}}};
+        e.common.layer = walls;
+        wall = tx.add(e).value();
         REQUIRE(layout::createLayout(tx, "A", "A3").ok());
         REQUIRE(layout::addViewport(tx, "A", BBox2{{20, 20}, {220, 170}}, {5000, 3000}, 50).ok());
         REQUIRE(layout::setViewportLayerFrozen(tx, "A", 1, walls, true).ok());
@@ -384,6 +391,12 @@ TEST_CASE("layers frozen in a viewport are hidden while it is edited from model 
     CHECK_FALSE(core.scene().layerVisible(walls));
     CHECK(core.setting("layout.current") == std::optional<std::string>("A"));
     CHECK(core.setting("tmp.layout.editing") == std::optional<std::string>("A:1"));
+    // Objects on it can't be picked or selected either.
+    CHECK_FALSE(isSelectable(core.document(), *core.document().find(wall)));
+    core.selectAll();
+    CHECK(std::find(core.selection().begin(), core.selection().end(), wall) ==
+          core.selection().end());
+    core.clearSelection();
 
     // Thawed in the viewport: shown again.
     {
@@ -406,4 +419,5 @@ TEST_CASE("layers frozen in a viewport are hidden while it is edited from model 
     core.updateFrame();
     CHECK(core.scene().layerVisible(walls));
     CHECK_FALSE(core.setting("tmp.layout.editing").has_value());
+    CHECK(isSelectable(core.document(), *core.document().find(wall)));
 }

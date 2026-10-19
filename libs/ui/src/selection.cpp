@@ -11,6 +11,8 @@ namespace tbcad::ui {
 bool isVisible(const Document& doc, const Entity& e) {
     if (!e.common.visible)
         return false;
+    if (!doc.viewHiddenLayers().empty() && doc.viewHiddenLayers().contains(e.common.layer))
+        return false;
     return doc.effective(e.common).visible();
 }
 
@@ -23,6 +25,8 @@ bool isSelectable(const Document& doc, const Entity& e) {
         if (!b || b->name.rfind("*LAYOUT-", 0) != 0)
             return false;
     }
+    if (!doc.viewHiddenLayers().empty() && doc.viewHiddenLayers().contains(e.common.layer))
+        return false;
     EffectiveLayer layer = doc.effective(e.common);
     return layer.visible() && !layer.locked;
 }

@@ -1050,6 +1050,14 @@ int App::runCapture() {
             vpScaleBefore = pick->scaleN;
             core_->setActiveLayout(name);
             settle();
+            // The sheet's saved view may not show the viewport (sheets drawn far from the paper's
+            // origin): zoom to it, with a margin, as a user would before double-clicking.
+            {
+                const BBox2& p = pick->paper;
+                const double mx = p.width() * 0.25, my = p.height() * 0.25;
+                core_->zoomToBox(BBox2{{p.min.x - mx, p.min.y - my}, {p.max.x + mx, p.max.y + my}});
+                settle();
+            }
             // The middle first, then other points inside it (a clipped viewport, or a note on
             // the sheet over the middle), as a user would try.
             const BBox2 box = pick->paper;
@@ -1095,6 +1103,14 @@ int App::runCapture() {
                         name.c_str(), pick->id, pick->scaleN, pick->locked ? " (locked)" : "",
                         pick->paper.min.x, pick->paper.min.y, pick->paper.max.x, pick->paper.max.y,
                         pick->clip.empty() ? "" : " (clipped)");
+            for (const layout::Layout& l : all)
+                if (l.name == name) {
+                    const bool onPaper = pick->paper.max.x > 0 && pick->paper.max.y > 0 &&
+                                         pick->paper.min.x < l.widthMm &&
+                                         pick->paper.min.y < l.heightMm;
+                    std::printf("enter-viewport: the paper is %.6g x %.6g mm%s\n", l.widthMm,
+                                l.heightMm, onPaper ? "" : "; the viewport lies off it");
+                }
             if (core_->inPaperSpace()) {
                 std::printf("enter-viewport: the double click did not enter it\n");
                 ++failed, ++failedSinceShot;
