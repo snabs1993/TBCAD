@@ -345,6 +345,25 @@ Clip capture(const Document& doc, std::span<const EntityId> ids, std::optional<V
     return clip;
 }
 
+Clip captureBlock(const Document& doc, BlockId block) {
+    Clip clip;
+    const BlockDef* def = doc.block(block);
+    if (!def)
+        return clip;
+    Collector collector(doc, clip);
+    for (EntityId id : def->entities) {
+        const Entity* e = doc.find(id);
+        if (!e)
+            continue;
+        clip.bounds.merge(geom::bounds(*e, doc));
+        clip.entities.push_back(*e);
+        clip.plotStyles.push_back(entityPlotStyle(doc.header(), id));
+        collector.collect(clip.entities.back());
+    }
+    clip.base = clip.bounds.empty() ? Vec2{} : clip.bounds.min;
+    return clip;
+}
+
 Result<std::vector<EntityId>> paste(Transaction& tx, const Clip& clip, const PasteOptions& opts) {
     if (clip.empty())
         return Error{ErrorCode::InvalidArgument, "The clipboard is empty."};
@@ -386,7 +405,8 @@ Result<std::vector<EntityId>> paste(Transaction& tx, const Clip& clip, const Pas
             return r.error();
         created.push_back(r.value());
     } else {
-        Transform2 move = Transform2::translate(opts.target - clip.base);
+        Transform2 move = opts.owner ? Transform2::translate({0, 0})
+                                     : Transform2::translate(opts.target - clip.base);
         for (std::size_t i = 0; i < clip.entities.size(); ++i) {
             Entity e = in.import(clip.entities[i]);
             if (opts.layer)
@@ -394,7 +414,7 @@ Result<std::vector<EntityId>> paste(Transaction& tx, const Clip& clip, const Pas
             auto moved = geom::transformed(e, move);
             if (!moved)
                 continue;
-            auto r = tx.add(std::move(moved.value()));
+            auto r = tx.add(std::move(moved.value()), opts.owner);
             if (!r)
                 return r.error();
             created.push_back(r.value());

@@ -45,7 +45,11 @@ struct Clip {
 Clip capture(const Document& doc, std::span<const EntityId> ids,
              std::optional<Vec2> base = std::nullopt);
 
+// The same for every object inside a block (for example a layout's sheet), which capture() skips.
+Clip captureBlock(const Document& doc, BlockId block);
+
 struct PasteOptions {
+    BlockId owner{};       // when set, loose entities go into this block, at their own coordinates
     Vec2 target{};         // where `clip.base` lands
     bool asBlock = false;  // one Insert of a new block instead of loose entities
     LayerId layer{};       // when set, everything pasted goes on this layer
