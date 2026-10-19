@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <random>
 
 #include "dwg_builder.h"
 #include "tbcad/dwg/dwg.h"
@@ -696,6 +697,66 @@ TEST_CASE("damaged or truncated files give a result or a clean error, never a cr
         (void)r;
     }
     CHECK(true);
+}
+
+TEST_CASE("random damage to every container version: no crash, no hang, an error or a result") {
+    // Random byte, run and size-field damage on files of each layout. Each import must also
+    // finish quickly (a pathological file may not keep the program busy).
+    std::mt19937 rng(20261019);
+    std::size_t imported = 0, rejected = 0;
+    double slowest = 0;
+    auto run = [&](const std::vector<std::uint8_t>& good) {
+        for (int iter = 0; iter < 600; ++iter) {
+            auto bad = good;
+            for (int k = 0, n = 1 + static_cast<int>(rng() % 4); k < n; ++k) {
+                const std::size_t at = 0x19 + rng() % (bad.size() - 0x19);
+                switch (rng() % 6) {
+                    case 0:
+                        bad[at] = static_cast<std::uint8_t>(rng());
+                        break;
+                    case 1:
+                        bad[at] = 0xFF;
+                        break;
+                    case 2:
+                        bad[at] = 0;
+                        break;
+                    case 3: {  // a run of all-ones: huge sizes and counts
+                        const std::size_t len =
+                            std::min<std::size_t>(1 + rng() % 8, bad.size() - at);
+                        std::fill_n(bad.begin() + static_cast<std::ptrdiff_t>(at), len, 0xFF);
+                        break;
+                    }
+                    case 4:
+                        bad.resize(at);
+                        break;
+                    default:
+                        bad.insert(bad.begin() + static_cast<std::ptrdiff_t>(at),
+                                   static_cast<std::uint8_t>(rng()));
+                }
+                if (bad.size() < 0x40)
+                    break;
+            }
+            const auto t0 = std::chrono::steady_clock::now();
+            dxf::Report report;
+            auto r = importDwg(asBytes(bad), dxf::ImportOptions{}, report);
+            const double sec =
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+            slowest = std::max(slowest, sec);
+            if (r.ok()) {
+                ++imported;
+                for (EntityId id : r.value().document->modelSpace())
+                    REQUIRE(r.value().document->find(id) != nullptr);
+            } else {
+                ++rejected;
+                CHECK_FALSE(r.error().message.empty());
+            }
+        }
+    };
+    run(sampleDrawing());
+    run(sampleDrawing2004("AC1018"));
+    run(sampleDrawing2004("AC1024"));
+    INFO("imported " << imported << " rejected " << rejected << " slowest " << slowest << " s");
+    CHECK(slowest < 2.0);
 }
 
 TEST_CASE("an object map of many sections reads in full") {
