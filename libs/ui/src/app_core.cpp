@@ -1346,7 +1346,21 @@ Result<void> AppCore::saveAs(const fs::path& requested) {
                          "TBCAD can save as .tbcad or .dxf; it never writes " + ext + " files.");
     }
     storeCurrentUcs();
+    // Relative xref paths must keep finding their files from the new folder.
+    const fs::path oldFile = session_->file;
+    bool rebased = false;
+    if (!oldFile.empty() && oldFile.parent_path() != path.parent_path()) {
+        Transaction tx = session_->doc.begin("SAVEAS");
+        rebased = xref::rebaseAll(tx, session_->doc, oldFile, path) > 0;
+        if (rebased)
+            tx.commit();
+    }
     auto r = isDxfPath(path) ? saveDxf(path) : io::writeTbcad(session_->doc, path);
+    if (!r && rebased) {  // the file did not move: put the paths back
+        Transaction tx = session_->doc.begin("SAVEAS");
+        (void)xref::rebaseAll(tx, session_->doc, path, oldFile);
+        tx.commit();
+    }
     if (!r) {
         print("Cannot save " + path.string() + ": " + r.error().message);
         return r;

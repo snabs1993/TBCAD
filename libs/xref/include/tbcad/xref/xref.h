@@ -62,6 +62,15 @@ enum class State {
 // host drawing (empty `hostFile` = the current folder). An options part ("plan.pdf#page=2,fade=60",
 // see tbcad/underlay/pdf.h) is not a part of the file name and is dropped.
 std::filesystem::path resolvePath(std::string_view stored, const std::filesystem::path& hostFile);
+// The stored path of an xref as it must read when the drawing moves from `fromHost` to `toHost`
+// (a paste into a drawing in another folder, SAVEAS): a relative path keeps pointing at the same
+// file, written relative to the new folder (absolute when no relative form exists). Absolute paths
+// and drawings that are not saved yet (empty host) leave it unchanged. Options after '#' stay.
+std::string rebaseStored(std::string_view stored, const std::filesystem::path& fromHost,
+                         const std::filesystem::path& toHost);
+// Rebases the path of every xref block (pictures and PDFs too) of `doc`; returns how many changed.
+std::size_t rebaseAll(Transaction& tx, const Document& doc, const std::filesystem::path& fromHost,
+                      const std::filesystem::path& toHost);
 // Last-write time in nanoseconds since the Unix epoch; 0 when the file cannot be read.
 std::int64_t fileStamp(const std::filesystem::path& file);
 // A block name for a file: its stem with characters a block name cannot hold replaced.
