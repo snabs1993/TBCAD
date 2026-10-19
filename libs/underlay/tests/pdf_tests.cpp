@@ -2,6 +2,7 @@
 #include <miniz.h>
 
 #include <cmath>
+#include <map>
 #include <string>
 
 #include "tbcad/underlay/pdf.h"
@@ -238,4 +239,40 @@ TEST_CASE("stored path specs: page and fade travel with the path") {
     CHECK(makeSpec("a.pdf", PdfOptions{}) == "a.pdf");
     CHECK(isPdfPath("A.PDF#page=2"));
     CHECK_FALSE(isPdfPath("a.png"));
+}
+
+TEST_CASE("PDF layers (optional content) become layers, hidden ones start off") {
+    std::string content =
+        "/OC /A BDC 0 0 m 10 0 l S EMC\n"
+        "/OC /B BDC 0 10 m 10 10 l S EMC\n"
+        "20 0 m 30 0 l S\n";
+    std::string p = "%PDF-1.5\n";
+    p += "1 0 obj\n<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [5 0 R 6 0 R] "
+         "/D << /OFF [6 0 R] >> >> >>\nendobj\n";
+    p += "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 200 100] >>\nendobj\n";
+    p += "3 0 obj\n<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << /Properties "
+         "<< /A 5 0 R /B 6 0 R >> >> >>\nendobj\n";
+    p += "4 0 obj\n<< /Length " + std::to_string(content.size()) + " >>\nstream\n" + content +
+         "\nendstream\nendobj\n";
+    p += "5 0 obj\n<< /Type /OCG /Name (Walls) >>\nendobj\n";
+    p += "6 0 obj\n<< /Type /OCG /Name (Furniture) >>\nendobj\n";
+    p += "trailer\n<< /Root 1 0 R >>\n%%EOF\n";
+    PdfReport rep;
+    auto doc = importPdf(bytesOf(p), {}, &rep);
+    REQUIRE(doc.ok());
+    REQUIRE(rep.layers.size() == 2);
+    CHECK(rep.layers[0] == "Walls");
+    CHECK(rep.layers[1] == "Furniture");
+    const Document& d = *doc.value();
+    const Layer* walls = d.layerByName("Walls");
+    const Layer* furniture = d.layerByName("Furniture");
+    REQUIRE(walls);
+    REQUIRE(furniture);
+    CHECK(walls->on);
+    CHECK_FALSE(furniture->on);
+    std::map<std::string, int> perLayer;
+    d.forEachEntity([&](const Entity& e) { ++perLayer[d.layer(e.common.layer)->name]; });
+    CHECK(perLayer["Walls"] == 1);
+    CHECK(perLayer["Furniture"] == 1);
+    CHECK(perLayer[kPdfLayerName] == 1);
 }

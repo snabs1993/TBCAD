@@ -1,8 +1,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <iterator>
+#include <map>
+#include <set>
 
 #include "pdf_parse.h"
 #include "tbcad/underlay/pdf.h"
@@ -42,7 +45,32 @@ struct OutPoly {
     std::vector<Vec2> pts{};
     bool closed = false;
     Rgb color{};
+    int layer = -1;  // index into Interpreter::layers; -1 = outside any optional content
 };
+
+// Name of an optional-content group: PDF text strings are PDFDocEncoding or UTF-16BE.
+std::string pdfText(const std::string& s) {
+    std::string out;
+    if (s.size() >= 2 && static_cast<unsigned char>(s[0]) == 0xFE &&
+        static_cast<unsigned char>(s[1]) == 0xFF) {
+        for (std::size_t i = 2; i + 1 < s.size(); i += 2) {
+            const unsigned cp =
+                (static_cast<unsigned char>(s[i]) << 8) | static_cast<unsigned char>(s[i + 1]);
+            if (cp < 0x80) {
+                out.push_back(static_cast<char>(cp));
+            } else if (cp < 0x800) {
+                out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+                out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+            } else {
+                out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+                out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+                out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+            }
+        }
+        return out;
+    }
+    return s;
+}
 
 struct Sub {
     std::vector<Vec2> pts{};
@@ -60,12 +88,23 @@ public:
     std::size_t vertices = 0, textRuns = 0, images = 0, skippedFills = 0;
     bool truncated = false;
     BBox2 page{};
+    // Optional-content groups met so far: name and whether the file switches them off.
+    struct Group {
+        std::string name{};
+        bool off = false;
+    };
+    std::vector<Group> groups{};
+    std::set<int> offRefs{};  // object numbers of the groups the default configuration hides
 
 private:
     const File& file_;
     std::size_t maxVertices_;
     std::size_t ops_ = 0;
 
+    int curLayer_ = -1;
+    std::map<int, int> groupOfRef_{};
+    std::map<std::string, int> groupOfName_{};
+    int groupFor(const Obj& ref, int depth = 0);
     void emit(const Sub& s, bool stroke, bool fill, const State& st);
     void flatten(Sub& s, Vec2 p1, Vec2 p2, Vec2 p3, const State& st);
 };
@@ -117,12 +156,53 @@ void Interpreter::emit(const Sub& s, bool stroke, bool fill, const State& st) {
     o.pts = s.pts;
     o.closed = s.closed || fill;
     o.color = color;
+    o.layer = curLayer_;
     vertices += o.pts.size();
     out.push_back(std::move(o));
 }
 
+// The layer of an optional-content group or membership dictionary (-1 when it names none).
+int Interpreter::groupFor(const Obj& ref, int depth) {
+    if (depth > 4)
+        return -1;
+    if (ref.type == Obj::Type::Ref) {
+        auto it = groupOfRef_.find(ref.refNum);
+        if (it != groupOfRef_.end())
+            return it->second;
+    }
+    const Obj& d = file_.resolve(ref);
+    if (!d.isDict())
+        return -1;
+    int idx = -1;
+    if (const Obj* groupsEntry = d.get("OCGs")) {  // membership dictionary: its first group
+        const Obj& g = file_.resolve(*groupsEntry);
+        if (g.isArr())
+            idx = g.arr.empty() ? -1 : groupFor(g.arr[0], depth + 1);
+        else
+            idx = groupFor(*groupsEntry, depth + 1);
+    } else {
+        const Obj* nm = file_.find(d, "Name");
+        std::string name = nm ? pdfText(nm->str) : std::string();
+        if (name.empty())
+            name = "Layer " + std::to_string(groups.size() + 1);
+        auto byName = groupOfName_.find(name);
+        if (byName != groupOfName_.end()) {
+            idx = byName->second;
+        } else {
+            idx = static_cast<int>(groups.size());
+            groups.push_back({name, ref.type == Obj::Type::Ref && offRefs.count(ref.refNum) > 0});
+            groupOfName_[name] = idx;
+        }
+    }
+    if (ref.type == Obj::Type::Ref)
+        groupOfRef_[ref.refNum] = idx;
+    return idx;
+}
+
 void Interpreter::run(std::string_view content, const Obj& resources, State st, int depth) {
     std::vector<State> stack;
+    std::vector<int> marked;  // layer to return to at each EMC
+    const int entryLayer = curLayer_;
     std::vector<Obj> args;
     std::vector<Sub> path;
     Vec2 cur{};
@@ -257,6 +337,26 @@ void Interpreter::run(std::string_view content, const Obj& resources, State st, 
         } else if (op == "SC" || op == "SCN") {
             if (!args.empty() && args.back().isNum())
                 colorOps(st.stroke);
+        } else if (op == "BDC" || op == "BMC") {
+            marked.push_back(curLayer_);
+            if (op == "BDC" && args.size() >= 2 && args[0].isName("OC")) {
+                int g = -1;
+                if (args[1].isName()) {
+                    const Obj* props = file_.find(resources, "Properties");
+                    const Obj* ref = props && props->isDict() ? props->get(args[1].str) : nullptr;
+                    if (ref)
+                        g = groupFor(*ref);
+                } else if (args[1].isDict()) {
+                    g = groupFor(args[1]);
+                }
+                if (g >= 0)
+                    curLayer_ = g;
+            }
+        } else if (op == "EMC") {
+            if (!marked.empty()) {
+                curLayer_ = marked.back();
+                marked.pop_back();
+            }
         } else if (op == "BT") {
             ++textRuns;
         } else if (op == "BI") {
@@ -297,9 +397,16 @@ void Interpreter::run(std::string_view content, const Obj& resources, State st, 
                         }
                         std::vector<std::uint8_t> bytes = file_.decode(*xe);
                         const Obj* fr = file_.find(*xe, "Resources");
+                        const int before = curLayer_;
+                        if (const Obj* ocRef = xe->get("OC")) {
+                            const int g = groupFor(*ocRef);
+                            if (g >= 0)
+                                curLayer_ = g;
+                        }
                         run(std::string_view(reinterpret_cast<const char*>(bytes.data()),
                                              bytes.size()),
                             fr ? *fr : resources, fs, depth + 1);
+                        curLayer_ = before;
                     } else if (sub && sub->isName("Image")) {
                         ++images;
                     }
@@ -308,6 +415,7 @@ void Interpreter::run(std::string_view content, const Obj& resources, State st, 
         }
         args.clear();
     }
+    curLayer_ = entryLayer;
 }
 
 std::string lowerStr(std::string_view s) {
@@ -402,9 +510,32 @@ Result<std::unique_ptr<Document>> importPdf(std::span<const std::byte> bytes,
         }
     }
     const Obj* resources = file.find(page, "Resources");
+    // Groups the default configuration hides: all of them with BaseState OFF (except those in
+    // ON), else those in OFF.
+    if (const Obj* ocp = file.find(file.root(), "OCProperties")) {
+        auto refsOf = [&](const Obj* arr, auto&& fn) {
+            if (!arr)
+                return;
+            const Obj& a = file.resolve(*arr);
+            if (a.isArr())
+                for (const Obj& e : a.arr)
+                    if (e.type == Obj::Type::Ref)
+                        fn(e.refNum);
+        };
+        if (const Obj* cfg = file.find(*ocp, "D")) {
+            const Obj* base = file.find(*cfg, "BaseState");
+            if (base && base->isName("OFF")) {
+                refsOf(ocp->get("OCGs"), [&](int n) { in.offRefs.insert(n); });
+                refsOf(cfg->get("ON"), [&](int n) { in.offRefs.erase(n); });
+            }
+            refsOf(cfg->get("OFF"), [&](int n) { in.offRefs.insert(n); });
+        }
+    }
     State st;
     st.ctm = base;
     in.run(content, resources ? *resources : Obj{}, st, 0);
+    for (const Interpreter::Group& g : in.groups)
+        rep.layers.push_back(g.name);
 
     rep.paths = in.out.size();
     rep.vertices = in.vertices;
@@ -428,6 +559,32 @@ Result<std::unique_ptr<Document>> importPdf(std::span<const std::byte> bytes,
         auto lid = tx.addLayer(layer);
         if (!lid)
             return lid.error();
+        // One layer per optional-content group; the ones the file hides start switched off.
+        std::vector<LayerId> groupLayers;
+        for (const Interpreter::Group& g : in.groups) {
+            std::string name = g.name;
+            for (char& c : name)
+                if (std::strchr("<>/\\\":;?*|=`", c) || static_cast<unsigned char>(c) < 32)
+                    c = '_';
+            while (!name.empty() && name.back() == ' ')
+                name.pop_back();
+            if (name.empty())
+                name = "Layer";
+            LayerId found{};
+            for (std::size_t i = 0; i < groupLayers.size(); ++i)
+                if (const Layer* l = doc->layer(groupLayers[i]); l && l->name == name)
+                    found = groupLayers[i];
+            if (!found) {
+                Layer l;
+                l.name = name;
+                l.on = !g.off;
+                auto r = tx.addLayer(l);
+                if (!r)
+                    return r.error();
+                found = r.value();
+            }
+            groupLayers.push_back(found);
+        }
         const double fade = std::clamp(options.fadePercent, 0.0, 95.0) / 100.0;
         constexpr double kGrey = 160;
         auto chan = [&](double v) {
@@ -441,7 +598,8 @@ Result<std::unique_ptr<Document>> importPdf(std::span<const std::byte> bytes,
             for (Vec2 p : o.pts)
                 pl.v.push_back({p, 0, 0, 0});
             Entity e;
-            e.common.layer = lid.value();
+            e.common.layer =
+                o.layer >= 0 ? groupLayers[static_cast<std::size_t>(o.layer)] : lid.value();
             e.common.color = Color::rgb(chan(o.color.r), chan(o.color.g), chan(o.color.b));
             e.data = std::move(pl);
             auto added = tx.add(std::move(e));

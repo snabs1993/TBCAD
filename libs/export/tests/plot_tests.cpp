@@ -12,6 +12,7 @@
 #include "miniz.h"
 #include "tbcad/blocks/display.h"
 #include "tbcad/export/plot.h"
+#include "tbcad/underlay/image.h"
 
 using namespace tbcad;
 using namespace tbcad::exportlib;
@@ -823,6 +824,33 @@ TEST_CASE("a picture block is plotted as a picture in PDF, SVG and raster output
     CHECK(c[0] == 255);
     CHECK(c[1] < 10);
     CHECK(c[2] < 10);
+
+    // A polygon clip and a plotted frame: the outside of the polygon is transparent, the frame is
+    // drawn as a path.
+    {
+        auto tx = doc.begin("clip");
+        underlay::ImageParams ip;
+        ip.clip = {{0, 0}, {1, 0}, {0, 1}};
+        ip.frame = 1;
+        REQUIRE(underlay::setImageParams(tx, "red", ip));
+        tx.commit();
+    }
+    auto clipped = buildSheet(doc, s);
+    REQUIRE(clipped.ok());
+    const PlotImage* cp = nullptr;
+    std::size_t framePaths = 0;
+    for (const PlotPrimitive& p : clipped.value().prims) {
+        if (const auto* i = std::get_if<PlotImage>(&p))
+            cp = i;
+        else if (std::get_if<PlotPath>(&p))
+            ++framePaths;
+    }
+    REQUIRE(cp);
+    CHECK(framePaths == 1);
+    const auto& rgba = cp->data->rgba;
+    CHECK(rgba[3] == 255);                    // top-left pixel is inside
+    CHECK(rgba[((1 * 4 + 3) * 4) + 3] == 0);  // bottom-right pixel is outside
+    s.hostFile = dir / "drawing.tbcad";
 
     // A picture whose file cannot be found is left out.
     s.hostFile = dir / "nowhere" / "drawing.tbcad";
