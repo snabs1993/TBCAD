@@ -1,6 +1,9 @@
 #include <doctest/doctest.h>
 
+#include <filesystem>
+
 #include "tbcad/cmd/cmd.h"
+#include "tbcad/io/tbcad.h"
 #include "tbcad/layout/layout.h"
 #include "tbcad/layoutcmd/layoutcmd.h"
 
@@ -332,4 +335,168 @@ TEST_CASE("LAYOUT Copy duplicates a layout with its viewports and makes the copy
     CHECK_FALSE(layout::findLayout(f.doc, "Plan copy").has_value());
     f.host->run("LAYOUT", {"Copy", "Plan", "plan"});
     CHECK(f.host->logContains("already"));
+}
+
+namespace {
+std::size_t sheetObjects(Document& doc, const std::string& name) {
+    auto l = layout::findLayout(doc, name);
+    const BlockDef* b = l ? doc.block(l->content) : nullptr;
+    return b ? b->entities.size() : 0;
+}
+}  // namespace
+
+TEST_CASE("every layout edit undoes and redoes back to the same state") {
+    Fixture f;
+    f.host->run("LAYOUT", {"New", "Plan", "A3", ""});
+    f.host->run("MVIEW", {"10,10", "200,200", "1:50", "1000,1000"});
+    f.host->run("MVIEW", {"210,10", "400,200", "1:100", "2000,500"});
+    f.host->run("TITLEBLOCK", {"Job", "Client", "A. Person", "1", "2026-10-19"});
+    const std::size_t objects = sheetObjects(f.doc, "Plan");
+    const std::size_t views = layout::findLayout(f.doc, "Plan")->viewports.size();
+    REQUIRE(views == 2);
+    REQUIRE(objects > 0);
+
+    // Copy, rename, paper change, delete: each one step back and forth.
+    f.host->run("LAYOUT", {"Copy", "Plan", "Plan 2"});
+    CHECK(sheetObjects(f.doc, "Plan 2") == objects);
+    f.host->run("LAYOUT", {"Rename", "Plan 2", "Detail"});
+    CHECK(layout::findLayout(f.doc, "Detail").has_value());
+    f.host->run("LAYOUT", {"Paper", "Detail", "A1", "Portrait"});
+    CHECK(layout::findLayout(f.doc, "Detail")->heightMm == doctest::Approx(841));
+    f.host->run("LAYOUT", {"Delete", "Detail"});
+    CHECK_FALSE(layout::findLayout(f.doc, "Detail").has_value());
+
+    CHECK(f.host->undo());  // delete
+    auto back = layout::findLayout(f.doc, "Detail");
+    REQUIRE(back.has_value());
+    CHECK(back->viewports.size() == views);
+    CHECK(sheetObjects(f.doc, "Detail") == objects);
+    CHECK(f.host->undo());  // paper
+    CHECK(layout::findLayout(f.doc, "Detail")->widthMm == doctest::Approx(420));
+    CHECK(f.host->undo());  // rename
+    CHECK(layout::findLayout(f.doc, "Plan 2").has_value());
+    CHECK(f.host->undo());  // copy
+    CHECK_FALSE(layout::findLayout(f.doc, "Plan 2").has_value());
+    CHECK(layout::layouts(f.doc).size() == 1);
+
+    for (int i = 0; i < 4; ++i)
+        CHECK(f.host->redo());
+    CHECK_FALSE(layout::findLayout(f.doc, "Detail").has_value());
+    CHECK(layout::layouts(f.doc).size() == 1);
+}
+
+TEST_CASE("viewport edits undo: scale, lock, layer freeze, delete, move and clip") {
+    Fixture f;
+    LayerId walls;
+    {
+        auto tx = f.doc.begin("layer");
+        Layer l;
+        l.name = "Walls";
+        walls = tx.addLayer(l).value();
+        tx.commit();
+    }
+    f.host->run("LAYOUT", {"New", "Plan", "A3", ""});
+    f.host->run("MVIEW", {"10,10", "200,200", "1:50", "1000,1000"});
+    auto vp = [&]() { return layout::findLayout(f.doc, "Plan")->viewports.at(0); };
+    const int id = vp().id;
+
+    f.host->run("VPSCALE", {std::to_string(id), "1:20"});
+    CHECK(vp().scaleN == doctest::Approx(20));
+    CHECK(f.host->undo());
+    CHECK(vp().scaleN == doctest::Approx(50));
+
+    f.host->run("VPLOCK", {std::to_string(id), "Lock"});
+    CHECK(vp().locked);
+    f.host->run("VPSCALE", {std::to_string(id), "1:20"});
+    CHECK(vp().scaleN == doctest::Approx(50));  // refused while locked
+    CHECK(f.host->undo());                      // the lock
+    CHECK_FALSE(vp().locked);
+    f.host->run("VPSCALE", {std::to_string(id), "1:20"});
+    CHECK(vp().scaleN == doctest::Approx(20));
+
+    f.host->run("VPLAYER", {"Freeze", "Walls", std::to_string(id)});
+    CHECK(layout::frozenInViewport(f.doc, vp(), walls));
+    CHECK(f.host->undo());
+    CHECK_FALSE(layout::frozenInViewport(f.doc, vp(), walls));
+
+    f.host->run("VPDELETE", {std::to_string(id)});
+    CHECK(layout::findLayout(f.doc, "Plan")->viewports.empty());
+    CHECK(f.host->undo());
+    REQUIRE(layout::findLayout(f.doc, "Plan")->viewports.size() == 1);
+    CHECK(vp().scaleN == doctest::Approx(20));
+}
+
+TEST_CASE("layout names are validated and the last layout can go") {
+    Fixture f;
+    f.host->run("LAYOUT", {"New", "Plan", "A3", ""});
+    f.host->run("LAYOUT", {"New", "PLAN", "A3", ""});  // same name ignoring case
+    CHECK(layout::layouts(f.doc).size() == 1);
+    f.host->run("LAYOUT", {"New", "", "A3", ""});
+    CHECK(layout::layouts(f.doc).size() == 1);
+    f.host->run("LAYOUT", {"New", std::string(80, 'x'), "A3", ""});
+    CHECK(layout::layouts(f.doc).size() == 1);
+    f.host->run("LAYOUT", {"New", "Other", "A3", ""});
+    f.host->run("LAYOUT", {"Rename", "Other", "plan"});
+    CHECK(layout::findLayout(f.doc, "Other").has_value());
+    f.host->run("LAYOUT", {"New", "Sheet\n2", "A3", ""});
+    CHECK(layout::layouts(f.doc).size() == 2);
+    f.host->run("LAYOUT", {"Delete", "Other"});
+    f.host->run("LAYOUT", {"Delete", "Plan"});
+    CHECK(layout::layouts(f.doc).empty());
+    f.host->run("MVIEW", {});
+    CHECK(f.host->logContains("no layouts"));
+}
+
+TEST_CASE("LAYOUT Template brings a layout, its sheet objects and viewports from a drawing file") {
+    const auto file = std::filesystem::temp_directory_path() / "tbcad_layout_template.tbcad";
+    {
+        Fixture src;
+        LayerId frame;
+        {
+            auto tx = src.doc.begin("layer");
+            Layer l;
+            l.name = "TB-FRAME";
+            frame = tx.addLayer(l).value();
+            tx.commit();
+        }
+        src.host->run("LAYOUT", {"New", "A2 Plan", "A2", "Portrait"});
+        src.host->run("MVIEW", {"20,20", "400,500", "1:200", "5000,6000"});
+        src.host->run("VPLOCK", {"1", "Lock"});
+        src.host->run("TITLEBLOCK", {"Job", "Client", "A. Person", "1", "2026-10-19"});
+        {
+            auto tx = src.doc.begin("frame");
+            Entity e;
+            e.data = LineData{{5, 5}, {400, 5}};
+            e.common.layer = frame;
+            REQUIRE(tx.add(std::move(e), layout::findLayout(src.doc, "A2 Plan")->content).ok());
+            tx.commit();
+        }
+        REQUIRE(io::writeTbcad(src.doc, file, io::WriteOptions{.keepBackup = false}).ok());
+    }
+    Fixture f;
+    f.host->run("LAYOUT", {"Template", file.string()});
+    auto got = layout::findLayout(f.doc, "A2 Plan");
+    REQUIRE(got.has_value());
+    CHECK(got->heightMm == doctest::Approx(594).epsilon(0.5));  // portrait A2: 420 x 594
+    CHECK(got->landscape == false);
+    REQUIRE(got->viewports.size() == 1);
+    CHECK(got->viewports[0].scaleN == doctest::Approx(200));
+    CHECK(got->viewports[0].locked);
+    CHECK(got->viewports[0].center.y == doctest::Approx(6000));
+    CHECK(sheetObjects(f.doc, "A2 Plan") >= 2);
+    CHECK(f.doc.layerByName("TB-FRAME") != nullptr);  // created from the template
+    CHECK(layoutcmd::currentLayout(*f.host, f.doc) == "A2 Plan");
+
+    // A second import gets a fresh name; one step of undo takes it away again.
+    f.host->run("LAYOUT", {"Template", file.string()});
+    CHECK(layout::findLayout(f.doc, "A2 Plan (2)").has_value());
+    CHECK(f.host->undo());
+    CHECK_FALSE(layout::findLayout(f.doc, "A2 Plan (2)").has_value());
+    CHECK(layout::findLayout(f.doc, "A2 Plan").has_value());
+
+    // Missing and non-drawing files say so and change nothing.
+    f.host->run("LAYOUT", {"Template", (file.parent_path() / "no_such_file.tbcad").string()});
+    CHECK(f.host->logContains("Cannot read"));
+    CHECK(layout::layouts(f.doc).size() == 1);
+    std::filesystem::remove(file);
 }

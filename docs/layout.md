@@ -8,7 +8,7 @@ so they are saved in the `.tbcad` file and changes are undoable.
 
 | Command | What it does |
 | --- | --- |
-| `LAYOUT` (`LO`) | New, Delete, Rename, Paper, Set (current), List |
+| `LAYOUT` (`LO`) | New, Copy, Delete, Rename, Paper, Set (current), List, Template (bring a layout with its sheet objects and viewports from a .tbcad or .dxf file) |
 | `MVIEW` (`MV`) | Adds a viewport: two sheet corners in mm, scale `1:N`, model centre (Enter = the middle of the drawing) |
 | `VPSCALE` | Changes a viewport's scale |
 | `VPMOVE`, `VPRESIZE`, `VPCENTER`, `VPDELETE` | Move a viewport on the sheet, give it new corners, change the model point it shows, or delete it |

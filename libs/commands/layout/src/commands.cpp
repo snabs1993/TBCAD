@@ -1,9 +1,16 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <span>
 
+#include "tbcad/clipboard/clipboard.h"
 #include "tbcad/cmd/cmd.h"
+#include "tbcad/dxf/reader.h"
 #include "tbcad/geom/entity.h"
+#include "tbcad/io/tbcad.h"
 #include "tbcad/layout/layout.h"
 #include "tbcad/layoutcmd/layoutcmd.h"
 
@@ -94,7 +101,7 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::KeywordOptions menu;
-        menu.keywords = {"New", "Copy", "Delete", "Rename", "Paper", "Set", "List"};
+        menu.keywords = {"New", "Copy", "Delete", "Rename", "Paper", "Set", "List", "Template"};
         menu.defaultKeyword = "List";
         auto choice = co_await ctx.getKeyword("Layout", menu);
         if (choice.status == Status::Cancel)
@@ -138,6 +145,10 @@ public:
                 ctx.host().setSetting("layout.current", name.text);
                 ctx.host().setSetting("layout.show", name.text);  // the window follows
             }
+            co_return;
+        }
+        if (kw == "Template") {
+            co_await fromTemplate(ctx);
             co_return;
         }
         // The rest work on a named layout, defaulting to the current one.
@@ -216,6 +227,114 @@ public:
                                           orient.keyword == "Landscape", w, h),
                    "Paper changed.");
         }
+    }
+
+private:
+    // LAYOUT Template: brings a layout (paper, sheet objects and viewports) from a drawing file
+    // (.tbcad or .dxf) into this drawing. Layers, styles and blocks the sheet uses are matched by
+    // name and created when missing; layers frozen per viewport are not carried over.
+    static cmd::Task fromTemplate(cmd::CommandContext& ctx) {
+        auto f = co_await ctx.getString("Drawing file with the layout (.tbcad or .dxf)");
+        if (!f.ok())
+            co_return;
+        std::string path = cmd::trim(f.text);
+        if (path.size() >= 2 && path.front() == '"' && path.back() == '"')
+            path = path.substr(1, path.size() - 2);
+        const std::filesystem::path file(std::u8string(path.begin(), path.end()));
+        std::unique_ptr<Document> src;
+        std::string ext = lower(file.extension().string());
+        if (ext == ".dxf") {
+            std::ifstream in(file, std::ios::binary);
+            if (!in) {
+                ctx.message("Cannot read " + path);
+                co_return;
+            }
+            std::vector<char> raw((std::istreambuf_iterator<char>(in)),
+                                  std::istreambuf_iterator<char>());
+            dxf::Report rep;
+            auto r = dxf::importDxf(std::span<const std::byte>(
+                                        reinterpret_cast<const std::byte*>(raw.data()), raw.size()),
+                                    dxf::ImportOptions{}, rep);
+            if (!r) {
+                ctx.message("Cannot read " + path + ": " + r.error().message);
+                co_return;
+            }
+            src = std::move(r.value().document);
+        } else {
+            io::IoReport rep;
+            auto r = io::readTbcad(file, rep);
+            if (!r) {
+                ctx.message("Cannot read " + path + ": " + r.error().message);
+                co_return;
+            }
+            src = std::move(r.value());
+        }
+        const auto all = layout::layouts(*src);
+        if (all.empty()) {
+            ctx.message(path + " has no layouts.");
+            co_return;
+        }
+        std::string pick = all.front().name;
+        if (all.size() > 1) {
+            std::string names;
+            for (const auto& l : all)
+                names += (names.empty() ? "" : ", ") + l.name;
+            ctx.message("Layouts in the file: " + names);
+            cmd::StringOptions po;
+            po.defaultValue = pick;
+            auto n = co_await ctx.getString("Layout to bring in", po);
+            if (!n.ok())
+                co_return;
+            pick = n.text;
+        }
+        auto chosen = layout::findLayout(*src, pick);
+        if (!chosen) {
+            ctx.message("No layout named \"" + pick + "\" in the file.");
+            co_return;
+        }
+        std::string name = chosen->name;
+        for (int n = 2; layout::findLayout(ctx.doc(), name); ++n)
+            name = chosen->name + " (" + std::to_string(n) + ")";
+        auto made = layout::createLayout(ctx.tx(), name, chosen->paperName, chosen->landscape);
+        if (!made) {
+            // A custom sheet size is not a named paper: create it as A3, then set the size.
+            made = layout::createLayout(ctx.tx(), name, "A3", chosen->landscape);
+            if (made)
+                made = layout::setLayoutPaper(ctx.tx(), name, "Custom", chosen->landscape,
+                                              chosen->widthMm, chosen->heightMm);
+        }
+        if (!made) {
+            ctx.message(made.error().message);
+            co_return;
+        }
+        auto created = layout::findLayout(ctx.doc(), name);
+        clipboard::Clip sheet = clipboard::captureBlock(*src, chosen->content);
+        std::size_t objects = 0;
+        if (created && !sheet.empty()) {
+            clipboard::PasteOptions po;
+            po.owner = created->content;
+            auto ids = clipboard::paste(ctx.tx(), sheet, po);
+            if (!ids) {
+                ctx.message(ids.error().message);
+                co_return;
+            }
+            objects = ids.value().size();
+        }
+        for (const layout::Viewport& v : chosen->viewports) {
+            auto id = layout::addViewport(ctx.tx(), name, v.paper, v.center, v.scaleN);
+            if (!id)
+                continue;
+            if (!v.clip.empty())
+                (void)layout::setViewportClip(ctx.tx(), name, id.value(), v.clip);
+            if (!v.on)
+                (void)layout::setViewportOn(ctx.tx(), name, id.value(), false);
+            if (v.locked)
+                (void)layout::setViewportLocked(ctx.tx(), name, id.value(), true);
+        }
+        ctx.host().setSetting("layout.current", name);
+        ctx.host().setSetting("layout.show", name);
+        ctx.message("Layout \"" + name + "\" brought in with " + std::to_string(objects) +
+                    " object(s) and " + std::to_string(chosen->viewports.size()) + " viewport(s).");
     }
 };
 
