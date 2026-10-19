@@ -244,44 +244,58 @@ void SplineCurve::buildSamples() {
 
 namespace {
 
-// Solves A x = b (b has two columns) for a square matrix stored row-major. Banded elimination
-// without pivoting when `banded` > 0, dense with partial pivoting otherwise.
-bool solveSystem(std::vector<double>& a, std::vector<Vec2>& b, int n, int band) {
-    auto at = [&](int r, int c) -> double& {
-        return a[static_cast<std::size_t>(r) * static_cast<std::size_t>(n) +
-                 static_cast<std::size_t>(c)];
-    };
-    bool pivoting = band <= 0;
-    for (int k = 0; k < n; ++k) {
-        int rowEnd = pivoting ? n : std::min(n, k + band + 1);
-        if (pivoting) {
-            int best = k;
-            for (int r = k + 1; r < n; ++r)
-                if (std::abs(at(r, k)) > std::abs(at(best, k)))
-                    best = r;
-            if (best != k) {
-                for (int c = 0; c < n; ++c)
-                    std::swap(at(k, c), at(best, c));
-                std::swap(b[static_cast<std::size_t>(k)], b[static_cast<std::size_t>(best)]);
-            }
+// Sparse rows of a square matrix: (column, value) pairs.
+using SparseRows = std::vector<std::vector<std::pair<int, double>>>;
+
+// Solves A x = b (b has two columns) for a banded square matrix by LU with partial pivoting; only
+// the band (plus the fill the pivoting adds) is stored, so the cost is linear in n.
+bool solveBanded(const SparseRows& rows, std::vector<Vec2>& b) {
+    const int n = static_cast<int>(rows.size());
+    int kl = 0, ku = 0;
+    for (int r = 0; r < n; ++r)
+        for (const auto& [c, v] : rows[static_cast<std::size_t>(r)]) {
+            kl = std::max(kl, r - c);
+            ku = std::max(ku, c - r);
         }
-        double piv = at(k, k);
-        if (std::abs(piv) < 1e-13)
+    // Row r keeps the columns r - kl .. r + ku + kl.
+    const int w = 2 * kl + ku + 1;
+    std::vector<double> a(static_cast<std::size_t>(n) * static_cast<std::size_t>(w), 0.0);
+    auto at = [&](int r, int c) -> double& {
+        return a[static_cast<std::size_t>(r) * static_cast<std::size_t>(w) +
+                 static_cast<std::size_t>(c - (r - kl))];
+    };
+    for (int r = 0; r < n; ++r)
+        for (const auto& [c, v] : rows[static_cast<std::size_t>(r)])
+            at(r, c) += v;
+    const int reach = kl + ku;
+    for (int k = 0; k < n; ++k) {
+        const int last = std::min(n - 1, k + kl);
+        int best = k;
+        for (int r = k + 1; r <= last; ++r)
+            if (std::abs(at(r, k)) > std::abs(at(best, k)))
+                best = r;
+        if (std::abs(at(best, k)) < 1e-14)
             return false;
-        int colEnd = pivoting ? n : std::min(n, k + band + 1);
-        for (int r = k + 1; r < rowEnd; ++r) {
-            double f = at(r, k) / piv;
+        const int cEnd = std::min(n - 1, k + reach);
+        if (best != k) {
+            for (int c = k; c <= cEnd; ++c)
+                std::swap(at(k, c), at(best, c));
+            std::swap(b[static_cast<std::size_t>(k)], b[static_cast<std::size_t>(best)]);
+        }
+        const double piv = at(k, k);
+        for (int r = k + 1; r <= last; ++r) {
+            const double f = at(r, k) / piv;
             if (f == 0)
                 continue;
-            for (int c = k; c < colEnd; ++c)
+            for (int c = k; c <= cEnd; ++c)
                 at(r, c) -= f * at(k, c);
             b[static_cast<std::size_t>(r)] -= b[static_cast<std::size_t>(k)] * f;
         }
     }
     for (int k = n - 1; k >= 0; --k) {
         Vec2 s = b[static_cast<std::size_t>(k)];
-        int colEnd = pivoting ? n : std::min(n, k + band + 1);
-        for (int c = k + 1; c < colEnd; ++c)
+        const int cEnd = std::min(n - 1, k + reach);
+        for (int c = k + 1; c <= cEnd; ++c)
             s -= b[static_cast<std::size_t>(c)] * at(k, c);
         b[static_cast<std::size_t>(k)] = s / at(k, k);
     }
@@ -371,12 +385,15 @@ Result<SplineData> interpolateSpline(std::span<const Vec2> fitPoints,
     }
 
     // Assemble the collocation system.
-    std::vector<double> a(static_cast<std::size_t>(m) * static_cast<std::size_t>(m), 0.0);
+    SparseRows rows(static_cast<std::size_t>(m));
     std::vector<Vec2> rhs(static_cast<std::size_t>(m));
-    auto at = [&](int r, int c) -> double& {
-        return a[static_cast<std::size_t>(r) * static_cast<std::size_t>(m) +
-                 static_cast<std::size_t>(c)];
+    // Sets entry (r, c); each entry is set once, so a plain append does.
+    struct Entry {
+        SparseRows& rows;
+        int r, c;
+        void operator=(double v) const { rows[static_cast<std::size_t>(r)].emplace_back(c, v); }
     };
+    auto at = [&](int r, int c) { return Entry{rows, r, c}; };
 
     SplineData tmp;
     tmp.degree = p;
@@ -464,18 +481,7 @@ Result<SplineData> interpolateSpline(std::span<const Vec2> fitPoints,
     }
     (void)dataRow0;
 
-    std::vector<double> a2 = a;
-    std::vector<Vec2> rhs2 = rhs;
-    int band = p + 2;
-    bool ok = m > 1500 ? solveSystem(a, rhs, m, band) : false;
-    if (!ok && m <= 1500) {
-        a = a2;
-        rhs = rhs2;
-        ok = solveSystem(a, rhs, m, 0);
-    } else if (!ok) {
-        return makeError(ErrorCode::Generic, "spline interpolation failed (singular system)");
-    }
-    if (!ok)
+    if (!solveBanded(rows, rhs))
         return makeError(ErrorCode::Generic, "spline interpolation failed (singular system)");
 
     SplineData out;
