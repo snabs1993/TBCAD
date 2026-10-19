@@ -141,7 +141,8 @@ float boxBeside(const char* buttonLabel) {
 }
 
 void enumCombo(ui::PanelContext& pc, const DimStyle& s, const char* label, const char* key,
-               int current, const std::vector<std::pair<const char*, const char*>>& options) {
+               int current, const std::vector<std::pair<const char*, const char*>>& options,
+               const char* tip = nullptr) {
     if (ImGui::BeginCombo(leftLabel(label).c_str(),
                           options[static_cast<std::size_t>(current)].first)) {
         for (std::size_t i = 0; i < options.size(); ++i)
@@ -149,12 +150,16 @@ void enumCombo(ui::PanelContext& pc, const DimStyle& s, const char* label, const
                 pc.runCommand(editLine(s.name, key, options[i].second));
         ImGui::EndCombo();
     }
+    if (tip && ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", tip);
 }
 
 void realField(ui::PanelContext& pc, const DimStyle& s, const char* label, const char* key,
-               double value) {
+               double value, const char* tip = nullptr) {
     double v = value;
     ImGui::InputDouble(leftLabel(label).c_str(), &v, 0, 0, "%.6g", kNumber);
+    if (tip && ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", tip);
     if (ImGui::IsItemDeactivatedAfterEdit() && v != value)
         pc.runCommand(editLine(s.name, key, number(v)));
 }
@@ -192,6 +197,20 @@ void drawEditor(ui::PanelContext& pc, const DimStyle& s) {
     enumCombo(pc, s, "Alignment", "Alignment", static_cast<int>(s.textAlign),
               {{"With the line", "WithLine"}, {"Horizontal", "Horizontal"}});
     colorField(pc, s, "Text colour", "TextColor", s.textColor);
+    enumCombo(pc, s, "Fit", "Fit", static_cast<int>(s.fit),
+              {{"Best fit", "Best"},
+               {"Arrows first", "ArrowsFirst"},
+               {"Text first", "TextFirst"},
+               {"Both outside", "BothOutside"}},
+              "DIMATFIT: what moves outside the extension lines when the text and arrows do not "
+              "both fit.\nBest fit and Arrows first move the arrows out, then the text.\n"
+              "Text first moves the text out first.\nBoth outside moves both as soon as they do "
+              "not fit together.");
+    enumCombo(pc, s, "Dragged text", "TextMove", static_cast<int>(s.textMove),
+              {{"Keep with line", "WithLine"}, {"Add a leader", "Leader"}, {"Move freely", "Free"}},
+              "DIMTMOVE: where the text goes when you drag it away from the dimension line.\n"
+              "Outside the extension lines it keeps a leader (Keep with line, Add a leader) or "
+              "none (Move freely).");
 
     ImGui::SeparatorText("Lines and arrows");
     enumCombo(pc, s, "Arrow", "ArrowType", static_cast<int>(s.arrowType),
@@ -215,6 +234,9 @@ void drawEditor(ui::PanelContext& pc, const DimStyle& s) {
     if (ImGui::IsItemDeactivatedAfterEdit() && prec != s.precision)
         pc.runCommand(editLine(s.name, "Precision", std::to_string(std::clamp(prec, 0, 8))));
     realField(pc, s, "Round off", "RoundOff", s.roundOff);
+    realField(pc, s, "Linear factor", "LinearFactor", s.linearFactor,
+              "DIMLFAC: multiplies every length measurement before it is shown (for drawings "
+              "made at a different scale).\nMust be above zero. Angles are not affected.");
     textField(pc, s, "Prefix", "Prefix", s.prefix);
     textField(pc, s, "Suffix", "Suffix", s.suffix);
     bool lead = s.suppressLeadingZeros, trail = s.suppressTrailingZeros;
