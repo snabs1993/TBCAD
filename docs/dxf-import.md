@@ -84,8 +84,9 @@ definitions), the TBCAD entities produced and the records dropped.
   lines; spline edges keep their shape). One info line `dxf.reader.extrusion_3d` counts them.
   TEXT, ATTDEF and ATTRIB keep their exact projected shape (rotation, height, width factor,
   obliquing angle, upside down); MTEXT gets the projected height and width. Text seen edge-on is
-  skipped as a bad entity. Inserts and other entity types in such a plane are still skipped with
-  a warning of the same code.
+  skipped as a bad entity. An INSERT turned by a multiple of 90 degrees in its plane becomes a
+  block squashed by the tilt (rotation plus non-uniform scale); any other turn would need a shear
+  and is skipped with a warning of the same code, as are other entity types in such a plane.
 * **Units.** `$INSUNITS` is converted with the usual factors (inch 25.4, foot 304.8, metre 1000,
   ...). Unitless (0) or missing: the numbers are taken as millimetres and an info line says so.
   When a factor other than 1 is applied an info line names it. Every length is scaled: coordinates,
