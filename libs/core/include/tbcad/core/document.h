@@ -733,4 +733,10 @@ inline void applyCurrentProperties(const Header& h, Entity& e) {
     applyAnnotativeDefault(h, e);
 }
 
+// Rewrites the entity ids a block definition keeps (dynamic actions and visibility states,
+// assembly bindings) through `map`, for a definition copied to another drawing whose members got
+// new ids. Ids that `map` does not know (it returns null) are dropped from lists and cleared in
+// bindings.
+void remapBlockEntityRefs(BlockDef& def, const std::function<EntityId(EntityId)>& map);
+
 }  // namespace tbcad

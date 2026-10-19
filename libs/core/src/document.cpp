@@ -2378,4 +2378,26 @@ bool annotateNewObjects(const Header& h) {
     return it != h.custom.end() && it->second == "1";
 }
 
+void remapBlockEntityRefs(BlockDef& def, const std::function<EntityId(EntityId)>& map) {
+    auto list = [&](std::vector<EntityId>& ids) {
+        std::vector<EntityId> out;
+        out.reserve(ids.size());
+        for (EntityId id : ids)
+            if (EntityId n = map(id))
+                out.push_back(n);
+        ids = std::move(out);
+    };
+    if (def.dynamic) {
+        for (DynParam& p : def.dynamic->params)
+            for (auto& objs : p.stateObjects)
+                list(objs);
+        for (DynAction& a : def.dynamic->actions)
+            list(a.objects);
+    }
+    if (def.assembly)
+        for (AsmBinding& b : def.assembly->bindings)
+            if (b.entity)
+                b.entity = map(b.entity);
+}
+
 }  // namespace tbcad

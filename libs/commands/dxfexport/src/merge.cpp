@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <map>
 #include <unordered_map>
 
 #include "tbcad/dxfexport/dxfexport.h"
@@ -138,6 +139,7 @@ Result<MergeSummary> mergeDocument(const Document& dst, Transaction& tx, const D
         ++sum.blocks;
     }
     for (const auto& [id, b] : src.blocks()) {
+        std::map<EntityId, EntityId> memberIds;
         for (EntityId eid : b.entities) {
             const Entity* e = src.find(eid);
             if (!e)
@@ -145,7 +147,19 @@ Result<MergeSummary> mergeDocument(const Document& dst, Transaction& tx, const D
             Entity copy = *e;
             remap(copy, m);
             TRY(n, tx.add(std::move(copy), m.block[id]));
+            memberIds[eid] = n.value();
             ++sum.entities;
+        }
+        if (b.dynamic || b.assembly) {
+            const BlockDef& from = b;
+            (void)tx.modifyBlock(m.block[id], [&](BlockDef& d) {
+                d.dynamic = from.dynamic;
+                d.assembly = from.assembly;
+                remapBlockEntityRefs(d, [&](EntityId old) {
+                    auto it = memberIds.find(old);
+                    return it == memberIds.end() ? EntityId{} : it->second;
+                });
+            });
         }
     }
     for (EntityId eid : src.modelSpace()) {
