@@ -69,6 +69,9 @@ public:
     void summary(std::string_view code, std::string message);
 
     const std::vector<Diagnostic>& diagnostics() const { return items_; }
+    // Hands the kept diagnostics over and starts the list again (the counts stay). For a reader
+    // that collects the diagnostics of a worker and adds them to the real report in order.
+    std::vector<Diagnostic> takeItems() { return std::exchange(items_, {}); }
     // Count per severity, including diagnostics dropped after kMaxDiagnostics.
     std::size_t count(Severity severity) const { return counts_[static_cast<int>(severity)]; }
     bool hasErrors() const { return count(Severity::Error) > 0; }

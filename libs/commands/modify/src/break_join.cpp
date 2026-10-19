@@ -104,11 +104,13 @@ public:
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::SelectionOptions so;
         so.filter = [&doc = ctx.doc()](const Entity& e) {
+            if (kind(e) == EntityKind::Ray)  // not a curve entity: only the layer decides
+                return isModifiable(doc, e);
             if (!isEditable(doc, e))
                 return false;
             return kind(e) == EntityKind::Line || kind(e) == EntityKind::Arc ||
                    kind(e) == EntityKind::Polyline || kind(e) == EntityKind::Ellipse ||
-                   kind(e) == EntityKind::Spline || kind(e) == EntityKind::Ray;
+                   kind(e) == EntityKind::Spline;
         };
         auto sel = co_await ctx.getSelection("Select objects to join", so);
         if (!sel.ok())

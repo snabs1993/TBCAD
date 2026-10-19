@@ -104,3 +104,46 @@ TEST_CASE("PURGE lists what would go and keeps everything unless confirmed") {
     CHECK(f.host.logContains("Spare"));
     CHECK(f.host.logContains("Nothing was purged"));
 }
+
+TEST_CASE("PURGE removes a long chain of nested unused blocks in one go") {
+    Document doc;
+    constexpr int kChain = 400;
+    {
+        Transaction tx = doc.begin("chain");
+        std::vector<BlockId> ids;
+        for (int i = 0; i < kChain; ++i)
+            ids.push_back(tx.addBlock({.name = "N" + std::to_string(i)}).value());
+        for (int i = 0; i < kChain; ++i) {
+            Entity e;
+            if (i + 1 < kChain)
+                e.data = Indirect<InsertData>(
+                    InsertData{ids[static_cast<std::size_t>(i + 1)], {1, 0}, {1, 1}, 0});
+            else
+                e.data = LineData{{0, 0}, {1, 1}};
+            (void)tx.add(std::move(e), ids[static_cast<std::size_t>(i)]);
+        }
+        // One chain that is used: the model places its outermost block.
+        BlockId inner = tx.addBlock({.name = "Inner"}).value();
+        (void)tx.add(Entity{{}, LineData{{0, 0}, {2, 2}}}, inner);
+        BlockId keep = tx.addBlock({.name = "Outer"}).value();
+        {
+            Entity e;
+            e.data = Indirect<InsertData>(InsertData{inner, {0, 0}, {1, 1}, 0});
+            (void)tx.add(std::move(e), keep);
+        }
+        {
+            Entity e;
+            e.data = Indirect<InsertData>(InsertData{keep, {5, 5}, {1, 1}, 0});
+            (void)tx.add(std::move(e));
+        }
+        tx.commit();
+    }
+    Transaction tx = doc.begin("purge");
+    const auto n = select::purgeUnused(doc, tx, static_cast<unsigned>(select::PurgeKind::Blocks));
+    tx.commit();
+    CHECK(n.blocks == kChain);
+    CHECK(doc.blockByName("Inner") != nullptr);
+    CHECK(doc.blockByName("Outer") != nullptr);
+    CHECK(doc.blockByName("N0") == nullptr);
+    CHECK(doc.blockByName("N399") == nullptr);
+}

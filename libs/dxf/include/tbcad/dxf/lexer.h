@@ -114,6 +114,8 @@ public:
     // Width in bytes of a binary group code (1 for R12, 2 for R13+); 0 for ASCII.
     int binaryCodeWidth() const { return codeWidth_; }
     bool atEnd() const { return done_; }
+    // Later problems go to `report` (which must outlive the lexer's use).
+    void setReport(Report& report) { report_ = &report; }
 
 private:
     Lexer() = default;

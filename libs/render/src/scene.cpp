@@ -368,9 +368,35 @@ void Scene::removeMany(std::span<const EntityId> ids) {
     // Most ids of a big change are often not in the scene at all (objects that were only queued):
     // look at the scene's side first instead of hashing every id into a set.
     std::vector<EntityId> present;
-    for (EntityId id : ids)
-        if (entities_.count(id))
-            present.push_back(id);
+    if (ids.size() > 4 * entities_.size()) {
+        // Far more ids than drawn objects (an undo of EXPLODE drops the many pieces that were still
+        // waiting in the queue): walk the scene once against a flat table of the ids instead of
+        // looking every id up in the scene's map.
+        std::size_t cap = 16;
+        while (cap < ids.size() * 2)
+            cap <<= 1;
+        std::vector<std::uint64_t> table(cap, 0);
+        const std::size_t mask = cap - 1;
+        auto slot = [&](std::uint64_t v) { return static_cast<std::size_t>(v * 0x9E3779B97F4A7C15ull >> 20) & mask; };
+        for (EntityId id : ids)
+            if (id.value) {
+                std::size_t i = slot(id.value);
+                while (table[i] && table[i] != id.value)
+                    i = (i + 1) & mask;
+                table[i] = id.value;
+            }
+        for (const auto& [id, rec] : entities_) {
+            std::size_t i = slot(id.value);
+            while (table[i] && table[i] != id.value)
+                i = (i + 1) & mask;
+            if (table[i])
+                present.push_back(id);
+        }
+    } else {
+        for (EntityId id : ids)
+            if (entities_.count(id))
+                present.push_back(id);
+    }
     if (present.size() <= 8) {
         for (EntityId id : present)
             remove(id);

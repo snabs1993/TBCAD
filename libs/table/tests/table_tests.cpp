@@ -234,10 +234,14 @@ TEST_CASE("grips: the origin moves it, the far corner rescales the grid") {
     Entity e;
     e.data = Indirect<TableData>(grid(2, 2));
     auto grips = geom::gripPoints(e);
-    REQUIRE(grips.size() == 2);
+    REQUIRE(grips.size() == 4);  // origin, corner, one column border, one row border
     CHECK(grips[0].x == doctest::Approx(100));
     CHECK(grips[1].x == doctest::Approx(180));
     CHECK(grips[1].y == doctest::Approx(180));
+    CHECK(grips[2].x == doctest::Approx(140));  // column border on the top edge
+    CHECK(grips[2].y == doctest::Approx(200));
+    CHECK(grips[3].x == doctest::Approx(100));  // row border on the left edge
+    CHECK(grips[3].y == doctest::Approx(190));
     auto moved = geom::moveGrip(e, 0, {10, 10});
     REQUIRE(moved.ok());
     CHECK(entityAs<TableData>(moved.value())->origin.x == doctest::Approx(10));
