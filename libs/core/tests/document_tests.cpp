@@ -415,16 +415,16 @@ TEST_CASE("text and dimension styles") {
 TEST_CASE("coordinates beyond the hard cap are rejected") {
     Document doc;
     Transaction tx = doc.begin("cap");
-    auto r = tx.add(line(0, 0, 1.0000001e10, 0));
+    auto r = tx.add(line(0, 0, 1.0000001e12, 0));
     CHECK_FALSE(r);
     CHECK(r.error().code == ErrorCode::OutOfRange);
-    CHECK(tx.add(line(0, 0, 1e10, 0)));                          // exactly at the cap is fine
-    CHECK_FALSE(tx.add(Entity{{}, CircleData{{9e9, 0}, 2e9}}));  // reaches beyond via the radius
+    CHECK(tx.add(line(0, 0, 1e12, 0)));                            // exactly at the cap is fine
+    CHECK_FALSE(tx.add(Entity{{}, CircleData{{9e11, 0}, 2e11}}));  // reaches beyond via the radius
     CHECK_FALSE(tx.add(line(0, 0, std::numeric_limits<double>::infinity(), 0)));
     CHECK_FALSE(tx.add(line(std::nan(""), 0, 1, 1)));
     // modify is guarded too
     EntityId id = tx.add(line(0, 0, 1, 1)).value();
-    CHECK_FALSE(tx.modify(id, [](Entity& e) { std::get<LineData>(e.data).b = {0, -2e10}; }));
+    CHECK_FALSE(tx.modify(id, [](Entity& e) { std::get<LineData>(e.data).b = {0, -2e12}; }));
     CHECK(entityAs<LineData>(*doc.find(id))->b == Vec2{1, 1});
     tx.commit();
 }
@@ -445,7 +445,7 @@ TEST_CASE("geometry beyond the work area is accepted and listed") {
 
     // The work area can be changed in the header; it is validated.
     Transaction t2 = doc.begin("hdr");
-    CHECK_FALSE(t2.modifyHeader([](Header& h) { h.workArea = 2e10; }));
+    CHECK_FALSE(t2.modifyHeader([](Header& h) { h.workArea = 2e12; }));
     CHECK_FALSE(t2.modifyHeader([](Header& h) { h.workArea = 0; }));
     CHECK(t2.modifyHeader([](Header& h) { h.workArea = 1e6; }));
     EntityId e = t2.add(line(0, 0, 2e6, 0)).value();

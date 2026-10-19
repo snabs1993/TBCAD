@@ -480,7 +480,7 @@ Result<double> validateEntity(const Document& doc, Entity& e, BlockId owner) {
         return invalid(chk.err);
     if (chk.extent > kHardCap) {
         return makeError(ErrorCode::OutOfRange,
-                         "geometry lies beyond the hard coordinate limit of 1e10 mm");
+                         "geometry lies beyond the hard coordinate limit of 1e12 mm");
     }
     return chk.extent;
 }
@@ -633,7 +633,7 @@ Result<void> checkRow(const Document&, BlockDef& r, const BlockDef*) {
 // Header rules shared by Transaction::modifyHeader and Document::applyChecked.
 Result<void> checkHeader(const Document& d, const Header& work) {
     if (!std::isfinite(work.workArea) || !(work.workArea > 0) || work.workArea > kHardCap) {
-        return makeError(ErrorCode::OutOfRange, "work area must be in (0, 1e10] mm");
+        return makeError(ErrorCode::OutOfRange, "work area must be in (0, 1e12] mm");
     }
     if (!std::isfinite(work.ltScale) || !(work.ltScale > 0)) {
         return invalid("linetype scale must be positive");

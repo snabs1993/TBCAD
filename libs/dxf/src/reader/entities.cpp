@@ -697,7 +697,7 @@ void Importer::add(Entity&& e, BlockId owner, std::string_view type, int line,
                 ++cnt.imported;
                 report_.warn(code::kBeyondHardCap,
                              std::string(type) +
-                                 ": coordinates beyond the hard limit of 1e10 mm; kept for "
+                                 ": coordinates beyond the hard limit of 1e12 mm; kept for "
                                  "saving, not shown",
                              line, handle);
                 return;
@@ -705,7 +705,7 @@ void Importer::add(Entity&& e, BlockId owner, std::string_view type, int line,
         }
         ++cnt.skipped;
         report_.warn(code::kBeyondHardCap,
-                     std::string(type) + ": coordinates beyond the hard limit of 1e10 mm; dropped",
+                     std::string(type) + ": coordinates beyond the hard limit of 1e12 mm; dropped",
                      line, handle);
     } else {
         ++cnt.skipped;
