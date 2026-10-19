@@ -1196,6 +1196,21 @@ Result<void> AppCore::openFile(const fs::path& path) {
         activateDocument(*open);
         return {};
     }
+    {
+        std::error_code ec;
+        if (!fs::exists(path, ec)) {
+            const std::string text = "File not found: " + path.string() +
+                                     ". It may have been moved, renamed or deleted.";
+            printOpenFailure(text);
+            settings_.removeRecentFile(platform::pathToUtf8(path));  // no point offering it again
+            return makeError(ErrorCode::NotFound, text);
+        }
+        if (fs::is_directory(path, ec)) {
+            const std::string text = path.string() + " is a folder, not a drawing file.";
+            printOpenFailure(text);
+            return makeError(ErrorCode::InvalidArgument, text);
+        }
+    }
     openTimings_.clear();
     openLapAt_ = std::chrono::steady_clock::now();
     if (auto it = foreignReaders_.find(lowerExtension(path)); it != foreignReaders_.end()) {
