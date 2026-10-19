@@ -84,7 +84,7 @@ definitions), the TBCAD entities produced and the records dropped.
   projected with its bulges cut into short segments, as is a 2D POLYLINE. HATCH, SOLID and TRACE
   are built in the object plane and projected (arc and elliptical boundary edges become short
   lines; spline edges keep their shape). One info line `dxf.reader.extrusion_3d` counts them.
-  TEXT, ATTDEF and ATTRIB keep their exact projected shape (rotation, height, width factor,
+  TEXT, ATTDEF and ATTRIB (also the loose attributes of an insert) keep their exact projected shape (rotation, height, width factor,
   obliquing angle, upside down); MTEXT gets the projected height and width. Text seen edge-on is
   skipped as a bad entity. An INSERT turned by a multiple of 90 degrees in its plane becomes a
   block squashed by the tilt (rotation plus non-uniform scale); any other turn would need a shear
