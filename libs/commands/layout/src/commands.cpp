@@ -101,7 +101,7 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::KeywordOptions menu;
-        menu.keywords = {"New", "Copy", "Delete", "Rename", "Paper", "Set", "List", "Template"};
+        menu.keywords = {"New", "Copy", "Delete", "Rename", "Move", "Paper", "Set", "List", "Template"};
         menu.defaultKeyword = "List";
         auto choice = co_await ctx.getKeyword("Layout", menu);
         if (choice.status == Status::Cancel)
@@ -192,6 +192,22 @@ public:
             report(ctx, r, "Renamed to \"" + nn.text + "\".");
             if (r && lower(currentLayout(ctx.host(), ctx.doc())) == lower(named.text))
                 ctx.host().setSetting("layout.current", nn.text);
+        } else if (kw == "Move") {
+            const auto all = layout::layouts(ctx.doc());
+            std::size_t at = 0;
+            for (std::size_t i = 0; i < all.size(); ++i)
+                if (lower(all[i].name) == lower(named.text))
+                    at = i;
+            cmd::IntOptions io;
+            io.defaultValue = static_cast<long long>(at) + 1;
+            auto pos = co_await ctx.getInteger(
+                "Place in the tab order (1-" + std::to_string(all.size()) + ")", io);
+            if (!pos.ok())
+                co_return;
+            report(ctx,
+                   layout::moveLayout(ctx.tx(), named.text,
+                                      static_cast<std::size_t>(std::max<long long>(1, pos.value) - 1)),
+                   "Layout \"" + named.text + "\" moved.");
         } else if (kw == "Paper") {
             cmd::StringOptions po;
             po.defaultValue = layout::findLayout(ctx.doc(), named.text)->paperName;
