@@ -67,10 +67,13 @@ public:
             co_return;
         }
         const Grip hot = *found;
-        const HotGrips hotSet = hotGripsOf(grips, hot);  // the same for every mouse move
+        const HotGrips hotSet = hotGripsOf(grips, hot, warmGrips());  // the same for every mouse move
         struct HotScope {  // the overlay draws the hot grip red while the command runs
             explicit HotScope(Vec2 p) { setHotGrip(p); }
-            ~HotScope() { setHotGrip(std::nullopt); }
+            ~HotScope() {
+                setHotGrip(std::nullopt);
+                clearWarmGrips();
+            }
         } hotScope(hot.pos);
 
         const std::vector<GripAction> menu = gripActions(ctx.doc(), hot);
@@ -198,7 +201,8 @@ public:
             ctx.checkpoint();
             if (mode == GripMode::Stretch) {
                 std::string err;
-                auto results = stretchResults(ctx.doc(), grips, hot, r.point - hot.pos, &err);
+                auto results = stretchResults(ctx.doc(), hotSet, hot, r.point - hot.pos, &err,
+                                              std::numeric_limits<std::size_t>::max());
                 for (auto& [id, e] : results) {
                     if (copy) {
                         (void)ctx.tx().add(std::move(e));
