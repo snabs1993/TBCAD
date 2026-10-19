@@ -93,3 +93,23 @@ TEST_CASE("a visibility parameter takes its states from windows") {
     f.host->run("DYNSET", {cmd::ScriptItem::pick(ins), "Style", "Closed"});
     CHECK(entityAs<InsertData>(*f.doc.find(ins))->dynValues == std::vector<double>{1});
 }
+
+TEST_CASE("a lookup table parameter sets the parameters it drives") {
+    Fixture f;
+    BlockId b = makeFrame(f);
+    f.host->run("BPARAM", {"Frame", "L", "Width", "0,0", "10,0", "0", "0"});
+    // table "Size" at 0,8 (asked first) drives Width; rows Small = 6 and Big = 12, Enter ends each
+    // list
+    f.host->run("BPARAM",
+                {"Frame", "T", "Size", "0,8", "Width", "", "Small", "6", "Big", "12", ""});
+    const BlockDef* def = f.doc.block(b);
+    REQUIRE((def->dynamic && def->dynamic->params.size() == 2));
+    const DynParam& p = def->dynamic->params[1];
+    CHECK(p.kind == DynParam::Kind::Lookup);
+    CHECK(p.lookupParams == std::vector<int>{0});
+    CHECK(p.lookupValues == std::vector<std::vector<double>>{{6}, {12}});
+    EntityId ins = insertFrame(f, b);
+    f.host->run("DYNSET", {cmd::ScriptItem::pick(ins), "Size", "Big"});
+    const auto values = blocks::dynValues(*def, *entityAs<InsertData>(*f.doc.find(ins)));
+    CHECK(values == std::vector<double>{12, 1});
+}
