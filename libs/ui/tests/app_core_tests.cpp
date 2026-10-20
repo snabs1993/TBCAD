@@ -8,6 +8,7 @@
 #include "tbcad/io/tbcad.h"
 #include "tbcad/text/text.h"
 #include "tbcad/ui/app_core.h"
+#include "tbcad/ui/customize.h"
 #include "tbcad/xref/xref.h"
 #include "test_support.h"
 
@@ -973,7 +974,7 @@ TEST_CASE("a leading apostrophe on an idle command line is ignored") {
     f.core->pressEscape();
 }
 
-TEST_CASE("double click on a text object selects it and starts TEXTEDIT") {
+TEST_CASE("double click on a text object selects it, and its action is TEXTEDIT") {
     // The text generator lives in libs/text; a stand-in gives the object a pickable outline.
     geom::DisplayRegistry::set(EntityKind::Text, [](const Document&, const Entity& e,
                                                     const geom::DisplayContext&, DisplayList& out) {
@@ -996,17 +997,92 @@ TEST_CASE("double click on a text object selects it and starts TEXTEDIT") {
     }
     EntityId line = addLine(f.core->document(), {0, 0}, {50, 0});
 
+    // TEXTEDIT is text's action; this test registry has no TEXTEDIT, so the panel opens instead
+    // (the GUI tests run the real command).
+    CHECK(doubleClickAction(f.core->settings(), f.core->document(),
+                            *f.core->document().find(text)) == "TEXTEDIT");
+    (void)f.core->takePanelRequests();
     f.core->doubleClick(f.at({100, 105}));  // on the text outline
     CHECK(f.core->selection() == std::vector<EntityId>{text});
-    bool started = false;
-    for (const auto& h : f.core->history())
-        started = started || h.find("TEXTEDIT") != std::string::npos;
-    CHECK(started);
+    CHECK(f.core->takePanelRequests() == std::vector<std::string>{"properties"});
 
     f.core->clearSelection();
     f.core->doubleClick(f.at({25, 0}));  // a line: plain single click
     CHECK(f.core->selection() == std::vector<EntityId>{line});
     geom::DisplayRegistry::clear(EntityKind::Text);
+}
+
+TEST_CASE("double-click actions: per object type, DBLCLKEDIT off, unknown commands") {
+    Fixture f("dblclick_actions");
+    EntityId line = addLine(f.core->document(), {0, 0}, {50, 0});
+    auto started = [&](const char* name) {
+        bool any = false;
+        for (const auto& h : f.core->history())
+            any = any || h.find(name) != std::string::npos;
+        return any;
+    };
+    // The default for a line is the Properties panel.
+    (void)f.core->takePanelRequests();
+    f.core->doubleClick(f.at({25, 0}));
+    CHECK(f.core->selection() == std::vector<EntityId>{line});
+    CHECK(f.core->takePanelRequests() == std::vector<std::string>{"properties"});
+    // An action set for lines runs instead.
+    f.core->settings().setString("dblclick.Line", "TESTLINE");
+    f.core->clearSelection();
+    f.core->doubleClick(f.at({25, 0}));
+    CHECK(started("TESTLINE"));
+    CHECK(f.core->runner().active());
+    f.core->pressEscape();
+    // A command that does not exist falls back to the panel.
+    f.core->settings().setString("dblclick.Line", "NOSUCHCOMMAND 3");
+    f.core->clearSelection();
+    (void)f.core->takePanelRequests();
+    f.core->doubleClick(f.at({25, 0}));
+    CHECK_FALSE(f.core->runner().active());
+    CHECK(f.core->takePanelRequests() == std::vector<std::string>{"properties"});
+    // DBLCLKEDIT 0: a double click only selects.
+    f.core->submitText("DBLCLKEDIT");
+    f.core->submitText("0");
+    CHECK(f.core->setting(kDoubleClickEditKey).value_or("") == "0");
+    f.core->clearSelection();
+    f.core->doubleClick(f.at({25, 0}));
+    CHECK(f.core->selection() == std::vector<EntityId>{line});
+    CHECK(f.core->takePanelRequests().empty());
+}
+
+TEST_CASE("double-click types: blocks with attributes, external references, labels") {
+    Document doc;
+    BlockId plain{}, xref{};
+    {
+        auto tx = doc.begin("blocks");
+        BlockDef a;
+        a.name = "A";
+        plain = tx.addBlock(std::move(a)).value();
+        BlockDef x;
+        x.name = "X";
+        x.xrefPath = "site.tbcad";
+        xref = tx.addBlock(std::move(x)).value();
+        tx.commit();
+    }
+    InsertData ins;
+    ins.block = plain;
+    CHECK(doubleClickKey(doc, Entity{{}, ins}) == "Block");
+    ins.attribs.push_back(AttribValue{});
+    CHECK(doubleClickKey(doc, Entity{{}, ins}) == "AttributeBlock");
+    ins.block = xref;
+    CHECK(doubleClickKey(doc, Entity{{}, ins}) == "Xref");
+    CHECK(doubleClickKey(doc, Entity{{}, LineData{}}) == "Line");
+    // Every key has a row on the Customize page.
+    for (const char* k : {"Block", "AttributeBlock", "Xref", "Line", "Other"}) {
+        bool listed = false;
+        for (const DoubleClickType& t : doubleClickTypes())
+            listed = listed || std::string(t.key) == k;
+        CHECK_MESSAGE(listed, k);
+    }
+    platform::Settings s;
+    CHECK(doubleClickAction(s, doc, Entity{{}, LineData{}}) == kOpenProperties);
+    CHECK(commandLabel("  zoom e") == "ZOOM");
+    CHECK(commandLabel("") == "");
 }
 
 TEST_CASE(

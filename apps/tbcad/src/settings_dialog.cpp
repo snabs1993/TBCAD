@@ -18,6 +18,7 @@
 #include "tbcad/platform/keybindings.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/tmpl/tmpl.h"
+#include "tbcad/ui/customize.h"
 #include "tbcad/ui/radial_wheel.h"
 #include "tbcad/ui/theme.h"
 
@@ -131,6 +132,7 @@ void SettingsDialog::draw(ui::AppCore& core) {
             keybindings(core);
             ImGui::EndTabItem();
         }
+        page("Customize", &SettingsDialog::customize);
         ImGui::EndTabBar();
         selectPage_.clear();
     }
@@ -213,6 +215,101 @@ void SettingsDialog::rightClick(ui::AppCore& core) {
     choice("While a command runs", "ui.rightClick.command", kCmd, kCmdLabel, 3);
     ImGui::EndDisabled();
     ImGui::TextDisabled("Shift + right-click at a point prompt always shows the snap overrides.");
+}
+
+// A list of command lines kept in the setting `key`, in order: each can move up or down or go;
+// a new one is typed below and must start with a command or an alias.
+void SettingsDialog::commandList(ui::AppCore& core, const char* key) {
+    auto& s = core.settings();
+    std::vector<std::string> items = s.getStrings(key);
+    bool changed = false;
+    ImGui::PushID(key);
+    for (std::size_t i = 0; i < items.size(); ++i) {
+        ImGui::PushID(static_cast<int>(i));
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(items[i].c_str());
+        ImGui::SameLine(300);
+        if (ImGui::SmallButton("Up") && i > 0) {
+            std::swap(items[i], items[i - 1]);
+            changed = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Down") && i + 1 < items.size()) {
+            std::swap(items[i], items[i + 1]);
+            changed = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Remove")) {
+            items.erase(items.begin() + static_cast<std::ptrdiff_t>(i));
+            changed = true;
+            ImGui::PopID();
+            break;
+        }
+        ImGui::PopID();
+    }
+    if (items.empty())
+        ImGui::TextDisabled("(none)");
+    std::string& draft = listDraft_[key];
+    ImGui::SetNextItemWidth(260);
+    const bool enter = ImGui::InputTextWithHint("##add", "Command, e.g. LINE or ZOOM E", &draft,
+                                                ImGuiInputTextFlags_EnterReturnsTrue);
+    ImGui::SameLine();
+    if ((ImGui::Button("Add") || enter) && !draft.empty()) {
+        const std::string word = ui::commandLabel(draft);
+        if (!core.registry().find(word)) {
+            listMessage_ = "No command or alias named " + word + ".";
+        } else {
+            items.push_back(draft);
+            draft.clear();
+            listMessage_.clear();
+            changed = true;
+        }
+    }
+    if (changed)
+        s.setStrings(key, items);
+    ImGui::PopID();
+}
+
+// Settings > Customize (CUI): the Quick Access toolbar, the extra commands of the right-click
+// menu and what a double click does on each type of object.
+void SettingsDialog::customize(ui::AppCore& core) {
+    auto& s = core.settings();
+    ImGui::SeparatorText("Quick Access toolbar");
+    ImGui::TextDisabled("Buttons at the end of the toolbar; each runs its command line.");
+    commandList(core, ui::kQuickAccessKey);
+
+    ImGui::SeparatorText("Right-click menu");
+    ImGui::TextUnformatted("Nothing selected:");
+    commandList(core, ui::kContextMenuKey);
+    ImGui::TextUnformatted("Objects selected:");
+    commandList(core, ui::kContextMenuEditKey);
+    if (!listMessage_.empty())
+        ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.45f, 1.0f), "%s", listMessage_.c_str());
+
+    ImGui::SeparatorText("Double-click actions");
+    bool on = core.setting(ui::kDoubleClickEditKey).value_or("1") != "0";
+    if (ImGui::Checkbox("Double-click edits the object (DBLCLKEDIT)", &on))
+        core.setSetting(ui::kDoubleClickEditKey, on ? "1" : "0");
+    ImGui::TextDisabled(
+        "A command line runs with the object selected; PROPERTIES opens the panel. "
+        "Empty uses the default.");
+    ImGui::BeginDisabled(!on);
+    if (ImGui::BeginTable("##dblclick", 2, ImGuiTableFlags_SizingFixedFit)) {
+        for (const ui::DoubleClickType& t : ui::doubleClickTypes()) {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(t.label);
+            ImGui::TableNextColumn();
+            const std::string skey = std::string("dblclick.") + t.key;
+            std::string v = s.getString(skey);
+            ImGui::SetNextItemWidth(220);
+            if (ImGui::InputTextWithHint(("##" + skey).c_str(), t.defaultAction, &v))
+                s.setString(skey, v);
+        }
+        ImGui::EndTable();
+    }
+    ImGui::EndDisabled();
 }
 
 // The radial tool wheel: hold the right mouse button in the drawing to show it.

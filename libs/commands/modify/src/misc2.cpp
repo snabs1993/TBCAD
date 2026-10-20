@@ -353,6 +353,7 @@ public:
         eo.filter = [&doc = ctx.doc()](const Entity& e) {
             return isEditable(doc, e) && kind(e) == EntityKind::Spline;
         };
+        eo.allowPreselection = true;
         auto pick = co_await ctx.getEntity("Select spline", eo);
         if (!pick.ok())
             co_return;

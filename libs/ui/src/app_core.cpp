@@ -34,6 +34,7 @@
 #include "tbcad/platform/paths.h"
 #include "tbcad/text/text.h"
 #include "tbcad/tmpl/tmpl.h"
+#include "tbcad/ui/customize.h"
 #include "tbcad/ui/selection.h"
 #include "tbcad/ui/settings_model.h"
 #include "tbcad/xref/xref.h"
@@ -2940,10 +2941,15 @@ void AppCore::doubleClick(const PointerState& p) {
         return;
     }
     applyPick({*id}, false);
-    if (kind(*e) == EntityKind::Text || kind(*e) == EntityKind::MText)
-        submitText("TEXTEDIT");
+    if (setting(kDoubleClickEditKey).value_or("1") == "0")
+        return;  // DBLCLKEDIT off: the double click only selects
+    // The action set for the object's type (Customize page, as AutoCAD's CUI): an edit command
+    // that takes the picked object, or the Properties panel.
+    const std::string action = doubleClickAction(settings_, session_->doc, *e);
+    if (action == kOpenProperties || !registry().find(commandLabel(action)))
+        openPanel("properties");
     else
-        openPanel("properties");  // like AutoCAD: double click an object to see its properties
+        submitText(action);
 }
 
 std::optional<std::size_t> AppCore::dragSelectCount() {
