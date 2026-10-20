@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <system_error>
 
+#include "chunks.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/platform/paths.h"
 
@@ -35,20 +36,24 @@ Error ioError(const std::string& what, const fs::path& p, const std::error_code&
     return makeError(ErrorCode::Io, std::move(m));
 }
 
-// Writes the whole buffer to `path` (created or truncated) and forces it to stable storage.
-Result<void> writeAndSync(const fs::path& path, std::span<const std::uint8_t> data) {
+// Writes the parts one after the other to `path` (created or truncated) and forces it to stable
+// storage.
+Result<void> writeAndSync(const fs::path& path,
+                          std::span<const std::span<const std::uint8_t>> parts) {
 #ifdef _WIN32
     HANDLE h = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
                            FILE_ATTRIBUTE_NORMAL, nullptr);
     if (h == INVALID_HANDLE_VALUE)
         return ioError("cannot create", path);
-    std::size_t done = 0;
     bool ok = true;
-    while (done < data.size() && ok) {
-        DWORD chunk = static_cast<DWORD>(std::min<std::size_t>(data.size() - done, 1u << 30));
-        DWORD wrote = 0;
-        ok = WriteFile(h, data.data() + done, chunk, &wrote, nullptr) && wrote == chunk;
-        done += wrote;
+    for (std::span<const std::uint8_t> data : parts) {
+        std::size_t done = 0;
+        while (done < data.size() && ok) {
+            DWORD chunk = static_cast<DWORD>(std::min<std::size_t>(data.size() - done, 1u << 30));
+            DWORD wrote = 0;
+            ok = WriteFile(h, data.data() + done, chunk, &wrote, nullptr) && wrote == chunk;
+            done += wrote;
+        }
     }
     ok = ok && FlushFileBuffers(h);
     ok = CloseHandle(h) && ok;
@@ -58,14 +63,16 @@ Result<void> writeAndSync(const fs::path& path, std::span<const std::uint8_t> da
     int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd < 0)
         return ioError("cannot create", path, std::error_code(errno, std::generic_category()));
-    std::size_t done = 0;
     bool ok = true;
-    while (done < data.size() && ok) {
-        ssize_t n = ::write(fd, data.data() + done, data.size() - done);
-        if (n <= 0) {
-            ok = false;
-        } else {
-            done += static_cast<std::size_t>(n);
+    for (std::span<const std::uint8_t> data : parts) {
+        std::size_t done = 0;
+        while (done < data.size() && ok) {
+            ssize_t n = ::write(fd, data.data() + done, data.size() - done);
+            if (n <= 0) {
+                ok = false;
+            } else {
+                done += static_cast<std::size_t>(n);
+            }
         }
     }
     ok = ok && ::fsync(fd) == 0;
@@ -116,12 +123,14 @@ Result<void> replaceFile(const fs::path& tmp, const fs::path& target, const fs::
 
 }  // namespace
 
-Result<void> saveTbcadBytes(std::span<const std::uint8_t> bytes, const fs::path& requested,
-                            const WriteOptions& options) {
+namespace detail {
+
+Result<void> saveTbcadParts(std::span<const std::span<const std::uint8_t>> parts,
+                            const fs::path& requested, const WriteOptions& options) {
     const fs::path path = platform::longPath(requested);
     fs::path tmp = path;
     tmp += ".tmp";
-    if (Result<void> r = writeAndSync(tmp, bytes); !r) {
+    if (Result<void> r = writeAndSync(tmp, parts); !r) {
         std::error_code ec;
         fs::remove(tmp, ec);
         return r;
@@ -141,12 +150,12 @@ Result<void> saveTbcadBytes(std::span<const std::uint8_t> bytes, const fs::path&
     return r;
 }
 
-Result<void> writeTbcad(const Document& doc, const fs::path& requested,
-                        const WriteOptions& options) {
-    Result<std::vector<std::uint8_t>> bytes = writeTbcadToMemory(doc, options);
-    if (!bytes)
-        return bytes.error();
-    return saveTbcadBytes(bytes.value(), requested, options);
+}  // namespace detail
+
+Result<void> saveTbcadBytes(std::span<const std::uint8_t> bytes, const fs::path& requested,
+                            const WriteOptions& options) {
+    const std::span<const std::uint8_t> whole[] = {bytes};
+    return detail::saveTbcadParts(whole, requested, options);
 }
 
 }  // namespace tbcad::io

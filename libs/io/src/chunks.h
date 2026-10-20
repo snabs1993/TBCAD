@@ -1,9 +1,12 @@
 #pragma once
 
+#include <filesystem>
+#include <span>
 #include <string>
 #include <vector>
 
 #include "format.h"
+#include "tbcad/io/tbcad.h"
 
 namespace tbcad::io::detail {
 
@@ -24,6 +27,11 @@ void appendPrepared(ByteWriter& out, std::uint32_t type, const PreparedChunk& ch
 // Appends a chunk exactly as stored (used for opaque chunks).
 void appendStoredChunk(ByteWriter& out, std::uint32_t type, std::uint32_t flags,
                        std::span<const std::uint8_t> stored);
+
+// saveTbcadBytes for a file image held in pieces, written one after the other: a big drawing
+// is saved without first joining its chunks into one buffer.
+Result<void> saveTbcadParts(std::span<const std::span<const std::uint8_t>> parts,
+                            const std::filesystem::path& path, const WriteOptions& options);
 
 struct RawChunk {
     std::uint32_t type = 0;
