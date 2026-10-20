@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <map>
 #include <string_view>
+#include <tuple>
 
 #include "importer.h"
 #include "tbcad/dim/dim.h"
@@ -264,17 +265,25 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
     }
     if (!handles.empty()) {
         const auto a = dimArrows_.find(ds.name);
-        ArrowType blk = a != dimArrows_.end() ? a->second.first : ArrowType::ClosedFilled;
-        ArrowType blk1 = a != dimArrows_.end() ? a->second.second : ArrowType::ClosedFilled;
+        DimArrows arrows = a != dimArrows_.end()
+                               ? a->second
+                               : DimArrows{ArrowType::ClosedFilled, ArrowType::ClosedFilled,
+                                           ArrowType::ClosedFilled};
         const auto sahOv = extra.find(173);
-        const bool sah =
-            sahOv != extra.end() ? sahOv->second != 0 : (ds.arrowType == blk1 && blk1 != blk);
+        const bool sah = sahOv != extra.end()
+                             ? sahOv->second != 0
+                             : ds.arrowType2.has_value() ||
+                                   (ds.arrowType == arrows.blk1 && arrows.blk1 != arrows.blk);
         if (const auto h = handles.find(342); h != handles.end())
-            blk = arrowKindOf(h->second, ArrowType::ClosedFilled);
+            arrows.blk = arrowKindOf(h->second, ArrowType::ClosedFilled);
         if (const auto h = handles.find(343); h != handles.end())
-            blk1 = arrowKindOf(h->second, ArrowType::ClosedFilled);
-        ds.arrowType = sah ? blk1 : blk;
+            arrows.blk1 = arrowKindOf(h->second, ArrowType::ClosedFilled);
+        if (const auto h = handles.find(344); h != handles.end())
+            arrows.blk2 = arrowKindOf(h->second, ArrowType::ClosedFilled);
+        std::tie(ds.arrowType, ds.arrowType2) = arrows.with(sah);
         extraKey += "|arrow=" + std::to_string(static_cast<int>(ds.arrowType));
+        if (ds.arrowType2)
+            extraKey += "|arrow2=" + std::to_string(static_cast<int>(*ds.arrowType2));
     }
     // The other variables an override can carry (number format, text rules, colours, spacing).
     for (const auto& [varCode, v] : extra) {
@@ -308,6 +317,7 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
             case 142:  // DIMTSZ: oblique strokes of that size instead of arrowheads
                 if (v > 0) {
                     ds.arrowType = ArrowType::ArchTick;
+                    ds.arrowType2.reset();
                     ds.arrowSize = v * k_;
                 }
                 break;
@@ -351,9 +361,11 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
                 if (!handles.empty())
                     break;  // decided with the overridden blocks below
                 if (const auto a = dimArrows_.find(ds.name); a != dimArrows_.end())
-                    ds.arrowType = whole != 0 ? a->second.second : a->second.first;
-                else if (whole != 0)
+                    std::tie(ds.arrowType, ds.arrowType2) = a->second.with(whole != 0);
+                else if (whole != 0) {
                     ds.arrowType = ArrowType::ClosedFilled;
+                    ds.arrowType2.reset();
+                }
                 break;
             case 175:
                 ds.suppressArrowsOutside = whole != 0;

@@ -138,6 +138,29 @@ private:
             h->patternAngle = 0;
             h->doubled = false;
         }
+        // "\P" and a line break are the same new paragraph in a multiline text; the importer
+        // reads the first as the second.
+        if (auto* m = entityAs<MTextData>(e)) {
+            std::string t;
+            for (std::size_t i = 0; i < m->utf8.size(); ++i) {
+                if (m->utf8[i] == '\\' && i + 1 < m->utf8.size()) {
+                    if (m->utf8[i + 1] == 'P') {
+                        t += '\n';
+                    } else {
+                        t += m->utf8[i];
+                        t += m->utf8[i + 1];
+                    }
+                    ++i;
+                } else {
+                    t += m->utf8[i];
+                }
+            }
+            m->utf8 = std::move(t);
+        }
+        // An aligned dimension runs along its two points: a rotation means nothing to it, and DXF
+        // has none for it.
+        if (auto* d = entityAs<DimensionData>(e); d && d->kind == DimKind::Aligned)
+            d->rotation = 0;
         // A left-aligned text on its baseline is placed by its position alone: DXF writes no
         // alignment point for it, and the importer sets it to the position.
         if (auto* t = entityAs<TextData>(e); t && t->h == HAlign::Left && t->v == VAlign::Baseline)

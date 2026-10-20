@@ -81,6 +81,9 @@ S-COLNHATC
 HATCH
 Pattern
 SOLID
+# One hatch per column, so each can be picked on its own (AutoCAD makes one hatch of all the
+# picks in a run unless Separate is on).
+SEparate
 @clickw 0 100
 @clickw 6000 100
 @clickw 12000 100
@@ -144,7 +147,7 @@ MVIEW
 @expect layout Model
 ZOOM
 2X
-PAN
+-PAN
 0,0
 1000,0
 PSPACE

@@ -30,12 +30,13 @@ TEST_CASE(
     REQUIRE(e2);
     CHECK(near(e2->pts.back(), {100, 11.25}));
 
-    // One dimension line from end to end, at y = 10; two arrows whose tips touch its ends.
+    // One dimension line at y = 10 between the tails of the closed filled arrows (as AutoCAD
+    // draws it), the arrows' tips at the extension lines.
     REQUIRE(count(L, Role::DimLine) == 1);
     for (const auto& l : L.lines)
         if (l.role == Role::DimLine) {
-            CHECK(near(l.pts.front(), {0, 10}));
-            CHECK(near(l.pts.back(), {100, 10}));
+            CHECK(near(l.pts.front(), {2.5, 10}));
+            CHECK(near(l.pts.back(), {97.5, 10}));
         }
     REQUIRE(L.arrows.size() == 2);
     BBox2 a = arrowBox(L.arrows[0]), b = arrowBox(L.arrows[1]);
@@ -49,6 +50,28 @@ TEST_CASE(
     CHECK(L.text.center.x == doctest::Approx(50));
     CHECK(L.text.center.y == doctest::Approx(10 + 0.625 + 1.25));  // gap + half the text height
     CHECK(L.text.rotation == doctest::Approx(0));
+}
+
+TEST_CASE("a second arrow kind (DIMBLK2) draws at the second extension line") {
+    Document doc;
+    Transaction tx = doc.begin("style");
+    REQUIRE(tx.modifyDimStyle(kDimStyleStandard, [](DimStyle& s) {
+        s.arrowType = ArrowType::Dot;
+        s.arrowType2 = ArrowType::ArchTick;
+    }));
+    tx.commit();
+    // Points given right to left: the first extension line is at x = 100.
+    Layout L = layoutDimension(doc, linear({100, 0}, {0, 0}, {50, 10}));
+    REQUIRE(L.arrows.size() == 1);  // the dot
+    CHECK(near(box(L.arrows[0].ring).center(), {100, 10}, 0.05));
+    int ticks = 0;
+    for (const auto& l : L.lines)
+        if (l.role == Role::DimLine && l.pts.size() == 2 &&
+            std::abs(l.pts[0].y - l.pts[1].y) > 1e-6) {  // the slanted stroke
+            ++ticks;
+            CHECK(near((l.pts[0] + l.pts[1]) / 2, {0, 10}));
+        }
+    CHECK(ticks == 1);
 }
 
 TEST_CASE("centered text breaks the dimension line") {

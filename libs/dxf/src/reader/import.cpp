@@ -9,6 +9,7 @@
 #include <optional>
 #include <set>
 #include <thread>
+#include <tuple>
 #include <unordered_set>
 
 #include "importer.h"
@@ -1730,16 +1731,21 @@ void Importer::readDimStyle(const Record& r) {
         auto arrowOf = [&](int code, ArrowType none) { return arrowKindOf(r.raw(code), none); };
         const ArrowType blk = arrowOf(342, arrowOf(343, ds.arrowType));
         const ArrowType blk1 = arrowOf(343, ArrowType::ClosedFilled);
-        ds.arrowType = r.integer(173) != 0 ? blk1 : blk;
-        dimArrows_[name] = {blk, blk1};
+        const ArrowType blk2 = arrowOf(344, ArrowType::ClosedFilled);
+        const DimArrows arrows{blk, blk1, blk2};
+        std::tie(ds.arrowType, ds.arrowType2) = arrows.with(r.integer(173) != 0);
+        dimArrows_[name] = arrows;
         ds.leaderArrow = arrowOf(341, ArrowType::ClosedFilled);  // DIMLDRBLK
         // A leader child style ("name$7") draws leaders with its arrow: that is DIMLDRBLK.
-        if (name.size() > 2 && name.compare(name.size() - 2, 2, "$7") == 0 && r.has(341))
+        if (name.size() > 2 && name.compare(name.size() - 2, 2, "$7") == 0 && r.has(341)) {
             ds.arrowType = ds.leaderArrow;
+            ds.arrowType2.reset();
+        }
     }
     // DIMTSZ: oblique strokes of that size instead of arrowheads, whatever DIMBLK says.
     if (const Group* g = r.find(142); g && std::isfinite(g->number()) && g->number() > 0) {
         ds.arrowType = ArrowType::ArchTick;
+        ds.arrowType2.reset();
         ds.arrowSize = g->number() * k_;
     }
     for (const Group& x : r.g) {  // the arrow kind TBCAD writes as extended data
@@ -1750,6 +1756,10 @@ void Importer::readDimStyle(const Record& r) {
             const int a = std::atoi(std::string(v.substr(6)).c_str());
             if (a >= 0 && a <= static_cast<int>(ArrowType::None))
                 ds.arrowType = static_cast<ArrowType>(a);
+        } else if (v.rfind("arrow2=", 0) == 0) {
+            const int a = std::atoi(std::string(v.substr(7)).c_str());
+            if (a >= 0 && a <= static_cast<int>(ArrowType::None))
+                ds.arrowType2 = static_cast<ArrowType>(a);
         } else if (v.rfind("leaderArrow=", 0) == 0) {
             const int a = std::atoi(std::string(v.substr(12)).c_str());
             if (a >= 0 && a <= static_cast<int>(ArrowType::None))

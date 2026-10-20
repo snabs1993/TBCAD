@@ -1676,7 +1676,14 @@ Result<EntityEdit> refitSpline(const Entity& e, double tolerance) {
             return err("The new spline has no geometry.");
         const int m =
             static_cast<int>(std::clamp(static_cast<double>(idx.size()) * 24.0, 100.0, 4000.0));
-        const std::vector<Vec2> poly = nc.front().pointsAtEqualLength(m);
+        // Even steps in the parameter: the new spline is fitted by chord length, so they are
+        // close to even in length, and far cheaper than measuring the length (most of the time
+        // of a refit went there).
+        std::vector<Vec2> poly(static_cast<std::size_t>(m) + 1);
+        const CurveRef& ncv = nc.front();
+        for (int i = 0; i <= m; ++i)
+            poly[static_cast<std::size_t>(i)] =
+                ncv.pointAt(ncv.t0() + (ncv.t1() - ncv.t0()) * i / m);
         const PolylineGrid grid(poly);
         // The worst sample between each pair of neighbouring fit points; the worst few of those
         // become fit points together (one per round would refit a long curve hundreds of times).

@@ -633,6 +633,9 @@ Result<void> checkRow(const Document& doc, DimStyle& r, const DimStyle* old) {
     if (static_cast<int>(r.leaderArrow) < 0 ||
         static_cast<int>(r.leaderArrow) > static_cast<int>(ArrowType::None))
         return invalid("unknown leader arrow");
+    if (r.arrowType2 && (static_cast<int>(*r.arrowType2) < 0 ||
+                         static_cast<int>(*r.arrowType2) > static_cast<int>(ArrowType::None)))
+        return invalid("unknown second arrow");
     r.textVertPos = std::clamp(r.textVertPos, -100.0, 100.0);
     r.textJustify = std::clamp(r.textJustify, 0, 2);
     r.angularPrecision = std::clamp(r.angularPrecision, -1, 8);
