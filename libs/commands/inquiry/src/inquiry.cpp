@@ -69,6 +69,7 @@ public:
     std::string_view description() const override {
         return "Measure the distance between two points";
     }
+    bool isTransparent() const override { return true; }  // 'DIST inside another command
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         auto first = co_await ctx.getPoint("Specify first point");
@@ -101,6 +102,7 @@ class IdPoint final : public cmd::Command {
 public:
     std::string_view name() const override { return "ID"; }
     std::string_view description() const override { return "Show the coordinates of a point"; }
+    bool isTransparent() const override { return true; }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         auto pt = co_await ctx.getPoint("Specify point");
@@ -277,7 +279,8 @@ public:
             auto p2 = co_await ctx.getPoint("Specify second angle endpoint", po);
             if (!p2.ok())
                 co_return;
-            report(ctx, "Angle = " + ang(angleAtVertex(vertex.point, p1.point, p2.point), anglePrecisionOf(ctx)));
+            report(ctx, "Angle = " + ang(angleAtVertex(vertex.point, p1.point, p2.point),
+                                         anglePrecisionOf(ctx)));
             co_return;
         }
         if (!first.ok())
@@ -293,10 +296,9 @@ public:
             ctx.message("Select straight lines.");
             co_return;
         }
-        report(ctx,
-               "Angle = " +
-                   ang(angleBetweenLines(a0, a1, first.pickPoint, b0, b1, second.pickPoint),
-                       anglePrecisionOf(ctx)));
+        report(ctx, "Angle = " +
+                        ang(angleBetweenLines(a0, a1, first.pickPoint, b0, b1, second.pickPoint),
+                            anglePrecisionOf(ctx)));
     }
 };
 

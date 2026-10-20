@@ -152,6 +152,44 @@ TEST_CASE("transparent commands run inside another command and hand control back
     CHECK(near(c.lines()[0].b, {10, 0}));
 }
 
+TEST_CASE("'CAL works out a point or a length and answers the prompt it interrupted") {
+    Cli c;
+    c.say({"LINE", "0,0", "'CAL", "1200/4,50*2"});
+    CHECK(c.running());  // LINE goes on from the computed point
+    c.say({"'CAL", "@10*5,0", ""});
+    CHECK_FALSE(c.running());
+    REQUIRE(c.lines().size() == 2);
+    CHECK(near(c.lines()[0].b, {300, 100}));
+    CHECK(near(c.lines()[1].b, {350, 100}));
+    // A distance: the circle's radius.
+    c.say({"CIRCLE", "0,0", "'CAL", "sqrt(9)+2"});
+    CHECK_FALSE(c.running());
+    bool found = false;
+    c.core->document().forEachEntity([&](const Entity& e) {
+        if (const auto* ci = entityAs<CircleData>(e))
+            found = std::abs(ci->radius - 5) < 1e-9;
+    });
+    CHECK(found);
+    // A bad expression says why and leaves the prompt waiting.
+    c.say({"LINE", "0,0", "'CAL", "2*"});
+    CHECK(c.running());
+    c.core->pressEscape();
+    c.core->pressEscape();
+}
+
+TEST_CASE("'DIST, 'ID and 'TEXTSCR run inside another command") {
+    Cli c;
+    c.say({"LINE", "0,0", "'DIST", "0,0", "30,40"});
+    CHECK(c.running());
+    c.say({"'ID", "5,5"});
+    CHECK(c.running());
+    c.say({"'TEXTSCR"});
+    CHECK(c.running());
+    c.say({"10,0", ""});
+    REQUIRE(c.lines().size() == 1);
+    CHECK(near(c.lines()[0].b, {10, 0}));
+}
+
 TEST_CASE("a command that is not transparent is refused in the middle of another") {
     Cli c;
     c.say({"LINE", "0,0"});

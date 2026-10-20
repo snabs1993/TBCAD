@@ -148,10 +148,11 @@ public:
         cmd::KeywordOptions ko;
         ko.keywords = {"Millimeters", "Centimeters", "Meters", "Inches", "Feet", "Precision"};
         ko.defaultKeyword = unitName(ctx.doc().header().units);
-        auto k = co_await ctx.getKeyword("Length unit [Millimeters/Centimeters/Meters/Inches/Feet/"
-                                         "Precision] <" +
-                                             *ko.defaultKeyword + ">",
-                                         ko);
+        auto k = co_await ctx.getKeyword(
+            "Length unit [Millimeters/Centimeters/Meters/Inches/Feet/"
+            "Precision] <" +
+                *ko.defaultKeyword + ">",
+            ko);
         if (!k.ok())
             co_return;
         if (k.keyword == "Precision") {
@@ -281,6 +282,7 @@ public:
     std::string_view description() const override {
         return "Refresh the display (it is always up to date)";
     }
+    bool isTransparent() const override { return true; }
     Task run(CommandContext& ctx) override {
         ctx.message("The display is always up to date.");
         co_return;
