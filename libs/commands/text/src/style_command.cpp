@@ -27,6 +27,14 @@ bool looksLikeFontFile(const std::string& s) {
     return ends(".ttf") || ends(".otf") || ends(".ttc") || ends(".tbsf") || ends(".shx");
 }
 
+// A font is named by a family or a file name: control characters belong to neither.
+bool hasControl(const std::string& s) {
+    for (char c : s)
+        if (static_cast<unsigned char>(c) < 0x20 || c == 0x7F)
+            return true;
+    return false;
+}
+
 // -TEXTSTYLE: create or change a text style and make it current, one question after another
 // (STYLE opens the Text Styles dialog).
 class StyleCommand final : public cmd::Command {
@@ -69,6 +77,10 @@ public:
         auto f = co_await ctx.getString("Specify font family or font file", fo);
         if (!f.ok())
             co_return;
+        if (hasControl(f.text)) {
+            ctx.message("A font name cannot hold control characters.");
+            co_return;
+        }
         row.fontFile.clear();
         row.fontFamily.clear();
         row.shxFile.clear();
