@@ -288,12 +288,12 @@ public:
     Entity& at(std::size_t i) {
         std::shared_ptr<Chunk>& c = chunks_[i / kChunk];
         if (c.use_count() > 1)
-            detach(c);
+            detach(i / kChunk);
         else  // a snapshot that let go of the chunk on another thread is done reading it
             std::atomic_thread_fence(std::memory_order_acquire);
-        return c->mem[i % kChunk];
+        return mems_[i / kChunk][i % kChunk];
     }
-    const Entity& at(std::size_t i) const { return chunks_[i / kChunk]->mem[i % kChunk]; }
+    const Entity& at(std::size_t i) const { return mems_[i / kChunk][i % kChunk]; }
     std::size_t pushBack(Entity&& e);
     void popBack();
     // A store with the same entities that shares this one's full chunks.
@@ -315,8 +315,9 @@ private:
         Chunk(const Chunk&) = delete;
         Chunk& operator=(const Chunk&) = delete;
     };
-    static void detach(std::shared_ptr<Chunk>& c);
+    void detach(std::size_t chunk);
     std::vector<std::shared_ptr<Chunk>> chunks_{};
+    std::vector<Entity*> mems_{};  // chunks_[k]->mem, read without the extra step
     std::size_t size_ = 0;
 };
 
