@@ -1749,9 +1749,10 @@ void Gui::statusBar() {
                 std::string names;
                 for (const std::string& n : changed)
                     names += (names.empty() ? "" : ", ") + n;
-                ImGui::SetTooltip("The file of %s changed. Click for External References; "
-                                  "right-click to reload.",
-                                  names.c_str());
+                ImGui::SetTooltip(
+                    "The file of %s changed. Click for External References; "
+                    "right-click to reload.",
+                    names.c_str());
             }
             if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
                 core_.reloadXrefs({});

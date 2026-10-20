@@ -1429,9 +1429,10 @@ PathType pathTypeOf(std::string_view stored) {
     if (auto hash = stored.find('#'); hash != std::string_view::npos)
         stored = stored.substr(0, hash);
     const std::filesystem::path p(std::u8string(stored.begin(), stored.end()));
-    // A drive letter counts as absolute on every platform, so a drawing from Windows reads the same.
-    const bool drive = stored.size() > 2 && stored[1] == ':' &&
-                       (stored[2] == '\\' || stored[2] == '/');
+    // A drive letter counts as absolute on every platform, so a drawing from Windows reads the
+    // same.
+    const bool drive =
+        stored.size() > 2 && stored[1] == ':' && (stored[2] == '\\' || stored[2] == '/');
     if (p.is_absolute() || drive || p.has_root_directory() ||
         (!stored.empty() && (stored[0] == '\\' || stored[0] == '/')))
         return PathType::Absolute;

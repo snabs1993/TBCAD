@@ -359,7 +359,7 @@ void drawXrefPanel(ui::PanelContext& ctx) {
         const std::u8string foundU8 = found.u8string();
         row("Status", stateLabel(s));
         row("Found at", s == xref::State::Missing ? std::string("(not found)")
-                                                   : std::string(foundU8.begin(), foundU8.end()));
+                                                  : std::string(foundU8.begin(), foundU8.end()));
         row("Saved path", stored + "  (" + pathTypeLabel(stored) + ")");
         row("Used", std::to_string(xref::useCount(doc, selId)) + " times");
         ImGui::EndTable();
@@ -388,9 +388,9 @@ void drawXrefPanel(ui::PanelContext& ctx) {
             runOn(ctx, "XREFTYPE", name, {overlay ? "Attach" : "Overlay"});
     }
     if (ImGui::BeginCombo("Path type", pathTypeLabel(stored))) {
-        for (const auto& [label, answer] : {std::pair{"Relative path", "Relative"},
-                                            std::pair{"Full path", "Absolute"},
-                                            std::pair{"No path", "None"}})
+        for (const auto& [label, answer] :
+             {std::pair{"Relative path", "Relative"}, std::pair{"Full path", "Absolute"},
+              std::pair{"No path", "None"}})
             if (ImGui::Selectable(label))
                 runOn(ctx, "XPATH", name, {answer});
         ImGui::EndCombo();

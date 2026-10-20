@@ -669,7 +669,8 @@ TEST_CASE("REFEDIT on a .tbcad xref edits it in place and REFCLOSE saves its fil
     CHECK(fs::exists(fs::path(file.string() + ".bak")));
 }
 
-TEST_CASE("XREFTYPE switches attach and overlay with undo - XOPEN asks the window to open the file") {
+TEST_CASE(
+    "XREFTYPE switches attach and overlay with undo - XOPEN asks the window to open the file") {
     Dir dir;
     fs::path file = writeSource(dir.path, "plan.tbcad", 2);
     Fixture f;

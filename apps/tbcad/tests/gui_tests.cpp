@@ -453,8 +453,9 @@ TEST_CASE("external references panel: tree, details, type switch, row menu and c
     h.frame(2);
     CHECK(h.has("Reference type"));
     CHECK(h.has("Detach"));
-    h.core().pressEscape();
+    h.click(900, 500);  // a click beside the menu closes it
     h.frame(2);
+    CHECK_FALSE(h.has("Reference type"));
 
     // The file changes on disk: a balloon names it and reloads it on request.
     fs::last_write_time(source, fs::last_write_time(source) + std::chrono::seconds(10));

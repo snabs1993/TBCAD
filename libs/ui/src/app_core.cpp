@@ -2040,9 +2040,9 @@ void AppCore::tickXrefs(std::chrono::steady_clock::time_point now) {
     if (!session_)
         return;
     const std::string notifyText = setting("xref.notify").value_or("2");
-    const int notify =
-        notifyText.size() == 1 && notifyText[0] >= '0' && notifyText[0] <= '3' ? notifyText[0] - '0'
-                                                                               : 2;
+    const int notify = notifyText.size() == 1 && notifyText[0] >= '0' && notifyText[0] <= '3'
+                           ? notifyText[0] - '0'
+                           : 2;
     session_->xrefChanged.clear();
     if (notify == 0) {
         session_->xrefNotice.clear();
