@@ -46,6 +46,16 @@ TEST_CASE("STYLE changes an existing style - font files and families are stored"
     CHECK(s->fontFamily.empty());
 }
 
+TEST_CASE("STYLE refuses a font name with control characters") {
+    Fixture f;
+    f.host.run("-TEXTSTYLE", {"Standard", std::string("B<\x02x\0y", 6), "1", "0", "0"});
+    CHECK(f.host.logContains("control characters"));
+    const TextStyle* s = f.doc.textStyleByName("Standard");
+    REQUIRE(s);
+    CHECK(s->fontFamily.empty());
+    CHECK(s->fontFile.empty());
+}
+
 TEST_CASE("STYLE ? lists the styles - Esc changes nothing") {
     Fixture f;
     f.host.run("-TEXTSTYLE", {"?"});
