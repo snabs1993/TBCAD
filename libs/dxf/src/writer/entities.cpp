@@ -227,7 +227,6 @@ void Writer::head(std::string_view type, const Props& p, std::uint64_t owner,
                   std::string_view subclass) {
     Out& o = *L().o;
     o.zero(type);
-    L().tbcadOpen = false;
     if (r12_ && owner == paperRec_ && owner != 0)
         o.i(67, 1);
     if (!r12_) {
@@ -717,10 +716,8 @@ void Writer::writeExtXdata(const EntityCommon& c) {
 }
 
 void Writer::openTbcadXdata() {
-    if (L().tbcadOpen)
-        return;
-    L().o->raw(1001, "TBCAD");
-    L().tbcadOpen = true;
+    if (L().o->xdataApp != "TBCAD")
+        L().o->raw(1001, "TBCAD");
 }
 
 void Writer::writeTbcadFlags(const Entity& e) {
@@ -735,24 +732,28 @@ void Writer::writeTbcadFlags(const Entity& e) {
         if (source.find("%<") != std::string::npos)
             written = encodeText(toDxfMarkup(text::expandFields(doc_, source)), utf8_);
     }
-    const bool field = !written.empty() && written != encodeText(source, utf8_);
-    if (!e.common.annotative && !e.common.wipeout && !field)
-        return;
-    openTbcadXdata();
-    if (field) {
+    if (!written.empty() && written != encodeText(source, utf8_)) {
+        openTbcadXdata();
         L().o->raw(1000, "fieldof=" + fieldHash(written) + ";" +
                              fieldHash(text::expandFields(doc_, source, kFieldCheckDate)));
         for (const std::string& piece : fieldPieces(source))
             L().o->raw(1000, piece);
     }
-    if (e.common.wipeout)
+    writeCommonFlags(e.common);
+}
+
+void Writer::writeCommonFlags(const EntityCommon& c) {
+    if (!c.annotative && !c.wipeout)
+        return;
+    openTbcadXdata();
+    if (c.wipeout)
         L().o->str(1000, "wipeout=1");
-    if (!e.common.annotative)
+    if (!c.annotative)
         return;
     L().o->str(1000, "annotative=1");
-    if (!e.common.annoScales.empty()) {
+    if (!c.annoScales.empty()) {
         std::string s = "annoscales=";
-        for (double v : e.common.annoScales) {
+        for (double v : c.annoScales) {
             char buf[40];
             std::snprintf(buf, sizeof buf, "%.12g", v);
             s += (s.back() == '=' ? "" : ",") + std::string(buf);
@@ -1484,7 +1485,7 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
         o.d(50, d.rotation * kDeg);
     if (d.clip.size() >= 3) {
         // No DXF form for a clipping boundary: TBCAD restores it from XDATA (block coordinates).
-        o.raw(1001, "TBCAD");
+        openTbcadXdata();
         o.str(1000, d.clipOn ? "clip=1" : "clip=0");
         if (d.clipInvert)
             o.str(1000, "clipinvert=1");
@@ -1494,6 +1495,8 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
                   "a clipping boundary is kept only in TBCAD XDATA; other programs "
                   "show the whole block");
     }
+    if (L().cur)  // in the INSERT record itself, ahead of its ATTRIBs (see writeEntity)
+        writeCommonFlags(*L().cur);
     if (!arrayTag_.empty()) {
         o.raw(1001, "TBCAD_ARRAY");
         for (const DataItem& it : arrayTag_)
