@@ -178,7 +178,8 @@ fonts, open file, first frame). Capture runs print it to stdout as well, and wit
 `TBCAD_STARTUP_TRACE=1` it also goes to the command history. A settings file that cannot be read
 never stops the program: it starts with the defaults, says so on the command line, and keeps the
 damaged `settings.json` as `settings.json.bad`. Values of the wrong type, or numbers outside what the
-Settings dialog offers (interface scale, pick box, tool wheel delay, autosave minutes), are put back
+Settings dialog offers (interface scale, pick box, crosshair size, locked layer fade, grip and
+marker size, tool wheel delay, autosave minutes), are put back
 to the default or the nearest allowed value.
 
 ## Automated GUI tests
@@ -225,6 +226,22 @@ Defaults: Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S, Ctrl+Z, Ctrl+Y, Ctrl+A, Esc. Act
   `ui::AliasEditor`. The Keybindings tab captures the next key press for an action, warns when the keys are
   already used (Take over / Cancel), and can unbind or restore the default, through
   `ui::KeybindingEditor` and `keybindings.json`. A hidden `SETTINGSPAGE <page>` opens a tab directly.
+  The option pages scroll above the Close row. Each option that AutoCAD keeps in a variable can
+  also be typed as that variable, and both change the same setting:
+
+  | Page | Option | Variable | Setting |
+  |---|---|---|---|
+  | General | Show line weights | `LWDISPLAY` | `view.lineweights` |
+  | General | Right-click with nothing selected / objects selected / a command running | `SHORTCUTMENU` (1, 2, 4, 8) | `ui.rightClick.default`, `.edit`, `.command` |
+  | Display | Crosshair size, % of the drawing area | `CURSORSIZE` | `view.crosshairSize` |
+  | Display | Model space background, crosshair and AutoSnap marker colours | | `ui.viewportBackground`, `view.crosshairColor`, `osnap.markerColor` |
+  | Display | Locked layer fade, % (0 or less: none) | `LAYLOCKFADECTL` | `view.lockFade` |
+  | Drafting > Object Snap | Aperture, aperture box | `APERTURE`, `APBOX` | `drafting.osnap.aperture`, `osnap.apbox` |
+  | Drafting > Object Snap | AutoSnap marker on, size | | `osnap.marker`, `osnap.markerSize` |
+  | Drafting > Selection | Pick box, grip size | `PICKBOX`, `GRIPSIZE` | `pick.aperturePx`, `grips.size` |
+  | Drafting > Selection | Grip colours (colour numbers) | `GRIPCOLOR`, `GRIPHOVER`, `GRIPHOT` | `grips.color`, `grips.hover`, `grips.hot` |
+  | Files | Autosave minutes (0 = off) | `SAVETIME` | `autosave.enabled`, `autosave.minutes` |
+  | Files | Keep the previous file as `.bak` | `ISAVEBAK` | `files.backup` |
 - **Ctrl+L** (`view.expandLog`) or **F2** (`view.textWindow`, also `TEXTSCR`): the whole command
   history in one read-only box that can be selected and copied. The command line's AutoComplete
   also finds commands by synonym (ROUND finds FILLET) and by text inside the name (LINE finds
@@ -238,7 +255,10 @@ Defaults: Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S, Ctrl+Z, Ctrl+Y, Ctrl+A, Esc. Act
 - **Right-click in the drawing** opens a menu that depends on the state: while a command runs it lists
   Enter, Cancel, the prompt's options and Zoom Extents; with a selection it lists Move, Copy, Rotate, Scale,
   Mirror, Erase and Deselect All; otherwise Repeat <last command>, Select All, Undo, Redo and Zoom Extents.
-  Setting `ui.rightClick = enter` (Settings > General) makes right-click act as Enter instead.
+  Settings > General chooses, for each of the three states, the menu or Enter (with nothing running,
+  Enter repeats the last command), as AutoCAD's `SHORTCUTMENU`; while a command runs it can also
+  show the menu only when the prompt has options. The older `ui.rightClick = enter` still makes
+  every right-click Enter.
 - **Autosave** writes every open drawing with unsaved changes (`recovery-<n>.tbcad` + `.json` in the
   autosave folder). Saving or closing a drawing removes its backup. After a crash the recovery prompt reopens all
   of them (`AppCore::recoverAll`); the first replaces the empty drawing, the others get tabs.

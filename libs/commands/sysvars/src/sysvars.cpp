@@ -501,6 +501,10 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeLwDisplayCommand());
     (void)registry.add(makeQpModeCommand());
     (void)registry.add(makeRolloverTipsCommand());
+    for (const char* n :
+         {"PICKBOX", "APERTURE", "CURSORSIZE", "GRIPSIZE", "GRIPCOLOR", "GRIPHOVER", "GRIPHOT",
+          "LAYLOCKFADECTL", "SAVETIME", "ISAVEBAK", "APBOX", "SHORTCUTMENU"})
+        (void)registry.add(makeOptionVarCommand(n));
     (void)registry.add(makeViewCommand());
     (void)registry.add(makeAddSelectedCommand());
 }

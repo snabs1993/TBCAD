@@ -34,3 +34,27 @@ TEST_CASE("wheel slices are clockwise from the top") {
     CHECK(wheelSliceAt(0, -100, 20, 4) == 0);
     CHECK(wheelSliceAt(100, 0, 20, 4) == 1);
 }
+
+TEST_CASE("right-click customization: menu, Enter or repeat in each mode, and SHORTCUTMENU") {
+    RightClickModes m;  // defaults: the menu everywhere
+    CHECK(rightClickAction(m, false, false, false) == RightClick::Menu);
+    CHECK(rightClickAction(m, true, false, false) == RightClick::Menu);
+    CHECK(shortcutMenuCode(m) == 7);
+    m.idle = "repeat";
+    m.command = "options";
+    CHECK(rightClickAction(m, false, false, false) == RightClick::Repeat);
+    CHECK(rightClickAction(m, false, false, true) == RightClick::Menu);  // edit mode keeps it
+    CHECK(rightClickAction(m, true, true, false) == RightClick::Menu);
+    CHECK(rightClickAction(m, true, false, false) == RightClick::Enter);
+    CHECK(shortcutMenuCode(m) == 10);
+    m.legacy = "enter";  // the older "right-click is Enter" switch wins
+    CHECK(rightClickAction(m, true, true, true) == RightClick::Enter);
+    CHECK(rightClickAction(m, false, false, true) == RightClick::Repeat);
+    CHECK(shortcutMenuCode(m) == 0);
+    for (int code : {0, 3, 7, 11})
+        CHECK(shortcutMenuCode(rightClickModesFromCode(code)) == code);
+    const RightClickModes acad = rightClickModesFromCode(11);  // AutoCAD's default
+    CHECK(acad.idle == "menu");
+    CHECK(acad.edit == "menu");
+    CHECK(acad.command == "options");
+}

@@ -65,6 +65,10 @@ public:
     void setExtraHiddenLayers(std::unordered_set<LayerId> layers);
     const std::unordered_set<LayerId>& extraHiddenLayers() const { return extraHidden_; }
 
+    // How much objects on locked layers are faded, in % (LAYLOCKFADECTL; 0 or less: not at all).
+    void setLockedFade(double percent);
+    double lockedOpacity() const { return lockedKeep_; }
+
     // Block-space lists built since construction (for tests).
     std::size_t blockBuilds() const { return blockCache_.builds(); }
 
@@ -132,6 +136,7 @@ private:
     unsigned maxThreads_ = 0;
     bool skippedOffscreen_ = false;
     std::unordered_set<LayerId> lockedLayers_{};
+    double lockedKeep_ = 0.4;
     std::unordered_map<LayerId, std::uint8_t> layerTransparency_{};
     bool showTransparency_ = true;
     bool fillMode_ = true;    // FILL, from the drawing header

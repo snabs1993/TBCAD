@@ -1054,6 +1054,33 @@ TEST_CASE("hover tooltip, right-click as Enter and the cursor HUD switch") {
     CHECK(entityCount(h) == 0);
     CHECK_FALSE(h.core().runner().active());
     CHECK(h.windowShot("##Popup").empty());
+
+    // Right-click customization (SHORTCUTMENU): with nothing selected a right click repeats the
+    // last command; while it runs, the menu or Enter as chosen.
+    h.core().setSetting("ui.rightClick", "menu");
+    h.core().setSetting("ui.rightClick.default", "repeat");
+    h.core().setSetting("ui.rightClick.command", "menu");
+    h.click(onLine.x + 300, onLine.y + 200, 1);
+    h.frame(3);
+    CHECK(h.core().runner().active());  // ERASE again
+    CHECK(h.windowShot("##Popup").empty());
+    h.click(onLine.x + 300, onLine.y + 200, 1);
+    h.frame(3);
+    CHECK(h.core().runner().active());  // the menu, not Enter
+    h.key(ImGuiKey_Escape);             // closes the menu
+    h.frame(3);
+    h.core().pressEscape();  // ends ERASE
+    h.frame(3);
+    REQUIRE_FALSE(h.core().runner().active());
+    h.core().setSetting("ui.rightClick.command", "enter");
+    h.command("ERASE");
+    h.frame(3);
+    REQUIRE(h.core().runner().active());
+    h.click(onLine.x + 300, onLine.y + 200, 1);
+    h.frame(3);
+    CHECK_FALSE(h.core().runner().active());
+    h.core().setSetting("ui.rightClick.default", "menu");
+    h.core().setSetting("ui.rightClick.command", "menu");
 }
 
 TEST_CASE("file dialogs: Save As and Open round trip a drawing from the keyboard") {

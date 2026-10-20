@@ -3137,23 +3137,36 @@ void Gui::viewportInput(const ViewportRect& rect) {
         }
     }
 
-    // Right button: context menu, or Enter for users who set ui.rightClick = enter.
+    // Right button: what a short click does depends on the mode (Options > User Preferences,
+    // SHORTCUTMENU): the context menu, Enter, or repeating the last command.
     // With the wheel on, holding the button past ui.wheel.delayMs shows the tool wheel and
-    // releasing over a slice runs it; a shorter press opens the menu on release. The wheel is
-    // for starting commands, so it stays closed while one is running (hold then gives the menu).
-    const bool rightIsEnter = core_.settings().getString("ui.rightClick", "menu") == "enter";
-    const bool wheelOn = !rightIsEnter && flag("ui.wheel.enabled", true);
+    // releasing over a slice runs it; a shorter press does the click's action on release. The
+    // wheel is for starting commands, so it stays closed while one is running.
+    const bool wheelOn = flag("ui.wheel.enabled", true);
+    auto doRightClick = [&](ui::RightClick a) {
+        if (a == ui::RightClick::Menu)
+            ImGui::OpenPopup("##viewportMenu");
+        else
+            core_.submitText("");  // Enter; with no command running it repeats the last one
+    };
     if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
         const auto* pr = core_.runner().prompt();
+        const auto& st = core_.settings();
+        ui::RightClickModes modes;
+        modes.legacy = st.getString("ui.rightClick", "menu");
+        modes.idle = st.getString("ui.rightClick.default", "menu");
+        modes.edit = st.getString("ui.rightClick.edit", "menu");
+        modes.command = st.getString("ui.rightClick.command", "menu");
+        rightAction_ =
+            ui::rightClickAction(modes, core_.runner().active(), pr && !pr->keywords.empty(),
+                                 !core_.selection().empty());
         if (io.KeyShift && core_.runner().active() && pr &&
             pr->kind == cmd::PromptInfo::Kind::Point)
             ImGui::OpenPopup("##snapMenu");  // Shift + right click: snap overrides
-        else if (rightIsEnter)
-            core_.submitText("");
-        else if (wheelOn)
+        else if (rightAction_ != ui::RightClick::Enter && wheelOn)
             rightDown_ = true;
         else
-            ImGui::OpenPopup("##viewportMenu");
+            doRightClick(rightAction_);
     }
     if (rightDown_) {
         anyActivity_ = true;
@@ -3173,7 +3186,7 @@ void Gui::viewportInput(const ViewportRect& rect) {
             wheel_.close();
             rightDown_ = false;
             if (!wasOpen)
-                ImGui::OpenPopup("##viewportMenu");
+                doRightClick(rightAction_);
             else if (!chosen.empty())
                 // The Undo slice undoes one step (U); UNDO itself asks how many.
                 core_.submitText(chosen == "UNDO" ? std::string("U") : chosen);

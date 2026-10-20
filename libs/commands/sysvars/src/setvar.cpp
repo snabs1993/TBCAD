@@ -2,6 +2,7 @@
 // commands (LTSCALE, COLOR, ...) already set; the names follow the usual ones.
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <functional>
 
@@ -384,6 +385,166 @@ private:
     std::string help_;
 };
 }  // namespace
+
+namespace {
+// A whole number kept as a setting of this installation: PICKBOX, CURSORSIZE, GRIPSIZE, ... The
+// Options dialog changes the same settings.
+class NumberSettingCommand final : public cmd::Command {
+public:
+    NumberSettingCommand(std::string name, std::string key, int lo, int hi, int fallback,
+                         std::string help)
+        : name_(std::move(name)),
+          key_(std::move(key)),
+          lo_(lo),
+          hi_(hi),
+          fallback_(fallback),
+          help_(std::move(help)) {}
+    std::string_view name() const override { return name_; }
+    std::string_view description() const override { return help_; }
+    Task run(CommandContext& ctx) override {
+        int cur = fallback_;
+        if (const auto v = ctx.host().setting(key_); v && !v->empty()) {
+            char* end = nullptr;
+            const double d = std::strtod(v->c_str(), &end);
+            if (end != v->c_str())
+                cur = static_cast<int>(std::lround(d));
+        }
+        cmd::StringOptions so;
+        so.defaultValue = std::to_string(cur);
+        auto val = co_await ctx.getString(
+            "Enter new value for " + name_ + " <" + *so.defaultValue + ">", so);
+        if (!val.ok())
+            co_return;
+        const std::string text(cmd::trim(val.text));
+        char* end = nullptr;
+        const long n = std::strtol(text.c_str(), &end, 10);
+        if (text.empty() || *end != 0 || n < lo_ || n > hi_) {
+            ctx.message(name_ + " is a whole number from " + std::to_string(lo_) + " to " +
+                        std::to_string(hi_) + ".");
+            co_return;
+        }
+        ctx.host().setSetting(key_, std::to_string(n));
+        ctx.message(name_ + " = " + std::to_string(n));
+    }
+
+private:
+    std::string name_, key_;
+    int lo_, hi_, fallback_;
+    std::string help_;
+};
+
+// SAVETIME: minutes between automatic saves; 0 switches them off.
+class SaveTimeCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "SAVETIME"; }
+    std::string_view description() const override {
+        return "Minutes between automatic saves (0 = off)";
+    }
+    Task run(CommandContext& ctx) override {
+        const auto on = ctx.host().setting("autosave.enabled");
+        const auto mins = ctx.host().setting("autosave.minutes");
+        const bool enabled = !on || (*on == "1" || *on == "true");
+        const long cur =
+            enabled ? (mins ? std::lround(std::strtod(mins->c_str(), nullptr)) : 10) : 0;
+        cmd::StringOptions so;
+        so.defaultValue = std::to_string(cur);
+        auto val =
+            co_await ctx.getString("Enter new value for SAVETIME <" + *so.defaultValue + ">", so);
+        if (!val.ok())
+            co_return;
+        const std::string text(cmd::trim(val.text));
+        char* end = nullptr;
+        const long n = std::strtol(text.c_str(), &end, 10);
+        if (text.empty() || *end != 0 || n < 0 || n > 600) {
+            ctx.message("SAVETIME is a whole number of minutes from 0 to 600.");
+            co_return;
+        }
+        ctx.host().setSetting("autosave.enabled", n > 0 ? "1" : "0");
+        if (n > 0)
+            ctx.host().setSetting("autosave.minutes", std::to_string(n));
+        ctx.message("SAVETIME = " + std::to_string(n));
+    }
+};
+
+// SHORTCUTMENU: what a right-click in the drawing does, as a bit code (see radial_wheel.h of
+// the ui library, which reads the same three settings).
+class ShortcutMenuCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "SHORTCUTMENU"; }
+    std::string_view description() const override {
+        return "Right-click menus: 1 default, 2 edit, 4 command, 8 command only with options";
+    }
+    Task run(CommandContext& ctx) override {
+        auto get = [&](const char* key) { return ctx.host().setting(key).value_or("menu"); };
+        int cur = 0;
+        if (get("ui.rightClick") != "enter") {
+            if (get("ui.rightClick.default") != "repeat")
+                cur |= 1;
+            if (get("ui.rightClick.edit") != "repeat")
+                cur |= 2;
+            const std::string c = get("ui.rightClick.command");
+            cur |= c == "options" ? 8 : c == "enter" ? 0 : 4;
+        }
+        cmd::StringOptions so;
+        so.defaultValue = std::to_string(cur);
+        auto val = co_await ctx.getString(
+            "Enter new value for SHORTCUTMENU <" + *so.defaultValue + ">", so);
+        if (!val.ok())
+            co_return;
+        const std::string text(cmd::trim(val.text));
+        char* end = nullptr;
+        const long n = std::strtol(text.c_str(), &end, 10);
+        if (text.empty() || *end != 0 || n < 0 || n > 31) {
+            ctx.message("SHORTCUTMENU is a bit code from 0 to 15.");
+            co_return;
+        }
+        ctx.host().setSetting("ui.rightClick", "menu");
+        ctx.host().setSetting("ui.rightClick.default", (n & 1) ? "menu" : "repeat");
+        ctx.host().setSetting("ui.rightClick.edit", (n & 2) ? "menu" : "repeat");
+        ctx.host().setSetting("ui.rightClick.command", (n & 4)   ? "menu"
+                                                       : (n & 8) ? "options"
+                                                                 : "enter");
+        ctx.message("SHORTCUTMENU = " + std::to_string(n & 15));
+    }
+};
+}  // namespace
+
+std::unique_ptr<cmd::Command> makeOptionVarCommand(std::string_view name) {
+    struct Spec {
+        const char* name;
+        const char* key;
+        int lo, hi, fallback;
+        const char* help;
+    };
+    static constexpr Spec kSpecs[] = {
+        {"PICKBOX", "pick.aperturePx", 1, 50, 6, "Size of the pick box, pixels"},
+        {"APERTURE", "drafting.osnap.aperture", 1, 50, 10, "Object snap aperture, pixels"},
+        {"CURSORSIZE", "view.crosshairSize", 1, 100, 100, "Crosshair size, % of the drawing area"},
+        {"GRIPSIZE", "grips.size", 1, 20, 4, "Grip size, pixels from the centre to the edge"},
+        {"GRIPCOLOR", "grips.color", 1, 255, 150, "Colour number of unselected grips"},
+        {"GRIPHOVER", "grips.hover", 1, 255, 11, "Colour number of the grip under the cursor"},
+        {"GRIPHOT", "grips.hot", 1, 255, 12, "Colour number of selected (hot) grips"},
+        {"LAYLOCKFADECTL", "view.lockFade", -90, 90, 60,
+         "How much objects on locked layers fade, % (0 or less: not at all)"},
+    };
+    if (name == "SAVETIME")
+        return std::make_unique<SaveTimeCommand>();
+    if (name == "SHORTCUTMENU")
+        return std::make_unique<ShortcutMenuCommand>();
+    if (name == "ISAVEBAK")
+        return std::make_unique<SwitchSettingCommand>(
+            "ISAVEBAK", "files.backup", true,
+            "Keep the previous file as .bak when saving (0 or 1)");
+    if (name == "APBOX")
+        return std::make_unique<SwitchSettingCommand>(
+            "APBOX", "osnap.apbox", false,
+            "Show the object snap aperture box at point prompts (0 or 1)");
+    for (const Spec& s : kSpecs)
+        if (name == s.name)
+            return std::make_unique<NumberSettingCommand>(s.name, s.key, s.lo, s.hi, s.fallback,
+                                                          s.help);
+    return nullptr;
+}
 
 std::unique_ptr<cmd::Command> makeLwDisplayCommand() {
     return std::make_unique<SwitchSettingCommand>(

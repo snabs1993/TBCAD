@@ -15,11 +15,12 @@ namespace tbcad::ui {
 
 namespace {
 
-constexpr double kLockedFade = 0.4;
-
-void fade(DisplayList& list) {
-    auto dim = [](DisplayStyle& s) {
-        s.color.a = static_cast<std::uint8_t>(static_cast<double>(s.color.a) * kLockedFade);
+// keep: the share of opacity kept on a locked layer (1 = not faded).
+void fade(DisplayList& list, double keep) {
+    if (keep >= 1.0)
+        return;
+    auto dim = [keep](DisplayStyle& s) {
+        s.color.a = static_cast<std::uint8_t>(static_cast<double>(s.color.a) * keep);
     };
     for (auto& item : list.items)
         std::visit([&](auto& it) { dim(it.style); }, item);
@@ -154,7 +155,7 @@ void SceneSync::upsertEntity(const Entity& e, std::optional<std::uint32_t> drawO
         geom::buildDisplay(doc_, e, ctx, list);
     }
     if (locked)
-        fade(list);
+        fade(list, lockedKeep_);
     scene_.upsert(id, list, order, builtZoom);
 }
 
@@ -181,7 +182,7 @@ void SceneSync::prepare(const Entity& e, std::uint32_t order, Prepared& out) con
     out.builtZoom = needsTessellation(e) ? 1.0 / pixelSizeMm_ : 0.0;
     geom::buildDisplay(doc_, e, ctx, out.list);
     if (doc_.effective(e.common).locked)
-        fade(out.list);
+        fade(out.list, lockedKeep_);
     out.what = Prepared::What::List;
 }
 
@@ -573,6 +574,16 @@ void SceneSync::setExtraHiddenLayers(std::unordered_set<LayerId> layers) {
     syncLayerVisibility();
 }
 
+void SceneSync::setLockedFade(double percent) {
+    // LAYLOCKFADECTL: 0..90 % faded; 0 or less (a remembered value switched off) shows them as is.
+    const double keep = percent <= 0 ? 1.0 : 1.0 - std::min(percent, 90.0) / 100.0;
+    if (keep == lockedKeep_)
+        return;
+    lockedKeep_ = keep;
+    lockedLayers_.clear();  // every locked layer now counts as changed: its objects are redrawn
+    syncLayers();
+}
+
 void SceneSync::syncLayers() {
     // Visibility is a property of the scene's layer, so objects still waiting to be built need no
     // flush: they come out hidden or shown by the layer they are on.
@@ -662,7 +673,7 @@ void SceneSync::rebuildDrawOrder() {
             geom::buildDisplay(doc_, *e, ctx, list);
         }
         if (doc_.effective(e->common).locked)
-            fade(list);
+            fade(list, lockedKeep_);
         scene_.upsert(id, list, ++rank, needsTessellation(*e) ? 1.0 / pixelSizeMm_ : 0.0);
     }
 }

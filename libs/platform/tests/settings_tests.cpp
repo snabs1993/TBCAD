@@ -110,7 +110,7 @@ TEST_CASE("repair puts back values a hand-edited file made unusable") {
     CHECK(s.getNumber("ui.scale") == 0.75);
     CHECK(s.getNumber("pick.aperturePx") == 6);
     CHECK(s.getBool("drafting.osnap"));
-    CHECK(s.getNumber("autosave.minutes") == 60);
+    CHECK(s.getNumber("autosave.minutes") == 600);  // SAVETIME goes up to 600
     CHECK(s.getString("ui.theme") == "dark");
     CHECK(s.kindOf("my.own") == Settings::Kind::Other);  // not ours: left alone
     CHECK(s.dirty());

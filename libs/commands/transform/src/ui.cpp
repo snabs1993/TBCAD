@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 
+#include "tbcad/core/color.h"
 #include "tbcad/transform/grip_menu.h"
 #include "tbcad/transform/grips.h"
 #include "tbcad/transform/transform.h"
@@ -75,10 +77,22 @@ void registerUi(ui::UiRegistry& ui) {
         return true;
     });
 
-    // Grip squares for the selection (8 px): blue, pink under the cursor, red while hot.
+    // Grip squares for the selection, 2 x GRIPSIZE px: blue, pink under the cursor, red while
+    // hot, or the colours GRIPCOLOR, GRIPHOVER and GRIPHOT set (colour numbers 1-255).
     ui.addOverlayDrawer([](ui::PanelContext& ctx, render::Overlay& overlay) {
         if (!ctx.doc || !ctx.host || !ctx.selection || ctx.selection->empty())
             return;
+        auto aciSetting = [&](const char* key, Rgba fallback) {
+            const auto v = ctx.host->setting(key);
+            const long n = v ? std::strtol(v->c_str(), nullptr, 10) : 0;
+            return n >= 1 && n <= 255 ? paletteColor(static_cast<std::uint8_t>(n)) : fallback;
+        };
+        const Rgba cold = aciSetting("grips.color", Rgba{38, 120, 255, 255});
+        const Rgba hotColour = aciSetting("grips.hot", Rgba{255, 50, 50, 255});
+        const Rgba hoverColour = aciSetting("grips.hover", Rgba{255, 105, 180, 255});
+        double sizePx = 8.0;
+        if (const auto v = ctx.host->setting("grips.size"))
+            sizePx = 2.0 * std::clamp(std::strtod(v->c_str(), nullptr), 1.0, 20.0);
         const auto& grips = cachedGrips(*ctx.doc, *ctx.selection, gripLimit(*ctx.host));
         const auto hot = hotGrip();
         // Only the grips in view are drawn, and no more than a screen can show.
@@ -95,17 +109,17 @@ void registerUi(ui::UiRegistry& ui) {
                 continue;
             if (++drawn > kMaxDrawn)
                 break;
-            Rgba colour{38, 120, 255, 255};
+            Rgba colour = cold;
             const auto& warm = warmGrips();
             if (hot && distance(g.pos, *hot) < 1e-9)
-                colour = Rgba{255, 50, 50, 255};
+                colour = hotColour;
             else if (!warm.empty() && std::any_of(warm.begin(), warm.end(), [&](Vec2 w) {
                          return distance(g.pos, w) < 1e-9;
                      }))
-                colour = Rgba{255, 50, 50, 255};  // picked with Shift
+                colour = hotColour;  // picked with Shift
             else if (hover && hover == &g)
-                colour = Rgba{255, 105, 180, 255};
-            overlay.marker(render::Space::World, g.pos, render::MarkerKind::Square, 8.0, colour,
+                colour = hoverColour;
+            overlay.marker(render::Space::World, g.pos, render::MarkerKind::Square, sizePx, colour,
                            true);
         }
     });
