@@ -293,6 +293,19 @@ TEST_CASE("arrow types") {
     Layout tick = with(ArrowType::ArchTick);
     CHECK(tick.arrows.empty());
     CHECK(tick.lines.size() == 5);
+    // As AutoCAD's _ArchTick block: a stroke one arrow size across each way, at 45 degrees.
+    {
+        const double a = doc.dimStyle(kDimStyleStandard)->arrowSize;
+        bool found = false;
+        for (const auto& l : tick.lines)
+            if (l.pts.size() == 2 && std::abs(l.pts[0].x - l.pts[1].x) > 1e-9 &&
+                std::abs(l.pts[0].y - l.pts[1].y) > 1e-9) {
+                CHECK(std::abs(l.pts[1].x - l.pts[0].x) == doctest::Approx(a));
+                CHECK(std::abs(l.pts[1].y - l.pts[0].y) == doctest::Approx(a));
+                found = true;
+            }
+        CHECK(found);
+    }
     CHECK(with(ArrowType::Dot).arrows.size() == 2);
     Layout none = with(ArrowType::None);
     CHECK(none.arrows.empty());

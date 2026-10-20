@@ -1686,6 +1686,11 @@ void Importer::readDimStyle(const Record& r) {
         ds.arrowType = r.integer(173) != 0 ? blk1 : blk;
         dimArrows_[name] = {blk, blk1};
     }
+    // DIMTSZ: oblique strokes of that size instead of arrowheads, whatever DIMBLK says.
+    if (const Group* g = r.find(142); g && std::isfinite(g->number()) && g->number() > 0) {
+        ds.arrowType = ArrowType::ArchTick;
+        ds.arrowSize = g->number() * k_;
+    }
     for (const Group& x : r.g) {  // the arrow kind TBCAD writes as extended data
         if (x.code != 1000)
             continue;

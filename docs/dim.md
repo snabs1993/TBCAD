@@ -76,6 +76,10 @@ DXF 279) is WithLine, Leader or Free: text dragged outside the extension lines (
 radius / diameter dimension) gets a leader line, except with Free. All three are edited with
 DIMSTYLE, undo with the style, and are kept in `.tbcad` (DSTX), the change journal and DXF.
 
+Tick marks (`ArrowType::ArchTick`, DXF `_ARCHTICK` or `_OBLIQUE`, or a DIMTSZ above 0, which
+sets the arrow size to DIMTSZ) are drawn as AutoCAD's block: a stroke at 45 degrees from
+(-a/2,-a/2) to (a/2,a/2) round the tip, so `a·√2` long.
+
 ## Fit rules (linear and aligned)
 
 `L` is the distance between the extension lines, `tw` the text width, `g` the text gap and `a`
