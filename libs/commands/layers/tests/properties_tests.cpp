@@ -604,4 +604,19 @@ TEST_CASE("Properties edit attribute values, dimension override and style, table
     CHECK(entityAs<InsertData>(*doc.find(ins))->attribs[1].value == "12");
     CHECK(host.undo());
     CHECK(entityAs<InsertData>(*doc.find(ins))->attribs[0].value == "101");
+
+    // a multileader whose block has an attribute
+    MLeaderData ml;
+    ml.lines = {{{0, 0}, {5, 5}}};
+    ml.landing = {5, 5};
+    ml.contentPos = {7, 5};
+    ml.content = MLeaderData::Content::Block;
+    ml.block = blk;
+    ml.attribs = {{"ROOM", "7", {}}};
+    EntityId tagged = addEntity(doc, Indirect<MLeaderData>(ml));
+    CHECK(word(tagged, "att:room") == "7");
+    CHECK(word(tagged, "contents") == "<none>");
+    host.setSelection({tagged});
+    host.run("-PROP", {"Set", "att:room", "8", cmd::ScriptItem::enter()});
+    CHECK(entityAs<MLeaderData>(*doc.find(tagged))->attribs[0].value == "8");
 }

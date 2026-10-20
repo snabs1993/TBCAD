@@ -678,6 +678,9 @@ std::vector<StringField> stringFields(const Document& doc, const Entity& e) {
     } else if (const auto* ml = entityAs<MLeaderData>(e)) {
         if (ml->content == MLeaderData::Content::Text)
             out.push_back({"contents", "Contents", ml->utf8, true, {}});
+        // The block's attribute values, as for an Insert.
+        for (const AttribValue& a : ml->attribs)
+            out.push_back({"att:" + lowerWord(a.tag), a.tag, a.value, true, {}});
         out.push_back(
             {"dimstyle", "Style", dimStyleNameOf(doc, ml->style), true, dimStyleNames(doc)});
     } else if (const auto* tb = entityAs<TableData>(e)) {
@@ -815,6 +818,9 @@ Result<void> setStringField(const Document& doc, Transaction& tx, EntityId id, c
             ml->utf8 = chosen;
         else if (f == "dimstyle")
             sub = dimStyleId(ml->style);
+        for (AttribValue& a : ml->attribs)
+            if ("att:" + lowerWord(a.tag) == f)
+                a.value = chosen;
     } else if (auto* tb = entityAs<TableData>(next)) {
         const TextStyle* st = doc.textStyleByName(chosen);
         if (!st)
