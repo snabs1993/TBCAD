@@ -414,4 +414,7 @@ private:
     int firstMirroredLine_ = 0;
 };
 
+// The relative height ("\\H0.8x;") that starts a (dimension) text and so sizes all of it, else 1.
+double leadingHeightFactor(std::string_view text);
+
 }  // namespace tbcad::dxf::detail
