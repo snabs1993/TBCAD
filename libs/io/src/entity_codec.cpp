@@ -160,17 +160,26 @@ struct PayloadWriter {
         w.u8(static_cast<std::uint8_t>(d.attach));
         w.varint(d.style.value);
         str(d.utf8);
-        if (d.columns > 1 || d.lineSpacing != 1.0 || d.bgMode) {  // a tail older readers ignore
+        // A tail older readers ignore: each part is written when it or a later one is needed.
+        const bool colHeight = d.columns > 1 && d.columnHeight > 0;
+        const int tail = colHeight              ? 4
+                         : d.bgMode             ? 3
+                         : d.lineSpacing != 1.0 ? 2
+                         : d.columns > 1        ? 1
+                                                : 0;
+        if (tail >= 1) {
             w.u8(d.columns);
             w.f64(d.columnGap);
-            if (d.lineSpacing != 1.0 || d.bgMode)
-                w.f64(d.lineSpacing);
-            if (d.bgMode) {
-                w.u8(d.bgMode);
-                w.u8(static_cast<std::uint8_t>(d.bgColor));
-                w.f64(d.bgScale);
-            }
         }
+        if (tail >= 2)
+            w.f64(d.lineSpacing);
+        if (tail >= 3) {
+            w.u8(d.bgMode);
+            w.u8(static_cast<std::uint8_t>(d.bgColor));
+            w.f64(d.bgScale);
+        }
+        if (tail >= 4)
+            w.f64(d.columnHeight);
     }
     void operator()(const HatchData& d) {
         w.u8(d.solid ? 1 : 0);
@@ -734,6 +743,11 @@ struct PayloadReader {
                             d.bgScale = r.f64();
                             if (!(d.bgScale >= 1.0 && d.bgScale <= 5.0))
                                 d.bgScale = 1.5;
+                            if (r.remaining() > 0) {
+                                d.columnHeight = r.f64();
+                                if (!(d.columnHeight > 0 && d.columnHeight < 1e12))
+                                    d.columnHeight = 0;
+                            }
                         }
                     }
                 }

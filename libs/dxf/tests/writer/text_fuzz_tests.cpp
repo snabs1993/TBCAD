@@ -87,6 +87,8 @@ TEST_CASE("random TEXT and MTEXT survive DXF export and import") {
                     if (m.width > 0 && rng() % 3 == 0) {
                         m.columns = static_cast<std::uint8_t>(2 + rng() % 3);
                         m.columnGap = (rng() % 2) ? 0 : 3 + static_cast<double>(rng() % 20);
+                        if (rng() % 2)
+                            m.columnHeight = 5 + static_cast<double>(rng() % 50);
                     }
                     e.data = Indirect<MTextData>(m);
                 }
@@ -121,6 +123,8 @@ TEST_CASE("random TEXT and MTEXT survive DXF export and import") {
                 CHECK((*a2)->height == doctest::Approx((*b2)->height));
                 CHECK((*a2)->width == doctest::Approx((*b2)->width));
                 CHECK((*a2)->columns == (*b2)->columns);
+                if ((*a2)->columns > 1)
+                    CHECK((*b2)->columnHeight == doctest::Approx((*a2)->columnHeight));
                 if ((*a2)->columns > 1)
                     CHECK((*b2)->columnGap == doctest::Approx((*a2)->columnGap > 0
                                                                   ? (*a2)->columnGap

@@ -1522,6 +1522,39 @@ TEST_CASE("text editor: TEXT is typed in the box on the drawing, Thai included")
     });
 }
 
+TEST_CASE("text editor: the MTEXT formatting bar wraps the selection and inserts symbols") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    h.core().submitText("MTEXT");
+    h.core().submitText("0,0");
+    h.core().submitText("100,-40");
+    h.frame(8);
+    REQUIRE(h.windowOpen("##textedit"));
+    h.type("Hello");
+    h.frame(2);
+    h.key(ImGuiKey_A, true);  // select all, then Bold from the bar
+    h.frame(2);
+    REQUIRE(h.click("B", "##textedit"));
+    h.frame(4);
+    h.key(ImGuiKey_End, true);  // the box has the keyboard again: go to the end
+    h.frame(2);
+    REQUIRE(h.click("@ Symbol", "##textedit"));
+    h.frame(3);
+    REQUIRE(h.click("Degree  \xC2\xB0"));
+    h.frame(4);
+    CHECK(h.has("Bullets and numbering", "##textedit"));
+    CHECK(h.has("Columns", "##textedit"));
+    h.key(ImGuiKey_Enter, true);  // Ctrl+Enter accepts
+    h.frame(5);
+    CHECK_FALSE(h.windowOpen("##textedit"));
+    REQUIRE(entityCount(h) == 1);
+    h.core().document().forEachEntity([&](const Entity& e) {
+        const auto* m = std::get_if<Indirect<MTextData>>(&e.data);
+        REQUIRE(m);
+        CHECK((*m)->utf8 == "{\\b1;Hello}\xC2\xB0");
+    });
+}
+
 TEST_CASE("object properties: annotation section, scales and *varies* with a mixed selection") {
     Harness h(1920, 1080);
     run(h, "-LAYER New A-One");

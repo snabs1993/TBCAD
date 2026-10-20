@@ -12,6 +12,7 @@
 #include "settings_dialog.h"
 #include "tbcad/core/color.h"
 #include "tbcad/platform/external_link.h"
+#include "tbcad/textcmd/format_bar.h"
 #include "tbcad/ui/app_core.h"
 #include "tbcad/ui/command_match.h"
 #include "tbcad/ui/input_history.h"
@@ -223,6 +224,7 @@ private:
     int textEditorFocus_ = 0;
     std::string textEditorBuf_{};
     std::string textEditorSent_{};
+    textcmd::FormatBar formatBar_{};  // the MTEXT editor's formatting bar
     bool spaceAsEnter_ = false;
     std::string typedWhileUnfocused_{};
     std::size_t lastHistorySize_ = 0;

@@ -277,6 +277,7 @@ std::unique_ptr<Document> makeRichDocument() {
         MTextData columns{{9, 9}, 3, 40, 0, Attachment::TopLeft, thai, "a\\Pb\\Pc\\Pd"};
         columns.columns = 2;
         columns.columnGap = 6;
+        columns.columnHeight = 7;  // static columns
         add(make(columns, l0));
 
         // Erase two entities (id gaps in the middle) and reorder the drawing.

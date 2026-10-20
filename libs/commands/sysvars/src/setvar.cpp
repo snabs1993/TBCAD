@@ -526,6 +526,8 @@ std::unique_ptr<cmd::Command> makeOptionVarCommand(std::string_view name) {
         {"GRIPHOT", "grips.hot", 1, 255, 12, "Colour number of selected (hot) grips"},
         {"LAYLOCKFADECTL", "view.lockFade", -90, 90, 60,
          "How much objects on locked layers fade, % (0 or less: not at all)"},
+        {"TEXTEDITMODE", "textedit.mode", 0, 1, 0,
+         "TEXTEDIT asks for another object after each edit (0) or ends (1)"},
     };
     if (name == "SAVETIME")
         return std::make_unique<SaveTimeCommand>();

@@ -1206,12 +1206,12 @@ bool Importer::convMesh(const Record& r, const std::vector<Vec2>& ctrl,
 bool Importer::convPolyline(const Record& r, RecordReader& rr, const Frame& /*unused*/,
                             std::vector<Entity>& out) {
     const std::int64_t flags = r.integer(70);
-    const bool mesh = (flags & (16 | 64)) != 0;  // polygon mesh, polyface mesh
+    const bool mesh = (flags & (16 | 64)) != 0;     // polygon mesh, polyface mesh
     const bool line3d = (flags & 8) != 0 && !mesh;  // 3D polyline: drawn flat, Z dropped
     const double defStart = r.num(40) * k_, defEnd = r.num(41) * k_;
 
     std::vector<PolyVertex> plain, splineVerts;
-    std::vector<Vec2> meshCtrl, meshFit;           // polygon mesh / polyface vertices
+    std::vector<Vec2> meshCtrl, meshFit;             // polygon mesh / polyface vertices
     std::vector<std::array<std::int64_t, 4>> faces;  // polyface faces (1-based, < 0 = hidden)
     bool zSeen = false;
     Record v;
@@ -1386,8 +1386,8 @@ bool Importer::convSpline(const Record& r, std::vector<Entity>& out) {
         }
         // Drawn with the highest degree its points allow (two points: a straight line).
         bad(r, "SPLINE",
-            "too few control points for degree " + std::to_string(sp.degree) + "; drawn with degree " +
-                std::to_string(sp.control.size() - 1));
+            "too few control points for degree " + std::to_string(sp.degree) +
+                "; drawn with degree " + std::to_string(sp.control.size() - 1));
         sp.degree = static_cast<int>(sp.control.size()) - 1;
         sp.knots.clear();
         sp.periodic = false;
@@ -1515,6 +1515,9 @@ bool Importer::convMText(const Record& r, const Frame& f, std::vector<Entity>& o
         if (r.has(48) && r.num(48) > 0)
             d.width = r.num(48) * k_;
         d.columnGap = std::max(0.0, r.num(49) * k_);
+        // Static columns (75 = 1) are all as tall as the defined height (46).
+        if (r.integer(75, 0) == 1 && r.has(46) && r.num(46) > 0)
+            d.columnHeight = r.num(46) * k_;
     }
     if (f.mirror) {
         if (mirroredText_++ == 0)
@@ -2555,12 +2558,18 @@ std::string Importer::keptRecord(const Record& r) {
         int before;  // added before the first group with this code; 0 = first
     };
     static constexpr Marker kMarkers[] = {
-        {"LWPOLYLINE", "AcDbPolyline", 0}, {"LINE", "AcDbLine", 0},
-        {"CIRCLE", "AcDbCircle", 0},       {"ARC", "AcDbCircle", 0},
-        {"ARC", "AcDbArc", 50},            {"POINT", "AcDbPoint", 0},
-        {"ELLIPSE", "AcDbEllipse", 0},     {"SPLINE", "AcDbSpline", 0},
-        {"INSERT", "AcDbBlockReference", 0}, {"SOLID", "AcDbTrace", 0},
-        {"TRACE", "AcDbTrace", 0},         {"3DFACE", "AcDbFace", 0},
+        {"LWPOLYLINE", "AcDbPolyline", 0},
+        {"LINE", "AcDbLine", 0},
+        {"CIRCLE", "AcDbCircle", 0},
+        {"ARC", "AcDbCircle", 0},
+        {"ARC", "AcDbArc", 50},
+        {"POINT", "AcDbPoint", 0},
+        {"ELLIPSE", "AcDbEllipse", 0},
+        {"SPLINE", "AcDbSpline", 0},
+        {"INSERT", "AcDbBlockReference", 0},
+        {"SOLID", "AcDbTrace", 0},
+        {"TRACE", "AcDbTrace", 0},
+        {"3DFACE", "AcDbFace", 0},
         {"MTEXT", "AcDbMText", 0},
     };
     std::vector<const Marker*> pending;
