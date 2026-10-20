@@ -131,6 +131,10 @@ private:
             e.common.color = h->fill;
             h->fill = Color::byLayer();
         }
+        // A left-aligned text on its baseline is placed by its position alone: DXF writes no
+        // alignment point for it, and the importer sets it to the position.
+        if (auto* t = entityAs<TextData>(e); t && t->h == HAlign::Left && t->v == VAlign::Baseline)
+            t->alignPoint = t->position;
         std::string raw = dumpEntity(e);
         std::string out;
         std::string plain;
