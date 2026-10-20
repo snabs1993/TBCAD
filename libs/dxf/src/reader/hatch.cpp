@@ -67,23 +67,47 @@ bool Importer::convHatch(const Record& r, const Frame& f, std::vector<Entity>& o
     std::optional<GradientData> gradient;
     if (r.integer(450) == 1) {
         solid = true;
+        // The colours follow group 450, each as an index (63, when it has one) and RGB (421).
         std::vector<std::uint32_t> stops;
-        for (const Group& gr : g)
-            if (gr.code == 421)
+        std::vector<int> stopIndex;
+        int index = 0;
+        bool inGradient = false;
+        for (const Group& gr : g) {
+            if (gr.code == 450)
+                inGradient = true;
+            else if (!inGradient)
+                continue;
+            if (gr.code == 63) {
+                index = static_cast<int>(gr.integer());
+            } else if (gr.code == 421) {
                 stops.push_back(static_cast<std::uint32_t>(gr.integer()) & 0xFFFFFF);
+                stopIndex.push_back(index);
+                index = 0;
+            }
+        }
         auto toColor = [](std::uint32_t v) {
             return Color::rgb(static_cast<std::uint8_t>((v >> 16) & 0xFF),
                               static_cast<std::uint8_t>((v >> 8) & 0xFF),
                               static_cast<std::uint8_t>(v & 0xFF));
+        };
+        auto stopColor = [&](std::size_t k) {
+            const std::uint32_t v = stops[k];
+            if (stopIndex[k] >= 1 && stopIndex[k] <= 255) {
+                const auto i = static_cast<std::uint8_t>(stopIndex[k]);
+                const Rgba p = paletteColor(i);
+                if (((static_cast<std::uint32_t>(p.r) << 16) | (p.g << 8) | p.b) == v)
+                    return Color::index(i);
+            }
+            return toColor(v);
         };
         if (stops.empty()) {
             report_.info(code::kGradient, "gradient hatch without colours imported as a solid fill",
                          r.line);
         } else {
             GradientData gd;
-            gd.color1 = toColor(stops.front());
+            gd.color1 = stopColor(0);
             if (stops.size() >= 2) {
-                gd.color2 = toColor(stops[1]);
+                gd.color2 = stopColor(1);
             } else {
                 // One colour: it fades towards white by the tint.
                 const double tint = r.has(462) ? std::clamp(r.num(462), 0.0, 1.0) : 1.0;
