@@ -221,6 +221,9 @@ std::unique_ptr<Document> makeRichDocument() {
             ml.style = arch;
             ml.utf8 = "หมายเหตุ";
             ml.textHeight = 3;
+            ml.breaks = {DimBreak{{1, 1}, {2, 2}}, DimBreak{{1, 9}, {2, 8}}};
+            ml.autoBreaks = 1;
+            ml.breakWith = {EntityId{1}};
             add(make(std::move(ml), l0));
         }
         {

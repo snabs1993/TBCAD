@@ -1014,3 +1014,66 @@ TEST_CASE("DIMREASSOCIATE asks for each point: a pick links it there, Select obj
     }
     CHECK(entityAs<DimensionData>(*f.doc.find(rid))->measurement == doctest::Approx(25));
 }
+
+TEST_CASE("DIMBREAK breaks leaders and multileaders, and the gaps follow") {
+    Chain f;
+    EntityId leader{}, mleader{}, cutter{};
+    {
+        auto tx = f.doc.begin("objects");
+        Entity l;
+        l.data = LeaderData{{{0, 0}, {50, 0}, {60, 10}}, {}, "", {}};
+        leader = tx.add(std::move(l)).value();
+        MLeaderData md;
+        md.lines = {{{0, 20}, {50, 20}}};
+        md.landing = {50, 20};
+        md.contentPos = {60, 20};
+        md.dogleg = true;
+        Entity m;
+        m.data = md;
+        mleader = tx.add(std::move(m)).value();
+        Entity cut;
+        cut.data = LineData{{30, -10}, {30, 30}};
+        cutter = tx.add(std::move(cut)).value();
+        tx.commit();
+    }
+    REQUIRE(f.host
+                ->run("DIMBREAK", {ScriptItem::select({leader, mleader}), ScriptItem::enter(),
+                                   "Auto", ScriptItem::enter()})
+                .finished);
+    const auto* ld = entityAs<LeaderData>(*f.doc.find(leader));
+    const auto* md = entityAs<MLeaderData>(*f.doc.find(mleader));
+    REQUIRE(ld->breaks.size() == 1);
+    REQUIRE(md->breaks.size() == 1);
+    CHECK(ld->autoBreaks == 1);
+    CHECK(md->breakWith == std::vector<EntityId>{cutter});
+    CHECK((ld->breaks[0].a.x + ld->breaks[0].b.x) / 2 == doctest::Approx(30));
+    // The leader line is drawn in two pieces round the gap.
+    const dim::Layout L = dim::layoutLeader(f.doc, *ld);
+    std::size_t pieces = 0;
+    for (const auto& line : L.lines)
+        if (!line.pts.empty() && line.pts.front().y == doctest::Approx(0) &&
+            line.pts.back().y == doctest::Approx(0))
+            ++pieces;
+    CHECK(pieces == 1);  // the piece from the tip to the gap; the other runs on to (60,10)
+    CHECK(dim::layoutMLeader(f.doc, *md).lines.size() >= 3);
+
+    // The line moves: both gaps go with it.
+    {
+        auto tx = f.doc.begin("move");
+        REQUIRE(tx.modify(cutter, [](Entity& e) { e.data = LineData{{10, -10}, {10, 30}}; }));
+        tx.commit();
+    }
+    ld = entityAs<LeaderData>(*f.doc.find(leader));
+    md = entityAs<MLeaderData>(*f.doc.find(mleader));
+    REQUIRE(ld->breaks.size() == 1);
+    REQUIRE(md->breaks.size() == 1);
+    CHECK((ld->breaks[0].a.x + ld->breaks[0].b.x) / 2 == doctest::Approx(10));
+    CHECK((md->breaks[0].a.x + md->breaks[0].b.x) / 2 == doctest::Approx(10));
+
+    REQUIRE(f.host
+                ->run("DIMBREAK",
+                      {ScriptItem::select({leader, mleader}), ScriptItem::enter(), "Remove"})
+                .finished);
+    CHECK(entityAs<LeaderData>(*f.doc.find(leader))->breaks.empty());
+    CHECK(entityAs<MLeaderData>(*f.doc.find(mleader))->breakWith.empty());
+}
