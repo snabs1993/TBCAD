@@ -13,10 +13,12 @@ namespace tbcad::transform {
 namespace {
 
 constexpr GripAction kAll[] = {
-    GripAction::Stretch,      GripAction::AddVertex,     GripAction::RemoveVertex,
-    GripAction::ConvertToArc, GripAction::ConvertToLine, GripAction::Lengthen,
-    GripAction::Radius,       GripAction::ResetText,     GripAction::Continue,
-    GripAction::Baseline,     GripAction::FlipArrow};
+    GripAction::Stretch,         GripAction::AddVertex,      GripAction::RemoveVertex,
+    GripAction::ConvertToArc,    GripAction::ConvertToLine,  GripAction::Lengthen,
+    GripAction::Radius,          GripAction::ResetText,      GripAction::Continue,
+    GripAction::Baseline,        GripAction::FlipArrow,      GripAction::MoveWithLine,
+    GripAction::MoveTextOnly,    GripAction::MoveWithLeader, GripAction::AboveLine,
+    GripAction::CenterVertically};
 
 bool iequals(const std::string& a, const char* b) {
     std::size_t n = 0;
@@ -91,6 +93,16 @@ const char* gripActionLabel(GripAction a) {
             return "Baseline dimension";
         case GripAction::FlipArrow:
             return "Flip arrow";
+        case GripAction::MoveWithLine:
+            return "Move with dim line";
+        case GripAction::MoveTextOnly:
+            return "Move text only";
+        case GripAction::MoveWithLeader:
+            return "Move with leader";
+        case GripAction::AboveLine:
+            return "Above dim line";
+        case GripAction::CenterVertically:
+            return "Center vertically";
     }
     return "";
 }
@@ -119,6 +131,16 @@ const char* gripActionKeyword(GripAction a) {
             return "Baseline";
         case GripAction::FlipArrow:
             return "FlipArrow";
+        case GripAction::MoveWithLine:
+            return "MoveWithLine";
+        case GripAction::MoveTextOnly:
+            return "MoveTextOnly";
+        case GripAction::MoveWithLeader:
+            return "MoveWithLeader";
+        case GripAction::AboveLine:
+            return "AboveLine";
+        case GripAction::CenterVertically:
+            return "CenterVertically";
     }
     return "";
 }
@@ -140,9 +162,33 @@ bool gripActionNeedsPoint(GripAction a) {
         case GripAction::Continue:
         case GripAction::Baseline:
         case GripAction::FlipArrow:
+        case GripAction::AboveLine:
+        case GripAction::CenterVertically:
             return false;
         default:
             return true;
+    }
+}
+
+bool gripActionStyle(GripAction a, DimStyle& s) {
+    switch (a) {
+        case GripAction::MoveWithLine:
+            s.textMove = DimTextMove::WithLine;
+            return true;
+        case GripAction::MoveTextOnly:
+            s.textMove = DimTextMove::Free;
+            return true;
+        case GripAction::MoveWithLeader:
+            s.textMove = DimTextMove::Leader;
+            return true;
+        case GripAction::AboveLine:
+            s.textPlacement = DimTextPlacement::AboveLine;
+            return true;
+        case GripAction::CenterVertically:
+            s.textPlacement = DimTextPlacement::Centered;
+            return true;
+        default:
+            return false;
     }
 }
 
@@ -244,6 +290,13 @@ std::vector<GripAction> gripActions(const Document& doc, const Grip& grip) {
             const auto& d = *entityAs<DimensionData>(*e);
             if (grip.index == geom::dimTextGrip(d) && d.textPosUser)
                 out.push_back(GripAction::ResetText);
+            if ((d.kind == DimKind::Linear || d.kind == DimKind::Aligned) &&
+                grip.index == geom::dimTextGrip(d)) {
+                for (GripAction a : {GripAction::MoveWithLine, GripAction::MoveTextOnly,
+                                     GripAction::MoveWithLeader, GripAction::AboveLine,
+                                     GripAction::CenterVertically})
+                    out.push_back(a);
+            }
             // Continue and Baseline from an extension line origin or a dimension line end.
             if ((d.kind == DimKind::Linear || d.kind == DimKind::Aligned) && grip.index < 4) {
                 out.push_back(GripAction::Continue);
@@ -535,6 +588,17 @@ Result<Entity> applyGripAction(const Entity& e, int index, GripAction action, Ve
             if (action == GripAction::ResetText && index == geom::dimTextGrip(d)) {
                 d.textPosUser = false;
                 return out;
+            }
+            // The text actions: the style change is the command's (it needs the document); here
+            // the text moves to the point, or goes back to its place on the line.
+            if (index == geom::dimTextGrip(d)) {
+                if (action == GripAction::AboveLine || action == GripAction::CenterVertically) {
+                    d.textPosUser = false;
+                    return out;
+                }
+                if (action == GripAction::MoveWithLine || action == GripAction::MoveTextOnly ||
+                    action == GripAction::MoveWithLeader)
+                    return geom::moveGrip(e, index, target);
             }
             break;
         }

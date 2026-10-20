@@ -58,6 +58,36 @@ const DimStyle& styleOf(const Document& doc, DimStyleId id) {
     return defaultStyle();
 }
 
+DimStyleId overrideStyle(Transaction& tx, DimStyleId base,
+                         const std::function<void(DimStyle&)>& change) {
+    const Document& doc = tx.document();
+    const DimStyle from = styleOf(doc, base);
+    DimStyle derived = from;
+    change(derived);
+    if (derived == from)
+        return from.id;
+    std::string root = from.name;
+    if (auto at = root.rfind('$'); at != std::string::npos && at > 0)
+        root.resize(at);
+    // An override with the same settings is shared.
+    for (const auto& [id, st] : doc.dimStyles()) {
+        if (st.name.rfind(root + "$", 0) != 0)
+            continue;
+        DimStyle same = derived;
+        same.id = st.id;
+        same.name = st.name;
+        if (same == st)
+            return id;
+    }
+    int n = 1;
+    while (doc.dimStyleByName(root + "$" + std::to_string(n)))
+        ++n;
+    derived.id = {};
+    derived.name = root + "$" + std::to_string(n);
+    auto added = tx.addDimStyle(std::move(derived));
+    return added ? added.value() : DimStyleId{};
+}
+
 // Degrees, minutes and seconds. Decimals 0..1 show degrees, 2..3 add minutes, 4 and more add
 // seconds (with decimals - 4 places), as DIMADEC does for DIMAUNIT 1. The value is rounded to
 // the finest part shown, so 59.9999 degrees becomes 60 and carries.
@@ -351,8 +381,8 @@ std::optional<StackedText> stackedDimensionText(const DimStyle& style, const Dim
         std::snprintf(buf, sizeof buf, "%.6g", f);
         stackMarkup = std::string("{\\H") + buf + "x;" + stackMarkup + "}";
     }
-    s.markup = "\\A1;" + text::markupFromPlain(t.before) + stackMarkup +
-               text::markupFromPlain(t.after);
+    s.markup =
+        "\\A1;" + text::markupFromPlain(t.before) + stackMarkup + text::markupFromPlain(t.after);
     s.before = std::move(t.before);
     s.up = std::move(t.up);
     s.down = std::move(t.down);
