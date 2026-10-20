@@ -424,3 +424,48 @@ TEST_CASE(
     CHECK_FALSE(importLayerStateText(g.doc, tx, "x", "TBCAD-LAYERSTATE 1\nWalls\t11\n").ok());
     CHECK_FALSE(importLayerStateText(g.doc, tx, "x", "TBCAD-LAYERSTATE 1\n").ok());
 }
+
+TEST_CASE("a layer state file written by AutoCAD (.las, group codes) imports and restores") {
+    Fixture f;
+    f.build();
+    // Walls: off, colour 1, Dashed would be missing here so Continuous; S-FLOOR: frozen and
+    // locked, true colour, 0.35 mm, not plotted. The current layer is Walls.
+    const std::string las =
+        "0\r\nLAYERSTATEDICTIONARY\r\n0\r\nLAYERSTATE\r\n1\r\nFrom AutoCAD\r\n91\r\n2047\r\n"
+        "301\r\n\r\n302\r\nWalls\r\n290\r\n0\r\n"
+        "0\r\nLAYER\r\n8\r\nWalls\r\n90\r\n0\r\n62\r\n-1\r\n370\r\n-3\r\n6\r\nContinuous\r\n"
+        "0\r\nLAYER\r\n8\r\nS-FLOOR\r\n90\r\n5\r\n62\r\n3\r\n420\r\n16744448\r\n370\r\n35\r\n"
+        "6\r\nContinuous\r\n290\r\n0\r\n"
+        "0\r\nLAYERSTATE\r\n1\r\nSecond\r\n0\r\nLAYER\r\n8\r\nedge\r\n62\r\n-5\r\n";
+    {
+        auto tx = f.doc.begin("import");
+        REQUIRE(importLayerStateText(f.doc, tx, "From AutoCAD", las).ok());
+        tx.commit();
+    }
+    {
+        auto tx = f.doc.begin("restore");
+        std::size_t skipped = 99;
+        REQUIRE(restoreLayerState(f.doc, tx, "from autocad", {}, &skipped).ok());
+        tx.commit();
+        CHECK(skipped == 0);
+    }
+    const Layer* walls = f.doc.layer(f.id("Walls"));
+    const Layer* floor = f.doc.layer(f.id("S-FLOOR"));
+    CHECK_FALSE(walls->on);
+    CHECK(walls->color.kind == ColorKind::Index);
+    CHECK(walls->color.indexValue() == 1);
+    CHECK(floor->on);
+    CHECK(floor->frozen);
+    CHECK(floor->locked);
+    CHECK_FALSE(floor->plot);
+    CHECK(floor->color.kind == ColorKind::Rgb);
+    CHECK(floor->color.r == 0xFF);
+    CHECK(floor->color.g == 0x80);
+    CHECK(floor->lineweight.v == 35);
+    CHECK(f.doc.header().currentLayer == f.id("Walls"));
+    CHECK(f.doc.layer(f.id("S-FLOOR~edge"))->on);  // only the first state of the file is read
+
+    auto tx = f.doc.begin("bad");
+    CHECK_FALSE(importLayerStateText(f.doc, tx, "x", "0\nLAYERSTATE\n0\nLAYER\n8\n").ok());
+    CHECK_FALSE(importLayerStateText(f.doc, tx, "x", "0\nLAYERSTATEDICTIONARY\n0\nEOF\n").ok());
+}

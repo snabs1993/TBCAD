@@ -496,7 +496,8 @@ Result<void> setLayerDescription(const Document& doc, Transaction& tx, LayerId i
     return editLayer(doc, tx, id, [&](Layer& l) { l.description = std::string(text); });
 }
 
-Result<void> isolateLayers(const Document& doc, Transaction& tx, const std::vector<LayerId>& keep) {
+Result<void> isolateLayers(const Document& doc, Transaction& tx, const std::vector<LayerId>& keep,
+                           bool lockOthers) {
     if (keep.empty())
         return err(ErrorCode::InvalidArgument, "No layers to isolate.");
     std::vector<LayerId> keepers;
@@ -512,7 +513,7 @@ Result<void> isolateLayers(const Document& doc, Transaction& tx, const std::vect
     std::vector<LayerId> turnOff, turnOn;
     for (const auto& [id, l] : doc.layers()) {
         bool k = std::find(keepers.begin(), keepers.end(), id) != keepers.end();
-        if (!k && l.on)
+        if (!k && (lockOthers ? !l.locked : l.on))
             turnOff.push_back(id);
     }
     // The kept layers and their ancestors must be visible for the isolation to mean anything.
@@ -520,7 +521,14 @@ Result<void> isolateLayers(const Document& doc, Transaction& tx, const std::vect
         if (!doc.layer(k)->on)
             turnOn.push_back(k);
     for (LayerId id : turnOff)
-        if (auto r = editLayer(doc, tx, id, [](Layer& x) { x.on = false; }); !r)
+        if (auto r = editLayer(doc, tx, id,
+                               [lockOthers](Layer& x) {
+                                   if (lockOthers)
+                                       x.locked = true;
+                                   else
+                                       x.on = false;
+                               });
+            !r)
             return r;
     for (LayerId id : turnOn)
         if (auto r = editLayer(doc, tx, id, [](Layer& x) { x.on = true; }); !r)
