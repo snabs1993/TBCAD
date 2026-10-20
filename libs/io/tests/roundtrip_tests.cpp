@@ -179,6 +179,30 @@ TEST_CASE("round trip: broken UTF-8 in a text is saved as U+FFFD and the file st
     CHECK(text == "A\xEF\xBF\xBD\xEF\xBF\xBD(Bห้อง");
 }
 
+TEST_CASE("round trip: XLINE directions load exactly as they were saved") {
+    // Normalising a unit direction once more can move it by an ulp; most of these would.
+    Document doc;
+    std::vector<std::pair<EntityId, Vec2>> rays;
+    {
+        auto tx = doc.begin("xlines");
+        for (int i = 1; i <= 200; ++i) {
+            Entity e;
+            e.data = RayData{{44846, 44674}, {0.4636 * i, 49.8227 - i * 0.731}, true};
+            rays.emplace_back(tx.add(std::move(e)).value(), Vec2{});
+        }
+        tx.commit();
+    }
+    for (auto& [id, dir] : rays)
+        dir = entityAs<RayData>(*doc.find(id))->dir;
+    auto back = readOrFail(writeOrFail(doc));
+    int moved = 0;
+    for (const auto& [id, dir] : rays) {
+        const Vec2 got = entityAs<RayData>(*back->find(id))->dir;
+        moved += got.x != dir.x || got.y != dir.y;
+    }
+    CHECK(moved == 0);
+}
+
 TEST_CASE("sub-layers: the tree, ByParent values and inherited state are restored") {
     auto doc = makeRichDocument();
     auto back = readOrFail(writeOrFail(*doc));
