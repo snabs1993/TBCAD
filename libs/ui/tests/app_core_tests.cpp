@@ -315,7 +315,7 @@ TEST_CASE("zoom extents fits the drawing - ZOOM and PAN work as commands") {
     CHECK(w.max.x < 1000);
 
     Vec2 c0 = f.core->camera().center;
-    f.core->submitText("PAN 0,0 10,0");
+    f.core->submitText("-PAN 0,0 10,0");
     CHECK(f.core->camera().center.x == doctest::Approx(c0.x - 10));
 }
 

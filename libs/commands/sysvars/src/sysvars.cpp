@@ -587,6 +587,9 @@ void registerCommands(cmd::Registry& registry) {
                           "SHORTCUTMENU", "TEXTEDITMODE", "AUDITCTL"})
         (void)registry.add(makeOptionVarCommand(n));
     (void)registry.add(makeViewCommand());
+    (void)registry.add(makeViewManagerCommand());
+    (void)registry.add(makeVportsCommand());
+    (void)registry.add(makeVportsDialogCommand());
     (void)registry.add(makeAddSelectedCommand());
 }
 

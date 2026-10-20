@@ -35,8 +35,31 @@ version). One undo step.
 
 # VIEW and TIME
 
-**VIEW** (alias NAMEDVIEW) saves the centre and scale of the display under a name (**Save**), puts it back
-(**Restore**), **Delete**s it or **List**s the views. The views are stored in the drawing and follow undo.
+**VIEW** (alias V, menu View > Named Views...) opens the View Manager: the named views with their
+category, size and layer snapshot, and Set Current, New (current display or a window), Rename, Delete,
+Update Layers and Category. Every button runs **-VIEW** (aliases -V, NAMEDVIEW), the typed form:
+**Restore**, **Save**, **Window** (save the area between two corners), **Delete**, **Rename**, **LAyers**
+(update the layer snapshot), **Category**, **sEttings** (save a layer snapshot with new views, setting
+`view.layerSnapshot`, on by default) and **List**. A view is stored as `Header::custom["tbcad.view.<name>"]`
+and follows undo; its layer snapshot is the hidden layer state `*view|<name>`, which the Layer States list
+does not show. Restore fits the saved area to the window and puts the layer visibility back. On a sheet
+it goes into the selected (or only) viewport, which must not be locked. Restore goes in the ZOOM
+Previous history.
+
+**VPORTS** (menu View > Viewports...) splits model space into tiled viewports: Single, two (Vertical or
+Horizontal), three (Right, Left, Above, Below, Vertical, Horizontal) or four. Each tile has its own view; a
+click or the wheel over a tile makes it the active one, and commands work in the active tile. Named
+configurations are saved in the drawing (`Header::custom["tbcad.vports.<name>"]`, one undo step). The
+typed form is **-VPORTS** with Save, Restore, Delete, SIngle, List, 2, 3 and 4. The tiles are for model
+space; on a sheet use MVIEW.
+
+**ZOOM** (alias Z) takes a window corner, a scale (nX relative to the view, nXP relative to paper), All,
+Center, Dynamic (place and size a box over the whole drawing), Extents, Previous, Scale, Window and Object;
+Enter starts real-time zoom (drag up to zoom in; Esc, Enter or a right click ends it). **PAN** (alias P)
+starts real-time pan; **-PAN** takes two points. **ZOOM Previous** steps back through the last ten views:
+wheel zooms and drag pans (one step per burst), PAN, ZOOM, -VIEW Restore, PLAN and UCSFOLLOW all add one.
+**NAVBAR** ON/OFF (menu View > Navigation Bar, setting `ui.navbar`) shows a bar at the right edge of the
+drawing with Pan, Zoom Extents, Window, Previous, In, Out and Real time.
 **TIME** shows the current date and time.
 
 # UNITS

@@ -61,6 +61,12 @@ public:
     const ViewportRect& lastViewportRect() const { return lastRect_; }
     // Shows the rendered drawing in the viewport rectangle; call after frame(), before Render().
     void showViewport(unsigned texture, const ViewportRect& rect);
+    // Model tiled viewports (VPORTS): the tiles other than the active one, with their rectangles
+    // (window points), and drawing one of them; call after frame(), before Render().
+    const std::vector<std::pair<std::size_t, ViewportRect>>& inactiveTiles() const {
+        return inactiveTiles_;
+    }
+    void showTile(unsigned texture, const ViewportRect& rect);
 
     bool wantsExit() const { return exitRequested_; }
     // The window's close button: asks to save first when needed. Returns true when it is fine to
@@ -144,6 +150,8 @@ private:
     void fillPanelContext(ui::PanelContext& pc);
     void dialogs();
     void viewportInput(const ViewportRect& rect);
+    ViewportRect tiledViewports(const ViewportRect& area);
+    void navigationBar(const ViewportRect& rect);
     void viewportMenu();
     void cycleListPopup();
     void snapOverrideItems();
@@ -280,6 +288,14 @@ private:
     // Command log (Ctrl+L) and clean-screen mode (F11).
     bool logExpanded_ = false;
     bool cleanScreen_ = false;
+    // Real-time ZOOM / PAN (Enter at ZOOM, PAN, the navigation bar): left drag zooms or pans until
+    // Esc, Enter or a right click.
+    enum class Realtime { Off, Zoom, Pan };
+    Realtime realtime_ = Realtime::Off;
+    bool realtimeDrag_ = false;
+    // A click that only made another tiled viewport active.
+    bool tileJustActivated_ = false;
+    std::vector<std::pair<std::size_t, ViewportRect>> inactiveTiles_;
     std::size_t logShownSize_ = static_cast<std::size_t>(-1);  // forces a scroll on first show
     int logFollow_ = 0;
 

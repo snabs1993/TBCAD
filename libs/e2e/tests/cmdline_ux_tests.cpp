@@ -144,7 +144,7 @@ TEST_CASE("transparent commands run inside another command and hand control back
     REQUIRE(c.running());
     c.say({"'ZOOM", "E"});
     CHECK(c.running());  // still LINE
-    c.say({"'PAN", "0,0", "5,5"});
+    c.say({"'-PAN", "0,0", "5,5"});  // 'PAN is real time; '-PAN takes points
     CHECK(c.running());
     c.say({"10,0", ""});
     CHECK_FALSE(c.running());

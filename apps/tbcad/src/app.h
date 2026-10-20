@@ -76,6 +76,7 @@ private:
     void runScriptFile(const std::string& file);
     void frame();
     void drawScene();
+    void drawTiles();
     int runGate();
     int runGateFile();
     bool saveScreenshot(const std::string& path);
@@ -106,6 +107,8 @@ private:
     render::Renderer renderer_;
     ViewportTarget target_;
     ViewportTarget captureTarget_;
+    // The model tiled viewports (VPORTS) other than the active one, by tile index.
+    std::vector<std::unique_ptr<ViewportTarget>> tileTargets_;
     std::atomic<bool> windowReady_{false};  // glfwPostEmptyEvent is only legal after glfwInit
     render::Overlay underlay_;
     render::Overlay overlay_;

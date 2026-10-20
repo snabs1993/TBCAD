@@ -9,6 +9,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -18,6 +19,7 @@
 
 #include "icons.h"
 #include "key_map.h"
+#include "tbcad/core/color.h"
 #include "tbcad/drafting/settings.h"
 #include "tbcad/drafting/ucs.h"
 #include "tbcad/platform/crash.h"
@@ -3237,6 +3239,13 @@ void Gui::viewportInput(const ViewportRect& rect) {
         activityStamp_ = stamp;
     }
 
+    // The press that made a tile active does nothing else.
+    if (tileJustActivated_) {
+        tileJustActivated_ = false;
+        pendingNotches_ = 0;
+        return;
+    }
+
     // Middle button: pan; double click: zoom extents.
     if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Middle))
         panning_ = true;
@@ -3263,6 +3272,46 @@ void Gui::viewportInput(const ViewportRect& rect) {
         core_.zoomAtScreen(zoomAnchor_, step);
         pendingNotches_ -= step;
         anyActivity_ = true;
+    }
+
+    // Real-time zoom or pan (ZOOM <Enter>, PAN, the navigation bar): a left drag zooms (up = in)
+    // or pans; Esc, Enter or a right click ends it.
+    if (realtime_ != Realtime::Off) {
+        anyActivity_ = true;
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) || ImGui::IsKeyPressed(ImGuiKey_Enter) ||
+            ImGui::IsKeyPressed(ImGuiKey_KeypadEnter) ||
+            (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right))) {
+            realtime_ = Realtime::Off;
+            realtimeDrag_ = false;
+            return;
+        }
+        if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+            realtimeDrag_ = true;
+        if (realtimeDrag_ && !ImGui::IsMouseDown(ImGuiMouseButton_Left))
+            realtimeDrag_ = false;
+        if (realtimeDrag_ && (io.MouseDelta.x != 0 || io.MouseDelta.y != 0)) {
+            if (realtime_ == Realtime::Pan)
+                core_.panPixels(io.MouseDelta.x * s, io.MouseDelta.y * s);
+            else
+                core_.zoomAtScreen({core_.camera().viewportW / 2.0, core_.camera().viewportH / 2.0},
+                                   -io.MouseDelta.y / 40.0);
+        }
+        if (hovered) {
+            core_.pointerMoved(ps);
+            ImGui::SetMouseCursor(realtime_ == Realtime::Pan ? ImGuiMouseCursor_Hand
+                                                             : ImGuiMouseCursor_ResizeNS);
+            const char* tip = realtime_ == Realtime::Pan
+                                  ? "Real-time pan: drag. Esc or Enter ends it."
+                                  : "Real-time zoom: drag up to zoom in, down to zoom out. Esc "
+                                    "or Enter ends it.";
+            ImDrawList* fg = ImGui::GetForegroundDrawList();
+            const ImVec2 at(io.MousePos.x + 18, io.MousePos.y + 18);
+            const ImVec2 sz = ImGui::CalcTextSize(tip);
+            fg->AddRectFilled(ImVec2(at.x - 4, at.y - 2), ImVec2(at.x + sz.x + 4, at.y + sz.y + 2),
+                              IM_COL32(24, 26, 30, 220), 3.0f);
+            fg->AddText(at, IM_COL32(230, 232, 235, 255), tip);
+        }
+        return;
     }
 
     // Left button: click, or drag a selection rectangle.
@@ -3742,6 +3791,8 @@ ViewportRect Gui::frame() {
             switchWorkspace(what.substr(15));
         else if (what.rfind("workspace:save:", 0) == 0)
             saveWorkspace(what.substr(15));
+        else if (what == "realtime:zoom" || what == "realtime:pan")
+            realtime_ = what == "realtime:pan" ? Realtime::Pan : Realtime::Zoom;
         else if (what == "cleanscreen:on" || what == "cleanscreen:off")
             cleanScreen_ = what == "cleanscreen:on";
         else if (what == "drawingrecovery")
@@ -3802,10 +3853,12 @@ ViewportRect Gui::frame() {
         rect.h -= layoutTabsHeight();
         layoutTabs(rect);
     }
+    rect = tiledViewports(rect);
     core_.setViewportOrigin(std::lround(rect.x * s), std::lround(rect.y * s));
     core_.setViewportSize(static_cast<int>(std::lround(rect.w * s)),
                           static_cast<int>(std::lround(rect.h * s)));
     viewportInput(rect);
+    navigationBar(rect);
     dropIntoViewport(rect);
     lastRect_ = rect;
     startPage(rect);
@@ -3884,6 +3937,103 @@ ViewportRect Gui::frame() {
     return rect;
 }
 
+// Tiled model viewports (VPORTS): splits the drawing area, makes a clicked tile the active one and
+// returns the active tile's rectangle (the one the pointer and the commands work in). The other
+// tiles are listed in inactiveTiles_ for the window to draw.
+ViewportRect Gui::tiledViewports(const ViewportRect& area) {
+    inactiveTiles_.clear();
+    if (!core_.tiled())
+        return area;
+    const auto& tiles = core_.tiles();
+    auto rectOf = [&](const ui::AppCore::ViewTile& t) {
+        const float gap = 1.0f;
+        return ViewportRect{area.x + static_cast<float>(t.x0) * area.w + (t.x0 > 0 ? gap : 0),
+                            area.y + static_cast<float>(t.y0) * area.h + (t.y0 > 0 ? gap : 0),
+                            static_cast<float>(t.x1 - t.x0) * area.w - (t.x0 > 0 ? gap : 0),
+                            static_cast<float>(t.y1 - t.y0) * area.h - (t.y0 > 0 ? gap : 0)};
+    };
+    // A click (any button) or the wheel over another tile makes it active first.
+    const ImGuiIO& io = ImGui::GetIO();
+    const bool pressed = ImGui::IsMouseClicked(ImGuiMouseButton_Left) ||
+                         ImGui::IsMouseClicked(ImGuiMouseButton_Right) ||
+                         ImGui::IsMouseClicked(ImGuiMouseButton_Middle) || io.MouseWheel != 0;
+    if (pressed && !io.WantCaptureMouse && !core_.runner().active())
+        for (std::size_t i = 0; i < tiles.size(); ++i) {
+            const ViewportRect r = rectOf(tiles[i]);
+            if (i != core_.activeTile() && io.MousePos.x >= r.x && io.MousePos.y >= r.y &&
+                io.MousePos.x < r.x + r.w && io.MousePos.y < r.y + r.h) {
+                const float sc = io.DisplayFramebufferScale.x;
+                core_.activateTile(i, std::lround(r.x * sc), std::lround(r.y * sc),
+                                   static_cast<int>(std::lround(r.w * sc)),
+                                   static_cast<int>(std::lround(r.h * sc)));
+                tileJustActivated_ = true;  // that click only activates
+                break;
+            }
+        }
+    ViewportRect active = area;
+    for (std::size_t i = 0; i < tiles.size(); ++i) {
+        const ViewportRect r = rectOf(tiles[i]);
+        if (i == core_.activeTile())
+            active = r;
+        else
+            inactiveTiles_.push_back({i, r});
+    }
+    return active;
+}
+
+void Gui::showTile(unsigned texture, const ViewportRect& rect) {
+    ImDrawList* bg = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
+    bg->AddImage(static_cast<ImTextureID>(texture), ImVec2(rect.x, rect.y),
+                 ImVec2(rect.x + rect.w, rect.y + rect.h), ImVec2(0, 1), ImVec2(1, 0));
+    bg->AddRect(ImVec2(rect.x, rect.y), ImVec2(rect.x + rect.w, rect.y + rect.h),
+                IM_COL32(90, 95, 105, 255));
+}
+
+// The navigation bar (NAVBAR): pan, zoom extents / window / previous, zoom in and out, at the
+// right edge of the drawing.
+void Gui::navigationBar(const ViewportRect& rect) {
+    if (cleanScreen_ || core_.setting("ui.navbar").value_or("1") == "0" || rect.w < 200 ||
+        rect.h < 260)
+        return;
+    const float pad = 8.0f * dpiScale_;
+    ImGui::SetNextWindowPos(ImVec2(rect.x + rect.w - pad, rect.y + rect.h * 0.5f), ImGuiCond_Always,
+                            ImVec2(1.0f, 0.5f));
+    ImGui::SetNextWindowBgAlpha(0.85f);
+    const ImGuiWindowFlags f = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                               ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking |
+                               ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav |
+                               ImGuiWindowFlags_NoMove;
+    if (ImGui::Begin("##navbar", nullptr, f)) {
+        const ImVec2 size(64.0f * dpiScale_, 0);
+        auto button = [&](const char* label, const char* tip) {
+            const bool hit = ImGui::Button(label, size);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", tip);
+            return hit;
+        };
+        const bool panOn = realtime_ == Realtime::Pan;
+        if (panOn)
+            ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+        if (button("Pan", "Real-time pan: drag the drawing (PAN). Esc ends it."))
+            realtime_ = panOn ? Realtime::Off : Realtime::Pan;
+        if (panOn)
+            ImGui::PopStyleColor();
+        if (button("Extents", "Zoom to the whole drawing (ZOOM Extents)"))
+            core_.submitText("'ZOOM E");
+        if (button("Window", "Zoom to a window you drag (ZOOM Window)"))
+            core_.submitText("'ZOOM W");
+        if (button("Previous", "Back to the view before (ZOOM Previous)"))
+            core_.submitText("'ZOOM P");
+        if (button("In", "Zoom in, twice as big (ZOOM 2X)"))
+            core_.submitText("'ZOOM 2X");
+        if (button("Out", "Zoom out, half as big (ZOOM 0.5X)"))
+            core_.submitText("'ZOOM 0.5X");
+        if (button("Real time", "Real-time zoom: drag up or down (ZOOM). Esc ends it."))
+            realtime_ = Realtime::Zoom;
+    }
+    ImGui::End();
+}
+
 void Gui::showViewport(unsigned texture, const ViewportRect& rect) {
     ImDrawList* bg = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
     bg->AddImage(static_cast<ImTextureID>(texture), ImVec2(rect.x, rect.y),
@@ -3907,8 +4057,13 @@ void Gui::ucsIcon(const ViewportRect& rect) {
         return;
     const drafting::Ucs ucs = drafting::currentUcs(&core_.document(), &core_);
     const double sc = ImGui::GetIO().DisplayFramebufferScale.x;
-    const float len = 36.0f * dpiScale_;
-    ImVec2 at(rect.x + 44.0f * dpiScale_, rect.y + rect.h - 44.0f * dpiScale_);
+    // UCSICON Properties: size 5-95 (50 = the normal 36 px) and one colour or the default pair.
+    int sizeSetting = std::atoi(core_.setting(drafting::keys::ucsIconSize).value_or("50").c_str());
+    if (sizeSetting < 5 || sizeSetting > 95)
+        sizeSetting = 50;
+    const float len = 36.0f * dpiScale_ * static_cast<float>(sizeSetting) / 50.0f;
+    const float inset = std::max(44.0f * dpiScale_, len + 8.0f * dpiScale_);
+    ImVec2 at(rect.x + inset, rect.y + rect.h - inset);
     bool atOrigin = false;
     if (drafting::parseBoolSetting(core_.setting(drafting::keys::ucsIconOrigin).value_or("1"),
                                    true)) {
@@ -3925,7 +4080,13 @@ void Gui::ucsIcon(const ViewportRect& rect) {
     const float c = static_cast<float>(std::cos(ucs.angle));
     const float sn = static_cast<float>(std::sin(ucs.angle));
     const ImVec2 dx(c, -sn), dy(-sn, -c);  // screen directions of the UCS axes (y grows downwards)
-    const ImU32 xCol = IM_COL32(230, 80, 80, 235), yCol = IM_COL32(80, 200, 100, 235);
+    ImU32 xCol = IM_COL32(230, 80, 80, 235), yCol = IM_COL32(80, 200, 100, 235);
+    const int colourIndex =
+        std::atoi(core_.setting(drafting::keys::ucsIconColor).value_or("Default").c_str());
+    if (colourIndex >= 1 && colourIndex <= 255) {
+        const Rgba c = paletteColor(static_cast<std::uint8_t>(colourIndex));
+        xCol = yCol = IM_COL32(c.r, c.g, c.b, 235);
+    }
     ImDrawList* dl = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
     dl->PushClipRect(ImVec2(rect.x, rect.y), ImVec2(rect.x + rect.w, rect.y + rect.h));
     auto arrow = [&](ImVec2 d, ImU32 col, const char* name) {
