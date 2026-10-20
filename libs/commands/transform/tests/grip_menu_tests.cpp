@@ -199,6 +199,64 @@ TEST_CASE("dimension: reset text position, continue and baseline commands") {
     CHECK(tf::gripActionCommand(f.doc, *textGrip, GripAction::Continue).empty());
 }
 
+// AutoCAD's text grip menu: each item gives that dimension a style of its own with the change
+// (DIMTMOVE or DIMTAD), the others keep theirs; equal changes share one override style.
+TEST_CASE("dimension text grip: move modes, above the line, centred, as overrides") {
+    Fixture f;
+    f.host.run("DIMLINEAR", {"0,0", "10,0", "5,5"});
+    f.host.run("DIMLINEAR", {"0,20", "10,20", "5,25"});
+    std::vector<EntityId> dims;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (entityAs<DimensionData>(e))
+            dims.push_back(e.common.id);
+    });
+    REQUIRE(dims.size() == 2);
+    const DimStyleId standard = get<DimensionData>(f.doc, dims[0]).style;
+    auto textGripOf = [&](EntityId id) {
+        for (const auto& g : tf::collectGrips(f.doc, std::vector<EntityId>{id}))
+            if (g.index == 4)
+                return g.pos;
+        return Vec2{};
+    };
+    auto at = [](Vec2 p) { return ScriptItem(std::to_string(p.x) + "," + std::to_string(p.y)); };
+    for (GripAction a :
+         {GripAction::MoveWithLine, GripAction::MoveTextOnly, GripAction::MoveWithLeader,
+          GripAction::AboveLine, GripAction::CenterVertically})
+        CHECK(offers(f.doc, dims[0], 4, a));
+    CHECK_FALSE(offers(f.doc, dims[0], 0, GripAction::AboveLine));
+
+    // Centre vertically: DIMTAD 0 on this dimension only.
+    f.host.setSelection({dims[0]});
+    f.host.run("GRIPEDIT", {at(textGripOf(dims[0])), "CenterVertically"});
+    const DimensionData& d0 = get<DimensionData>(f.doc, dims[0]);
+    CHECK(d0.style != standard);
+    CHECK(dim::styleOf(f.doc, d0.style).textPlacement == DimTextPlacement::Centered);
+    CHECK(dim::styleOf(f.doc, d0.style).name.find('$') != std::string::npos);
+    CHECK(get<DimensionData>(f.doc, dims[1]).style == standard);
+    // The same change on the other dimension shares the override.
+    f.host.setSelection({dims[1]});
+    f.host.run("GRIPEDIT", {at(textGripOf(dims[1])), "CenterVertically"});
+    CHECK(get<DimensionData>(f.doc, dims[1]).style == get<DimensionData>(f.doc, dims[0]).style);
+    // Back above the line: the settings are the standard style's again.
+    f.host.run("GRIPEDIT", {at(textGripOf(dims[1])), "AboveLine"});
+    CHECK(dim::styleOf(f.doc, get<DimensionData>(f.doc, dims[1]).style).textPlacement ==
+          DimTextPlacement::AboveLine);
+
+    // Move text only: DIMTMOVE 2, the text goes to the point and the dimension line stays.
+    f.host.setSelection({dims[0]});
+    const Vec2 lineBefore = get<DimensionData>(f.doc, dims[0]).defPts[2];
+    f.host.run("GRIPEDIT", {at(textGripOf(dims[0])), "MoveTextOnly", "5,12"});
+    const DimensionData& moved = get<DimensionData>(f.doc, dims[0]);
+    CHECK(dim::styleOf(f.doc, moved.style).textMove == DimTextMove::Free);
+    CHECK(dim::styleOf(f.doc, moved.style).textPlacement == DimTextPlacement::Centered);
+    CHECK(moved.textPosUser);
+    CHECK(near(moved.textPos, Vec2{5, 12}));
+    CHECK(near(moved.defPts[2], lineBefore));
+    // Move with dim line: the line follows the text.
+    f.host.run("GRIPEDIT", {at(textGripOf(dims[0])), "MoveWithLine", "5,15"});
+    CHECK(get<DimensionData>(f.doc, dims[0]).defPts[2].y == doctest::Approx(15));
+}
+
 TEST_CASE("action keywords and commands round trip") {
     Fixture f;
     auto id = add(f.doc, square());
