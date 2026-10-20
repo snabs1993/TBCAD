@@ -118,6 +118,9 @@ struct DimStyle {
     double textGap = 0.625;
     ArrowType arrowType = ArrowType::ClosedFilled;
     ArrowType leaderArrow = ArrowType::ClosedFilled;  // DIMLDRBLK: the arrow of leaders
+    // DIMSAH with DIMBLK2: the arrow at the second end when it differs from `arrowType` (which
+    // is then DIMBLK1); none: both ends draw `arrowType`.
+    std::optional<ArrowType> arrowType2{};
     double arrowSize = 2.5;
     double extLineOffset = 0.625;
     double extLineExtension = 1.25;

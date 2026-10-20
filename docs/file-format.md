@@ -276,7 +276,8 @@ heights); tag 2 (since 1.19) the arrow of leaders (DIMLDRBLK, the `ArrowType` nu
 Default); tags 5, 6 and 7 (since 1.21) DIMLTYPE, DIMLTEX1 and DIMLTEX2 (the linetype name, as its
 index in the string table); tags 8, 9 and 10 (since 1.22) DIMAZIN, DIMTZIN and DIMALTZ (bit 1
 leading zeros, bit 2 trailing; absent: as the length setting); tags 11 and 12 (since 1.23)
-DIMALTRND and DIMTOLJ. A reader skips tags it does not know, so later variables need no new
+DIMALTRND and DIMTOLJ; tag 13 (since 1.24) the second arrow (DIMBLK2, the `ArrowType` number). A
+reader skips tags it does not know, so later variables need no new
 chunk.
 
 ## Reading safely

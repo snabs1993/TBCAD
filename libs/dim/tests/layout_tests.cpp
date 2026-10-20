@@ -51,6 +51,28 @@ TEST_CASE(
     CHECK(L.text.rotation == doctest::Approx(0));
 }
 
+TEST_CASE("a second arrow kind (DIMBLK2) draws at the second extension line") {
+    Document doc;
+    Transaction tx = doc.begin("style");
+    REQUIRE(tx.modifyDimStyle(kDimStyleStandard, [](DimStyle& s) {
+        s.arrowType = ArrowType::Dot;
+        s.arrowType2 = ArrowType::ArchTick;
+    }));
+    tx.commit();
+    // Points given right to left: the first extension line is at x = 100.
+    Layout L = layoutDimension(doc, linear({100, 0}, {0, 0}, {50, 10}));
+    REQUIRE(L.arrows.size() == 1);  // the dot
+    CHECK(near(box(L.arrows[0].ring).center(), {100, 10}, 0.05));
+    int ticks = 0;
+    for (const auto& l : L.lines)
+        if (l.role == Role::DimLine && l.pts.size() == 2 &&
+            std::abs(l.pts[0].y - l.pts[1].y) > 1e-6) {  // the slanted stroke
+            ++ticks;
+            CHECK(near((l.pts[0] + l.pts[1]) / 2, {0, 10}));
+        }
+    CHECK(ticks == 1);
+}
+
 TEST_CASE("centered text breaks the dimension line") {
     Document doc;
     Transaction tx = doc.begin("style");

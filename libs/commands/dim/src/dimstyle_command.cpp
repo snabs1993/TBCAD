@@ -93,7 +93,7 @@ const std::vector<std::string> kProps = {
     "TextFrame",      "LengthFormat",    "TolHeight",     "TextVertPos", "FixedExt",
     "FixedExtLength", "LeaderArrow",     "LineWeight",    "ExtWeight",   "Linetype",
     "ExtLinetype1",   "ExtLinetype2",    "AngleZeros",    "TolZeros",    "AltZeros",
-    "AltRoundOff",    "TolJustify"};
+    "AltRoundOff",    "TolJustify",      "ArrowType2"};
 
 // DIMAZIN / DIMTZIN / DIMALTZ as text.
 const char* const kZeros[] = {"Show", "Leading", "Trailing", "Both"};
@@ -144,6 +144,7 @@ std::vector<std::pair<std::string, std::string>> describe(const Document& doc, c
         {"TextGap", num(s.textGap)},
         {"TextStyle", ts ? ts->name : "Current"},
         {"ArrowType", arrow[static_cast<int>(s.arrowType)]},
+        {"ArrowType2", s.arrowType2 ? arrow[static_cast<int>(*s.arrowType2)] : "Same"},
         {"ArrowSize", num(s.arrowSize)},
         {"ExtOffset", num(s.extLineOffset)},
         {"ExtExtension", num(s.extLineExtension)},
@@ -298,9 +299,17 @@ std::string applyProperty(const Document& doc, DimStyle& s, std::string_view key
         s.textStyle = t->id;
         return {};
     }
-    // ArrowType: the dimension arrows; LeaderArrow: the arrow of leaders (DIMLDRBLK).
-    if (same(key, "ArrowType") || same(key, "LeaderArrow")) {
-        ArrowType& a = same(key, "ArrowType") ? s.arrowType : s.leaderArrow;
+    // ArrowType: the dimension arrows (the first, when ArrowType2 differs); ArrowType2: the
+    // second arrow (DIMBLK2; Same: as the first); LeaderArrow: the arrow of leaders (DIMLDRBLK).
+    if (same(key, "ArrowType2") && same(value, "Same")) {
+        s.arrowType2.reset();
+        return {};
+    }
+    if (same(key, "ArrowType") || same(key, "LeaderArrow") || same(key, "ArrowType2")) {
+        ArrowType second = s.arrowType2.value_or(s.arrowType);
+        ArrowType& a = same(key, "ArrowType")    ? s.arrowType
+                       : same(key, "ArrowType2") ? second
+                                                 : s.leaderArrow;
         if (same(value, "Filled") || same(value, "Closed"))
             a = ArrowType::ClosedFilled;
         else if (same(value, "Open"))
@@ -313,6 +322,8 @@ std::string applyProperty(const Document& doc, DimStyle& s, std::string_view key
             a = ArrowType::None;
         else
             return "Arrow type is Filled, Open, Tick, Dot or None.";
+        if (same(key, "ArrowType2"))
+            s.arrowType2 = second;
         return {};
     }
     if (same(key, "Placement")) {

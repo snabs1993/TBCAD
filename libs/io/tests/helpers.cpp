@@ -61,6 +61,7 @@ std::unique_ptr<Document> makeRichDocument() {
         arch.tolZeros = 0;
         arch.altRoundOff = 0.25;
         arch.tolJustify = 0;
+        arch.arrowType2 = ArrowType::Dot;
         arch.units = LengthUnit::Meter;
         arch.precision = 3;
         arch.prefix = "<";

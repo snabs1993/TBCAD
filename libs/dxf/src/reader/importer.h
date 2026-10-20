@@ -188,7 +188,16 @@ private:
     DimStyleId dimStyleWithOverrides(const Record& r, DimStyleId base);
     std::map<std::string, DimStyleId> dimOverrideStyles_{};
     // Each dimension style's arrow (DIMBLK) and first separate arrow (DIMBLK1, used with DIMSAH).
-    std::map<std::string, std::pair<ArrowType, ArrowType>> dimArrows_{};
+    struct DimArrows {
+        ArrowType blk, blk1, blk2;  // DIMBLK, DIMBLK1, DIMBLK2
+        // The arrows with DIMSAH on or off: the first, and the second when it differs.
+        std::pair<ArrowType, std::optional<ArrowType>> with(bool sah) const {
+            if (!sah)
+                return {blk, std::nullopt};
+            return {blk1, blk2 != blk1 ? std::optional<ArrowType>(blk2) : std::nullopt};
+        }
+    };
+    std::map<std::string, DimArrows> dimArrows_{};
     // BLOCK_RECORD names by handle: DIMBLK and the arrow overrides of a dimension name their
     // block by handle. The table comes after DIMSTYLE, so dimension styles wait for it.
     std::map<std::string, std::string> blockNameByHandle_{};

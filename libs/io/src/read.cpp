@@ -529,6 +529,7 @@ private:
             int zeros[3] = {-1, -1, -1};
             double altRnd = 0;
             int tolj = 1;
+            std::optional<ArrowType> arrow2;
             for (std::size_t k = 0; k < values; ++k) {
                 const std::uint64_t tag = r.varint();
                 const double v = r.f64();
@@ -560,6 +561,10 @@ private:
                     if (v < 0 || v > 2 || v != std::floor(v))
                         bad("invalid tolerance justification");
                     tolj = static_cast<int>(v);
+                } else if (tag == 13) {
+                    if (v < 0 || v > static_cast<double>(ArrowType::None) || v != std::floor(v))
+                        bad("invalid second arrow");
+                    arrow2 = static_cast<ArrowType>(static_cast<int>(v));
                 }
             }
             if (!doc_->dimStyle(id))
@@ -578,6 +583,7 @@ private:
                                         d.altZeros = zeros[2];
                                         d.altRoundOff = altRnd;
                                         d.tolJustify = tolj;
+                                        d.arrowType2 = arrow2;
                                     }),
                   "dimension style");
         }

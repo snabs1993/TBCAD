@@ -15,7 +15,7 @@ namespace {
 
 constexpr std::uint8_t kDeltaMagic[4] = {'T', 'B', 'D', 'L'};
 // 3: text style rows carry the fixed height. Version 2 records are still read.
-constexpr std::uint8_t kDeltaVersion = 19;
+constexpr std::uint8_t kDeltaVersion = 20;
 
 [[noreturn]] void bad(const char* msg) {
     throw FormatError(msg);
@@ -153,6 +153,8 @@ void putRow(ByteWriter& w, StringTable& st, const DimStyle& r) {
     // (version 19) DIMALTRND, DIMTOLJ
     w.f64(r.altRoundOff);
     w.u8(static_cast<std::uint8_t>(std::clamp(r.tolJustify, 0, 2)));
+    // (version 20) the second arrow plus one (0: the same as the first)
+    w.u8(r.arrowType2 ? static_cast<std::uint8_t>(static_cast<int>(*r.arrowType2) + 1) : 0);
 }
 
 void putRow(ByteWriter& w, StringTable& st, const BlockDef& r) {
@@ -402,6 +404,13 @@ struct Reader {
             d.tolJustify = r.u8();
             if (d.tolJustify > 2)
                 bad("invalid tolerance justification");
+        }
+        if (version >= 20) {
+            const int a = r.u8();
+            if (a > static_cast<int>(ArrowType::None) + 1)
+                bad("invalid second arrow");
+            d.arrowType2 =
+                a == 0 ? std::nullopt : std::optional<ArrowType>(static_cast<ArrowType>(a - 1));
         }
     }
     void row(BlockDef& b) {
