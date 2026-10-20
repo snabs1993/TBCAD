@@ -3,6 +3,7 @@
 #include <system_error>
 
 #include "tbcad/io/tbcad.h"
+#include "tbcad/layout/layout.h"
 #include "tbcad/tmpl/tmpl.h"
 
 namespace tbcad::tmpl {
@@ -41,17 +42,21 @@ LayerId addLayer(Transaction& tx, const char* name, int color, LinetypeId linety
 
 }  // namespace
 
-std::unique_ptr<Document> builtinTemplate() {
+std::unique_ptr<Document> builtinTemplate(LengthUnit units) {
+    const bool inch = units == LengthUnit::Inch;
     auto doc = std::make_unique<Document>();
     Transaction tx = doc->begin("Template");
 
-    // Millimetre pattern lengths: + dash, - gap, 0 dot.
-    const LinetypeId dashed = addLinetype(tx, "Dashed", "Dashed", {12, -6});
-    const LinetypeId hidden = addLinetype(tx, "Hidden", "Hidden", {6, -3});
-    const LinetypeId center = addLinetype(tx, "Center", "Center", {24, -6, 6, -6});
-    (void)addLinetype(tx, "Phantom", "Phantom", {24, -6, 6, -6, 6, -6});
-    (void)addLinetype(tx, "Dot", "Dot", {0, -6});
-    (void)addLinetype(tx, "DashDot", "Dash dot", {12, -6, 0, -6});
+    // Pattern lengths: + dash, - gap, 0 dot. Millimetres, or the inch values of acad.lin.
+    const double k = inch ? 1.0 / 24.0 : 1.0;  // 12 mm dash = 0.5 in
+    const LinetypeId dashed = addLinetype(tx, "Dashed", "Dashed", {12 * k, -6 * k});
+    const LinetypeId hidden = addLinetype(tx, "Hidden", "Hidden", {6 * k, -3 * k});
+    const LinetypeId center =
+        addLinetype(tx, "Center", "Center", {inch ? 1.25 : 24, -6 * k, 6 * k, -6 * k});
+    (void)addLinetype(tx, "Phantom", "Phantom",
+                      {inch ? 1.25 : 24, -6 * k, 6 * k, -6 * k, 6 * k, -6 * k});
+    (void)addLinetype(tx, "Dot", "Dot", {0, -6 * k});
+    (void)addLinetype(tx, "DashDot", "Dash dot", {12 * k, -6 * k, 0, -6 * k});
 
     const LinetypeId cont = kLinetypeContinuous;
     addLayer(tx, "Defpoints", 7, cont, false);
@@ -72,22 +77,37 @@ std::unique_ptr<Document> builtinTemplate() {
     notes.name = "Notes";
     (void)tx.addTextStyle(std::move(notes));
 
-    // Millimetre drawings: whole numbers ("8000"), text lifted above the dimension line.
-    (void)tx.modifyDimStyle(kDimStyleStandard, [](DimStyle& d) {
-        d.precision = 0;
-        d.textPlacement = DimTextPlacement::AboveLine;
-    });
+    if (inch) {
+        // AutoCAD's imperial Standard: 0.18" text and arrows, four decimals.
+        (void)tx.modifyDimStyle(kDimStyleStandard, [](DimStyle& d) {
+            d.textHeight = 0.18;
+            d.textGap = 0.09;
+            d.arrowSize = 0.18;
+            d.extLineOffset = 0.0625;
+            d.extLineExtension = 0.18;
+            d.baselineSpacing = 0.38;
+            d.centerMark = 0.09;
+            d.precision = 4;
+            d.textPlacement = DimTextPlacement::AboveLine;
+        });
+    } else {
+        // Millimetre drawings: whole numbers ("8000"), text lifted above the dimension line.
+        (void)tx.modifyDimStyle(kDimStyleStandard, [](DimStyle& d) {
+            d.precision = 0;
+            d.textPlacement = DimTextPlacement::AboveLine;
+        });
+    }
 
     // A second dimension style with architectural ticks; Standard keeps filled arrows.
     DimStyle arch = *doc->dimStyle(kDimStyleStandard);
     arch.id = {};
     arch.name = "Architectural";
     arch.arrowType = ArrowType::ArchTick;
-    arch.precision = 0;
+    arch.precision = inch ? 2 : 0;
     (void)tx.addDimStyle(std::move(arch));
 
     (void)tx.modifyHeader([&](Header& h) {
-        h.units = LengthUnit::Millimeter;
+        h.units = inch ? LengthUnit::Inch : LengthUnit::Millimeter;
         h.currentLayer = kLayerZero;
         // Dimensions, hatches and text land on their own layers, as DIMLAYER, HPLAYER and
         // TEXTLAYER set them.
@@ -95,8 +115,23 @@ std::unique_ptr<Document> builtinTemplate() {
         h.custom[kHatchLayerKey] = std::to_string(hatchLayer.value);
         h.custom[kTextLayerKey] = std::to_string(textLayer.value);
     });
+    // Two empty sheets, as in AutoCAD's templates.
+    for (const char* name : {"Layout1", "Layout2"})
+        (void)layout::createLayout(tx, name, inch ? "ANSI B" : "A3", true);
     (void)tx.commit();
     return doc;
+}
+
+std::unique_ptr<Document> builtinTemplate(std::string_view name) {
+    if (name == kBuiltinTemplate)
+        return builtinTemplate(LengthUnit::Millimeter);
+    if (name == kBuiltinInchTemplate)
+        return builtinTemplate(LengthUnit::Inch);
+    return nullptr;
+}
+
+bool isBuiltinTemplate(std::string_view name) {
+    return name == kBuiltinTemplate || name == kBuiltinInchTemplate;
 }
 
 std::vector<TemplateInfo> listTemplates(const fs::path& dir) {

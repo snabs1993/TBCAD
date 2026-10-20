@@ -3,6 +3,7 @@
 #include <chrono>
 #include <fstream>
 
+#include "tbcad/layout/layout.h"
 #include "tbcad/tmpl/tmpl.h"
 
 using namespace tbcad;
@@ -40,6 +41,33 @@ TEST_CASE("the built-in template has the standard layers, linetypes and styles")
     CHECK(doc->dimStyleByName("Standard")->arrowType == ArrowType::ClosedFilled);
     CHECK(doc->header().units == LengthUnit::Millimeter);
     CHECK(doc->header().currentLayer == kLayerZero);
+}
+
+TEST_CASE("the built-in templates: two layouts, and an inch drawing with inch styles") {
+    auto mm = tmpl::builtinTemplate();
+    auto lm = layout::layouts(*mm);
+    REQUIRE(lm.size() == 2);
+    CHECK(lm[0].name == "Layout1");
+    CHECK(lm[1].name == "Layout2");
+    CHECK(lm[0].paperName == "A3");
+    CHECK(lm[0].landscape);
+
+    auto in = tmpl::builtinTemplate(tmpl::kBuiltinInchTemplate);
+    REQUIRE(in);
+    CHECK(in->header().units == LengthUnit::Inch);
+    auto li = layout::layouts(*in);
+    REQUIRE(li.size() == 2);
+    CHECK(li[0].paperName == "ANSI B");
+    const DimStyle* d = in->dimStyle(kDimStyleStandard);
+    REQUIRE(d);
+    CHECK(d->textHeight == doctest::Approx(0.18));
+    CHECK(d->arrowSize == doctest::Approx(0.18));
+    CHECK(d->precision == 4);
+    CHECK(in->linetypeByName("Dashed")->pattern ==
+          std::vector<double>{0.5, -0.25});  // acad.lin's DASHED
+    CHECK(in->layerByName("Walls"));
+    CHECK_FALSE(tmpl::builtinTemplate("Nope"));
+    CHECK(tmpl::isBuiltinTemplate("Built-in (inch)"));
 }
 
 TEST_CASE(

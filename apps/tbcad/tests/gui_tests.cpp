@@ -1330,17 +1330,17 @@ TEST_CASE("layout tabs: copy and move from the right-click menu") {
             s += n + ",";
         return s;
     };
-    CHECK(order() == "One,Two,");
+    CHECK(order() == "Layout1,Layout2,One,Two,");  // after the built-in drawing's two
     REQUIRE(h.rightClick("Two", "##layouttabs"));
     h.frame(2);
     REQUIRE(h.click("Move left", "Popup"));
     h.frame(5);
-    CHECK(order() == "Two,One,");
+    CHECK(order() == "Layout1,Layout2,Two,One,");
     REQUIRE(h.rightClick("Two", "##layouttabs"));
     h.frame(2);
     REQUIRE(h.click("Copy", "Popup"));
     h.frame(5);
-    CHECK(h.core().layoutNames().size() == 3);
+    CHECK(h.core().layoutNames().size() == 5);
     CHECK(h.has("Two (2)", "##layouttabs"));
 }
 

@@ -25,7 +25,8 @@ TEST_CASE("switching to a layout shows the sheet and goes back to the model view
         REQUIRE(layout::createLayout(tx, "Sheet 1", "A3").ok());
         tx.commit();
     }
-    CHECK(core.layoutNames() == std::vector<std::string>{"Sheet 1"});
+    // The built-in drawing comes with Layout1 and Layout2.
+    CHECK(core.layoutNames() == std::vector<std::string>{"Layout1", "Layout2", "Sheet 1"});
     const render::Camera2D model = core.camera();
 
     CHECK(core.setActiveLayout("Sheet 1"));

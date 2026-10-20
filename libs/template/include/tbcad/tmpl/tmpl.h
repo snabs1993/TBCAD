@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "tbcad/core/document.h"
@@ -15,16 +16,22 @@
 namespace tbcad::tmpl {
 
 inline constexpr const char* kTemplateExtension = ".tbt";
-// The name under which the built-in drawing is offered next to the user's templates.
+// The names under which the built-in drawings are offered next to the user's templates: one in
+// millimetres (the default) and one in inches.
 inline constexpr const char* kBuiltinTemplate = "Built-in";
+inline constexpr const char* kBuiltinInchTemplate = "Built-in (inch)";
 
 struct TemplateInfo {
     std::string name{};  // file name without the extension
     std::filesystem::path path{};
 };
 
-// The default drawing for NEW when the user has not chosen a template.
-std::unique_ptr<Document> builtinTemplate();
+// The default drawing for NEW when the user has not chosen a template: the usual layers,
+// linetypes, text and dimension styles, and two paper layouts (A3, or ANSI B in inches).
+std::unique_ptr<Document> builtinTemplate(LengthUnit units = LengthUnit::Millimeter);
+// The built-in drawing with that name (kBuiltinTemplate or kBuiltinInchTemplate), or null.
+std::unique_ptr<Document> builtinTemplate(std::string_view name);
+bool isBuiltinTemplate(std::string_view name);
 
 // The .tbt files directly inside `dir`, sorted by name (case-insensitive). A missing folder gives
 // an empty list.

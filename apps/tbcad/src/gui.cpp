@@ -2796,7 +2796,7 @@ void Gui::startPage(const ViewportRect& rect) {
                     break;
                 if (shown > 1 && (shown - 1) % 3 != 0)
                     ImGui::SameLine();
-                if (ImGui::Button((name + "##tmpl").c_str(), ImVec2(110, 0))) {
+                if (ImGui::Button((name + "##tmpl").c_str(), ImVec2(130, 0))) {
                     const std::string err = core_.newFromTemplate(name);
                     if (err.empty())
                         startPage_ = false;
@@ -2806,21 +2806,65 @@ void Gui::startPage(const ViewportRect& rect) {
             }
         }
 
+        // Recent drawings as cards: the picture taken when the drawing was last opened or saved,
+        // and its name. Four to a row, two rows.
         const auto recent = core_.recentFiles();
         if (!recent.empty()) {
             ImGui::Spacing();
             ImGui::TextDisabled("Recent");
+            const ImVec2 thumb(160 * dpiScale_, 110 * dpiScale_);
             int shown = 0;
             for (const auto& path : recent) {
-                if (++shown > 5)
+                if (shown == 8)
                     break;
+                if (shown % 4 != 0)
+                    ImGui::SameLine();
+                ++shown;
                 const std::filesystem::path fp = platform::pathFromUtf8(path);
+                const std::string name = platform::pathToUtf8(fp.filename());
                 ImGui::PushID(path.c_str());
-                if (ImGui::Selectable(platform::pathToUtf8(fp.filename()).c_str(), false,
-                                      ImGuiSelectableFlags_None, ImVec2(360, 0)))
-                    doOpenPath(path);
-                if (ImGui::IsItemHovered())
+                ImGui::BeginGroup();
+                const ImVec2 at = ImGui::GetCursorScreenPos();
+                const bool clicked = ImGui::InvisibleButton(name.c_str(), thumb);
+                const bool hovered = ImGui::IsItemHovered();
+                ImDrawList* dl = ImGui::GetWindowDrawList();
+                const ImVec2 end(at.x + thumb.x, at.y + thumb.y);
+                const unsigned tex =
+                    thumbnailLoader_ ? thumbnailLoader_(core_.thumbnailFile(path)) : 0u;
+                if (tex) {
+                    dl->AddImage(static_cast<ImTextureID>(tex), at, end);
+                } else {
+                    dl->AddRectFilled(at, end, ImGui::GetColorU32(ImGuiCol_FrameBg));
+                    std::string ext = platform::pathToUtf8(fp.extension());
+                    if (!ext.empty() && ext[0] == '.')
+                        ext.erase(0, 1);
+                    for (char& c : ext)
+                        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+                    const ImVec2 ts = ImGui::CalcTextSize(ext.c_str());
+                    dl->AddText(
+                        ImVec2(at.x + (thumb.x - ts.x) * 0.5f, at.y + (thumb.y - ts.y) * 0.5f),
+                        ImGui::GetColorU32(ImGuiCol_TextDisabled), ext.c_str());
+                }
+                dl->AddRect(at, end,
+                            ImGui::GetColorU32(hovered ? ImGuiCol_ButtonHovered : ImGuiCol_Border),
+                            0.0f, 0, hovered ? 2.0f : 1.0f);
+                // The name, cut to the card's width.
+                std::string label = name, base = name;
+                while (!base.empty() && ImGui::CalcTextSize(label.c_str()).x > thumb.x) {
+                    // One whole UTF-8 character off the end.
+                    while (!base.empty() &&
+                           (static_cast<unsigned char>(base.back()) & 0xC0) == 0x80)
+                        base.pop_back();
+                    if (!base.empty())
+                        base.pop_back();
+                    label = base + "...";
+                }
+                ImGui::TextUnformatted(label.c_str());
+                ImGui::EndGroup();
+                if (hovered)
                     ImGui::SetTooltip("%s", path.c_str());
+                if (clicked)
+                    doOpenPath(path);
                 ImGui::PopID();
             }
         }

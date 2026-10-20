@@ -7,13 +7,16 @@ so title blocks, layers, linetypes, text styles, dimension styles, units and eve
 `%APPDATA%\TBCAD\templates\` on Windows, `~/.config/tbcad/templates/` elsewhere (`TBCAD_CONFIG_DIR`
 moves it). Copy a `.tbt` file in there to share a template with a colleague.
 
-## Built-in template
-Without a user template NEW uses the built-in drawing, in millimetres:
+## Built-in templates
+Without a user template NEW uses the built-in drawing, in millimetres. `Built-in (inch)` is the same
+drawing in inches, with acad.lin's inch linetype patterns and AutoCAD's imperial dimension sizes
+(0.18" text and arrows, four decimals). Both have:
 
 - Layers: `0`, Defpoints (not plotted), Walls, Doors-Windows, Furniture, Dimensions, Text, Hatch,
   Centerlines, Hidden, Grid, Construction (not plotted), Title-Block, Viewports (not plotted).
 - Linetypes: Continuous, Dashed, Hidden, Center, Phantom, Dot, DashDot.
 - Text styles: Standard, Notes. Dimension styles: Standard (filled arrows), Architectural (ticks).
+- Layouts: Layout1 and Layout2, empty landscape sheets (A3, or ANSI B in inches).
 
 ## Commands
 | Command | Does |

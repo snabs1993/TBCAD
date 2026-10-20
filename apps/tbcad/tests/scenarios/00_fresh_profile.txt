@@ -1,7 +1,7 @@
 # The first start on a new computer: no settings at all. The program comes up in millimetres on
 # layer 0 with object snap on, shows the menus, toolbar, command line and status bar, and draws at once.
 @expect warnings 0
-@expect startup-ms 60000
+@expect startup-ms 10000
 @expect units mm
 @expect current-layer 0
 @expect setting drafting.osnap true

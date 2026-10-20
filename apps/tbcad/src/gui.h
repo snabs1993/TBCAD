@@ -3,6 +3,8 @@
 #include <imgui.h>
 
 #include <chrono>
+#include <filesystem>
+#include <functional>
 #include <map>
 #include <optional>
 #include <string>
@@ -97,6 +99,11 @@ public:
     float dpiScale() const { return dpiScale_; }
     // Shows a registered panel (Tools > MCP Settings...).
     void openPanel(const std::string& id) { panelOpen_[id] = true; }
+    // Turns the picture of a recent drawing (a PNG file) into a texture for the start page, or 0
+    // when there is none. Set by the App; without it the cards show the file type instead.
+    void setThumbnailLoader(std::function<unsigned(const std::filesystem::path&)> loader) {
+        thumbnailLoader_ = std::move(loader);
+    }
 
 private:
     enum class Pending { None, Close, Exit };
@@ -114,6 +121,7 @@ private:
     std::string dismissedReadOnly_{};  // read-only notice text the user closed
     void docTabs();
     void startPage(const ViewportRect& rect);
+    std::function<unsigned(const std::filesystem::path&)> thumbnailLoader_;
     bool ucsIconShown() const;
     void ucsIcon(const ViewportRect& rect);
     void statusBar();
