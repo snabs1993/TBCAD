@@ -163,8 +163,10 @@ there.
 
 **DIMJOGLINE** (DJL) puts a Z-shaped jog in the dimension line of a linear or aligned dimension, the sign
 that the drawn length is shortened. Pick the dimension, then the place on the dimension line, or press
-Enter for the middle; the keyword **Remove** takes the jogs out. The jog is stored with the dimension, so it
-moves, scales and saves with it.
+Enter for the middle. A dimension has one jog, as in AutoCAD: a new one replaces the old. **Remove** at the
+first prompt, then a pick, takes a dimension's jog out (**Remove** at the second prompt does the same for the
+dimension just picked). The jog is stored with the dimension, so it moves, scales and saves with it, and it
+stays on the dimension line when the line is moved (a grip, DIMSPACE).
 
 ## Arc length and ordinate dimensions (Q81)
 

@@ -1065,7 +1065,26 @@ public:
             const auto* d = entityAs<DimensionData>(e);
             return d && (d->kind == DimKind::Linear || d->kind == DimKind::Aligned);
         };
-        auto pick = co_await ctx.getEntity("Select a linear or aligned dimension", eo);
+        eo.keywords = {"Remove"};
+        auto pick = co_await ctx.getEntity("Select dimension to add jog or [Remove]", eo);
+        if (pick.status == Status::Keyword) {
+            // As AutoCAD: pick the jogged dimension whose jog goes.
+            cmd::EntityOptions ro;
+            ro.filter = [](const Entity& e) {
+                const auto* d = entityAs<DimensionData>(e);
+                return d && !d->jogs.empty();
+            };
+            auto jogged = co_await ctx.getEntity("Select jog to remove", ro);
+            if (!jogged.ok())
+                co_return;
+            ctx.setUndoLabel("DIMJOGLINE");
+            auto r = ctx.tx().modify(jogged.id, [](Entity& ent) {
+                if (auto* d = entityAs<DimensionData>(ent))
+                    d->jogs.clear();
+            });
+            ctx.message(r ? "Jog line removed." : r.error().message);
+            co_return;
+        }
         if (!pick.ok())
             co_return;
         const Entity* e = ctx.doc().find(pick.id);
@@ -1096,8 +1115,7 @@ public:
         cmd::PointOptions po;
         po.allowNone = true;
         po.keywords = {"Remove"};
-        auto where = co_await ctx.getPoint(
-            "Specify jog location on the dimension line or [Remove] (Enter = middle)", po);
+        auto where = co_await ctx.getPoint("Specify jog location or [Remove] (Enter = middle)", po);
         if (where.status == Status::Cancel)
             co_return;
         const bool remove = where.status == Status::Keyword;
@@ -1112,9 +1130,9 @@ public:
             auto* d = entityAs<DimensionData>(ent);
             if (!d)
                 return;
-            if (remove)
-                d->jogs.clear();
-            else
+            // One jog per dimension, as in AutoCAD: a new one replaces the old.
+            d->jogs.clear();
+            if (!remove)
                 d->jogs.push_back(at);
         });
         if (!r) {

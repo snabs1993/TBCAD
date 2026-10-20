@@ -852,9 +852,10 @@ static void applyBreaks(Layout& L, const std::vector<DimBreak>& breaks) {
     L.lines = std::move(out);
 }
 
-// DIMJOGLINE: cuts the dimension line open where a jog sits and draws a Z in the gap.
+// DIMJOGLINE: cuts the dimension line open where a jog sits and draws a Z in the gap. A jog is
+// placed by its position along the dimension line, so it stays on the line when the line is moved
+// (a grip, DIMSPACE, a stretch), as in AutoCAD.
 static void applyJogs(Layout& L, const std::vector<Vec2>& jogs, double width) {
-    constexpr double kOnLine = 0.02;  // mm
     if (!(width > 0))
         return;
     std::vector<Layout::Line> zigzags;
@@ -874,8 +875,7 @@ static void applyJogs(Layout& L, const std::vector<Vec2>& jogs, double width) {
         std::vector<double> at;  // distances along the line, ascending
         for (const Vec2& j : jogs) {
             const double s = (j.x - a.x) * u.x + (j.y - a.y) * u.y;
-            const Vec2 q = a + u * s;
-            if (std::hypot(j.x - q.x, j.y - q.y) <= kOnLine && s > width / 2 && s < len - width / 2)
+            if (s > width / 2 && s < len - width / 2)
                 at.push_back(s);
         }
         std::sort(at.begin(), at.end());
