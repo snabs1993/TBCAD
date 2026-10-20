@@ -53,3 +53,18 @@ Object snap modes are chosen with the `OSNAP` command. Every key can be changed,
 
 `Ctrl+S` saves a `.tbcad` file. Use `File > Open` or `OPEN` to load one. DXF files are converted
 first, see [Opening DXF files](dxf.md).
+
+## Several drawings
+
+Each open drawing has a tab at the top. Right-click a tab for New, Open, Save, Save As, Save All,
+Close, Close All, Close Other Drawings, Copy full path, Open file location and Quick view.
+`SAVEALL` saves every changed drawing that has a file and asks for a name for the first untitled
+one. `CLOSEALL` closes them all and asks about each one with unsaved changes. `QVDRAWING` (`QVD`)
+shows a card per open drawing with its model and layout buttons; `QVLAYOUT` (`QVL`) shows the
+layouts of the current drawing.
+
+## Export
+
+`EXPORT` (`EXP`) asks for a file name and exports by its extension: `.dxf` (EXPORTDXF), `.pdf`,
+`.svg`, `.png` or `.jpg` (the plot exports with their saved settings). With `FILEDIA` 1 a file
+dialog asks for the name.

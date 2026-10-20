@@ -142,6 +142,17 @@ public:
     std::uint64_t documentId(std::size_t index) const;
     // Untitled, unmodified and empty: nothing the user would miss.
     bool isPristine() const;
+    // The file of drawing `index` (empty when untitled) and its layout names.
+    std::filesystem::path documentFile(std::size_t index) const;
+    std::vector<std::string> documentLayouts(std::size_t index) const;
+    // SAVEALL: saves every modified drawing that has a file; the active tab stays active. Untitled
+    // and read-only-format drawings need Save As and are only listed; so are failed saves.
+    struct SaveAllReport {
+        std::size_t saved = 0;
+        std::vector<std::size_t> needSaveAs{};  // indices
+        std::vector<std::string> failed{};      // "name: why"
+    };
+    SaveAllReport saveAll();
     // Saves to the current file; fails with NotFound-style error text when there is none yet
     // (the window then asks for a name and calls saveAs).
     Result<void> save();
