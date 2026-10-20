@@ -109,6 +109,10 @@ Tick marks (`ArrowType::ArchTick`, DXF `_ARCHTICK` or `_OBLIQUE`, or a DIMTSZ ab
 sets the arrow size to DIMTSZ) are drawn as AutoCAD's block: a stroke at 45 degrees from
 (-a/2,-a/2) to (a/2,a/2) round the tip, so `a·√2` long.
 
+Between closed filled arrows inside the extension lines, the dimension line of a linear or aligned
+dimension runs from one arrow's tail to the other's, as AutoCAD draws it (the filled arrows cover
+the rest); ticks, dots and open arrows keep the line from end to end.
+
 ## Fit rules (linear and aligned)
 
 `L` is the distance between the extension lines, `tw` the text width, `g` the text gap and `a`
