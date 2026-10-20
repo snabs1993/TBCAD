@@ -267,6 +267,11 @@ struct DataDumper {
         o << " style" << d.style << " m" << d.measurement;
         for (const DimBreak& b : d.breaks)
             o << " break " << b.a << ">" << b.b;
+        if (!d.breakWith.empty()) {
+            o << " auto" << d.autoBreaks << " with";
+            for (EntityId id : d.breakWith)
+                o << " " << id.value;
+        }
         for (const Vec2& j : d.jogs)
             o << " jog" << j;
         for (std::size_t i = 0; i < d.assoc.size(); ++i)

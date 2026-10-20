@@ -581,6 +581,11 @@ struct DimensionData {
     DimStyleId style{};      // null = document's current dim style
     double measurement = 0;  // cache
     std::vector<DimBreak> breaks{};
+    // DIMBREAK Auto: the objects that break the dimension. The first `autoBreaks` gaps of `breaks`
+    // are where they cross it and are worked out again when the dimension or one of them changes,
+    // as in AutoCAD; the gaps after them were placed by hand (Manual) and stay where they are.
+    std::vector<EntityId> breakWith{};
+    std::uint32_t autoBreaks = 0;
     // DIMEDIT Oblique: how far the extension lines of a linear or aligned dimension lean from the
     // perpendicular of the dimension line (radians, counter-clockwise).
     double oblique = 0;

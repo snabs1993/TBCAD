@@ -28,6 +28,16 @@ DimRefreshFn dimRefresh() {
     return gRefresh;
 }
 
+namespace {
+DimRefreshFn gBreakRefresh = nullptr;
+}
+void setDimBreakRefresh(DimRefreshFn fn) {
+    gBreakRefresh = fn;
+}
+DimRefreshFn dimBreakRefresh() {
+    return gBreakRefresh;
+}
+
 std::optional<Vec2> dimAssocPoint(const Entity& e, const DimAssoc& a) {
     if (a.kind == DimAssoc::Kind::Center) {
         if (const auto* c = entityAs<CircleData>(e))

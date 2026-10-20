@@ -1974,10 +1974,13 @@ void Transaction::followAssociations() {
     auto close = [](Vec2 a, Vec2 b) {
         return distance(a, b) <= 1e-7 * (1.0 + std::abs(a.x) + std::abs(a.y));
     };
+    std::vector<EntityId> broken;  // dimensions with automatic DIMBREAK gaps, made before now
     d.forEachEntity([&](const Entity& e) {
         const auto* dm = entityAs<DimensionData>(e);
         if (!dm)
             return;
+        if (!dm->breakWith.empty() && e.common.id.value < startNextId_)
+            broken.push_back(e.common.id);
         Plan p{e.common.id, dm->defPts, dm->assoc, false, {}, 0, {}, true};
         bool changed = false;
         for (std::size_t i = 0; i < 4; ++i) {
@@ -2052,6 +2055,30 @@ void Transaction::followAssociations() {
                     f(*doc_, e);
             }
         });
+    }
+
+    // Automatic DIMBREAK gaps follow a dimension that changed, or the objects breaking it, as in
+    // AutoCAD. Dimensions made in this transaction (a copy, a file being read) keep theirs.
+    DimRefreshFn breaks = dimBreakRefresh();
+    if (!breaks)
+        return;
+    for (EntityId id : broken) {
+        const Entity* now = d.find(id);
+        const auto* dm = now ? entityAs<DimensionData>(*now) : nullptr;
+        if (!dm)
+            continue;
+        bool hit = touched_.find(id) != TouchedIndex::kNone;
+        for (std::size_t i = 0; !hit && i < dm->breakWith.size(); ++i)
+            hit = touched_.find(dm->breakWith[i]) != TouchedIndex::kNone;
+        if (!hit)
+            continue;
+        Entity e = *now;
+        breaks(*doc_, e);
+        const auto* was = entityAs<DimensionData>(*now);
+        const auto* is = entityAs<DimensionData>(e);
+        if (is && (is->breaks != was->breaks || is->breakWith != was->breakWith ||
+                   is->autoBreaks != was->autoBreaks))
+            (void)modify(id, [&](Entity& x) { x = std::move(e); });
     }
 }
 

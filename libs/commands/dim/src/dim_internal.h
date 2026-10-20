@@ -40,6 +40,9 @@ std::unique_ptr<cmd::Command> makeBaselineCommand();
 std::unique_ptr<cmd::Command> makeTextEditCommand();
 std::unique_ptr<cmd::Command> makeSpaceCommand();
 std::unique_ptr<cmd::Command> makeEditCommand();
+// Works the automatic DIMBREAK gaps of a dimension out again (installed as the document's
+// dimension break refresh).
+void refreshAutoBreaks(const Document& doc, Entity& e);
 std::unique_ptr<cmd::Command> makeBreakCommand();
 std::unique_ptr<cmd::Command> makeJogLineCommand();
 std::unique_ptr<cmd::Command> makeQuickDimCommand();
