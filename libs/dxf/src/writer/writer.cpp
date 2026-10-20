@@ -701,6 +701,10 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
                     0);
         if (!ds.prefix.empty() || !ds.suffix.empty())
             o.str(3, ds.prefix + "<>" + ds.suffix);
+        // DIMTXSTY: the text style's STYLE record (the STYLE table is written first).
+        if (const auto t = tsHandle_.find(ds.textStyle.value);
+            !r12_ && ds.textStyle.value && t != tsHandle_.end() && t->second != 0)
+            o.h(340, t->second);
         o.d(40, ds.overallScale);
         o.d(41, ds.arrowSize);
         o.d(42, ds.extLineOffset);

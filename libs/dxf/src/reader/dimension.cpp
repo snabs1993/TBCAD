@@ -131,6 +131,8 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
             if ((var == 341 || var == 342 || var == 343 || var == 344) &&
                 (h == "0" || blockNameByHandle_.count(h)))
                 handles[var] = h;
+            else if (var == 340 && styleNameByHandle_.count(std::string(g.str())))
+                handles[var] = std::string(g.str());  // DIMTXSTY
             var = -1;
             continue;
         }
@@ -221,6 +223,17 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
     // Arrow blocks named by handle (DIMBLK, DIMBLK1, DIMBLK2), with DIMSAH as overridden or as
     // the style has it. DIMTSZ, below, still turns the arrows into ticks.
     std::string extraKey;
+    if (const auto h = handles.find(340); h != handles.end()) {
+        // DIMTXSTY: the text style, and its fixed height when it has one.
+        if (const TextStyle* t = doc_->textStyleByName(styleNameByHandle_.at(h->second))) {
+            ds.textStyle = t->id;
+            if (const auto f = styleHeights_.find(h->second);
+                f != styleHeights_.end() && ds.overallScale > 0 && !txt)
+                ds.textHeight = f->second / ds.overallScale * factor;
+            extraKey += "|txsty=" + std::to_string(t->id.value);
+        }
+        handles.erase(h);
+    }
     if (const auto h = handles.find(341); h != handles.end()) {
         ds.leaderArrow = arrowKindOf(h->second, ArrowType::ClosedFilled);
         extraKey += "|ldr=" + std::to_string(static_cast<int>(ds.leaderArrow));

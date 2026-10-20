@@ -1207,6 +1207,36 @@ TEST_CASE("hatch: gradient colours, angle and name are kept") {
     CHECK(hatches[0]->gradient->color2 == Color::rgb(0, 0, 255));
 }
 
+TEST_CASE("dimension style: DIMTXSTY names the text style by handle, also as an override") {
+    Pairs p;
+    p.section("TABLES").g(0, "TABLE").g(2, "STYLE");
+    p.g(0, "STYLE").g(5, "11").g(2, "Notes").g(70, 0).g(40, 0.0).g(3, "arial.ttf");
+    p.g(0, "STYLE").g(5, "12").g(2, "Fixed").g(70, 0).g(40, 3.5).g(3, "arial.ttf");
+    p.g(0, "ENDTAB");
+    p.g(0, "TABLE").g(2, "DIMSTYLE");
+    p.g(0, "DIMSTYLE").g(105, "30").g(2, "Dn").g(340, "11").g(140, 2.5).g(41, 2.5);
+    p.g(0, "ENDTAB").end();
+    p.section("ENTITIES");
+    p.g(0, "DIMENSION").g(8, "0").g(2, "*D1").g(3, "Dn").g(10, 5.0).g(20, 25.0).g(11, 5.0);
+    p.g(21, 28.0).g(70, 1).g(13, 0.0).g(23, 20.0).g(14, 10.0).g(24, 20.0).g(42, 10.0);
+    p.g(1001, "ACAD").g(1000, "DSTYLE").g(1002, "{").g(1070, 340).g(1005, "12").g(1002, "}");
+    p.end().g(0, "EOF");
+    Loaded l = load(p.text);
+    const DimStyle* dn = l.doc().dimStyleByName("Dn");
+    REQUIRE(dn != nullptr);
+    const TextStyle* notes = l.doc().textStyleByName("Notes");
+    REQUIRE(notes != nullptr);
+    CHECK(dn->textStyle == notes->id);
+    auto dims = modelEntities<DimensionData>(l.doc());
+    REQUIRE(dims.size() == 1);
+    const DimStyle* ds = l.doc().dimStyle(dims[0]->style);
+    REQUIRE(ds != nullptr);
+    const TextStyle* fixed = l.doc().textStyleByName("Fixed");
+    REQUIRE(fixed != nullptr);
+    CHECK(ds->textStyle == fixed->id);
+    CHECK(near(ds->textHeight * ds->overallScale, 3.5));
+}
+
 TEST_CASE("dimension style: a built-in arrow block name picks the arrow kind") {
     Pairs p;
     p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE");

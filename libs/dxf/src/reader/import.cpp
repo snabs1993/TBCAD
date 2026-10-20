@@ -1684,6 +1684,11 @@ void Importer::readDimStyle(const Record& r) {
     dimColor(177, ds.extLineColor);
     dimColor(178, ds.textColor);
     if (r.has(340)) {
+        // DIMTXSTY: the text style, by the handle of its STYLE record.
+        if (const auto s = styleNameByHandle_.find(std::string(r.raw(340)));
+            s != styleNameByHandle_.end())
+            if (const TextStyle* t = doc_->textStyleByName(s->second))
+                ds.textStyle = t->id;
         const auto fixed = styleHeights_.find(std::string(r.raw(340)));
         if (fixed != styleHeights_.end() && ds.overallScale > 0)
             ds.textHeight = fixed->second / ds.overallScale;
