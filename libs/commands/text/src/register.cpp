@@ -43,6 +43,7 @@ void registerUi(ui::UiRegistry& ui) {
     registerEditorPanel(ui);
     registerStylePanel(ui);
     registerAnnotationSection(ui);
+    registerTextContextTab(ui);
 #endif
 }
 

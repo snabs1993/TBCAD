@@ -1034,7 +1034,8 @@ bool Importer::convRay(const Record& r, bool infinite, std::vector<Entity>& out)
         bad(r, infinite ? "XLINE" : "RAY", "direction must not be zero; skipped");
         return false;
     }
-    d.dir = {d.dir.x / len, d.dir.y / len};
+    if (std::abs(len - 1) > 1e-12)  // (a unit direction kept as written: no ulp drift)
+        d.dir = {d.dir.x / len, d.dir.y / len};
     out.push_back(makeEntity(d));
     return true;
 }

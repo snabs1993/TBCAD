@@ -9,6 +9,7 @@
 #include <cstring>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include "../src/dim_internal.h"
 #include "tbcad/dim/dim.h"
@@ -117,8 +118,7 @@ void drawPreview(ui::PanelContext& pc, const DimStyle& style) {
         }
         if (L.text.valid()) {
             // A stacked tolerance is markup: the preview shows it on one line.
-            const std::string shown =
-                L.text.stacked ? text::plainText(L.text.utf8) : L.text.utf8;
+            const std::string shown = L.text.stacked ? text::plainText(L.text.utf8) : L.text.utf8;
             ImVec2 sz = ImGui::CalcTextSize(shown.c_str());
             ImVec2 p = map(L.text.center);
             dl->AddText(ImVec2(p.x - sz.x / 2, p.y - sz.y / 2), col, shown.c_str());
@@ -436,6 +436,45 @@ void drawDimensionSection(ui::PanelContext& pc, EntityId id) {
     }
 }
 
+// ---- Contextual tab: Dimension ----------------------------------------------------------------
+
+void drawContextTab(ui::PanelContext& pc) {
+    if (!pc.doc || !pc.runCommand || !pc.selection || pc.selection->empty())
+        return;
+    const Entity* first = pc.doc->find(pc.selection->front());
+    if (!first)
+        return;
+    const DimStyleId style0 = styleIdOf(*first, *pc.doc);
+    bool sameStyle = true;
+    for (EntityId i : *pc.selection)
+        if (const Entity* e = pc.doc->find(i))
+            sameStyle = sameStyle && styleIdOf(*e, *pc.doc) == style0;
+    ImGui::SetNextItemWidth(140);
+    if (ImGui::BeginCombo("##ctxdimstyle",
+                          sameStyle ? dim::styleOf(*pc.doc, style0).name.c_str() : "*VARIES*")) {
+        for (const auto& [sid, st] : pc.doc->dimStyles())
+            if (!hasSpace(st.name) &&
+                ImGui::Selectable(st.name.c_str(), sameStyle && sid == style0))
+                pc.runCommand("DIMSETUP Style " + st.name);
+        ImGui::EndCombo();
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Dimension style of the selected dimensions");
+    const std::pair<const char*, const char*> tools[] = {
+        {"Text position", "DIMTEDIT"}, {"Oblique / text", "DIMEDIT"},
+        {"Break", "DIMBREAK"},         {"Space", "DIMSPACE"},
+        {"Jog", "DIMJOGLINE"},         {"Inspect", "DIMINSPECT"},
+        {"Override", "DIMOVERRIDE"},   {"Update", "DIMUPDATE"},
+        {"Reassociate", "DIMREASSOC"}};
+    for (const auto& [label, command] : tools) {
+        ImGui::SameLine();
+        if (ImGui::SmallButton(label))
+            pc.runCommand(command);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", command);
+    }
+}
+
 }  // namespace
 
 void registerUi(ui::UiRegistry& ui) {
@@ -450,6 +489,7 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addPropertySection(EntityKind::Dimension, drawDimensionSection);
     ui.addPropertySection(EntityKind::Leader, drawDimensionSection);
     ui.addPropertySection(EntityKind::MLeader, drawDimensionSection);
+    ui.addContextualTab("dimension", "Dimension", {EntityKind::Dimension}, drawContextTab);
 }
 
 }  // namespace tbcad::dimcmd

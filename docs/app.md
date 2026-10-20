@@ -40,6 +40,7 @@ Command modules call these from their `registerUi(UiRegistry&)` function (declar
 | `addStatusToggle(id, label, get, set)` | A toggle in the status bar (SNAP, GRID ...). The built-in ones store `drafting.snap`, `view.grid`, `drafting.ortho`, `drafting.polar` and `drafting.osnap` in the settings; drafting aids read them through `IHost::setting`. |
 | `addOverlayDrawer(fn)` | Draw into the per-frame overlay (grips, tracking lines). |
 | `addPropertySection(kind, fn)` | A section of the Properties panel for one entity kind. |
+| `addContextualTab(id, title, kinds, fn)` | A strip of tools floating over the top of the drawing, shown while the selection is made only of these entity kinds and no command runs (the ribbon's contextual tab). `contextualTabFor(doc, selection)` picks the first tab that covers the selection. The hatch, text, dimension and block modules each add one. Setting `ui.contextTabs` = `0` turns the strip off. |
 
 `PanelContext` holds the document, host, selection, camera and a `runCommand` function. Link
 `tbcad::ui`, not `tbcad::appcore`: the latter would make a cycle through the generated registry.
@@ -245,8 +246,15 @@ Defaults: Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S, Ctrl+Z, Ctrl+Y, Ctrl+A, Esc. Act
 - **Ctrl+L** (`view.expandLog`) or **F2** (`view.textWindow`, also `TEXTSCR`): the whole command
   history in one read-only box that can be selected and copied. The command line's AutoComplete
   also finds commands by synonym (ROUND finds FILLET) and by text inside the name (LINE finds
-  XLINE and PLINE). **F11** (`view.cleanScreen`): hides menus, tool strip, status bar and panels, leaving the
-  viewport and the command line. Both are rebindable like any other action.
+  XLINE and PLINE). **F11** (`view.cleanScreen`) or **Ctrl+0** (`view.cleanScreenAlt`, AutoCAD's
+  key), or `CLEANSCREENON` / `CLEANSCREENOFF`: hides menus, tool strip, status bar and panels,
+  leaving the viewport and the command line. All are rebindable like any other action.
+- The status bar shows, after the drafting toggles and the layer, workspace, level and annotation
+  scale boxes: **VIS** (`ANNOALLVISIBLE`: annotative objects of every scale, or only those of the
+  current scale), **AUTO** (`ANNOAUTOSCALE`), and **ISO**, lit while objects are isolated or
+  hidden, whose menu runs ISOLATEOBJECTS, HIDEOBJECTS or UNISOLATEOBJECTS. The `...` button at
+  the end chooses which items the bar shows (setting `statusbar.hidden`, comma-separated ids;
+  `ui/status_items.h`).
 - `IHost::requestUi(what)` lets a command ask the window to open something; `AppCore::takeUiRequests()`
   hands the requests to the window.
 

@@ -649,6 +649,83 @@ public:
     }
 };
 
+// WSCURRENT: switches to a workspace by name (the current one is the default).
+class WsCurrentCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "WSCURRENT"; }
+    std::string_view description() const override { return "Switch to a workspace by name"; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        WorkspaceStore store(ctx.host().settingsFolder() / "workspaces");
+        const std::string current = ctx.host().setting("workspace.current").value_or("");
+        cmd::StringOptions so;
+        if (!current.empty())
+            so.defaultValue = current;
+        const std::string prompt = current.empty()
+                                       ? std::string("Enter new value for WSCURRENT")
+                                       : "Enter new value for WSCURRENT <" + current + ">";
+        auto n = co_await ctx.getString(prompt, std::move(so));
+        if (!n.ok())
+            co_return;
+        const std::string name = cmd::trim(n.text);
+        if (!store.load(name)) {
+            std::string all;
+            for (const std::string& w : store.names())
+                all += (all.empty() ? "" : ", ") + w;
+            ctx.message("No workspace named \"" + name + "\". Workspaces: " + all);
+            co_return;
+        }
+        ctx.host().requestUi("workspace:load:" + name);
+    }
+};
+
+// WSSAVE: saves the panels and their layout as a workspace (the current one by default).
+class WsSaveCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "WSSAVE"; }
+    std::string_view description() const override {
+        return "Save the panels and their layout as a workspace";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        WorkspaceStore store(ctx.host().settingsFolder() / "workspaces");
+        std::string current = ctx.host().setting("workspace.current").value_or("");
+        if (store.isBuiltin(current))
+            current.clear();  // a built-in workspace cannot be overwritten
+        cmd::StringOptions so;
+        if (!current.empty())
+            so.defaultValue = current;
+        const std::string prompt = current.empty() ? std::string("Save workspace as")
+                                                   : "Save workspace as <" + current + ">";
+        auto n = co_await ctx.getString(prompt, std::move(so));
+        if (!n.ok())
+            co_return;
+        const std::string name = cmd::trim(n.text);
+        if (name.empty())
+            ctx.message("Give the workspace a name.");
+        else if (store.isBuiltin(name))
+            ctx.message("\"" + name + "\" is built in; choose another name.");
+        else
+            ctx.host().requestUi("workspace:save:" + name);
+    }
+};
+
+// CLEANSCREENON / CLEANSCREENOFF: the Clean Screen view (Ctrl+0 or F11) from the command line.
+class CleanScreenCommand final : public cmd::Command {
+public:
+    explicit CleanScreenCommand(bool on) : on_(on) {}
+    std::string_view name() const override { return on_ ? "CLEANSCREENON" : "CLEANSCREENOFF"; }
+    std::string_view description() const override {
+        return on_ ? "Hide the panels, menus and toolbars, leaving the drawing"
+                   : "Bring back the panels, menus and toolbars";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().requestUi(on_ ? "cleanscreen:on" : "cleanscreen:off");
+        co_return;
+    }
+
+private:
+    bool on_;
+};
+
 std::filesystem::path pathOf(const std::string& text) {
     return platform::pathFromUtf8(cmd::trim(text));
 }
@@ -821,6 +898,10 @@ void registerAppCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<NewFromTemplateCommand>());
     (void)registry.add(std::make_unique<TemplateDefaultCommand>());
     (void)registry.add(std::make_unique<WorkspaceCommand>());
+    (void)registry.add(std::make_unique<WsCurrentCommand>());
+    (void)registry.add(std::make_unique<WsSaveCommand>());
+    (void)registry.add(std::make_unique<CleanScreenCommand>(true));
+    (void)registry.add(std::make_unique<CleanScreenCommand>(false));
     (void)registry.add(std::make_unique<AliasImportCommand>());
     (void)registry.add(std::make_unique<AliasExportCommand>());
     (void)registry.add(std::make_unique<AliasEditCommand>());

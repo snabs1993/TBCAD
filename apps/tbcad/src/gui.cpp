@@ -28,6 +28,7 @@
 #include "tbcad/ui/drag_payload.h"
 #include "tbcad/ui/radial_wheel.h"
 #include "tbcad/ui/selection.h"
+#include "tbcad/ui/status_items.h"
 
 #if defined(_WIN32)
 #define GLFW_EXPOSE_NATIVE_WIN32
@@ -229,6 +230,7 @@ std::string Gui::actionLabel(const std::string& action) const {
         {"view.expandLog", "View > Command Log"},
         {"view.textWindow", "Command history window (F2)"},
         {"view.cleanScreen", "View > Clean Screen"},
+        {"view.cleanScreenAlt", "View > Clean Screen (second key)"},
         {"help.quickStart", "Help > Quick Start"},
         {"tools.settings", "Tools > Settings"}};
     if (auto it = builtin.find(action); it != builtin.end())
@@ -321,7 +323,7 @@ void Gui::runAction(const std::string& action) {
         // F2 as in AutoCAD; F2 over a row of a panel (a layer to rename) belongs to that row.
         if (!ImGui::IsAnyItemHovered())
             logExpanded_ = !logExpanded_;
-    } else if (action == "view.cleanScreen")
+    } else if (action == "view.cleanScreen" || action == "view.cleanScreenAlt")
         cleanScreen_ = !cleanScreen_;
     else if (action == "help.quickStart") {
         // F1 during a command explains that command; otherwise the quick start opens.
@@ -1232,6 +1234,43 @@ void Gui::blockEditBar() {
     ImGui::PopStyleColor();
 }
 
+// The contextual tab: while the selection is made only of hatches, text, dimensions or blocks,
+// a strip over the top of the drawing offers the tools for them (what the ribbon's contextual tab
+// holds). Setting ui.contextTabs ("0" hides it).
+void Gui::contextualBar() {
+    if (core_.runner().active() || !flag("ui.contextTabs", true))
+        return;
+    const ui::ContextualTab* tab = registry_.contextualTabFor(core_.document(), core_.selection());
+    if (!tab)
+        return;
+    // Floats over the top of the drawing (where the last frame put it), so the drawing does not
+    // jump when the selection changes.
+    if (lastRect_.w < 200 || lastRect_.h < 100)
+        return;
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                   ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+                                   ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking |
+                                   ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing |
+                                   ImGuiWindowFlags_AlwaysAutoResize;
+    ImGui::SetNextWindowPos(ImVec2(lastRect_.x + 8, lastRect_.y + 6));
+    ImGui::SetNextWindowBgAlpha(0.92f);
+    if (ImGui::Begin("##contexttab", nullptr, flags)) {
+        ImGui::TextColored(ImVec4(0.35f, 0.65f, 1.0f, 1.0f), "%s", tab->title.c_str());
+        ImGui::SameLine(0, 18);
+        ui::PanelContext pc;
+        fillPanelContext(pc);
+        ImGui::PushID(tab->id.c_str());
+        tab->draw(pc);
+        ImGui::PopID();
+        ImGui::SameLine(0, 18);
+        if (ImGui::SmallButton("Close"))
+            core_.clearSelection();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Clear the selection (Esc)");
+    }
+    ImGui::End();
+}
+
 float Gui::layoutTabsHeight() const {
     return ImGui::GetFrameHeight() + ImGui::GetStyle().WindowPadding.y * 2.0f;
 }
@@ -1572,12 +1611,15 @@ void Gui::statusBar() {
         };
         const auto textW = [](const char* t) { return ImGui::CalcTextSize(t).x; };
         const Document& doc = core_.document();
+        // Items hidden with the customization menu at the end of the bar.
+        const std::string hidden = core_.setting(ui::kStatusHiddenSetting).value_or("");
+        const auto shown = [&](std::string_view id) { return ui::statusItemShown(hidden, id); };
         UnitFormat fmt;
         fmt.unit = doc.header().units;
         Vec2 c = core_.cursorWorld();
         // Absurd coordinates (a stray point far away) switch to scientific notation, and the
         // readout keeps a fixed width so it never pushes the toggles or hides Y.
-        auto shown = [&](double v) {
+        auto coord = [&](double v) {
             if (std::abs(v) < 1e7)
                 return formatLength(v, 3, fmt);
             char buf[32];
@@ -1585,20 +1627,26 @@ void Gui::statusBar() {
             return std::string(buf);
         };
         ImFont* mono = monoFont();  // digits of equal width, so the readout does not jitter
-        if (mono)
-            ImGui::PushFont(mono);
-        ImGui::AlignTextToFramePadding();
-        ImGui::Text("X %s   Y %s   %s", shown(c.x).c_str(), shown(c.y).c_str(),
-                    std::string(unitSuffix(fmt.unit)).c_str());
-        const float pad = ImGui::CalcTextSize("X -1000000.000   Y -1000000.000   mm").x -
-                          ImGui::GetItemRectSize().x;
-        if (mono)
-            ImGui::PopFont();
-        if (pad > 0) {
-            ImGui::SameLine(0, 0);
-            ImGui::Dummy({pad, 1});
+        if (shown("coords")) {
+            if (mono)
+                ImGui::PushFont(mono);
+            ImGui::AlignTextToFramePadding();
+            ImGui::Text("X %s   Y %s   %s", coord(c.x).c_str(), coord(c.y).c_str(),
+                        std::string(unitSuffix(fmt.unit)).c_str());
+            const float pad = ImGui::CalcTextSize("X -1000000.000   Y -1000000.000   mm").x -
+                              ImGui::GetItemRectSize().x;
+            if (mono)
+                ImGui::PopFont();
+            if (pad > 0) {
+                ImGui::SameLine(0, 0);
+                ImGui::Dummy({pad, 1});
+            }
+        } else {
+            ImGui::Dummy({1, ImGui::GetFrameHeight()});  // the row starts somewhere
         }
         for (const auto& t : registry_.statusToggles()) {
+            if (!shown(t.id))
+                continue;
             place(textW(t.label.c_str()) + sty.FramePadding.x * 2);
             bool on = t.get();
             if (on)
@@ -1632,37 +1680,46 @@ void Gui::statusBar() {
         }
         const Layer* layer = doc.layer(doc.header().currentLayer);
         const float layerW = ImGui::CalcTextSize("A-WALL~interior").x + 30.0f;
-        place(textW("  Layer:") + sty.ItemSpacing.x + layerW);
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted("  Layer:");
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(layerW);
-        if (ImGui::BeginCombo("##layersw", layer ? layer->name.c_str() : "0",
-                              ImGuiComboFlags_HeightLarge)) {
-            for (const auto& [id, l] : doc.layers()) {
-                const bool sel = id == doc.header().currentLayer;
-                if (ImGui::Selectable(l.name.c_str(), sel) && !sel) {
-                    core_.submitText("-LAYER Set #" + std::to_string(id.value));
-                    core_.submitText("");
+        if (shown("layer")) {
+            place(textW("  Layer:") + sty.ItemSpacing.x + layerW);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("  Layer:");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(layerW);
+            if (ImGui::BeginCombo("##layersw", layer ? layer->name.c_str() : "0",
+                                  ImGuiComboFlags_HeightLarge)) {
+                for (const auto& [id, l] : doc.layers()) {
+                    const bool sel = id == doc.header().currentLayer;
+                    if (ImGui::Selectable(l.name.c_str(), sel) && !sel) {
+                        core_.submitText("-LAYER Set #" + std::to_string(id.value));
+                        core_.submitText("");
+                    }
                 }
+                ImGui::EndCombo();
             }
-            ImGui::EndCombo();
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Layer new objects are drawn on.");
         }
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Layer new objects are drawn on.");
-        place(130);
-        ImGui::SetNextItemWidth(130);
-        if (ImGui::BeginCombo("##workspace",
-                              workspaceName_.empty() ? "Workspace" : workspaceName_.c_str(),
-                              ImGuiComboFlags_HeightLarge)) {
-            for (const std::string& name : workspaces_.names())
-                if (ImGui::Selectable(name.c_str(), name == workspaceName_))
-                    switchWorkspace(name);
-            ImGui::EndCombo();
+        if (shown("workspace")) {
+            place(130);
+            ImGui::SetNextItemWidth(130);
+            if (ImGui::BeginCombo("##workspace",
+                                  workspaceName_.empty() ? "Workspace" : workspaceName_.c_str(),
+                                  ImGuiComboFlags_HeightLarge)) {
+                for (const std::string& name : workspaces_.names())
+                    if (ImGui::Selectable(name.c_str(), name == workspaceName_))
+                        switchWorkspace(name);
+                ImGui::Separator();
+                if (ImGui::Selectable("Save current as..."))
+                    core_.submitText("WSSAVE");
+                ImGui::EndCombo();
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Workspace: which panels are open and where (WSCURRENT)");
         }
 
         // Level switcher: pick the level to work on (highest first, like a section).
-        {
+        if (shown("level")) {
             const Level* cur = doc.level(doc.header().currentLevel);
             const float levelW = ImGui::CalcTextSize("Level 00 (mmm)").x + 40.0f;
             place(textW("  Level:") + sty.ItemSpacing.x + levelW);
@@ -1692,7 +1749,7 @@ void Gui::statusBar() {
         }
 
         // Annotation scale for new objects, and whether new objects are annotative.
-        {
+        if (shown("annoscale")) {
             const double cur = currentAnnotationScale(doc.header());
             char label[48];
             std::snprintf(label, sizeof label, "1:%g", cur);
@@ -1728,6 +1785,88 @@ void Gui::statusBar() {
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("New text, dimensions, tables and symbols follow the scale");
         }
+        // Annotation visibility and automatic scale (ANNOALLVISIBLE, ANNOAUTOSCALE).
+        const auto sysvarButton = [&](const char* id, const char* label, bool on,
+                                      const char* sysvar, const char* tip) {
+            if (!shown(id))
+                return;
+            place(textW(label) + sty.FramePadding.x * 2);
+            if (on)
+                ImGui::PushStyleColor(ImGuiCol_Button,
+                                      ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
+            if (ImGui::SmallButton(label) && !core_.runner().active()) {
+                core_.submitText(sysvar);
+                core_.submitText(on ? "0" : "1");
+            }
+            if (on)
+                ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", tip);
+        };
+        sysvarButton("annovis", "VIS", annoAllVisible(doc.header()), "ANNOALLVISIBLE",
+                     "Show annotative objects of every scale (on) or only those of the current "
+                     "annotation scale (off)");
+        sysvarButton("annoauto", "AUTO", annoAutoScale(doc.header()), "ANNOAUTOSCALE",
+                     "Changing the annotation scale adds it to the annotative objects");
+
+        // Object isolation: lit while objects are hidden or isolated; the menu isolates, hides or
+        // ends it.
+        if (shown("isolate")) {
+            const auto it = doc.header().custom.find("isolate.hidden");
+            const bool isolating = it != doc.header().custom.end() && !it->second.empty();
+            place(textW("ISO") + sty.FramePadding.x * 2);
+            if (isolating)
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.75f, 0.55f, 0.1f, 1.0f));
+            if (ImGui::SmallButton("ISO"))
+                ImGui::OpenPopup("##isolate");
+            if (isolating)
+                ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip(isolating ? "Some objects are hidden. Click to show them again."
+                                            : "Isolate or hide objects");
+            if (ImGui::BeginPopup("##isolate")) {
+                const bool idle = !core_.runner().active();
+                if (ImGui::MenuItem("Isolate Objects", nullptr, false, idle))
+                    core_.submitText("ISOLATEOBJECTS");
+                if (ImGui::MenuItem("Hide Objects", nullptr, false, idle))
+                    core_.submitText("HIDEOBJECTS");
+                if (ImGui::MenuItem("End Object Isolation", nullptr, false, idle && isolating))
+                    core_.submitText("UNISOLATEOBJECTS");
+                ImGui::EndPopup();
+            }
+        }
+
+        // Customization: which items the bar shows.
+        {
+            place(textW("...") + sty.FramePadding.x * 2);
+            if (ImGui::SmallButton("...##statuscustom"))
+                ImGui::OpenPopup("##statuscustom");
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Choose what the status bar shows");
+            if (ImGui::BeginPopup("##statuscustom")) {
+                const auto item = [&](const std::string& id, const std::string& label) {
+                    bool on = shown(id);
+                    if (ImGui::MenuItem(label.c_str(), nullptr, &on))
+                        core_.settings().setString(ui::kStatusHiddenSetting,
+                                                   ui::setStatusItemShown(hidden, id, on));
+                };
+                item("coords", "Coordinates");
+                for (const auto& t : registry_.statusToggles())
+                    item(t.id, t.label);
+                item("layer", "Current layer");
+                item("workspace", "Workspace");
+                item("level", "Level");
+                item("annoscale", "Annotation scale");
+                item("annovis", "Annotation visibility (VIS)");
+                item("annoauto", "Add scales automatically (AUTO)");
+                item("isolate", "Isolate objects (ISO)");
+                item("counts", "Object counts");
+                ImGui::Separator();
+                if (ImGui::MenuItem("Show all"))
+                    core_.settings().setString(ui::kStatusHiddenSetting, "");
+                ImGui::EndPopup();
+            }
+        }
 
         // Counts on the right; on a narrow window the fps and then the object count go first,
         // so they never overlap the toggles.
@@ -1745,7 +1884,7 @@ void Gui::statusBar() {
         if (ImGui::CalcTextSize(right.c_str()).x > free)
             right = std::to_string(core_.selection().size()) + " sel";
         const float w = ImGui::CalcTextSize(right.c_str()).x;
-        if (w <= free) {
+        if (w <= free && shown("counts")) {
             ImGui::SameLine(ImGui::GetWindowWidth() - w - ImGui::GetStyle().WindowPadding.x);
             ImGui::AlignTextToFramePadding();
             ImGui::TextUnformatted(right.c_str());
@@ -3550,6 +3689,8 @@ ViewportRect Gui::frame() {
             switchWorkspace(what.substr(15));
         else if (what.rfind("workspace:save:", 0) == 0)
             saveWorkspace(what.substr(15));
+        else if (what == "cleanscreen:on" || what == "cleanscreen:off")
+            cleanScreen_ = what == "cleanscreen:on";
         else if (what.rfind("keys:", 0) == 0) {
             const bool import = what.rfind("keys:import:", 0) == 0;
             const std::string path = what.substr(12);
@@ -3573,6 +3714,7 @@ ViewportRect Gui::frame() {
         docTabs();
         readOnlyBanner();
         blockEditBar();
+        contextualBar();
         xrefNotice();  // the list window the bar opens
         statusBar();
     }

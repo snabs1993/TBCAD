@@ -3,6 +3,7 @@
 
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "../src/hatch_params.h"
@@ -211,6 +212,48 @@ void drawSection(ui::PanelContext& pc, EntityId id) {
     ImGui::TextDisabled("%zu loop(s)", h->loops.size());
 }
 
+// ---- Contextual tab: Hatch Editor --------------------------------------------------------------
+
+void drawContextTab(ui::PanelContext& pc) {
+    if (!pc.doc || !pc.runCommand || !pc.selection || pc.selection->empty())
+        return;
+    const Entity* e = pc.doc->find(pc.selection->front());
+    const HatchData* h = e ? entityAs<HatchData>(*e) : nullptr;
+    if (!h)
+        return;
+    // The values shown are the first hatch's; an edit goes to every selected hatch.
+    ImGui::SetNextItemWidth(130);
+    if (ImGui::BeginCombo("##ctxpattern", h->solid ? "SOLID" : h->pattern.c_str(),
+                          ImGuiComboFlags_HeightLarge)) {
+        for (const std::string& name : PatternRegistry::names())
+            if (ImGui::Selectable(name.c_str(), name == h->pattern))
+                pc.runCommand("HATCHEDIT P " + name + " D");
+        ImGui::EndCombo();
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Pattern");
+    constexpr ImGuiInputTextFlags kEnter = ImGuiInputTextFlags_AutoSelectAll;
+    ImGui::SameLine();
+    double scale = h->patternScale;
+    ImGui::SetNextItemWidth(70);
+    ImGui::InputDouble("Scale##ctx", &scale, 0, 0, "%.4g", kEnter);
+    if (ImGui::IsItemDeactivatedAfterEdit() && scale > 0 && scale != h->patternScale)
+        pc.runCommand("HATCHEDIT S " + number(scale) + " D");
+    ImGui::SameLine();
+    double angle = h->patternAngle * 180.0 / kPi;
+    ImGui::SetNextItemWidth(60);
+    ImGui::InputDouble("Angle##ctx", &angle, 0, 0, "%.4g", kEnter);
+    if (ImGui::IsItemDeactivatedAfterEdit())
+        pc.runCommand("HATCHEDIT A " + number(angle) + " D");
+    for (const auto& [label, command] :
+         {std::pair{"Edit...", "HATCHEDIT"}, std::pair{"Send to back", "HATCHTOBACK"},
+          std::pair{"Explode", "EXPLODE"}}) {
+        ImGui::SameLine();
+        if (ImGui::SmallButton(label))
+            pc.runCommand(command);
+    }
+}
+
 }  // namespace
 
 void registerUi(ui::UiRegistry& ui) {
@@ -219,6 +262,7 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Modify/Edit Hatch", "HATCHEDIT", "modify.hatchedit");
     ui.addPanel("hatch", "Hatch", drawPanel, false);
     ui.addPropertySection(EntityKind::Hatch, drawSection);
+    ui.addContextualTab("hatch", "Hatch Editor", {EntityKind::Hatch}, drawContextTab);
 }
 
 }  // namespace tbcad::hatchcmd

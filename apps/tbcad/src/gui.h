@@ -101,6 +101,7 @@ private:
     void toolStrip();
     void readOnlyBanner();
     void blockEditBar();
+    void contextualBar();
     void xrefNotice();
     bool xrefListOpen_ = false;
     int statusRows_ = 1;               // rows the status bar needed last frame

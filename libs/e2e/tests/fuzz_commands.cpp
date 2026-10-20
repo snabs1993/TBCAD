@@ -134,6 +134,13 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     World& w = world();
     if (w.names.empty())
         return 0;
+    // Files a command wrote for an earlier input (a LAYTRANS mapping, a CSV) must not change
+    // what this one does.
+    {
+        std::error_code ec;
+        for (const auto& f : std::filesystem::directory_iterator(".", ec))
+            std::filesystem::remove_all(f.path(), ec);
+    }
     Reader in{data, size};
     io::IoReport report;
     auto read = io::readTbcad(std::span<const std::uint8_t>(w.sample), report);
@@ -144,7 +151,10 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     doc->forEachEntity([&](const Entity& e) { ids.push_back(e.common.id); });
     std::sort(ids.begin(), ids.end());
 
-    cmd::ScriptHost host(*doc, w.registry);
+    // A fresh set of commands: a command remembers its last answers (a distance, a style).
+    cmd::Registry registry;
+    registerAllCommands(registry);
+    cmd::ScriptHost host(*doc, registry);
     const int commands = 1 + in.byte() % 4;
     for (int c = 0; c < commands && in.n > 0; ++c) {
         const std::string& name = w.names[in.word() % w.names.size()];
@@ -181,7 +191,19 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     }
     while (host.undo()) {
     }
-    if (std::getenv("TBCAD_FUZZ_UNDO_CHECK") && canonicalDump(*doc) != w.sampleDump)
-        std::abort();
+    // With TBCAD_FUZZ_UNDO_CHECK, undoing everything must give back the sample exactly.
+    if (std::getenv("TBCAD_FUZZ_UNDO_CHECK")) {
+        if (const std::string now = canonicalDump(*doc); now != w.sampleDump) {
+            if (std::getenv("TBCAD_FUZZ_ECHO")) {
+                std::FILE* f = std::fopen("undo_expected.txt", "wb");
+                std::fwrite(w.sampleDump.data(), 1, w.sampleDump.size(), f);
+                std::fclose(f);
+                f = std::fopen("undo_got.txt", "wb");
+                std::fwrite(now.data(), 1, now.size(), f);
+                std::fclose(f);
+            }
+            std::abort();
+        }
+    }
     return 0;
 }

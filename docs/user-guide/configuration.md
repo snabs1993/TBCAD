@@ -60,6 +60,13 @@ and dimension style panels) and **Minimal** (only the drawing and the command li
 the box at the right of the status bar or from View > Workspaces. Arrange the window the way you like,
 then View > Workspaces > Save Current Layout As to keep it under your own name. The `WORKSPACE`
 command (alias `WS`) does the same from the keyboard: Load, Save, Rename, Delete or List.
+`WSCURRENT` switches to a workspace by name and `WSSAVE` saves the current layout (under the
+current workspace's name unless you type another; the built-in ones cannot be overwritten).
+
+The `...` button at the right end of the status bar lists everything the bar can show; untick
+what you do not need. While only hatches, text, dimensions or blocks are selected, a strip of
+tools for them appears above the drawing (the contextual tab); set `ui.contextTabs` to `0` to
+turn it off. Ctrl+0 (or F11) is Clean Screen: only the drawing and the command line.
 
 Your workspaces are `.json` files in the `workspaces` folder next to `settings.json`. The
 workspace you used last is restored on start.
