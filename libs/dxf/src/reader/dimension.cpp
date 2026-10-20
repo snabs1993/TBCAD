@@ -2,6 +2,7 @@
 // that holds the drawn dimension (lines, arrowheads, text) is kept as ProxyData graphics plus
 // loose text entities so the dimension displays before the dimension generator exists.
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -122,8 +123,13 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
             continue;
         }
         if (g.code == 1005 && var >= 0) {
-            if (var == 342 || var == 343 || var == 344)
-                handles[var] = std::string(g.str());
+            // Only handles of a known block record (a file converted from DWG has no table).
+            std::string h(g.str());
+            for (char& c : h)
+                c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            if ((var == 342 || var == 343 || var == 344) &&
+                (h == "0" || blockNameByHandle_.count(h)))
+                handles[var] = h;
             var = -1;
             continue;
         }
