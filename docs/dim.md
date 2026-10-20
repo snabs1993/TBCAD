@@ -193,6 +193,7 @@ moves, scales and saves with it.
 - **DIMBREAK** (DBR) opens gaps in the dimension and extension lines where other objects cross them: pick the dimensions, then **Auto** (pick the objects to break with, or Enter / **All** for every object of the drawing) **Manual** (one dimension: pick two points on a dimension or extension line; the gap between them is added to the breaks it already has) or **Remove**. An automatic gap is 1.5 arrow sizes wide. Gaps are stored with the dimension (a new optional part of the dimension record, file format minor 9; older builds open the file and show the dimension without gaps). They sit at fixed points of the sheet: after the dimension is moved or edited run DIMBREAK again. DXF export and EXPLODE keep the gaps.
 - **DIMSPACE** (DSP) evens out the gaps between parallel linear or aligned dimensions: pick the base dimension, select the
   others, then type the spacing or **Auto** (two text heights). A spacing of 0 lines them up with the base.
+  With an angular base dimension it spaces the angular dimensions about the same vertex by their arc radius.
 
 **MLEADEREDIT** (MLE) adds leader lines to a multileader (**Add**: pick arrowhead points, Enter ends) or removes the
 one whose arrowhead is nearest to a pick (**Remove**); one leader line always stays. **AIMLEADEREDITADD** and **AIMLEADEREDITREMOVE** are the same with the choice already made.

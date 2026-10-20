@@ -17,6 +17,17 @@ bool isLengthDim(const Entity& e) {
     return d && (d->kind == DimKind::Linear || d->kind == DimKind::Aligned);
 }
 
+bool isAngularDim(const Entity& e) {
+    const auto* d = entityAs<DimensionData>(e);
+    return d && (d->kind == DimKind::Angular2Line || d->kind == DimKind::Angular3Point);
+}
+
+// The point that sets an angular dimension's arc radius: the arc point of a two-line one (also
+// its text point), the fourth point of a three-point one.
+Vec2& angularArcPoint(DimensionData& d) {
+    return d.kind == DimKind::Angular2Line ? d.textPos : d.defPts[3];
+}
+
 bool isAnyDim(const Entity& e) {
     return kind(e) == EntityKind::Dimension;
 }
@@ -239,7 +250,7 @@ public:
     cmd::Task run(cmd::CommandContext& ctx) override {
         using cmd::Status;
         cmd::EntityOptions eo;
-        eo.filter = isLengthDim;
+        eo.filter = [](const Entity& e) { return isLengthDim(e) || isAngularDim(e); };
         auto base = co_await ctx.getEntity("Select base dimension", eo);
         if (!base.ok())
             co_return;
@@ -248,12 +259,20 @@ public:
         if (!b)
             co_return;
         const DimensionData baseDim = *b;
-        const Vec2 n = normalOf(baseDim);
-        const double baseOff = lineOffset(baseDim, n);
+        // Angular dimensions about the same vertex are spaced by their arc radius, as in AutoCAD.
+        const bool angular = isAngularDim(*be);
+        const dim::AngularGeometry baseArc =
+            angular ? dim::angularGeometry(baseDim) : dim::AngularGeometry{};
+        if (angular && !baseArc.ok)
+            co_return;
+        const Vec2 n = angular ? Vec2{} : normalOf(baseDim);
+        const double baseOff = angular ? baseArc.radius : lineOffset(baseDim, n);
 
         cmd::SelectionOptions so;
         so.allowPreselection = false;
-        so.filter = isLengthDim;
+        so.filter = [angular](const Entity& e) {
+            return angular ? isAngularDim(e) : isLengthDim(e);
+        };
         auto sel = co_await ctx.getSelection("Select dimensions to space", so);
         if (!sel.ok())
             co_return;
@@ -268,7 +287,17 @@ public:
                 continue;
             const Entity* e = ctx.doc().find(id);
             const auto* d = e ? entityAs<DimensionData>(*e) : nullptr;
-            if (!d || !isLengthDim(*e))
+            if (!d)
+                continue;
+            if (angular) {
+                const dim::AngularGeometry g = dim::angularGeometry(*d);
+                if (!isAngularDim(*e) || !g.ok ||
+                    distance(g.vertex, baseArc.vertex) > tol::kLinear * (1 + baseArc.radius))
+                    continue;  // not about the same vertex
+                items.push_back({id, g.radius});
+                continue;
+            }
+            if (!isLengthDim(*e))
                 continue;
             const Vec2 dn = normalOf(*d);
             if (std::abs(cross(dn, n)) > 1e-6)
@@ -277,7 +306,9 @@ public:
             items.push_back({id, sign * lineOffset(*d, dn)});
         }
         if (items.empty()) {
-            ctx.message("No dimensions parallel to the base dimension were selected.");
+            ctx.message(
+                angular ? "No angular dimensions about the base dimension's vertex were selected."
+                        : "No dimensions parallel to the base dimension were selected.");
             co_return;
         }
 
@@ -310,6 +341,18 @@ public:
                     auto* d = entityAs<DimensionData>(ent);
                     if (!d)
                         return;
+                    if (angular) {
+                        // The arc point moves along its radius to the new arc.
+                        if (!(target > tol::kLinear))
+                            return;
+                        Vec2& arc = angularArcPoint(*d);
+                        const Vec2 w = arc - baseArc.vertex;
+                        if (tol::isZeroLength(w))
+                            return;
+                        arc = baseArc.vertex + normalized(w) * target;
+                        dim::refresh(ctx.doc(), *d);
+                        return;
+                    }
                     const Vec2 dn = normalOf(*d);
                     const double sign = dot(dn, n) >= 0 ? 1.0 : -1.0;
                     const Vec2 move = dn * (sign * delta);

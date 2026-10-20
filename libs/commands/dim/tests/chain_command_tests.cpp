@@ -164,6 +164,35 @@ TEST_CASE("DIMSPACE evens out the gaps between parallel dimensions") {
     CHECK(entityAs<DimensionData>(*f.doc.find(ids[1]))->defPts[2].y == doctest::Approx(-47));
 }
 
+// DIMSPACE on angular dimensions spaces the arcs about their shared vertex, as in AutoCAD.
+TEST_CASE("DIMSPACE spaces angular dimensions about their vertex") {
+    Chain f;
+    const double c = std::sqrt(0.5);
+    auto at = [&](double r) { return std::to_string(r * c) + "," + std::to_string(r * c); };
+    REQUIRE(f.host->run("DIMANGULAR", {"", "0,0", "50,0", "0,50", at(10)}).finished);
+    REQUIRE(f.host->run("DIMANGULAR", {"", "0,0", "50,0", "0,50", at(13)}).finished);
+    REQUIRE(f.host->run("DIMANGULAR", {"", "0,0", "50,0", "0,50", at(30)}).finished);
+    REQUIRE(f.host->run("DIMLINEAR", {"0,0", "100,0", "50,-30"}).finished);
+    std::vector<EntityId> ids;
+    f.doc.forEachEntity([&](const Entity& e) { ids.push_back(e.common.id); });
+    std::sort(ids.begin(), ids.end(), [](EntityId a, EntityId b) { return a.value < b.value; });
+    REQUIRE(ids.size() == 4);
+    auto radius = [&](EntityId id) {
+        return dim::angularGeometry(*entityAs<DimensionData>(*f.doc.find(id))).radius;
+    };
+    REQUIRE(radius(ids[0]) == doctest::Approx(10));
+    auto r = f.host->run(
+        "DIMSPACE", {ScriptItem::pick(ids[0], {7, 7}), ScriptItem::select({ids[1], ids[2], ids[3]}),
+                     ScriptItem::enter(), "5"});
+    CHECK(r.finished);
+    CHECK(radius(ids[0]) == doctest::Approx(10));
+    CHECK(radius(ids[1]) == doctest::Approx(15));
+    CHECK(radius(ids[2]) == doctest::Approx(20));
+    CHECK(entityAs<DimensionData>(*f.doc.find(ids[3]))->defPts[2].y == doctest::Approx(-30));
+    CHECK(f.host->undo());
+    CHECK(radius(ids[1]) == doctest::Approx(13));
+}
+
 TEST_CASE("QDIM dimensions every key point in one chain") {
     Chain f;
     auto addLine = [&](Vec2 a, Vec2 b) {
