@@ -399,6 +399,10 @@ Result<Entity> transformed(const Entity& e, const Transform2& t) {
             for (Vec2& p : o.vertices)
                 p = t.apply(p);
             o.textPos = t.apply(o.textPos);
+            for (DimBreak& b : o.breaks) {
+                b.a = t.apply(b.a);
+                b.b = t.apply(b.b);
+            }
             return out;
         }
         case EntityKind::MLeader: {
@@ -411,6 +415,10 @@ Result<Entity> transformed(const Entity& e, const Transform2& t) {
                     p = t.apply(p);
             o.landing = t.apply(o.landing);
             o.contentPos = t.apply(o.contentPos);
+            for (DimBreak& b : o.breaks) {
+                b.a = t.apply(b.a);
+                b.b = t.apply(b.b);
+            }
             if (o.content == MLeaderData::Content::Block) {
                 o.blockScale *= s;
                 o.blockRotation = rotationOf(t, o.blockRotation);

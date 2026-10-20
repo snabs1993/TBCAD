@@ -992,46 +992,128 @@ std::vector<BreakHit> breakHits(const Entity& curve, EntityId self, const BreakS
     return spans;
 }
 
-// The automatic DIMBREAK gaps of dimension `self` where the shapes cross its lines and arcs, each
-// 1.5 arrow sizes wide; `hitBy` gets the objects that made one.
-std::vector<DimBreak> autoGaps(const Document& doc, EntityId self, const DimensionData& d0,
-                               const BreakSet& shapes, std::vector<EntityId>& hitBy) {
+// What DIMBREAK breaks: dimensions, leaders and multileaders.
+bool isBreakable(const Entity& e) {
+    const EntityKind k = kind(e);
+    return k == EntityKind::Dimension || k == EntityKind::Leader || k == EntityKind::MLeader;
+}
+
+// The DIMBREAK fields of a dimension, leader or multileader.
+struct BreakRefs {
+    std::vector<DimBreak>* breaks = nullptr;
+    std::vector<EntityId>* with = nullptr;
+    std::uint32_t* autoN = nullptr;
+};
+BreakRefs breakRefs(Entity& e) {
+    if (auto* d = entityAs<DimensionData>(e))
+        return {&d->breaks, &d->breakWith, &d->autoBreaks};
+    if (auto* d = entityAs<LeaderData>(e))
+        return {&d->breaks, &d->breakWith, &d->autoBreaks};
+    if (auto* d = entityAs<MLeaderData>(e))
+        return {&d->breaks, &d->breakWith, &d->autoBreaks};
+    return {};
+}
+
+// The layout without any gaps (nor jogs, for a dimension).
+dim::Layout bareLayout(const Document& doc, const Entity& e) {
+    if (const auto* d = entityAs<DimensionData>(e)) {
+        DimensionData bare = *d;
+        bare.breaks.clear();
+        bare.jogs.clear();
+        return dim::layoutDimension(doc, bare);
+    }
+    if (const auto* d = entityAs<LeaderData>(e)) {
+        LeaderData bare = *d;
+        bare.breaks.clear();
+        return dim::layoutLeader(doc, bare);
+    }
+    if (const auto* d = entityAs<MLeaderData>(e)) {
+        MLeaderData bare = *d;
+        bare.breaks.clear();
+        return dim::layoutMLeader(doc, bare);
+    }
+    return {};
+}
+
+double arrowOf(const Document& doc, DimStyleId style) {
+    const DimStyle& st = dim::styleOf(doc, style);
+    return st.arrowSize * (st.overallScale > 0 ? st.overallScale : 1);
+}
+
+// The lines DIMBREAK may cut: the dimension and extension lines of a dimension (not its arrows),
+// the leader lines with their hook or dogleg of a leader; and the arc of an angular or arc length
+// dimension. The gap is 1.5 arrow sizes wide.
+struct BreakPaths {
+    std::vector<std::vector<Vec2>> lines;
+    std::vector<dim::Layout::Arc> arcs;
+    double gap = 0;
+};
+BreakPaths breakPaths(const Document& doc, const Entity& e) {
+    BreakPaths p;
+    if (const auto* d = entityAs<DimensionData>(e)) {
+        const dim::Layout L = bareLayout(doc, e);
+        for (const dim::Layout::Line& line : L.lines)
+            if (line.pts.size() == 2 && line.role != dim::Role::Text)
+                p.lines.push_back(line.pts);
+        for (const dim::Layout::Arc& arc : L.arcs)
+            if (arc.role != dim::Role::Text && arc.radius > 1e-9)
+                p.arcs.push_back(arc);
+        p.gap = 1.5 * arrowOf(doc, d->style);
+    } else if (const auto* d = entityAs<LeaderData>(e)) {
+        const double a = arrowOf(doc, d->style);
+        if (d->vertices.size() >= 2) {
+            p.lines.push_back(d->vertices);
+            const Vec2 last = d->vertices.back();
+            if (!d->utf8.empty())
+                p.lines.push_back({last, last + Vec2{d->textPos.x >= last.x ? a : -a, 0}});
+        }
+        p.gap = 1.5 * a;
+    } else if (const auto* d = entityAs<MLeaderData>(e)) {
+        for (const auto& pts : d->lines)
+            if (pts.size() >= 2)
+                p.lines.push_back(pts);
+        if (d->dogleg)
+            p.lines.push_back({d->landing, d->contentPos});
+        p.gap = 1.5 * arrowOf(doc, d->style);
+    }
+    return p;
+}
+
+// The automatic DIMBREAK gaps of `e` where the shapes cross its lines and arcs; `hitBy` gets the
+// objects that made one.
+std::vector<DimBreak> autoGaps(const Document& doc, const Entity& e, const BreakSet& shapes,
+                               std::vector<EntityId>& hitBy) {
     std::vector<DimBreak> found;
     if (shapes.shapes.empty())
         return found;
-    DimensionData bare = d0;
-    bare.breaks.clear();
-    bare.jogs.clear();
-    const dim::Layout L = dim::layoutDimension(doc, bare);
-    const DimStyle& st = dim::styleOf(doc, d0.style);
-    const double gap = 1.5 * st.arrowSize * (st.overallScale > 0 ? st.overallScale : 1);
+    const EntityId self = e.common.id;
+    const BreakPaths P = breakPaths(doc, e);
+    const double gap = P.gap;
     auto add = [&](const DimBreak& b, EntityId source) {
         if (std::find(found.begin(), found.end(), b) == found.end())
             found.push_back(b);
         if (std::find(hitBy.begin(), hitBy.end(), source) == hitBy.end())
             hitBy.push_back(source);
     };
-    for (const dim::Layout::Line& line : L.lines) {
-        if (line.pts.size() != 2 || line.role == dim::Role::Text)
-            continue;
-        const Vec2 a = line.pts[0], dir = line.pts[1] - a;
-        const double len = std::hypot(dir.x, dir.y);
-        if (!(len > 1e-9))
-            continue;
-        Entity seg;
-        seg.data = LineData{line.pts[0], line.pts[1]};
-        for (const BreakHit& h : breakHits(seg, self, shapes)) {
-            if (h.t1 < 1e-6 || h.t0 > 1 - 1e-6)
+    for (const std::vector<Vec2>& pts : P.lines) {
+        for (std::size_t i = 0; i + 1 < pts.size(); ++i) {
+            const Vec2 a = pts[i], dir = pts[i + 1] - a;
+            const double len = std::hypot(dir.x, dir.y);
+            if (!(len > 1e-9))
                 continue;
-            const double half = gap / 2 / len;
-            add({a + dir * std::max(0.0, h.t0 - half), a + dir * std::min(1.0, h.t1 + half)},
-                h.source);
+            Entity seg;
+            seg.data = LineData{a, pts[i + 1]};
+            for (const BreakHit& h : breakHits(seg, self, shapes)) {
+                if (h.t1 < 1e-6 || h.t0 > 1 - 1e-6)
+                    continue;
+                const double half = gap / 2 / len;
+                add({a + dir * std::max(0.0, h.t0 - half), a + dir * std::min(1.0, h.t1 + half)},
+                    h.source);
+            }
         }
     }
     // The arcs of angular and arc length dimensions break the same way.
-    for (const dim::Layout::Arc& arc : L.arcs) {
-        if (arc.role == dim::Role::Text || !(arc.radius > 1e-9))
-            continue;
+    for (const dim::Layout::Arc& arc : P.arcs) {
         double sweep = normalizeAngle(arc.endAngle - arc.startAngle);
         if (sweep < 1e-12)
             sweep = kTwoPi;
@@ -1057,22 +1139,32 @@ std::vector<DimBreak> autoGaps(const Document& doc, EntityId self, const Dimensi
 }
 
 // The gaps placed by hand (DIMBREAK Manual): those after the automatic ones.
-std::vector<DimBreak> manualGaps(const DimensionData& d) {
-    const std::size_t from = std::min<std::size_t>(d.autoBreaks, d.breaks.size());
-    return {d.breaks.begin() + static_cast<std::ptrdiff_t>(from), d.breaks.end()};
+std::vector<DimBreak> manualGaps(const std::vector<DimBreak>& breaks, std::uint32_t autoN) {
+    const std::size_t from = std::min<std::size_t>(autoN, breaks.size());
+    return {breaks.begin() + static_cast<std::ptrdiff_t>(from), breaks.end()};
+}
+
+// Sets the automatic gaps, keeping those placed by hand after them.
+void setAutoGaps(const BreakRefs& r, std::vector<DimBreak> gaps, std::vector<EntityId> with) {
+    const std::vector<DimBreak> manual = manualGaps(*r.breaks, *r.autoN);
+    *r.autoN = static_cast<std::uint32_t>(gaps.size());
+    gaps.insert(gaps.end(), manual.begin(), manual.end());
+    *r.breaks = std::move(gaps);
+    *r.with = std::move(with);
 }
 
 }  // namespace
 
-// Works the automatic DIMBREAK gaps of a dimension out again from the objects that break it (after
-// it or one of them changed); an object that is gone no longer breaks it.
+// Works the automatic DIMBREAK gaps of a dimension, leader or multileader out again from the
+// objects that break it (after it or one of them changed); an object that is gone no longer
+// breaks it.
 void refreshAutoBreaks(const Document& doc, Entity& e) {
-    auto* d = entityAs<DimensionData>(e);
-    if (!d || d->breakWith.empty())
+    const BreakRefs r = breakRefs(e);
+    if (!r.with || r.with->empty())
         return;
     BreakSet shapes;
     std::vector<EntityId> alive;
-    for (EntityId id : d->breakWith) {
+    for (EntityId id : *r.with) {
         if (const Entity* c = doc.find(id)) {
             alive.push_back(id);
             breakShapes(doc, *c, shapes.shapes);
@@ -1080,18 +1172,15 @@ void refreshAutoBreaks(const Document& doc, Entity& e) {
     }
     shapes.index();
     std::vector<EntityId> hitBy;
-    std::vector<DimBreak> gaps = autoGaps(doc, e.common.id, *d, shapes, hitBy);
-    const std::vector<DimBreak> manual = manualGaps(*d);
-    d->autoBreaks = static_cast<std::uint32_t>(gaps.size());
-    gaps.insert(gaps.end(), manual.begin(), manual.end());
-    d->breaks = std::move(gaps);
-    d->breakWith = std::move(alive);
+    std::vector<DimBreak> gaps = autoGaps(doc, e, shapes, hitBy);
+    setAutoGaps(r, std::move(gaps), std::move(alive));
 }
 
 namespace {
 
 // DIMBREAK [DBR]: opens gaps in the dimension and extension lines where other objects cross them,
-// or closes the gaps again. The gaps are stored with the dimension (DimensionData::breaks).
+// or closes the gaps again; leaders and multileaders break the same way. The gaps are stored with
+// the object (DimensionData::breaks, LeaderData::breaks, MLeaderData::breaks).
 class BreakCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "DIMBREAK"; }
@@ -1103,7 +1192,7 @@ public:
     cmd::Task run(cmd::CommandContext& ctx) override {
         using cmd::Status;
         cmd::SelectionOptions so;
-        so.filter = isAnyDim;
+        so.filter = isBreakable;
         auto dims = co_await ctx.getSelection("Select dimensions to add or remove breaks", so);
         if (!dims.ok() || dims.ids.empty())
             co_return;
@@ -1130,12 +1219,9 @@ public:
             if (!p2.ok())
                 co_return;
             const Entity* e = ctx.doc().find(id);
-            const auto* d0 = e ? entityAs<DimensionData>(*e) : nullptr;
-            if (!d0)
+            if (!e || !isBreakable(*e))
                 co_return;
-            DimensionData bare = *d0;
-            bare.breaks.clear();
-            const dim::Layout L = dim::layoutDimension(ctx.doc(), bare);
+            const dim::Layout L = bareLayout(ctx.doc(), *e);
             // the straight line of the dimension nearest the first point
             double best = 1e300;
             Vec2 la{}, lb{};
@@ -1173,8 +1259,8 @@ public:
             }
             ctx.setUndoLabel("DIMBREAK");
             auto r = ctx.tx().modify(id, [&](Entity& ent) {
-                if (auto* d = entityAs<DimensionData>(ent))
-                    d->breaks.push_back(b);
+                if (const BreakRefs br = breakRefs(ent); br.breaks)
+                    br.breaks->push_back(b);
             });
             if (!r)
                 ctx.message(r.error().message);
@@ -1200,10 +1286,9 @@ public:
             BBox2 near;
             for (EntityId id : dims.ids) {
                 const Entity* e = ctx.doc().find(id);
-                const auto* d = e ? entityAs<DimensionData>(*e) : nullptr;
-                if (!d)
+                if (!e || !isBreakable(*e))
                     continue;
-                const dim::Layout L = dim::layoutDimension(ctx.doc(), *d);
+                const dim::Layout L = bareLayout(ctx.doc(), *e);
                 for (const dim::Layout::Line& line : L.lines)
                     for (Vec2 p : line.pts)
                         near.expand(p);
@@ -1242,29 +1327,24 @@ public:
         std::size_t changed = 0, gaps = 0;
         for (EntityId id : dims.ids) {
             const Entity* e = ctx.doc().find(id);
-            const auto* d0 = e ? entityAs<DimensionData>(*e) : nullptr;
-            if (!d0)
+            if (!e || !isBreakable(*e))
                 continue;
             std::vector<DimBreak> found;
             std::vector<EntityId> hitBy;
             if (mode.keyword == "Auto")
-                found = autoGaps(ctx.doc(), id, *d0, shapes, hitBy);
+                found = autoGaps(ctx.doc(), *e, shapes, hitBy);
             auto r = ctx.tx().modify(id, [&](Entity& ent) {
-                auto* d = entityAs<DimensionData>(ent);
-                if (!d)
+                const BreakRefs br = breakRefs(ent);
+                if (!br.breaks)
                     return;
                 if (mode.keyword == "Remove") {
-                    d->breaks.clear();
-                    d->breakWith.clear();
-                    d->autoBreaks = 0;
+                    br.breaks->clear();
+                    br.with->clear();
+                    *br.autoN = 0;
                     return;
                 }
                 // The new automatic gaps replace the old ones; gaps placed by hand stay.
-                const std::vector<DimBreak> manual = manualGaps(*d);
-                d->breaks = found;
-                d->breaks.insert(d->breaks.end(), manual.begin(), manual.end());
-                d->autoBreaks = static_cast<std::uint32_t>(found.size());
-                d->breakWith = hitBy;
+                setAutoGaps(br, found, hitBy);
             });
             if (!r) {
                 ctx.message(r.error().message);
@@ -1274,10 +1354,10 @@ public:
             gaps += found.size();
         }
         if (mode.keyword == "Remove")
-            ctx.message(std::to_string(changed) + " dimension(s): breaks removed.");
+            ctx.message(std::to_string(changed) + " object(s): breaks removed.");
         else
             ctx.message(std::to_string(gaps) + " break(s) in " + std::to_string(changed) +
-                        " dimension(s).");
+                        " object(s).");
     }
 };
 

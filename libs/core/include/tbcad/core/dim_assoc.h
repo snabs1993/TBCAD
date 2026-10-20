@@ -28,8 +28,9 @@ using DimRefreshFn = void (*)(const Document&, Entity&);
 void setDimRefresh(DimRefreshFn fn);
 DimRefreshFn dimRefresh();
 
-// Called after a dimension with automatic DIMBREAK gaps (DimensionData::breakWith), or one of the
-// objects that break it, changed: works those gaps out again. The dimension commands install it.
+// Called after a dimension, leader or multileader with automatic DIMBREAK gaps (breakWith), or one
+// of the objects that break it, changed: works those gaps out again. The dimension commands
+// install it.
 void setDimBreakRefresh(DimRefreshFn fn);
 DimRefreshFn dimBreakRefresh();
 

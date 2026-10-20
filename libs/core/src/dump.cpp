@@ -290,9 +290,20 @@ struct DataDumper {
         o.quoted(d.utf8);
         for (const auto& p : d.vertices)
             o << " " << p;
+        breaksOf(d);
     }
     void operator()(const RayData& d) {
         o << (d.infinite ? "XLINE" : "RAY") << " at" << d.origin << " dir" << d.dir;
+    }
+    template <class D>
+    void breaksOf(const D& d) {
+        for (const DimBreak& b : d.breaks)
+            o << " break " << b.a << ">" << b.b;
+        if (!d.breakWith.empty()) {
+            o << " auto" << d.autoBreaks << " with";
+            for (EntityId id : d.breakWith)
+                o << " " << id.value;
+        }
     }
     void operator()(const MLeaderData& d) {
         o << "MLEADER style" << d.style << " content" << static_cast<int>(d.content) << " landing"
@@ -304,6 +315,7 @@ struct DataDumper {
             for (const Vec2& p : line)
                 o << " " << p;
         }
+        breaksOf(d);
     }
     void operator()(const MlineData& d) {
         o << "MLINE ";
