@@ -35,5 +35,6 @@ std::unique_ptr<cmd::Command> makeArcTextCommand();
 void registerEditorPanel(ui::UiRegistry& ui);
 void registerStylePanel(ui::UiRegistry& ui);
 void registerAnnotationSection(ui::UiRegistry& ui);
+void registerTextContextTab(ui::UiRegistry& ui);
 
 }  // namespace tbcad::textcmd

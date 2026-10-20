@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "commands.h"
@@ -663,6 +664,59 @@ void drawBlockPanel(ui::PanelContext& ctx) {
     }
 }
 
+// The Block contextual tab: shown over the drawing while only block references are selected.
+void drawBlockContextTab(ui::PanelContext& ctx) {
+    if (!ctx.doc || !ctx.runCommand || !ctx.selection || ctx.selection->empty())
+        return;
+    // Names of the blocks selected, for the label.
+    std::string names;
+    std::size_t count = 0;
+    bool xref = false;
+    for (EntityId id : *ctx.selection) {
+        const Entity* e = ctx.doc->find(id);
+        const auto* ins = e ? entityAs<InsertData>(*e) : nullptr;
+        const BlockDef* def = ins ? ctx.doc->block(ins->block) : nullptr;
+        if (!def)
+            continue;
+        xref = xref || !def->xrefPath.empty();
+        if (names.find(def->name) == std::string::npos && count < 3) {
+            names += (names.empty() ? "" : ", ") + def->name;
+            ++count;
+        }
+    }
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextDisabled("%s", names.c_str());
+    const bool one = ctx.selection->size() == 1;
+    struct Tool {
+        const char* label;
+        const char* command;
+        bool enabled;
+    };
+    const Tool tools[] = {{"Edit block", "BEDIT", one && !xref},
+                          {"Edit in place", "REFEDIT", one},
+                          {"Attributes", "ATTEDIT", one},
+                          {"Sync attributes", "ATTSYNC", !xref},
+                          {"Replace", "BLOCKREPLACE", !xref},
+                          {"Clip", "XCLIP", true},
+                          {"Explode", "EXPLODE", !xref},
+                          {"Count", "BLOCKCOUNT", true},
+                          {"Blocks palette", "BLOCKSPALETTE", true}};
+    for (const Tool& t : tools) {
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!t.enabled);
+        if (ImGui::SmallButton(t.label)) {
+            ctx.runCommand(t.command);
+            if (std::string_view(t.command) == "BEDIT") {  // BEDIT asks for the block itself
+                ctx.runCommand("Name");
+                ctx.runCommand(names);
+            }
+        }
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", t.command);
+    }
+}
+
 // The Define Attribute dialog: collects what -ATTDEF asks on the command line, stores it in the
 // "attdef.*" settings and runs ATTDEF again, which then only needs the start point.
 struct AttDefForm {
@@ -824,6 +878,7 @@ void drawAttValuesPanel(ui::PanelContext& ctx) {
 void registerBlockPanel(ui::UiRegistry& ui) {
 #ifdef TBCAD_BLOCK_PANEL_IMGUI
     ui.addPanel("blocks", "Blocks", drawBlockPanel, false);
+    ui.addContextualTab("block", "Block", {EntityKind::Insert}, drawBlockContextTab);
     ui.addPanel("attdef", "Define Attribute", drawAttDefPanel, false);
     ui.addPanel("attvalues", "Attribute Values", drawAttValuesPanel, false);
 #else

@@ -20,7 +20,7 @@ set(_textcmd_sources
 if(TBCAD_BUILD_APP)
   include(deps/imgui)
   list(APPEND _textcmd_sources ui/text_editor_panel.cpp ui/text_style_panel.cpp ui/annotation_section.cpp
-       ui/format_bar.cpp)
+       ui/format_bar.cpp ui/text_context_tab.cpp)
 endif()
 
 tbcad_add_library(textcmd

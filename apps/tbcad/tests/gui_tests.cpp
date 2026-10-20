@@ -2339,3 +2339,92 @@ TEST_CASE(
     // Both show up in Recent.
     CHECK(block_cmds::parseRecent(h.core().setting("block.recent").value_or("")).size() == 1);
 }
+
+TEST_CASE("contextual tab: tools for a text selection, gone for a mixed one") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    for (const char* s : {"LINE", "0,10", "10,10", ""})
+        h.core().submitText(s);
+    for (const char* s : {"TEXT", "0,0", "2.5", "0", "Hello", ""})
+        h.core().submitText(s);
+    h.core().pressEscape();  // however many prompts TEXT still had
+    h.frame(3);
+    REQUIRE_FALSE(h.core().runner().active());
+    const std::vector<EntityId> all = h.core().document().modelSpace();
+    std::vector<EntityId> text;
+    for (EntityId id : all)
+        if (kind(*h.core().document().find(id)) == EntityKind::Text)
+            text.push_back(id);
+    REQUIRE(text.size() == 1);
+    h.core().setSelection(text);
+    h.frame(3);
+    CHECK(h.windowOpen("contexttab"));
+    CHECK(h.has("Spelling", "contexttab"));
+    h.core().setSelection(all);
+    h.frame(3);
+    CHECK_FALSE(h.windowOpen("contexttab"));
+    // Close clears the selection; ui.contextTabs 0 turns the strip off.
+    h.core().setSelection(text);
+    h.frame(3);
+    REQUIRE(h.click("Close", "contexttab"));
+    h.frame(3);
+    CHECK(h.core().selection().empty());
+    h.core().setSetting("ui.contextTabs", "0");
+    h.core().setSelection(text);
+    h.frame(3);
+    CHECK_FALSE(h.windowOpen("contexttab"));
+}
+
+TEST_CASE("status bar: VIS and ISO buttons, items hidden from the customization menu") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    REQUIRE(h.has("VIS", "statusbar"));
+    REQUIRE(h.has("ISO", "statusbar"));
+    const bool before = annoAllVisible(h.core().document().header());
+    REQUIRE(h.click("VIS", "statusbar"));
+    h.frame(3);
+    CHECK(annoAllVisible(h.core().document().header()) != before);
+    // Hide two items with the menu at the end of the bar.
+    REQUIRE(h.click("...", "statusbar"));
+    h.frame(2);
+    REQUIRE(h.click("Isolate objects (ISO)"));
+    h.frame(3);
+    CHECK_FALSE(h.has("ISO", "statusbar"));
+    CHECK(h.core().setting("statusbar.hidden").value_or("") == "isolate");
+    REQUIRE(h.click("...", "statusbar"));
+    h.frame(2);
+    REQUIRE(h.click("Show all"));
+    h.frame(3);
+    CHECK(h.has("ISO", "statusbar"));
+}
+
+TEST_CASE("Clean Screen from the command line and Ctrl+0, workspaces with WSSAVE and WSCURRENT") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    REQUIRE(h.windowOpen("statusbar"));
+    h.core().submitText("CLEANSCREENON");
+    h.frame(3);
+    CHECK_FALSE(h.windowOpen("statusbar"));
+    h.core().submitText("CLEANSCREENOFF");
+    h.frame(3);
+    CHECK(h.windowOpen("statusbar"));
+    h.key(ImGuiKey_0, true);
+    h.frame(3);
+    CHECK_FALSE(h.windowOpen("statusbar"));
+    h.key(ImGuiKey_0, true);
+    h.frame(3);
+    CHECK(h.windowOpen("statusbar"));
+
+    h.core().submitText("WSSAVE");
+    h.core().submitText("Mine");
+    h.frame(3);
+    CHECK(h.core().setting("workspace.current").value_or("") == "Mine");
+    h.core().submitText("WSCURRENT");
+    h.core().submitText("Drafting");
+    h.frame(3);
+    CHECK(h.core().setting("workspace.current").value_or("") == "Drafting");
+    h.core().submitText("WSSAVE");
+    h.core().submitText("Drafting");  // built in
+    h.frame(2);
+    CHECK(h.core().setting("workspace.current").value_or("") == "Drafting");
+}

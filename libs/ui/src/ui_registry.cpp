@@ -37,6 +37,42 @@ bool UiRegistry::addStatusToggle(std::string id, std::string label, std::functio
     return true;
 }
 
+bool UiRegistry::addContextualTab(std::string id, std::string title, std::vector<EntityKind> kinds,
+                                  PanelDrawFn draw) {
+    if (id.empty() || kinds.empty() || !draw)
+        return false;
+    if (std::any_of(contextTabs_.begin(), contextTabs_.end(),
+                    [&](const ContextualTab& t) { return t.id == id; }))
+        return false;
+    contextTabs_.push_back({std::move(id), std::move(title), std::move(kinds), std::move(draw)});
+    return true;
+}
+
+const ContextualTab* UiRegistry::contextualTabFor(const Document& doc,
+                                                  const std::vector<EntityId>& selection) const {
+    if (selection.empty() || selection.size() > kMaxContextualSelection || contextTabs_.empty())
+        return nullptr;
+    // The kinds present, once each.
+    std::vector<EntityKind> present;
+    for (EntityId id : selection) {
+        const Entity* e = doc.find(id);
+        if (!e)
+            continue;
+        const EntityKind k = kind(*e);
+        if (std::find(present.begin(), present.end(), k) == present.end())
+            present.push_back(k);
+    }
+    if (present.empty())
+        return nullptr;
+    for (const ContextualTab& t : contextTabs_) {
+        if (std::all_of(present.begin(), present.end(), [&](EntityKind k) {
+                return std::find(t.kinds.begin(), t.kinds.end(), k) != t.kinds.end();
+            }))
+            return &t;
+    }
+    return nullptr;
+}
+
 void UiRegistry::addOverlayDrawer(OverlayDrawFn fn) {
     if (fn)
         overlays_.push_back(std::move(fn));
