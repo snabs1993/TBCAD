@@ -5,6 +5,7 @@
 // line break). Text values are held as UTF-8.
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -168,6 +169,58 @@ inline HandlePairs unpackHandles(std::string_view text) {
         out.emplace_back(id, handle);
     }
     return out;
+}
+
+// A text with field codes ("%<date>%") is written with the values shown; its TBCAD XDATA keeps
+// the source ("field=" pieces of hex UTF-8) and "fieldof=<hash>;<check>": the hash of the text as
+// written, and of the source worked out with every date as kFieldCheckDate. The importer gives the
+// fields back only while the text is the one we wrote and the fields still work out the same in
+// the drawing it read (an object they name may have another id there).
+inline constexpr std::string_view kFieldCheckDate = "\x01";
+inline std::string fieldHash(std::string_view written) {
+    std::uint64_t h = 1469598103934665603ULL;
+    for (unsigned char c : written) {
+        h ^= c;
+        h *= 1099511628211ULL;
+    }
+    char buf[20];
+    std::snprintf(buf, sizeof buf, "%016llx", static_cast<unsigned long long>(h));
+    return buf;
+}
+
+inline std::vector<std::string> fieldPieces(std::string_view source) {
+    static constexpr char kDigits[] = "0123456789ABCDEF";
+    constexpr std::size_t kPiece = 120;  // bytes per 1000 group (240 hex digits, under 255)
+    std::vector<std::string> out;
+    for (std::size_t at = 0; at < source.size(); at += kPiece) {
+        std::string hex = "field=";
+        for (std::size_t k = at; k < std::min(source.size(), at + kPiece); ++k) {
+            const auto b = static_cast<unsigned char>(source[k]);
+            hex.push_back(kDigits[b >> 4]);
+            hex.push_back(kDigits[b & 15]);
+        }
+        out.push_back(std::move(hex));
+    }
+    return out;
+}
+
+// Appends the bytes of one "field=" piece (after the prefix) to `source`; false when not hex.
+inline bool appendFieldPiece(std::string_view hex, std::string& source) {
+    if (hex.size() % 2 != 0)
+        return false;
+    const auto digit = [](char c) {
+        return c >= '0' && c <= '9'   ? c - '0'
+               : c >= 'A' && c <= 'F' ? c - 'A' + 10
+               : c >= 'a' && c <= 'f' ? c - 'a' + 10
+                                      : -1;
+    };
+    for (std::size_t k = 0; k < hex.size(); k += 2) {
+        const int hi = digit(hex[k]), lo = digit(hex[k + 1]);
+        if (hi < 0 || lo < 0)
+            return false;
+        source.push_back(static_cast<char>(hi * 16 + lo));
+    }
+    return true;
 }
 
 }  // namespace tbcad::dxf::detail

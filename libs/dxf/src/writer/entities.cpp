@@ -227,6 +227,7 @@ void Writer::head(std::string_view type, const Props& p, std::uint64_t owner,
                   std::string_view subclass) {
     Out& o = *L().o;
     o.zero(type);
+    L().tbcadOpen = false;
     if (r12_ && owner == paperRec_ && owner != 0)
         o.i(67, 1);
     if (!r12_) {
@@ -531,7 +532,7 @@ void Writer::setLevelTag(const EntityCommon& c) {
 void Writer::emitLevelTag() {
     if (L().levelTag.empty() || !L().o)
         return;
-    L().o->raw(1001, "TBCAD");
+    openTbcadXdata();
     L().o->str(1000, "level=" + L().levelTag);
     L().levelTag.clear();
 }
@@ -715,10 +716,35 @@ void Writer::writeExtXdata(const EntityCommon& c) {
     }
 }
 
-void Writer::writeTbcadFlags(const Entity& e) {
-    if (!e.common.annotative && !e.common.wipeout)
+void Writer::openTbcadXdata() {
+    if (L().tbcadOpen)
         return;
     L().o->raw(1001, "TBCAD");
+    L().tbcadOpen = true;
+}
+
+void Writer::writeTbcadFlags(const Entity& e) {
+    // The source of a text with fields, and the hash of the group 1 (and 3) text written for it.
+    std::string source, written;
+    if (const auto* t = entityAs<TextData>(e); t && !t->attdef) {
+        source = t->utf8;
+        if (source.find("%<") != std::string::npos)
+            written = encodeText(text::expandFields(doc_, source), utf8_);
+    } else if (const auto* m = entityAs<MTextData>(e); m && !r12_) {
+        source = m->utf8;
+        if (source.find("%<") != std::string::npos)
+            written = encodeText(toDxfMarkup(text::expandFields(doc_, source)), utf8_);
+    }
+    const bool field = !written.empty() && written != encodeText(source, utf8_);
+    if (!e.common.annotative && !e.common.wipeout && !field)
+        return;
+    openTbcadXdata();
+    if (field) {
+        L().o->raw(1000, "fieldof=" + fieldHash(written) + ";" +
+                             fieldHash(text::expandFields(doc_, source, kFieldCheckDate)));
+        for (const std::string& piece : fieldPieces(source))
+            L().o->raw(1000, piece);
+    }
     if (e.common.wipeout)
         L().o->str(1000, "wipeout=1");
     if (!e.common.annotative)

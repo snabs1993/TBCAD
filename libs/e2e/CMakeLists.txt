@@ -55,6 +55,7 @@ option(TBCAD_CMD_FUZZ "Build the command fuzz target with libFuzzer + ASan/UBSan
 if(TBCAD_CMD_FUZZ)
   add_executable(tbcad_cmd_fuzz tests/fuzz_commands.cpp)
   target_link_libraries(tbcad_cmd_fuzz PRIVATE tbcad::io tbcad::dxf tbcad::cmd tbcad::command_registry)
+  target_include_directories(tbcad_cmd_fuzz PRIVATE ${CMAKE_SOURCE_DIR}/libs/dxf/tests)
   target_compile_definitions(tbcad_cmd_fuzz PRIVATE TBCAD_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/samples"
     TBCAD_CORPUS_DIR="${CMAKE_SOURCE_DIR}/tests/corpus")
   target_compile_options(tbcad_cmd_fuzz PRIVATE
