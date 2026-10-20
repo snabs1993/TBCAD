@@ -6,9 +6,9 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <initializer_list>
-#include <cstdint>
 #include <iosfwd>
 #include <map>
 #include <memory>
@@ -127,8 +127,8 @@ private:
     std::vector<Pic> pics_{};        // /Im<i> and /Gs<i> of the page resources
     std::vector<int> layersUsed_{};  // /L<i> of the page resources
     bool inText_ = false;
-    int textFont_ = -1;              // font selected in the open text object
-    std::set<int> fontsUsed_{};      // /F<i> of the page resources
+    int textFont_ = -1;          // font selected in the open text object
+    std::set<int> fontsUsed_{};  // /F<i> of the page resources
     // Per font: glyph id -> the text it stands for (the first one seen), for ToUnicode.
     std::map<int, std::map<std::uint16_t, std::u32string>> glyphsUsed_{};
 };

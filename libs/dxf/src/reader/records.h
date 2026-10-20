@@ -158,7 +158,8 @@ private:
 
     void produce() {
         std::optional<Group> pending;
-        std::size_t seen[3] = {lexReport_.count(Severity::Info), lexReport_.count(Severity::Warning),
+        std::size_t seen[3] = {lexReport_.count(Severity::Info),
+                               lexReport_.count(Severity::Warning),
                                lexReport_.count(Severity::Error)};
         for (;;) {
             Batch b = takeBatch();

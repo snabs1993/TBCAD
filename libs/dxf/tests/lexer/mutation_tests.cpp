@@ -80,9 +80,11 @@ TEST_CASE("mutated corpus files never crash the lexer or the text decoder") {
                 case 3: {
                     const std::size_t at = rng.below(data.size());
                     const std::size_t len = std::min(data.size() - at, 1 + rng.below(32));
-                    // A copy of the slice: inserting a range of the vector into itself is undefined.
-                    const std::vector<std::byte> slice(data.begin() + static_cast<std::ptrdiff_t>(at),
-                                                       data.begin() + static_cast<std::ptrdiff_t>(at + len));
+                    // A copy of the slice: inserting a range of the vector into itself is
+                    // undefined.
+                    const std::vector<std::byte> slice(
+                        data.begin() + static_cast<std::ptrdiff_t>(at),
+                        data.begin() + static_cast<std::ptrdiff_t>(at + len));
                     data.insert(data.begin() + static_cast<std::ptrdiff_t>(rng.below(data.size())),
                                 slice.begin(), slice.end());
                     break;

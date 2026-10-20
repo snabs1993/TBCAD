@@ -48,10 +48,9 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     mcp::registerDrawingTools(tools);
     mcp::McpServerCore core(session, std::move(tools));
     mcp::Client client;
-    (void)core.handleText(client,
-                          R"({"jsonrpc":"2.0","id":0,"method":"initialize","params":{)"
-                          R"("protocolVersion":"2025-06-18","capabilities":{},)"
-                          R"("clientInfo":{"name":"fuzz","version":"1"}}})");
+    (void)core.handleText(client, R"({"jsonrpc":"2.0","id":0,"method":"initialize","params":{)"
+                                  R"("protocolVersion":"2025-06-18","capabilities":{},)"
+                                  R"("clientInfo":{"name":"fuzz","version":"1"}}})");
     (void)core.handleText(client, R"({"jsonrpc":"2.0","method":"notifications/initialized"})");
     std::string_view text(reinterpret_cast<const char*>(data), size);
     int messages = 0;

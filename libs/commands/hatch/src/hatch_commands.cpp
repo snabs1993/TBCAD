@@ -85,7 +85,7 @@ std::vector<Candidate> windowCandidates(const Document& doc, const cmd::IHost& h
             return;
         if (checkWindow &&
             !window.intersects(kind(e) == EntityKind::Insert ? blocks::insertBounds(doc, e)
-                                                              : geom::bounds(e)))
+                                                             : geom::bounds(e)))
             return;
         if (!doc.effective(e.common).live())
             return;
@@ -184,10 +184,9 @@ public:
             const cmd::IHost& host = ctx.host();
             BoundaryOptions bo;
             bo.gapTolerance = p.gap;
-            NearBoundary nb =
-                findBoundaryNear(
-                    [&](const BBox2& w) { return windowCandidates(doc, host, w, nearStore_); },
-                    searchWindow(doc, host), cursor, bo);
+            NearBoundary nb = findBoundaryNear(
+                [&](const BBox2& w) { return windowCandidates(doc, host, w, nearStore_); },
+                searchWindow(doc, host), cursor, bo);
             b = std::move(nb.result);
             local = std::move(nb.finder);
             if (!local || !local->ok())
@@ -276,7 +275,8 @@ public:
     explicit HatchCommand(bool gradient = false) : gradient_(gradient) {}
     std::string_view name() const override { return gradient_ ? "GRADIENT" : "HATCH"; }
     std::vector<std::string> defaultAliases() const override {
-        return gradient_ ? std::vector<std::string>{"GR"} : std::vector<std::string>{"H", "BHATCH", "-HATCH"};
+        return gradient_ ? std::vector<std::string>{"GR"}
+                         : std::vector<std::string>{"H", "BHATCH", "-HATCH"};
     }
     std::string_view description() const override {
         return gradient_ ? "Fill an enclosed area with a colour gradient"

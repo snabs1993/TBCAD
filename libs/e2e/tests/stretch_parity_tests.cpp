@@ -75,7 +75,8 @@ TEST_CASE("STRETCH moves the outline corners of a hatch inside the window, or th
     CHECK(b.max.y == doctest::Approx(55));
 }
 
-TEST_CASE("STRETCH of an associative hatch's boundary updates the hatch, and it stays associative") {
+TEST_CASE(
+    "STRETCH of an associative hatch's boundary updates the hatch, and it stays associative") {
     Rig r;
     REQUIRE(r.host.run("RECTANG", {"0,0", "100,50"}).finished);
     REQUIRE(r.host.run("HATCH", {"50,25", ScriptItem::enter()}).finished);

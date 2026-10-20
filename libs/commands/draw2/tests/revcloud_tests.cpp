@@ -170,7 +170,8 @@ TEST_CASE("REVCLOUD Object converts the object: the cloud takes its place and it
     CHECK(f.doc.find(other) != nullptr);
 }
 
-TEST_CASE("REVCLOUD refuses an arc length that would need too many arcs and skips repeated points") {
+TEST_CASE(
+    "REVCLOUD refuses an arc length that would need too many arcs and skips repeated points") {
     Fixture f;
     f.host.run("REVC", {"A", "0.001", "Rectangular", "0,0", "100000,100000"});
     CHECK(f.entities().empty());
@@ -299,8 +300,9 @@ BBox2 boundsOf(const PolylineData& pl) {
 TEST_CASE("REVCLOUD Modify replaces the erased side with a new cloud part") {
     Fixture f;
     const EntityId id = square(f);
-    REQUIRE(f.host.run("REVC", {"A", "10", "Modify", ScriptItem::pick(id, {50, 0}), "50,-30",
-                                "80,-30", "80,0", "65,1", ""})
+    REQUIRE(f.host
+                .run("REVC", {"A", "10", "Modify", ScriptItem::pick(id, {50, 0}), "50,-30",
+                              "80,-30", "80,0", "65,1", ""})
                 .finished);
     const auto& pl = as<PolylineData>(f.doc.find(id));
     CHECK(pl.closed);
@@ -324,8 +326,9 @@ TEST_CASE("REVCLOUD Modify replaces the erased side with a new cloud part") {
 TEST_CASE("REVCLOUD Modify erasing the far side keeps only the near part, and Reverse turns in") {
     Fixture f;
     const EntityId id = square(f);
-    REQUIRE(f.host.run("REVC", {"A", "10", "M", ScriptItem::pick(id, {50, 0}), "50,-30",
-                                "80,-30", "80,0", "50,100", "Yes"})
+    REQUIRE(f.host
+                .run("REVC", {"A", "10", "M", ScriptItem::pick(id, {50, 0}), "50,-30", "80,-30",
+                              "80,0", "50,100", "Yes"})
                 .finished);
     const auto& pl = as<PolylineData>(f.doc.find(id));
     REQUIRE(pl.v.size() == 10);  // 50,0 kept, then the new part back from 80,0
@@ -339,7 +342,8 @@ TEST_CASE("REVCLOUD Modify erasing the far side keeps only the near part, and Re
         CHECK(close(pl.v[i].bulge, kBulge));
 }
 
-TEST_CASE("REVCLOUD Modify works on a cloud, Enter ends at the nearest place, Esc changes nothing") {
+TEST_CASE(
+    "REVCLOUD Modify works on a cloud, Enter ends at the nearest place, Esc changes nothing") {
     Fixture f;
     REQUIRE(f.host.run("REVC", {"A", "10", "Rectangular", "0,0", "40,40"}).finished);
     const EntityId id = f.entities()[0]->common.id;
@@ -348,9 +352,9 @@ TEST_CASE("REVCLOUD Modify works on a cloud, Enter ends at the nearest place, Es
     CHECK(as<PolylineData>(f.doc.find(id)).v.size() == before);
 
     // Enter: the part ends at the nearest place on the cloud to 30,-20 (30,0, a vertex)
-    REQUIRE(f.host.run("REVC", {"M", ScriptItem::pick(id, {20, 0}), "20,-20", "30,-20", "",
-                                "25,1", ""})
-                .finished);
+    REQUIRE(
+        f.host.run("REVC", {"M", ScriptItem::pick(id, {20, 0}), "20,-20", "30,-20", "", "25,1", ""})
+            .finished);
     const auto& pl = as<PolylineData>(f.doc.find(id));
     CHECK(pl.closed);
     const BBox2 b = boundsOf(pl);

@@ -14,8 +14,8 @@ void Page::endText() {
     textFont_ = -1;
 }
 
-void Page::showGlyph(int font, std::uint16_t glyphId, std::u32string_view text, double a,
-                     double b, double c, double d, double e, double f) {
+void Page::showGlyph(int font, std::uint16_t glyphId, std::u32string_view text, double a, double b,
+                     double c, double d, double e, double f) {
     if (!inText_) {
         content_ += "BT\n";
         inText_ = true;

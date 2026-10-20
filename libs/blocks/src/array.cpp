@@ -157,8 +157,7 @@ std::optional<ArrayInfo> arrayFromText(std::string_view text, double k) {
 }
 
 bool arrayItemShowsSource(const ArrayInfo& a, int item) {
-    return !std::binary_search(a.removed.begin(), a.removed.end(), item) &&
-           !arrayItemSwap(a, item);
+    return !std::binary_search(a.removed.begin(), a.removed.end(), item) && !arrayItemSwap(a, item);
 }
 
 const ArrayItemSwap* arrayItemSwap(const ArrayInfo& a, int item) {

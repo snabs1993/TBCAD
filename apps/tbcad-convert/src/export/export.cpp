@@ -1,12 +1,11 @@
 #include "export.h"
 
-#include "../timing.h"
-
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 
+#include "../timing.h"
 #include "tbcad/convert/cli.h"
 #include "tbcad/dxf/report.h"
 #include "tbcad/io/tbcad.h"

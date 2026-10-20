@@ -97,11 +97,14 @@ std::string dimCompareJson(const std::vector<DimComparison>& all) {
         ++sampled;
         if (!samples.empty())
             samples += ",";
-        samples += "{\"handle\":\"" + [&] {
-            char buf[24];
-            std::snprintf(buf, sizeof buf, "%llX", static_cast<unsigned long long>(c.handle));
-            return std::string(buf);
-        }() + "\",\"line\":" + std::to_string(c.line) + ",\"kind\":";
+        samples +=
+            "{\"handle\":\"" +
+            [&] {
+                char buf[24];
+                std::snprintf(buf, sizeof buf, "%llX", static_cast<unsigned long long>(c.handle));
+                return std::string(buf);
+            }() +
+            "\",\"line\":" + std::to_string(c.line) + ",\"kind\":";
         appendString(samples, c.kind);
         samples += ",\"stored\":";
         appendString(samples, c.storedText);
@@ -110,10 +113,9 @@ std::string dimCompareJson(const std::vector<DimComparison>& all) {
         samples += ",\"textOffset\":" + number(c.textOffset) +
                    ",\"heightRatio\":" + number(c.heightRatio) +
                    ",\"strayStored\":" + number(c.strayStored) +
-                   ",\"strayGenerated\":" + number(c.strayGenerated) +
-                   ",\"arrows\":[" + std::to_string(c.arrowsStored) + "," +
-                   std::to_string(c.arrowsGenerated) + "," + std::to_string(c.arrowsUnmatched) +
-                   "],\"detail\":";
+                   ",\"strayGenerated\":" + number(c.strayGenerated) + ",\"arrows\":[" +
+                   std::to_string(c.arrowsStored) + "," + std::to_string(c.arrowsGenerated) + "," +
+                   std::to_string(c.arrowsUnmatched) + "],\"detail\":";
         appendString(samples, c.detail);
         samples += "}";
     }
@@ -121,8 +123,8 @@ std::string dimCompareJson(const std::vector<DimComparison>& all) {
         return "{\"count\":" + std::to_string(t.count) + ",\"differ\":" + std::to_string(t.differ) +
                ",\"text\":" + std::to_string(t.text) + ",\"offset\":" + std::to_string(t.offset) +
                ",\"height\":" + std::to_string(t.height) + ",\"lines\":" + std::to_string(t.lines) +
-               ",\"arrows\":" + std::to_string(t.arrows) +
-               ",\"stale\":" + std::to_string(t.stale) + "}";
+               ",\"arrows\":" + std::to_string(t.arrows) + ",\"stale\":" + std::to_string(t.stale) +
+               "}";
     };
     std::string o = "{\"total\":" + tally(total) + ",\"byKind\":{";
     bool first = true;

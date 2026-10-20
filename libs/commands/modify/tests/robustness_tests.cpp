@@ -408,7 +408,9 @@ TEST_CASE("EXTEND, JOIN and BREAKATPOINT work on splines, fit-only ones included
 // of every object stops, boundaries behind, parallel, touching the end or far away included.
 TEST_CASE("EXTEND by the index gives the same result as testing every object") {
     std::mt19937 rng(7);
-    auto rnd = [&](double lo, double hi) { return std::uniform_real_distribution<double>(lo, hi)(rng); };
+    auto rnd = [&](double lo, double hi) {
+        return std::uniform_real_distribution<double>(lo, hi)(rng);
+    };
     int extended = 0;
     for (int round = 0; round < 60; ++round) {
         struct Pair {
@@ -429,7 +431,8 @@ TEST_CASE("EXTEND by the index gives the same result as testing every object") {
         EntityData target;
         if (round % 3 == 2) {
             PolylineData pl;
-            pl.v = {{a, 0, 0, 0}, {a + Vec2{rnd(2, 9), rnd(-4, 4)}, 0, 0, 0},
+            pl.v = {{a, 0, 0, 0},
+                    {a + Vec2{rnd(2, 9), rnd(-4, 4)}, 0, 0, 0},
                     {a + Vec2{rnd(10, 20), rnd(-6, 6)}, 0, 0, 0}};
             target = pl;
         } else {
@@ -451,9 +454,10 @@ TEST_CASE("EXTEND by the index gives the same result as testing every object") {
             return out;
         });
         const Vec2 pick = a + Vec2{rnd(-3, 3), rnd(-3, 3)};
-        pair->scan.host.run("EXTEND", {ScriptItem::enter(), ScriptItem::pick(idA, pick),
-                                       ScriptItem::esc()});
-        ix.host.run("EXTEND", {ScriptItem::enter(), ScriptItem::pick(idB, pick), ScriptItem::esc()});
+        pair->scan.host.run("EXTEND",
+                            {ScriptItem::enter(), ScriptItem::pick(idA, pick), ScriptItem::esc()});
+        ix.host.run("EXTEND",
+                    {ScriptItem::enter(), ScriptItem::pick(idB, pick), ScriptItem::esc()});
         const Entity* ea = pair->scan.doc.find(idA);
         const Entity* eb = ix.doc.find(idB);
         REQUIRE(ea);
@@ -465,7 +469,8 @@ TEST_CASE("EXTEND by the index gives the same result as testing every object") {
             CHECK(distance(la->a, lb->a) < 1e-9);
             CHECK(distance(la->b, lb->b) < 1e-9);
             extended += distance(la->a, std::get<LineData>(target).a) +
-                                    distance(la->b, std::get<LineData>(target).b) > 1e-9;
+                            distance(la->b, std::get<LineData>(target).b) >
+                        1e-9;
         } else if (const auto* pa = entityAs<PolylineData>(*ea)) {
             const auto* pb = entityAs<PolylineData>(*eb);
             REQUIRE(pb);
@@ -478,8 +483,12 @@ TEST_CASE("EXTEND by the index gives the same result as testing every object") {
 }
 
 TEST_CASE("random sequences of modify commands stay finite and undo step by step") {
-    std::mt19937 rng(std::getenv("TBCAD_FUZZ_SEED") ? std::strtoul(std::getenv("TBCAD_FUZZ_SEED"), nullptr, 10) : 20261019u);
-    auto rnd = [&](double lo, double hi) { return std::uniform_real_distribution<double>(lo, hi)(rng); };
+    std::mt19937 rng(std::getenv("TBCAD_FUZZ_SEED")
+                         ? std::strtoul(std::getenv("TBCAD_FUZZ_SEED"), nullptr, 10)
+                         : 20261019u);
+    auto rnd = [&](double lo, double hi) {
+        return std::uniform_real_distribution<double>(lo, hi)(rng);
+    };
     int steps = 0, changedSteps = 0;
     for (int round = 0; round < 12; ++round) {
         Rig r;
@@ -493,9 +502,7 @@ TEST_CASE("random sequences of modify commands stay finite and undo step by step
             if (auto* l = std::get_if<LineData>(&d); l)
                 (void)shift;
         }
-        const auto pickOn = [&](std::size_t k) {
-            return rng() % 2 ? ss[k].p1 : ss[k].p2;
-        };
+        const auto pickOn = [&](std::size_t k) { return rng() % 2 ? ss[k].p1 : ss[k].p2; };
         // A command that waits for more input is cancelled so the next one can start.
         const auto go = [&](std::string_view name, std::vector<ScriptItem> items) {
             if (!r.host.run(name, items).finished)
@@ -504,33 +511,35 @@ TEST_CASE("random sequences of modify commands stay finite and undo step by step
         std::vector<std::string> history{canonicalDump(r.doc)};
         for (int step = 0; step < 40; ++step) {
             const std::size_t a = rng() % ids.size(), b = rng() % ids.size();
-            const std::string ra = std::to_string(rnd(0.2, 6.0)), rb = std::to_string(rnd(0.2, 6.0));
+            const std::string ra = std::to_string(rnd(0.2, 6.0)),
+                              rb = std::to_string(rnd(0.2, 6.0));
             switch (rng() % 17) {
                 case 0:
-                    go("TRIM", {ScriptItem::enter(), ScriptItem::pick(ids[a], pickOn(a % ss.size())),
-                                        ScriptItem::enter()});
+                    go("TRIM",
+                       {ScriptItem::enter(), ScriptItem::pick(ids[a], pickOn(a % ss.size())),
+                        ScriptItem::enter()});
                     break;
                 case 1:
-                    go("EXTEND", {ScriptItem::enter(),
-                                          ScriptItem::pick(ids[a], pickOn(a % ss.size())),
-                                          ScriptItem::enter()});
+                    go("EXTEND",
+                       {ScriptItem::enter(), ScriptItem::pick(ids[a], pickOn(a % ss.size())),
+                        ScriptItem::enter()});
                     break;
                 case 2:
                     go("FILLET", {"R", ra, ScriptItem::pick(ids[a], pickOn(a % ss.size())),
-                                          ScriptItem::pick(ids[b], pickOn(b % ss.size()))});
+                                  ScriptItem::pick(ids[b], pickOn(b % ss.size()))});
                     break;
                 case 3:
                     go("CHAMFER", {"D", ra, rb, ScriptItem::pick(ids[a], pickOn(a % ss.size())),
-                                           ScriptItem::pick(ids[b], pickOn(b % ss.size()))});
+                                   ScriptItem::pick(ids[b], pickOn(b % ss.size()))});
                     break;
                 case 4:
                     go("OFFSET", {ra, ScriptItem::pick(ids[a], pickOn(a % ss.size())),
-                                          std::to_string(rnd(-10, 25)) + "," + std::to_string(rnd(-10, 20)),
-                                          ScriptItem::enter()});
+                                  std::to_string(rnd(-10, 25)) + "," + std::to_string(rnd(-10, 20)),
+                                  ScriptItem::enter()});
                     break;
                 case 5:
                     go("BREAK", {ScriptItem::pick(ids[a], pickOn(a % ss.size())),
-                                         std::to_string(rnd(-5, 25)) + "," + std::to_string(rnd(-5, 15))});
+                                 std::to_string(rnd(-5, 25)) + "," + std::to_string(rnd(-5, 15))});
                     break;
                 case 6:
                     go("EXPLODE", {ScriptItem::select({ids[a]}), ScriptItem::enter()});
@@ -551,24 +560,26 @@ TEST_CASE("random sequences of modify commands stay finite and undo step by step
                                  std::to_string(rnd(0.3, 2.5))});
                     break;
                 case 11:
-                    go("MIRROR", {ScriptItem::select({ids[a]}), ScriptItem::enter(), "0,0",
-                                  std::to_string(rnd(-5, 5)) + "," + std::to_string(rnd(-5, 5)), "N"});
+                    go("MIRROR",
+                       {ScriptItem::select({ids[a]}), ScriptItem::enter(), "0,0",
+                        std::to_string(rnd(-5, 5)) + "," + std::to_string(rnd(-5, 5)), "N"});
                     break;
                 case 14: {
                     const double x = rnd(-2, 18), y = rnd(-4, 8);
-                    go("STRETCH", {std::to_string(x) + "," + std::to_string(y),
-                                   std::to_string(x + rnd(2, 12)) + "," + std::to_string(y + rnd(2, 12)),
-                                   "0,0", std::to_string(rnd(-6, 6)) + "," + std::to_string(rnd(-6, 6))});
+                    go("STRETCH",
+                       {std::to_string(x) + "," + std::to_string(y),
+                        std::to_string(x + rnd(2, 12)) + "," + std::to_string(y + rnd(2, 12)),
+                        "0,0", std::to_string(rnd(-6, 6)) + "," + std::to_string(rnd(-6, 6))});
                     break;
                 }
                 case 15:
-                    go("LENGTHEN", {"Delta", std::to_string(rnd(-4, 6)),
-                                    ScriptItem::pick(ids[a], pickOn(a % ss.size())),
-                                    ScriptItem::enter()});
+                    go("LENGTHEN",
+                       {"Delta", std::to_string(rnd(-4, 6)),
+                        ScriptItem::pick(ids[a], pickOn(a % ss.size())), ScriptItem::enter()});
                     break;
                 case 16:
-                    go("ARRAY", {ScriptItem::select({ids[a]}), ScriptItem::enter(), "R", "Rows", "2",
-                                 "Columns", "2", "Spacing", std::to_string(rnd(3, 12)),
+                    go("ARRAY", {ScriptItem::select({ids[a]}), ScriptItem::enter(), "R", "Rows",
+                                 "2", "Columns", "2", "Spacing", std::to_string(rnd(3, 12)),
                                  std::to_string(rnd(3, 12)), ""});
                     break;
                 case 12:
@@ -611,8 +622,12 @@ TEST_CASE("random sequences of modify commands stay finite and undo step by step
 }
 
 TEST_CASE("degenerate and huge geometry: modify commands never crash, stay finite and undo") {
-    std::mt19937 rng(std::getenv("TBCAD_FUZZ_SEED") ? std::strtoul(std::getenv("TBCAD_FUZZ_SEED"), nullptr, 10) : 77u);
-    auto rnd = [&](double lo, double hi) { return std::uniform_real_distribution<double>(lo, hi)(rng); };
+    std::mt19937 rng(std::getenv("TBCAD_FUZZ_SEED")
+                         ? std::strtoul(std::getenv("TBCAD_FUZZ_SEED"), nullptr, 10)
+                         : 77u);
+    auto rnd = [&](double lo, double hi) {
+        return std::uniform_real_distribution<double>(lo, hi)(rng);
+    };
     const auto pt = [](Vec2 p) { return std::to_string(p.x) + "," + std::to_string(p.y); };
     int changed = 0;
     for (int round = 0; round < 10; ++round) {
@@ -624,20 +639,23 @@ TEST_CASE("degenerate and huge geometry: modify commands never crash, stay finit
             spots.push_back(spot);
         };
         const double big = 1e9;
-        addE(LineData{{5, 5}, {5, 5}}, {5, 5});                       // zero length
-        addE(LineData{{0, 0}, {1e-9, 0}}, {0, 0});                    // tiny
+        addE(LineData{{5, 5}, {5, 5}}, {5, 5});     // zero length
+        addE(LineData{{0, 0}, {1e-9, 0}}, {0, 0});  // tiny
         addE(LineData{{0, 0}, {20, 0}}, {10, 0});
-        addE(LineData{{0, 0}, {20, 0}}, {10, 0});                     // duplicate
-        addE(LineData{{-big, 3}, {big, 3}}, {0, 3});                  // huge
+        addE(LineData{{0, 0}, {20, 0}}, {10, 0});     // duplicate
+        addE(LineData{{-big, 3}, {big, 3}}, {0, 3});  // huge
         addE(LineData{{big, big}, {big + 10, big + 5}}, {big + 5, big + 2});
-        addE(CircleData{{10, 0}, 1e-6}, {10, 0});                     // tiny circle
+        addE(CircleData{{10, 0}, 1e-6}, {10, 0});  // tiny circle
         addE(CircleData{{0, 0}, 5}, {5, 0});
-        addE(CircleData{{0, 0}, 5}, {-5, 0});                         // coincident
-        addE(CircleData{{big, 0}, big}, {0, 0});                      // huge circle
-        addE(ArcData{{3, 3}, 4, 1.0, 1.0 + 1e-9}, {3, 7});            // sliver arc
-        addE(ArcData{{3, 3}, 4, 0.0, 6.2831853}, {7, 3});             // nearly full
+        addE(CircleData{{0, 0}, 5}, {-5, 0});               // coincident
+        addE(CircleData{{big, 0}, big}, {0, 0});            // huge circle
+        addE(ArcData{{3, 3}, 4, 1.0, 1.0 + 1e-9}, {3, 7});  // sliver arc
+        addE(ArcData{{3, 3}, 4, 0.0, 6.2831853}, {7, 3});   // nearly full
         PolylineData z;  // repeated vertices, bulge on a zero segment
-        z.v = {{{0, 0}, 0.5, 0, 0}, {{0, 0}, 0, 0, 0}, {{10, 0}, 1.0, 0, 0}, {{10, 0}, 0, 0, 0},
+        z.v = {{{0, 0}, 0.5, 0, 0},
+               {{0, 0}, 0, 0, 0},
+               {{10, 0}, 1.0, 0, 0},
+               {{10, 0}, 0, 0, 0},
                {{10, 10}, 0, 0, 0}};
         addE(z, {5, 0});
         PolylineData one;
@@ -648,7 +666,8 @@ TEST_CASE("degenerate and huge geometry: modify commands never crash, stay finit
         cl.v = {{{0, 0}, 0, 0, 0}, {{8, 0}, 0, 0, 0}, {{8, 8}, 0, 0, 0}, {{0, 8}, 0, 0, 0}};
         addE(cl, {4, 0});
         const auto pickAt = [&](std::size_t k) {
-            return spots[k] + Vec2{rng() % 2 ? 0.0 : rnd(-0.01, 0.01), rng() % 2 ? 0.0 : rnd(-0.01, 0.01)};
+            return spots[k] +
+                   Vec2{rng() % 2 ? 0.0 : rnd(-0.01, 0.01), rng() % 2 ? 0.0 : rnd(-0.01, 0.01)};
         };
         const auto go = [&](std::string_view name, std::vector<ScriptItem> items) {
             if (!r.host.run(name, items).finished)
@@ -660,17 +679,46 @@ TEST_CASE("degenerate and huge geometry: modify commands never crash, stay finit
             const std::string ra = std::to_string(rng() % 4 == 0 ? 0.0 : rnd(0.0, 8.0));
             const Vec2 where{rnd(-12, 25), rnd(-12, 20)};
             switch (rng() % 11) {
-                case 0: go("TRIM", {ScriptItem::enter(), ScriptItem::pick(ids[a], pickAt(a)), ScriptItem::enter()}); break;
-                case 1: go("EXTEND", {ScriptItem::enter(), ScriptItem::pick(ids[a], pickAt(a)), ScriptItem::enter()}); break;
-                case 2: go("FILLET", {"R", ra, ScriptItem::pick(ids[a], pickAt(a)), ScriptItem::pick(ids[b], pickAt(b))}); break;
-                case 3: go("CHAMFER", {"D", ra, ra, ScriptItem::pick(ids[a], pickAt(a)), ScriptItem::pick(ids[b], pickAt(b))}); break;
-                case 4: go("OFFSET", {ra, ScriptItem::pick(ids[a], pickAt(a)), pt(where), ScriptItem::enter()}); break;
-                case 5: go("BREAK", {ScriptItem::pick(ids[a], pickAt(a)), pt(where)}); break;
-                case 6: go("EXPLODE", {ScriptItem::select({ids[a]}), ScriptItem::enter()}); break;
-                case 7: go("JOIN", {ScriptItem::select({ids[a], ids[b]}), ScriptItem::enter()}); break;
-                case 8: go("SCALE", {ScriptItem::select({ids[a]}), ScriptItem::enter(), "0,0", std::to_string(rng() % 3 == 0 ? 0.0 : rnd(-2, 3))}); break;
-                case 9: go("LENGTHEN", {"Delta", std::to_string(rnd(-30, 30)), ScriptItem::pick(ids[a], pickAt(a)), ScriptItem::enter()}); break;
-                default: go("HATCH", {pt(where), ScriptItem::enter()}); break;
+                case 0:
+                    go("TRIM", {ScriptItem::enter(), ScriptItem::pick(ids[a], pickAt(a)),
+                                ScriptItem::enter()});
+                    break;
+                case 1:
+                    go("EXTEND", {ScriptItem::enter(), ScriptItem::pick(ids[a], pickAt(a)),
+                                  ScriptItem::enter()});
+                    break;
+                case 2:
+                    go("FILLET", {"R", ra, ScriptItem::pick(ids[a], pickAt(a)),
+                                  ScriptItem::pick(ids[b], pickAt(b))});
+                    break;
+                case 3:
+                    go("CHAMFER", {"D", ra, ra, ScriptItem::pick(ids[a], pickAt(a)),
+                                   ScriptItem::pick(ids[b], pickAt(b))});
+                    break;
+                case 4:
+                    go("OFFSET",
+                       {ra, ScriptItem::pick(ids[a], pickAt(a)), pt(where), ScriptItem::enter()});
+                    break;
+                case 5:
+                    go("BREAK", {ScriptItem::pick(ids[a], pickAt(a)), pt(where)});
+                    break;
+                case 6:
+                    go("EXPLODE", {ScriptItem::select({ids[a]}), ScriptItem::enter()});
+                    break;
+                case 7:
+                    go("JOIN", {ScriptItem::select({ids[a], ids[b]}), ScriptItem::enter()});
+                    break;
+                case 8:
+                    go("SCALE", {ScriptItem::select({ids[a]}), ScriptItem::enter(), "0,0",
+                                 std::to_string(rng() % 3 == 0 ? 0.0 : rnd(-2, 3))});
+                    break;
+                case 9:
+                    go("LENGTHEN", {"Delta", std::to_string(rnd(-30, 30)),
+                                    ScriptItem::pick(ids[a], pickAt(a)), ScriptItem::enter()});
+                    break;
+                default:
+                    go("HATCH", {pt(where), ScriptItem::enter()});
+                    break;
             }
             const std::string now = canonicalDump(r.doc);
             CHECK(finiteDump(now));
@@ -703,8 +751,12 @@ TEST_CASE("degenerate and huge geometry: modify commands never crash, stay finit
 }
 
 TEST_CASE("scenes with blocks, hatches and wide polylines: modify commands stay finite and undo") {
-    std::mt19937 rng(std::getenv("TBCAD_FUZZ_SEED") ? std::strtoul(std::getenv("TBCAD_FUZZ_SEED"), nullptr, 10) : 31u);
-    auto rnd = [&](double lo, double hi) { return std::uniform_real_distribution<double>(lo, hi)(rng); };
+    std::mt19937 rng(std::getenv("TBCAD_FUZZ_SEED")
+                         ? std::strtoul(std::getenv("TBCAD_FUZZ_SEED"), nullptr, 10)
+                         : 31u);
+    auto rnd = [&](double lo, double hi) {
+        return std::uniform_real_distribution<double>(lo, hi)(rng);
+    };
     const auto pt = [](Vec2 p) { return std::to_string(p.x) + "," + std::to_string(p.y); };
     int changed = 0;
     for (int round = 0; round < 8; ++round) {
@@ -720,7 +772,10 @@ TEST_CASE("scenes with blocks, hatches and wide polylines: modify commands stay 
             rr->host.run("INSERT", {"Mark", pt({rnd(0, 20), rnd(0, 12)})});
         }
         PolylineData wide;
-        wide.v = {{{0, 0}, 0, 1.0, 0.2}, {{12, 0}, 0.4, 0.5, 2.0}, {{12, 9}, 0, 0, 0}, {{0, 9}, 0, 3.0, 3.0}};
+        wide.v = {{{0, 0}, 0, 1.0, 0.2},
+                  {{12, 0}, 0.4, 0.5, 2.0},
+                  {{12, 9}, 0, 0, 0},
+                  {{0, 9}, 0, 3.0, 3.0}};
         wide.closed = rng() % 2;
         r.add(wide);
         PolylineData cw;
@@ -744,16 +799,44 @@ TEST_CASE("scenes with blocks, hatches and wide polylines: modify commands stay 
             const Vec2 on{rnd(0, 20), rnd(0, 12)}, where{rnd(-5, 25), rnd(-5, 18)};
             const std::string ra = std::to_string(rnd(0.0, 5.0));
             switch (rng() % 10) {
-                case 0: go("TRIM", {ScriptItem::enter(), ScriptItem::pick(ids[a], on), ScriptItem::enter()}); break;
-                case 1: go("EXTEND", {ScriptItem::enter(), ScriptItem::pick(ids[a], on), ScriptItem::enter()}); break;
-                case 2: go("FILLET", {"R", ra, ScriptItem::pick(ids[a], on), ScriptItem::pick(ids[b], on)}); break;
-                case 3: go("CHAMFER", {"D", ra, ra, ScriptItem::pick(ids[a], on), ScriptItem::pick(ids[b], on)}); break;
-                case 4: go("OFFSET", {ra, ScriptItem::pick(ids[a], on), pt(where), ScriptItem::enter()}); break;
-                case 5: go("BREAK", {ScriptItem::pick(ids[a], on), pt(where)}); break;
-                case 6: go("EXPLODE", {ScriptItem::select({ids[a]}), ScriptItem::enter()}); break;
-                case 7: go("MIRROR", {ScriptItem::select({ids[a], ids[b]}), ScriptItem::enter(), "0,0", pt({rnd(-5, 5), rnd(-5, 5)}), "N"}); break;
-                case 8: go("SCALE", {ScriptItem::select({ids[a]}), ScriptItem::enter(), pt(on), std::to_string(rnd(0.3, 2.5))}); break;
-                default: go("ROTATE", {ScriptItem::select({ids[a], ids[b]}), ScriptItem::enter(), pt(on), std::to_string(rnd(-180, 180))}); break;
+                case 0:
+                    go("TRIM",
+                       {ScriptItem::enter(), ScriptItem::pick(ids[a], on), ScriptItem::enter()});
+                    break;
+                case 1:
+                    go("EXTEND",
+                       {ScriptItem::enter(), ScriptItem::pick(ids[a], on), ScriptItem::enter()});
+                    break;
+                case 2:
+                    go("FILLET",
+                       {"R", ra, ScriptItem::pick(ids[a], on), ScriptItem::pick(ids[b], on)});
+                    break;
+                case 3:
+                    go("CHAMFER",
+                       {"D", ra, ra, ScriptItem::pick(ids[a], on), ScriptItem::pick(ids[b], on)});
+                    break;
+                case 4:
+                    go("OFFSET",
+                       {ra, ScriptItem::pick(ids[a], on), pt(where), ScriptItem::enter()});
+                    break;
+                case 5:
+                    go("BREAK", {ScriptItem::pick(ids[a], on), pt(where)});
+                    break;
+                case 6:
+                    go("EXPLODE", {ScriptItem::select({ids[a]}), ScriptItem::enter()});
+                    break;
+                case 7:
+                    go("MIRROR", {ScriptItem::select({ids[a], ids[b]}), ScriptItem::enter(), "0,0",
+                                  pt({rnd(-5, 5), rnd(-5, 5)}), "N"});
+                    break;
+                case 8:
+                    go("SCALE", {ScriptItem::select({ids[a]}), ScriptItem::enter(), pt(on),
+                                 std::to_string(rnd(0.3, 2.5))});
+                    break;
+                default:
+                    go("ROTATE", {ScriptItem::select({ids[a], ids[b]}), ScriptItem::enter(), pt(on),
+                                  std::to_string(rnd(-180, 180))});
+                    break;
             }
             const std::string now = canonicalDump(r.doc);
             CHECK(finiteDump(now));
@@ -819,12 +902,14 @@ TEST_CASE("no modify command changes an object on a locked layer") {
         go("TRIM", {ScriptItem::enter(), ScriptItem::pick(ids[k], p), ScriptItem::enter()});
         go("EXTEND", {ScriptItem::enter(), ScriptItem::pick(ids[k], p), ScriptItem::enter()});
         go("FILLET", {"R", "1", ScriptItem::pick(ids[k], p), ScriptItem::pick(ids[o], ss[o].p1)});
-        go("CHAMFER", {"D", "1", "1", ScriptItem::pick(ids[k], p), ScriptItem::pick(ids[o], ss[o].p1)});
+        go("CHAMFER",
+           {"D", "1", "1", ScriptItem::pick(ids[k], p), ScriptItem::pick(ids[o], ss[o].p1)});
         go("OFFSET", {"1", ScriptItem::pick(ids[k], p), "30,30", ScriptItem::enter()});
         go("BREAK", {ScriptItem::pick(ids[k], p), "5,5"});
         go("LENGTHEN", {"Delta", "3", ScriptItem::pick(ids[k], p), ScriptItem::enter()});
-        for (const char* c : {"EXPLODE", "ERASE", "MOVE", "COPY", "ROTATE", "SCALE", "MIRROR", "STRETCH",
-                              "JOIN", "PEDIT", "REVERSE", "CHPROP", "CHANGE", "ARRAY", "ALIGN"}) {
+        for (const char* c :
+             {"EXPLODE", "ERASE", "MOVE", "COPY", "ROTATE", "SCALE", "MIRROR", "STRETCH", "JOIN",
+              "PEDIT", "REVERSE", "CHPROP", "CHANGE", "ARRAY", "ALIGN"}) {
             r.host.setSelection({ids[k]});
             go(c, {ScriptItem::select({ids[k], ids[o]}), ScriptItem::enter(), "0,0", "5,5",
                    ScriptItem::enter(), ScriptItem::esc()});

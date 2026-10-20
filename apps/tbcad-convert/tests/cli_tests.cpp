@@ -255,8 +255,9 @@ TEST_CASE("cli: an xref found next to the drawing is loaded into the output, onc
     };
     {
         std::ofstream f(dir / "host.dxf", std::ios::binary);
-        f << "  0\nSECTION\n  2\nBLOCKS\n" << xrefBlock("site", ".\\site.dxf")
-          << xrefBlock("again", "Q:\\nowhere\\site.dxf") << xrefBlock("gone", "Q:\\gone.dwg")
+        f << "  0\nSECTION\n  2\nBLOCKS\n"
+          << xrefBlock("site", ".\\site.dxf") << xrefBlock("again", "Q:\\nowhere\\site.dxf")
+          << xrefBlock("gone", "Q:\\gone.dwg")
           << "  0\nENDSEC\n  0\nSECTION\n  2\nENTITIES\n"
              "  0\nINSERT\n  8\n0\n  2\nsite\n 10\n0\n 20\n0\n  0\nENDSEC\n  0\nEOF\n";
     }

@@ -4,8 +4,8 @@
 #include <limits>
 
 #include "internal.h"
-#include "tbcad/geom/entity.h"
 #include "tbcad/geom/box_grid.h"
+#include "tbcad/geom/entity.h"
 
 namespace tbcad::geom {
 
@@ -380,7 +380,8 @@ Result<void> intersectEntities(const Entity& a, const Entity& b,
             for (std::size_t j = 0; j < pb.size(); ++j)
                 hits.push_back(j);
         } else {
-            grid.query(x.curve.bounds().inflated(margin), [&](std::size_t j) { hits.push_back(j); });
+            grid.query(x.curve.bounds().inflated(margin),
+                       [&](std::size_t j) { hits.push_back(j); });
             hits.insert(hits.end(), everywhere.begin(), everywhere.end());
             std::sort(hits.begin(), hits.end());
             hits.erase(std::unique(hits.begin(), hits.end()), hits.end());

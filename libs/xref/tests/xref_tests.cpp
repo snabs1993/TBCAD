@@ -1,8 +1,8 @@
 #include <doctest/doctest.h>
 
 #include <chrono>
-#include <filesystem>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 
 #include "tbcad/dxf/reader.h"
@@ -714,12 +714,13 @@ TEST_CASE("open: an xref a DXF names is loaded from beside the drawing, a missin
     fs::create_directories(dir);
     {
         auto doc = makeSource();
-        REQUIRE(io::writeTbcad(*doc, dir / "site.tbcad", io::WriteOptions{.keepBackup = false})
-                    .ok());
+        REQUIRE(
+            io::writeTbcad(*doc, dir / "site.tbcad", io::WriteOptions{.keepBackup = false}).ok());
     }
     auto xrefBlock = [](const char* name, const char* path) {
-        return std::string("  0\nBLOCK\n  8\n0\n  2\n") + name + "\n 70\n4\n 10\n0\n 20\n0\n 30\n0\n  3\n" +
-               name + "\n  1\n" + path + "\n  0\nENDBLK\n";
+        return std::string("  0\nBLOCK\n  8\n0\n  2\n") + name +
+               "\n 70\n4\n 10\n0\n 20\n0\n 30\n0\n  3\n" + name + "\n  1\n" + path +
+               "\n  0\nENDBLK\n";
     };
     const std::string text = std::string("  0\nSECTION\n  2\nBLOCKS\n") +
                              xrefBlock("site", "C:\\old project\\xrefs\\site.tbcad") +
@@ -765,8 +766,8 @@ TEST_CASE("open: the host's settings for the xref's layers (site|walls) go to th
     fs::create_directories(dir);
     {
         auto doc = makeSource();  // has the layer "walls", colour 3
-        REQUIRE(io::writeTbcad(*doc, dir / "site.tbcad", io::WriteOptions{.keepBackup = false})
-                    .ok());
+        REQUIRE(
+            io::writeTbcad(*doc, dir / "site.tbcad", io::WriteOptions{.keepBackup = false}).ok());
     }
     const std::string text =
         "  0\nSECTION\n  2\nTABLES\n  0\nTABLE\n  2\nLAYER\n"

@@ -471,7 +471,8 @@ TEST_CASE("long polylines: the grid path finds the same points as testing each s
             pl.v.push_back({{u(rng), u(rng)}, i % 3 == 0 ? bulge(rng) : 0.0});
         return pl;
     };
-    const PolylineData A = make(120), B = make(120);  // 14400 piece pairs: over the brute force limit
+    const PolylineData A = make(120),
+                       B = make(120);  // 14400 piece pairs: over the brute force limit
     std::vector<EntityIntersection> big;
     REQUIRE(intersectEntities(Entity{{}, A}, Entity{{}, B}, big).ok());
 

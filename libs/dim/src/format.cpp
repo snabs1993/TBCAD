@@ -162,7 +162,7 @@ static std::string formatDms(double radians, int decimals) {
         long long unitsPerMinute = decimals >= 4 ? perDeg / 60 : 1;
         long long m = rest / unitsPerMinute;
         rest %= unitsPerMinute;
-        char buf[16];
+        char buf[32];  // room for any long long (GCC -Wformat-truncation)
         std::snprintf(buf, sizeof buf, "%02lld", m);
         out += buf;
         out += "'";
@@ -173,7 +173,7 @@ static std::string formatDms(double radians, int decimals) {
             std::snprintf(buf, sizeof buf, "%02lld", sec);
             out += buf;
             if (secDecimals > 0) {
-                char fb[16];
+                char fb[32];
                 std::snprintf(fb, sizeof fb, "%0*lld", secDecimals, frac);
                 out += ".";
                 out += fb;

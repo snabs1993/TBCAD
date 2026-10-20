@@ -10,12 +10,12 @@
 #include "tbcad/blocks/display.h"
 #include "tbcad/dim/dim.h"
 #include "tbcad/dxf/reader.h"
+#include "tbcad/dxf/writer.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/hatch/hatch.h"
 #include "tbcad/mline/mline.h"
 #include "tbcad/table/table.h"
 #include "tbcad/text/text.h"
-#include "tbcad/dxf/writer.h"
 
 extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size) {
     using namespace tbcad::dxf;

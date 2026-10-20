@@ -71,7 +71,9 @@ std::vector<EntityId> sketchScene(Document& doc, int n, unsigned seed) {
     std::uniform_real_distribution<double> u(0, 1);
     std::vector<EntityId> ids;
     auto tx = doc.begin("setup");
-    const auto line = [&](Vec2 a, Vec2 b) { ids.push_back(tx.add(Entity{{}, LineData{a, b}}).value()); };
+    const auto line = [&](Vec2 a, Vec2 b) {
+        ids.push_back(tx.add(Entity{{}, LineData{a, b}}).value());
+    };
     const int side = static_cast<int>(std::sqrt(n / 4.0)) + 1;
     for (int k = 0; static_cast<int>(ids.size()) < n; ++k) {
         const double x = (k % side) * 20.0, y = (k / side) * 20.0;

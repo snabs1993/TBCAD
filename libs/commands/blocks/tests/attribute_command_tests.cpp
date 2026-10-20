@@ -371,8 +371,8 @@ TEST_CASE("BATTMAN removes, reorders and changes the modes of attributes, in one
         return out;
     };
     REQUIRE(tags() == std::vector<std::string>{"NAME", "KEY", "OWNER"});
-    auto r = f.host->run("BATTMAN", {cmd::ScriptItem::pick(i), "Up", "owner", "Up", "owner",
-                                     "Edit", "key", "Constant", "No", "Remove", "name", "Done"});
+    auto r = f.host->run("BATTMAN", {cmd::ScriptItem::pick(i), "Up", "owner", "Up", "owner", "Edit",
+                                     "key", "Constant", "No", "Remove", "name", "Done"});
     CHECK(r.finished);
     CHECK(tags() == std::vector<std::string>{"OWNER", "KEY"});
     // the insert follows: OWNER keeps its value, KEY is no longer constant so it gets a value,

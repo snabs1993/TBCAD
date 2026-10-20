@@ -60,7 +60,8 @@ private:
     };
     struct Hash {
         std::size_t operator()(const Key& k) const {
-            std::uint64_t h = k.ea * 0x9E3779B97F4A7C15ull ^ (k.eb + 0x632BE59BD9B4E019ull + (h0(k)));
+            std::uint64_t h =
+                k.ea * 0x9E3779B97F4A7C15ull ^ (k.eb + 0x632BE59BD9B4E019ull + (h0(k)));
             return static_cast<std::size_t>(h ^ (h >> 29));
         }
         static std::uint64_t h0(const Key& k) {
@@ -69,8 +70,13 @@ private:
         }
     };
     static Key key(Kind k, Ref a, Ref b) {
-        return {a.entity.value, b.entity.value, a.index, b.index, static_cast<std::uint8_t>(k),
-                static_cast<std::uint8_t>(a.part), static_cast<std::uint8_t>(b.part)};
+        return {a.entity.value,
+                b.entity.value,
+                a.index,
+                b.index,
+                static_cast<std::uint8_t>(k),
+                static_cast<std::uint8_t>(a.part),
+                static_cast<std::uint8_t>(b.part)};
     }
     std::unordered_set<Key, Hash> pairs_, ones_;
 };
@@ -82,7 +88,8 @@ std::uint64_t cellKey(double x, double y, double cell) {
         const double q = std::floor(v / cell);
         return static_cast<std::int64_t>(std::clamp(q, -1.0e9, 1.0e9));
     };
-    return (static_cast<std::uint64_t>(c(x)) << 32) ^ (static_cast<std::uint64_t>(c(y)) & 0xFFFFFFFFull);
+    return (static_cast<std::uint64_t>(c(x)) << 32) ^
+           (static_cast<std::uint64_t>(c(y)) & 0xFFFFFFFFull);
 }
 
 }  // namespace
@@ -140,7 +147,8 @@ std::vector<Constraint> autoConstrain(const Document& doc, const std::vector<Ent
             near.clear();
             for (int dy = -1; dy <= 1; ++dy)
                 for (int dx = -1; dx <= 1; ++dx) {
-                    auto it = grid.find(cellKey(all[i].p.x + dx * cell, all[i].p.y + dy * cell, cell));
+                    auto it =
+                        grid.find(cellKey(all[i].p.x + dx * cell, all[i].p.y + dy * cell, cell));
                     if (it == grid.end())
                         continue;
                     for (std::size_t j : it->second)
@@ -214,7 +222,8 @@ std::vector<Constraint> autoConstrain(const Document& doc, const std::vector<Ent
             lines.push_back({i, t, orientation(*l)});
         }
         const double halfWidth = std::asin(std::clamp(opt.angle, 0.0, 1.0)) + 1e-9;
-        const long nb = std::clamp(static_cast<long>(kPi / std::max(halfWidth, 1e-6)), 1L, 1L << 20);
+        const long nb =
+            std::clamp(static_cast<long>(kPi / std::max(halfWidth, 1e-6)), 1L, 1L << 20);
         const auto bucketOf = [&](double t) {
             long b = static_cast<long>(std::floor(t / kPi * nb)) % nb;
             return b < 0 ? b + nb : b;
@@ -224,15 +233,16 @@ std::vector<Constraint> autoConstrain(const Document& doc, const std::vector<Ent
         for (auto& v : byOrient)
             v.resize(static_cast<std::size_t>(nb));
         for (std::size_t k = 0; k < lines.size(); ++k)
-            byOrient[static_cast<std::size_t>(lines[k].orient)][bucketOf(lines[k].theta)].push_back(k);
+            byOrient[static_cast<std::size_t>(lines[k].orient)][bucketOf(lines[k].theta)].push_back(
+                k);
         std::vector<std::size_t> cand;
         for (std::size_t k = 0; k < lines.size(); ++k) {
             const Dir& di = lines[k];
             cand.clear();
             for (const bool parallelWindow : {true, false}) {
                 const double centre = parallelWindow ? di.theta : di.theta + kPi / 2;
-                const long b0 = bucketOf(centre - halfWidth) - 1, b1 = b0 + 2 + static_cast<long>(
-                                                                         std::ceil(2 * halfWidth / kPi * nb));
+                const long b0 = bucketOf(centre - halfWidth) - 1,
+                           b1 = b0 + 2 + static_cast<long>(std::ceil(2 * halfWidth / kPi * nb));
                 for (long b = b0; b <= std::min(b1, b0 + nb - 1); ++b) {
                     const long w = ((b % nb) + nb) % nb;
                     for (int o = 0; o < 3; ++o) {
@@ -300,13 +310,14 @@ std::vector<Constraint> autoConstrain(const Document& doc, const std::vector<Ent
             const std::size_t i = mi.item;
             if (done[i] || mi.value <= opt.distance)
                 continue;
-            const auto lo = std::lower_bound(
-                sorted.begin(), sorted.end(), mi, [&](const M& x, const M& key) {
-                    return x.type != key.type ? x.type < key.type : x.value < key.value - opt.distance;
+            const auto lo =
+                std::lower_bound(sorted.begin(), sorted.end(), mi, [&](const M& x, const M& key) {
+                    return x.type != key.type ? x.type < key.type
+                                              : x.value < key.value - opt.distance;
                 });
             cand.clear();
-            for (auto it = lo; it != sorted.end() && it->type == mi.type &&
-                               it->value <= mi.value + opt.distance;
+            for (auto it = lo;
+                 it != sorted.end() && it->type == mi.type && it->value <= mi.value + opt.distance;
                  ++it)
                 if (it->item > i && !done[it->item] &&
                     std::abs(it->value - mi.value) <= opt.distance)
