@@ -376,7 +376,11 @@ TextParts dimensionParts(const DimStyle& style, const DimensionData& d, bool sta
     if (style.altUnits && !angular) {
         UnitFormat f;
         f.unit = style.altUnit;
-        std::string alt = formatLength(m * style.altScale, style.altPrecision, f);
+        double v = m * style.altScale;
+        if (style.altRoundOff > 0)  // DIMALTRND, in the alternate unit
+            v = std::round(v / mmPerUnit(style.altUnit) / style.altRoundOff) * style.altRoundOff *
+                mmPerUnit(style.altUnit);
+        std::string alt = formatLength(v, style.altPrecision, f);
         suppressZeros(alt, style, style.altZeros);
         tail += " [" + style.altPrefix + alt + style.altSuffix + "]";
     }
@@ -421,7 +425,7 @@ std::optional<StackedText> stackedDimensionText(const DimStyle& style, const Dim
         return o;
     };
     // MTEXT draws a stack at 0.7 of the height around it: DIMTFAC sets the height of each line,
-    // and \A1 keeps the measurement centred on the stack.
+    // and \A (DIMTOLJ, middle by default) sets where the measurement sits against the stack.
     std::string stackMarkup = "\\S" + esc(t.up) + "^" + esc(t.down) + ";";
     const double f = style.tolHeightFactor / 0.7;
     if (std::abs(f - 1) > 1e-9) {
@@ -429,8 +433,8 @@ std::optional<StackedText> stackedDimensionText(const DimStyle& style, const Dim
         std::snprintf(buf, sizeof buf, "%.6g", f);
         stackMarkup = std::string("{\\H") + buf + "x;" + stackMarkup + "}";
     }
-    s.markup =
-        "\\A1;" + text::markupFromPlain(t.before) + stackMarkup + text::markupFromPlain(t.after);
+    s.markup = "\\A" + std::to_string(std::clamp(style.tolJustify, 0, 2)) + ";" +
+               text::markupFromPlain(t.before) + stackMarkup + text::markupFromPlain(t.after);
     s.before = std::move(t.before);
     s.up = std::move(t.up);
     s.down = std::move(t.down);

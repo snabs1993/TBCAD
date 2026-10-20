@@ -1318,6 +1318,30 @@ TEST_CASE("dimension style: DIMAZIN, DIMTZIN and DIMALTZ, also as overrides") {
     CHECK(ds->altZeros == 3);
 }
 
+TEST_CASE("dimension style: DIMALTRND and DIMTOLJ, also as overrides") {
+    Pairs p;
+    p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE");
+    p.g(0, "DIMSTYLE").g(105, "30").g(2, "R").g(148, 0.5).g(283, 0).g(140, 2.5).g(41, 2.5);
+    p.g(0, "ENDTAB").end();
+    p.section("ENTITIES");
+    p.g(0, "DIMENSION").g(8, "0").g(2, "*D1").g(3, "R").g(10, 5.0).g(20, 25.0).g(11, 5.0);
+    p.g(21, 28.0).g(70, 1).g(13, 0.0).g(23, 20.0).g(14, 10.0).g(24, 20.0).g(42, 10.0);
+    p.g(1001, "ACAD").g(1000, "DSTYLE").g(1002, "{").g(1070, 283).g(1070, 2).g(1070, 148);
+    p.g(1040, 0.1).g(1002, "}");
+    p.end().g(0, "EOF");
+    Loaded l = load(p.text);
+    const DimStyle* r = l.doc().dimStyleByName("R");
+    REQUIRE(r != nullptr);
+    CHECK(r->altRoundOff == doctest::Approx(0.5));
+    CHECK(r->tolJustify == 0);
+    auto dims = modelEntities<DimensionData>(l.doc());
+    REQUIRE(dims.size() == 1);
+    const DimStyle* ds = l.doc().dimStyle(dims[0]->style);
+    REQUIRE(ds != nullptr);
+    CHECK(ds->altRoundOff == doctest::Approx(0.1));
+    CHECK(ds->tolJustify == 2);
+}
+
 TEST_CASE("dimension style: a built-in arrow block name picks the arrow kind") {
     Pairs p;
     p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE");

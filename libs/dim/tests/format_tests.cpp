@@ -194,6 +194,26 @@ TEST_CASE("alternate units follow the measurement in brackets") {
           "0.10");
 }
 
+TEST_CASE("DIMALTRND rounds the alternate value and DIMTOLJ places the measurement on the stack") {
+    DimensionData d = aligned({0, 0}, {263, 0}, {0, 10});  // 10.354 in
+    DimStyle s;
+    s.altUnits = true;
+    s.altRoundOff = 0.25;  // in inches
+    CHECK(dimensionText(s, d) == "263.00 [10.25]");
+    s.altZeros = 2;
+    s.altRoundOff = 0.5;
+    CHECK(dimensionText(s, d) == "263.00 [10.5]");
+    s.altUnits = false;
+    s.tolerance = DimTolerance::Deviation;
+    s.tolUpper = 0.05;
+    s.tolLower = 0.02;
+    s.tolHeightFactor = 0.7;
+    s.tolJustify = 0;
+    auto st = stackedDimensionText(s, d);
+    REQUIRE(st);
+    CHECK(st->markup == "\\A0;263.00 \\S+0.05^-0.02;");
+}
+
 TEST_CASE("angular dimensions: degrees, minutes and seconds, gradians, radians, own decimals") {
     DimStyle s;
     s.precision = 2;

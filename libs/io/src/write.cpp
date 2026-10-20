@@ -281,7 +281,8 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
         // as a tag and a number. Tag 1: DIMTVP; tag 2: the leader arrow (since 1.19); tags 3 and
         // 4: DIMLWD and DIMLWE (since 1.20); tags 5, 6 and 7: DIMLTYPE, DIMLTEX1 and DIMLTEX2 as
         // the index of the name in the string table (since 1.21); tags 8, 9 and 10: DIMAZIN,
-        // DIMTZIN and DIMALTZ (bit 1 leading, bit 2 trailing zeros; since 1.22).
+        // DIMTZIN and DIMALTZ (bit 1 leading, bit 2 trailing zeros; since 1.22); tags 11 and 12:
+        // DIMALTRND and DIMTOLJ (since 1.23).
         ByteWriter dstv;
         std::size_t dstvCount = 0;
         for (const auto& [id, r] : doc.dimStyles()) {
@@ -297,11 +298,21 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
             int zeroCount = 0;
             for (int z : zeros)
                 zeroCount += z >= 0 ? 1 : 0;
-            if (!tvp && !ldr && !lwd && !lwe && ltCount == 0 && zeroCount == 0)
+            const bool rnd = r.altRoundOff != 0;
+            const bool tolj = r.tolJustify != 1;
+            if (!tvp && !ldr && !lwd && !lwe && ltCount == 0 && zeroCount == 0 && !rnd && !tolj)
                 continue;
             dstv.varint(id.value);
             dstv.varint((tvp ? 1 : 0) + (ldr ? 1 : 0) + (lwd ? 1 : 0) + (lwe ? 1 : 0) + ltCount +
-                        zeroCount);
+                        zeroCount + (rnd ? 1 : 0) + (tolj ? 1 : 0));
+            if (rnd) {
+                dstv.varint(11);
+                dstv.f64(r.altRoundOff);
+            }
+            if (tolj) {
+                dstv.varint(12);
+                dstv.f64(r.tolJustify);
+            }
             for (int k = 0; k < 3; ++k) {
                 if (zeros[k] < 0)
                     continue;
