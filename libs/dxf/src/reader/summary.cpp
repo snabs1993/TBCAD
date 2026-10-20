@@ -1,6 +1,8 @@
 // ImportSummary::toJson - the conversion report written by tbcad-convert --report.
+#include <algorithm>
 #include <cstdio>
 #include <map>
+#include <vector>
 
 #include "tbcad/dxf/reader.h"
 
@@ -58,13 +60,14 @@ DimFaults faultsOf(const DimComparison& c) {
 }
 
 // {"count":..,"differ":..,"byKind":{kind:{"count","text","offset","height","lines","arrows"}},
-//  "samples":[the first differing dimensions of each kind of fault]}
+//  "byStyle":{the styles with the most differences, as byKind},
+//  "samples":[the first differing dimensions of each kind of fault in each style]}
 std::string dimCompareJson(const std::vector<DimComparison>& all) {
     struct Tally {
         std::size_t count = 0, differ = 0, text = 0, offset = 0, height = 0, lines = 0, arrows = 0,
                     stale = 0;
     };
-    std::map<std::string, Tally> byKind;
+    std::map<std::string, Tally> byKind, byStyle;
     Tally total;
     std::string samples;
     std::size_t sampled = 0;
@@ -72,7 +75,7 @@ std::string dimCompareJson(const std::vector<DimComparison>& all) {
     for (const DimComparison& c : all) {
         // A stale stored block is counted apart and not compared further (see DimComparison).
         const DimFaults f = c.stale ? DimFaults{} : faultsOf(c);
-        for (Tally* t : {&byKind[c.kind], &total}) {
+        for (Tally* t : {&byKind[c.kind], &byStyle[c.style], &total}) {
             ++t->count;
             t->stale += c.stale;
             t->differ += f.any();
@@ -82,14 +85,14 @@ std::string dimCompareJson(const std::vector<DimComparison>& all) {
             t->lines += f.lines;
             t->arrows += f.arrows;
         }
-        // At most three samples of each kind of fault, so one common fault does not hide the
-        // others.
-        if (!f.any() || sampled >= 60)
+        // At most two samples of each kind of fault in each style, so one common fault does not
+        // hide the others.
+        if (!f.any() || sampled >= 120)
             continue;
         const std::string signature = c.kind + (f.text ? "t" : "") + (f.offset ? "o" : "") +
                                       (f.height ? "h" : "") + (f.lines ? "l" : "") +
-                                      (f.arrows ? "a" : "");
-        if (++perSignature[signature] > 3)
+                                      (f.arrows ? "a" : "") + "|" + c.style;
+        if (++perSignature[signature] > 2)
             continue;
         ++sampled;
         if (!samples.empty())
@@ -129,6 +132,20 @@ std::string dimCompareJson(const std::vector<DimComparison>& all) {
         first = false;
         appendString(o, k);
         o += ":" + tally(t);
+    }
+    // The styles with the most differences, which is where a fix pays most.
+    std::vector<std::pair<std::string, Tally>> styles(byStyle.begin(), byStyle.end());
+    std::stable_sort(styles.begin(), styles.end(), [](const auto& a, const auto& b) {
+        return a.second.differ > b.second.differ;
+    });
+    o += "},\"byStyle\":{";
+    first = true;
+    for (std::size_t i = 0; i < styles.size() && i < 15 && styles[i].second.differ > 0; ++i) {
+        if (!first)
+            o += ",";
+        first = false;
+        appendString(o, styles[i].first);
+        o += ":" + tally(styles[i].second);
     }
     return o + "},\"samples\":[" + samples + "]}";
 }

@@ -180,6 +180,9 @@ private:
     std::map<std::string, DimStyleId> dimOverrideStyles_{};
     // Each dimension style's arrow (DIMBLK) and first separate arrow (DIMBLK1, used with DIMSAH).
     std::map<std::string, std::pair<ArrowType, ArrowType>> dimArrows_{};
+    // ImportOptions::dimensionCompare: the size the writing program measured each MTEXT at (DXF
+    // 42 / 43), by its insertion point.
+    std::map<std::pair<double, double>, Vec2> mtextExtents_{};
     // Width factor a STYLE record states, by style id (before any stand-in widening): the TEXT
     // group 41 is the object's full factor, TBCAD stores it relative to its style's.
     std::map<std::uint32_t, double> styleRawWidth_{};

@@ -72,6 +72,7 @@ struct DimComparison {
     std::uint64_t handle = 0;
     int line = 0;
     std::string kind{};           // "linear", "aligned", "radius", ...
+    std::string style{};          // the dimension style's name
     std::string storedText{};     // without formatting codes
     std::string generatedText{};
     bool textMatch = true;
