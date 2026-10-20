@@ -145,6 +145,7 @@ private:
     void dialogs();
     void viewportInput(const ViewportRect& rect);
     void viewportMenu();
+    void cycleListPopup();
     void snapOverrideItems();
     void dropIntoViewport(const ViewportRect& rect);
     void registeredMenu(const std::string& top);
@@ -300,6 +301,10 @@ private:
     bool doubleClick_ = false;
     bool dragging_ = false;
     std::vector<Vec2> lassoPath_{};  // Alt+drag freeform selection, screen pixels
+    // Selection cycling list (SELECTIONCYCLING 2): the overlapping objects of the last click.
+    std::vector<EntityId> cycleList_{};
+    ui::PointerState cycleListAt_{};
+    bool openCycleList_ = false;
     Vec2 pressPos_{};
     bool panning_ = false;
     bool rightDown_ = false;  // right button pressed in the drawing, wheel or menu pending

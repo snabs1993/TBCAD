@@ -119,6 +119,14 @@ enum class Match : unsigned {
     Size = 256    // text height or circle and arc radius
 };
 
+// SELECTSIMILAR's choice of properties, a Match mask kept in this setting (Type and Layer when
+// unset or unreadable).
+inline constexpr const char* kSimilarMatchKey = "selectsimilar.match";
+unsigned similarMatch(const std::optional<std::string>& setting);
+
+// The name QSELECT and FILTER use for the type of an object (LINE, CIRCLE, POLYLINE, XLINE, ...).
+std::string objectTypeName(const Entity& e);
+
 // Visible model-space objects that agree with `reference` on every property in `match` (the
 // reference itself is included).
 std::vector<EntityId> similarEntities(const Document& doc, const Entity& reference, unsigned match);

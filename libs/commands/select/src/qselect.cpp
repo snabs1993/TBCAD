@@ -155,10 +155,9 @@ std::optional<std::vector<EntityId>> queryEntities(const Document& doc, const Qu
     };
     if (q.property == Property::Type && !wild) {
         static const char* const kKnown[] = {
-            "LINE",   "CIRCLE",    "ARC",    "POLYLINE", "LWPOLYLINE", "POINT", "ELLIPSE",
-            "SPLINE", "TEXT",      "MTEXT",  "HATCH",    "INSERT",     "BLOCK", "DIMENSION",
-            "LEADER", "PROXY",     "TABLE",  "RAY",      "XLINE",      "MLINE", "MULTILEADER",
-            "MLEADER"};
+            "LINE",  "CIRCLE", "ARC",   "POLYLINE", "LWPOLYLINE",  "POINT",     "ELLIPSE", "SPLINE",
+            "TEXT",  "MTEXT",  "HATCH", "INSERT",   "BLOCK",       "DIMENSION", "LEADER",  "PROXY",
+            "TABLE", "RAY",    "XLINE", "MLINE",    "MULTILEADER", "MLEADER"};
         if (std::none_of(std::begin(kKnown), std::end(kKnown),
                          [&](const char* k) { return want == k; }))
             return std::nullopt;
@@ -374,8 +373,8 @@ std::vector<EntityId> similarEntities(const Document& doc, std::span<const Entit
 namespace detail {
 
 const char* const kPropNames[kPropCount] = {
-    "Type",         "Layer",   "Color",  "Linetype", "Lineweight", "Level", "Transparency",
-    "Pattern",      "Height",  "Radius", "Length",   "Name",       "Style", "Contents"};
+    "Type",    "Layer",  "Color",  "Linetype", "Lineweight", "Level", "Transparency",
+    "Pattern", "Height", "Radius", "Length",   "Name",       "Style", "Contents"};
 
 std::string propertyPrompt() {
     std::string s = "Property [";
@@ -388,8 +387,8 @@ cmd::Task askOperator(cmd::CommandContext& ctx, Query& q, std::string_view lead,
     ok = false;
     const bool numeric = q.property == Property::Transparency || q.property == Property::Height ||
                          q.property == Property::Radius || q.property == Property::Length;
-    const bool text = !numeric && q.property != Property::Color &&
-                      q.property != Property::Lineweight;
+    const bool text =
+        !numeric && q.property != Property::Color && q.property != Property::Lineweight;
     cmd::KeywordOptions oo;
     oo.keywords = {"Equals", "Not"};
     if (numeric) {
@@ -417,12 +416,13 @@ cmd::Task askOperator(cmd::CommandContext& ctx, Query& q, std::string_view lead,
 
 namespace {
 
-// QSELECT [QSEL]: selects the objects whose property has (or does not have) a value.
+// -QSELECT: selects the objects whose property has (or does not have) a value, typed.
 class QSelect final : public cmd::Command {
 public:
-    std::string_view name() const override { return "QSELECT"; }
-    std::vector<std::string> defaultAliases() const override { return {"QSEL"}; }
-    std::string_view description() const override { return "Select objects by a property value"; }
+    std::string_view name() const override { return "-QSELECT"; }
+    std::string_view description() const override {
+        return "Select objects by a property value (command line)";
+    }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::KeywordOptions po;
@@ -451,8 +451,8 @@ public:
         // selection").
         ao.keywords = {"Replace", "Append", "Within"};
         ao.defaultKeyword = "Replace";
-        auto a = co_await ctx.getKeyword(
-            "Apply to the selection [Replace/Append/Within] <Replace>", std::move(ao));
+        auto a = co_await ctx.getKeyword("Apply to the selection [Replace/Append/Within] <Replace>",
+                                         std::move(ao));
         if (!a.ok())
             co_return;
 
@@ -483,10 +483,28 @@ public:
     }
 };
 
+// QSELECT [QSEL]: the Quick Select dialog.
+class QSelectDialog final : public cmd::Command {
+public:
+    std::string_view name() const override { return "QSELECT"; }
+    std::vector<std::string> defaultAliases() const override { return {"QSEL"}; }
+    std::string_view description() const override {
+        return "Quick Select: select objects by type and a property value";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().openPanel("qselect");
+        co_return;
+    }
+};
+
 }  // namespace
 
 std::unique_ptr<cmd::Command> makeQSelect() {
     return std::make_unique<QSelect>();
+}
+
+std::unique_ptr<cmd::Command> makeQSelectDialog() {
+    return std::make_unique<QSelectDialog>();
 }
 
 }  // namespace detail

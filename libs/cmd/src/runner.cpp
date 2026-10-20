@@ -254,6 +254,8 @@ void CommandRunner::refreshPrompt() {
     shape_ = SelShape::None;
     shapePts_.clear();
     removeMode_ = false;
+    singleMode_ = false;
+    groupPending_ = false;
     selUndo_.clear();
     previewList_.items.clear();
     if (stack_.empty() || !stack_.back().ctx->hasPending()) {
@@ -518,6 +520,12 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
             return complete(std::move(ans));
         }
         reportFound(collected_.size() - before);
+        if (singleMode_) {  // SIngle: done after the first batch that found something
+            ans.status = Status::Ok;
+            ans.ids = collected_;
+            previousSelection_ = collected_;
+            return complete(std::move(ans));
+        }
         return SubmitResult::Accepted;
     };
     // The last point of a typed Window / Crossing / polygon / fence arrived: select.
@@ -527,6 +535,9 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
         shape_ = SelShape::None;
         shapePts_.clear();
         IHost::SelectShape kind = IHost::SelectShape::Window;
+        // BOX: left to right is a window, right to left a crossing, as when dragging.
+        if (sh == SelShape::Box && pts.size() == 2 && pts[1].x < pts[0].x)
+            kind = IHost::SelectShape::Crossing;
         switch (sh) {
             case SelShape::Crossing:
                 kind = IHost::SelectShape::Crossing;
@@ -551,10 +562,11 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
     auto addShapePoint = [&](Vec2 p) -> SubmitResult {
         lastPoint_ = p;
         shapePts_.push_back(p);
-        if ((shape_ == SelShape::Window || shape_ == SelShape::Crossing) && shapePts_.size() == 2)
+        const bool box =
+            shape_ == SelShape::Window || shape_ == SelShape::Crossing || shape_ == SelShape::Box;
+        if (box && shapePts_.size() == 2)
             return finishShape();
-        host_.print(shape_ == SelShape::Window || shape_ == SelShape::Crossing
-                        ? "Specify opposite corner:"
+        host_.print(box                         ? "Specify opposite corner:"
                     : shape_ == SelShape::Fence ? "Specify next fence point or [Undo]:"
                                                 : "Specify endpoint of polygon or [Undo]:");
         return SubmitResult::Accepted;
@@ -624,6 +636,11 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                         }
                         shape_ = SelShape::None;
                         shapePts_.clear();
+                        host_.print("Select objects:");
+                        return SubmitResult::Accepted;
+                    }
+                    if (groupPending_) {
+                        groupPending_ = false;
                         host_.print("Select objects:");
                         return SubmitResult::Accepted;
                     }
@@ -719,6 +736,20 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                     return up.size() >= minLen && up.size() <= full.size() &&
                            full.substr(0, up.size()) == up;
                 };
+                if (groupPending_) {
+                    groupPending_ = false;
+                    for (const Group& g : readGroups(doc_)) {
+                        if (toUpperAscii(g.name) != up)
+                            continue;
+                        std::vector<EntityId> members;
+                        for (EntityId id : g.members)
+                            if (const Entity* e = doc_.find(id); e && pickable(*e))
+                                members.push_back(id);
+                        return applyBatch(members, false,
+                                          "Group " + g.name + " has no objects to select.");
+                    }
+                    return reject("There is no group named \"" + text + "\".");
+                }
                 if (shape_ != SelShape::None) {
                     if (opt("UNDO", 1)) {
                         if (!shapePts_.empty())
@@ -753,6 +784,31 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                     return startShape(SelShape::CPolygon, "Specify first polygon point:");
                 if (opt("FENCE", 1))
                     return startShape(SelShape::Fence, "Specify first fence point:");
+                if (opt("BOX", 3))
+                    return startShape(SelShape::Box, "Specify first corner:");
+                if (opt("GROUP", 1)) {
+                    groupPending_ = true;
+                    host_.print("Enter group name:");
+                    return SubmitResult::Accepted;
+                }
+                if (opt("SINGLE", 2)) {
+                    singleMode_ = true;
+                    host_.print("Select objects:");
+                    return SubmitResult::Accepted;
+                }
+                // AUto and Multiple are how picking always works here: a pick on empty space
+                // starts a window, and picks are added one after another.
+                if (opt("AUTO", 2) || opt("MULTIPLE", 1)) {
+                    host_.print("Select objects:");
+                    return SubmitResult::Accepted;
+                }
+                if (up == "?") {
+                    host_.print(
+                        "Expects a point or Window/Last/Crossing/BOX/ALL/Fence/WPolygon/"
+                        "CPolygon/Group/Add/Remove/Multiple/Previous/Undo/AUto/SIngle");
+                    host_.print("Select objects:");
+                    return SubmitResult::Accepted;
+                }
                 if (opt("REMOVE", 1)) {
                     removeMode_ = true;
                     host_.print("Remove objects:");
@@ -795,9 +851,11 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                         if (accepts(id))
                             found.push_back(id);
                 } else {
-                    return reject("Invalid option \"" + text +
-                                  "\". Pick objects, or type Window, Crossing, WPolygon, CPolygon, "
-                                  "Fence, All, Last, Previous, Add, Remove or Undo.");
+                    return reject(
+                        "Invalid option \"" + text +
+                        "\". Pick objects, or type Window, Crossing, WPolygon, CPolygon, BOX, "
+                        "Fence, All, Last, Previous, Group, Add, Remove, SIngle or "
+                        "Undo (? lists them).");
                 }
                 return applyBatch(found, false, "No objects found.");
             }

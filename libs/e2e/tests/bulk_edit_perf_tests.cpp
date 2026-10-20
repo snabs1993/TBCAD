@@ -22,8 +22,8 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
-#include <windows.h>
 #include <psapi.h>
+#include <windows.h>
 #ifdef _MSC_VER
 #pragma comment(lib, "psapi.lib")
 #endif
@@ -405,7 +405,7 @@ TEST_CASE("perf: selection on a big drawing") {
             .size();
     });
     big.core->selectAll();
-    for (const char* cmdName : {"SELECTSIMILAR", "QSELECT"}) {
+    for (const char* cmdName : {"SELECTSIMILAR", "-QSELECT"}) {
         auto t = std::chrono::steady_clock::now();
         big.core->submitText(cmdName);
         std::printf("  %-22s %6.0f ms  (prompt: %s)\n", cmdName, ms(t),
@@ -418,7 +418,7 @@ TEST_CASE("perf: selection on a big drawing") {
 TEST_CASE("perf: QSELECT on a big drawing") {
     Big big;
     big.core->selectAll();
-    for (const char* l : {"QSELECT", "Type", "Line", "", "", ""}) {
+    for (const char* l : {"-QSELECT", "Type", "Line", "", "", ""}) {
         auto t = std::chrono::steady_clock::now();
         big.core->submitText(l);
         std::printf("  %-8s %6.0f ms  -> %s\n", l, ms(t), big.core->promptText().c_str());

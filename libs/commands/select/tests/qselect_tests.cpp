@@ -102,13 +102,13 @@ TEST_CASE("QSELECT replaces the selection and reports bad values") {
     Fixture f;
     auto a = f.addEntity(CircleData{{0, 0}, 1});
     f.addEntity(LineData{{0, 0}, {1, 1}});
-    f.host.run("QSELECT", {"Type", "circle", "", ""});
+    f.host.run("-QSELECT", {"Type", "circle", "", ""});
     CHECK(f.host.logContains("1 object(s) found."));
     REQUIRE(f.host.selection().size() == 1);
     CHECK(f.host.selection()[0] == a);
     CHECK_FALSE(f.host.undoStack().canUndo());
 
-    f.host.run("QSEL", {"Type", "banana", "", ""});
+    f.host.run("-QSELECT", {"Type", "banana", "", ""});
     CHECK(f.host.logContains("not a valid Type value"));
 }
 
@@ -116,8 +116,8 @@ TEST_CASE("QSELECT Not and Append") {
     Fixture f;
     auto c = f.addEntity(CircleData{{0, 0}, 1});
     auto l = f.addEntity(LineData{{0, 0}, {1, 1}});
-    f.host.run("QSELECT", {"Type", "circle", "", ""});
-    f.host.run("QSELECT", {"Type", "circle", "Not", "Append"});
+    f.host.run("-QSELECT", {"Type", "circle", "", ""});
+    f.host.run("-QSELECT", {"Type", "circle", "Not", "Append"});
     auto sel = f.host.selection();
     CHECK(sel.size() == 2);
     CHECK(has(sel, c));
@@ -282,11 +282,11 @@ TEST_CASE("QSELECT Wildcard and FILTER save and reuse a wildcard condition") {
     auto a = f.addEntity(LineData{{0, 0}, {1, 0}}, w1);
     auto b = f.addEntity(LineData{{0, 1}, {1, 1}}, w2);
     f.addEntity(LineData{{0, 2}, {1, 2}}, o);
-    f.host.run("QSELECT", {"Layer", "a-wall*", "Wildcard", "Replace"});
+    f.host.run("-QSELECT", {"Layer", "a-wall*", "Wildcard", "Replace"});
     CHECK(f.host.selection() == std::vector<EntityId>{a, b});
-    f.host.run("FILTER", {"Add", "Layer", "*EXT", "Wildcard", "Save", "ext", "Apply"});
+    f.host.run("-FILTER", {"Add", "Layer", "*EXT", "Wildcard", "Save", "ext", "Apply"});
     CHECK(f.host.selection() == std::vector<EntityId>{b});
     f.host.setSelection({});
-    f.host.run("FILTER", {"Use", "EXT", "Apply"});
+    f.host.run("-FILTER", {"Use", "EXT", "Apply"});
     CHECK(f.host.selection() == std::vector<EntityId>{b});
 }

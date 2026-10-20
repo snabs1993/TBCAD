@@ -10,6 +10,7 @@ std::unique_ptr<cmd::Command> makePurge();
 std::unique_ptr<cmd::Command> makePurgeDialog();
 std::unique_ptr<cmd::Command> makePurgeItems();
 std::unique_ptr<cmd::Command> makeQSelect();
+std::unique_ptr<cmd::Command> makeQSelectDialog();
 std::unique_ptr<cmd::Command> makeSelectSimilar();
 std::unique_ptr<cmd::Command> makeIsolate();
 std::unique_ptr<cmd::Command> makeSelectAll();
@@ -18,6 +19,8 @@ std::unique_ptr<cmd::Command> makeQuickProperties();
 std::unique_ptr<cmd::Command> makeChProp();
 std::unique_ptr<cmd::Command> makeChange();
 std::unique_ptr<cmd::Command> makeFilter();
+std::unique_ptr<cmd::Command> makeFilterDialog();
+std::unique_ptr<cmd::Command> makeFilterSave();
 std::unique_ptr<cmd::Command> makeHide();
 std::unique_ptr<cmd::Command> makeUnisolate();
 

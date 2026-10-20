@@ -122,11 +122,13 @@ private:
     std::vector<EntityId> collected_{};            // selection being built at a getSelection prompt
     std::unordered_set<EntityId> collectedSet_{};  // the same ids, for the duplicate check
     // Typed selection options at "Select objects:" (Window, Crossing, WPolygon, CPolygon, Fence,
-    // Remove / Add, Undo).
-    enum class SelShape { None, Window, Crossing, WPolygon, CPolygon, Fence };
+    // Remove / Add, Undo, BOX, Group, SIngle).
+    enum class SelShape { None, Window, Crossing, WPolygon, CPolygon, Fence, Box };
     SelShape shape_ = SelShape::None;
     std::vector<Vec2> shapePts_{};
     bool removeMode_ = false;
+    bool singleMode_ = false;    // SIngle: the first pick or window ends Select objects
+    bool groupPending_ = false;  // Group: the next text is a group name
     // Typed point modifiers at a point prompt, as in AutoCAD: FROM (a base point, then an offset
     // from it), M2P / MTP (the middle of two points) and TT (a temporary tracking point).
     enum class PtMod { None, FromBase, FromOffset, Mid1, Mid2, Track };

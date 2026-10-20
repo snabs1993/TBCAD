@@ -48,11 +48,12 @@ std::optional<std::vector<EntityId>> filterEntities(const Document& doc,
 std::string encodeFilter(const std::vector<Query>& queries) {
     std::string s;
     for (const Query& q : queries)
-        s += std::string(q.orPrevious ? "|" : "") + std::string(1, static_cast<char>(static_cast<int>(q.property) < 10
+        s += std::string(q.orPrevious ? "|" : "") +
+             std::string(1, static_cast<char>(static_cast<int>(q.property) < 10
                                                   ? '0' + static_cast<int>(q.property)
                                                   : 'a' + static_cast<int>(q.property) - 10)) +
-             (q.negate                        ? "!"
-              : q.compare == Compare::Greater ? ">"
+             (q.negate                         ? "!"
+              : q.compare == Compare::Greater  ? ">"
               : q.compare == Compare::Less     ? "<"
               : q.compare == Compare::Wildcard ? "~"
                                                : "=") +
@@ -103,8 +104,8 @@ namespace {
 
 std::string describeQuery(const Query& q) {
     return std::string(kPropNames[static_cast<int>(q.property)]) +
-           (q.negate                        ? " <> "
-            : q.compare == Compare::Greater ? " > "
+           (q.negate                         ? " <> "
+            : q.compare == Compare::Greater  ? " > "
             : q.compare == Compare::Less     ? " < "
             : q.compare == Compare::Wildcard ? " like "
                                              : " = ") +
@@ -117,10 +118,9 @@ std::string describeQuery(const Query& q) {
 // objects to look in first, as AutoCAD's Apply does.
 class Filter final : public cmd::Command {
 public:
-    std::string_view name() const override { return "FILTER"; }
-    std::vector<std::string> defaultAliases() const override { return {"FI"}; }
+    std::string_view name() const override { return "-FILTER"; }
     std::string_view description() const override {
-        return "Select objects that satisfy a list of conditions";
+        return "Select objects that satisfy a list of conditions (command line)";
     }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
@@ -132,7 +132,9 @@ public:
             ko.defaultKeyword = def;
             std::string head = conds.empty() ? "No conditions." : "";
             for (std::size_t i = 0; i < conds.size(); ++i)
-                head += (i == 0 ? "" : conds[i].orPrevious ? " OR " : " AND ") +
+                head += (i == 0                ? ""
+                         : conds[i].orPrevious ? " OR "
+                                               : " AND ") +
                         describeQuery(conds[i]);
             auto k = co_await ctx.getKeyword(
                 head + " [Add/Or/Remove/Apply/SElect/Save/Use] <" + def + ">", std::move(ko));
@@ -231,10 +233,62 @@ private:
     }
 };
 
+// FILTER [FI]: the Object Selection Filters dialog.
+class FilterDialog final : public cmd::Command {
+public:
+    std::string_view name() const override { return "FILTER"; }
+    std::vector<std::string> defaultAliases() const override { return {"FI"}; }
+    std::string_view description() const override {
+        return "Object Selection Filters: build, save and apply lists of conditions";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().openPanel("filter");
+        co_return;
+    }
+};
+
+// _FILTERSAVE (hidden): the dialog's Save As and Delete. Setting tmp.filter.save holds the name,
+// a newline and the encoded conditions; no conditions deletes the named filter. One undo step.
+class FilterSave final : public cmd::Command {
+public:
+    std::string_view name() const override { return "_FILTERSAVE"; }
+    std::string_view description() const override { return {}; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        const std::string spec = ctx.host().setting("tmp.filter.save").value_or("");
+        ctx.host().setSetting("tmp.filter.save", "");
+        const auto nl = spec.find('\n');
+        const std::string name = cmd::toUpperAscii(cmd::trim(spec.substr(0, nl)));
+        const std::string enc = nl == std::string::npos ? std::string() : spec.substr(nl + 1);
+        if (name.empty())
+            co_return;
+        const std::string key = "filter." + name;
+        const bool exists = ctx.doc().header().custom.count(key) != 0;
+        if (enc.empty() && !exists)
+            co_return;
+        ctx.setUndoLabel("FILTER");
+        (void)ctx.tx().modifyHeader([&](Header& h) {
+            if (enc.empty())
+                h.custom.erase(key);
+            else
+                h.custom[key] = enc;
+        });
+        ctx.message(enc.empty() ? "Filter " + name + " deleted." : "Filter " + name + " saved.");
+        co_return;
+    }
+};
+
 }  // namespace
 
 std::unique_ptr<cmd::Command> makeFilter() {
     return std::make_unique<Filter>();
+}
+
+std::unique_ptr<cmd::Command> makeFilterDialog() {
+    return std::make_unique<FilterDialog>();
+}
+
+std::unique_ptr<cmd::Command> makeFilterSave() {
+    return std::make_unique<FilterSave>();
 }
 
 }  // namespace detail

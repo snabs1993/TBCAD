@@ -867,6 +867,10 @@ void registerAppCommands(cmd::Registry& registry) {
         "PICKADD", "selection.pickadd", 2, 2,
         "0 = a pick replaces the selection (Shift adds), 1 or 2 = picks add (Shift removes)"));
     (void)registry.add(std::make_unique<PickVarCommand>(
+        "SELECTIONCYCLING", "selection.cycling", 2, 2,
+        "With selection cycling on (SELCYC): 0 = off, 1 = click again for the next object under "
+        "the cursor, 2 = a list of the overlapping objects to pick from"));
+    (void)registry.add(std::make_unique<PickVarCommand>(
         "PICKFIRST", "selection.pickfirst", 1, 1,
         "1 = commands use the objects selected before them, 0 = they always ask"));
     (void)registry.add(std::make_unique<SpaceCommand>(
