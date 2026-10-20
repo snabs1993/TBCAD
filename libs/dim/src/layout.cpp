@@ -491,14 +491,28 @@ void layoutAngular(const Ctx& c, const DimensionData& d, const std::string& txt,
 
     const double tw = textWidth(c, txt);
     const double arcLen = r * g.sweep;
-    const bool arrowsIn = arcLen >= 2 * c.arrow;
+    const bool arrowRoom = arcLen >= 2 * c.arrow;
+    // DIMATFIT, as for a linear dimension: text on the arc that fits there, but not together
+    // with the arrows, sends the arrows outside (best fit, arrows first, both outside).
+    bool textOnArc = tw > 0;
+    if (textOnArc && d.textPosUser) {
+        const Vec2 v = d.textPos - V;
+        const double along = normalizeAngle(angleOf(v) - a1);
+        textOnArc = std::abs(length(v) - r) < c.th && along < g.sweep;
+    }
+    const double textW = tw + 2 * c.gap;
+    const bool tight = textOnArc && arcLen < textW + 2 * c.arrow;
+    const DimFit fit = c.st.fit;
+    const bool arrowsIn =
+        arrowRoom && !(tight && (fit == DimFit::ArrowsFirst || fit == DimFit::BothOutside ||
+                                 (fit == DimFit::Best && arcLen >= textW)));
     const double stub = 2 * c.arrow;
     const double am = a1 + g.sweep / 2;
     const Vec2 radial = unit(am);
     // DIMTOH: text beyond the extension lines (an arc too short for its arrows, or text moved out
     // past the arc) can be horizontal while the text between them follows the arc.
     // (Moved text sets the arc radius, so "past the arc" is the arc lying beyond the picked lines.)
-    const bool outside = !arrowsIn || (d.textPosUser && !L.lines.empty());
+    const bool outside = !arrowRoom || (d.textPosUser && !L.lines.empty());
     const bool horizontal = c.st.textAlign == DimTextAlign::Horizontal ||
                             (outside && c.st.textAlignOutside == DimTextAlign::Horizontal);
     const double rotText = horizontal ? 0 : readable(am + kPi / 2);
