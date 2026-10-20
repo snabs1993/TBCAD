@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <map>
+#include <string_view>
 
 #include "importer.h"
 #include "tbcad/dim/dim.h"
@@ -144,8 +145,23 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
     double factor = 1;
     {
         const std::string t = dec(r.raw(1));
-        std::size_t i = t.rfind("\\H", 0) == 0 ? 0 : t.find("{\\H");
-        if (i != std::string::npos && i <= 8) {
+        // Only a height at the start counts (after other leading codes such as "\\A1;"): one
+        // in the middle ("9d{\\H0.8x;b}") sizes just the letters after it.
+        std::size_t i = 0;
+        while (i < t.size()) {
+            if (t[i] == '{') {
+                ++i;
+            } else if (t[i] == '\\' && i + 1 < t.size() &&
+                       std::string_view("ACcFfQTWp").find(t[i + 1]) != std::string_view::npos &&
+                       t.find(';', i) != std::string::npos) {
+                i = t.find(';', i) + 1;
+            } else {
+                break;
+            }
+        }
+        if (t.compare(i, 2, "\\H") != 0)
+            i = std::string::npos;
+        if (i != std::string::npos) {
             i = t.find("\\H", i) + 2;
             std::size_t j = t.find(';', i);
             if (j != std::string::npos && j > i && t[j - 1] == 'x') {
