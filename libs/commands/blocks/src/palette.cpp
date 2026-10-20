@@ -275,4 +275,69 @@ std::string blockCountCsv(const std::vector<BlockCountRow>& rows) {
     return out;
 }
 
+std::vector<std::string> paletteInsertLines(const std::string& name, const InsertOptions& o) {
+    std::vector<std::string> lines{"INSERT", name};
+    auto number = [](double v) {
+        std::string s = std::to_string(v);
+        s.erase(s.find_last_not_of('0') + 1);
+        if (!s.empty() && s.back() == '.')
+            s.pop_back();
+        return s;
+    };
+    if (o.scale != 1 && o.scale != 0) {
+        lines.push_back("Scale");
+        lines.push_back(number(o.scale));
+    }
+    if (o.rotationDeg != 0) {
+        lines.push_back("Rotate");
+        lines.push_back(number(o.rotationDeg));
+    }
+    if (o.repeat)
+        lines.push_back("Multiple");
+    if (o.explode)
+        lines.push_back("Explode");
+    return lines;
+}
+
+std::vector<RecentBlock> parseRecent(const std::string& setting) {
+    std::vector<RecentBlock> out;
+    std::size_t at = 0;
+    while (at < setting.size()) {
+        std::size_t end = setting.find('\x1e', at);
+        if (end == std::string::npos)
+            end = setting.size();
+        const std::string rec = setting.substr(at, end - at);
+        at = end + 1;
+        const std::size_t a = rec.find('\x1f');
+        const std::size_t b = a == std::string::npos ? a : rec.find('\x1f', a + 1);
+        if (b == std::string::npos || a == 0)
+            continue;
+        RecentBlock r{rec.substr(0, a), rec.substr(a + 1, b - a - 1), rec.substr(b + 1) == "1"};
+        if (out.size() < kMaxRecentBlocks)
+            out.push_back(std::move(r));
+    }
+    return out;
+}
+
+std::string formatRecent(const std::vector<RecentBlock>& list) {
+    std::string s;
+    for (const RecentBlock& r : list) {
+        if (!s.empty())
+            s += '\x1e';
+        s += r.name + '\x1f' + r.file + '\x1f' + (r.whole ? "1" : "0");
+    }
+    return s;
+}
+
+std::string pushRecent(const std::string& setting, const RecentBlock& b) {
+    std::vector<RecentBlock> list = parseRecent(setting);
+    std::erase_if(list, [&](const RecentBlock& r) {
+        return lower(r.name) == lower(b.name) && r.file == b.file;
+    });
+    list.insert(list.begin(), b);
+    if (list.size() > kMaxRecentBlocks)
+        list.resize(kMaxRecentBlocks);
+    return formatRecent(list);
+}
+
 }  // namespace tbcad::block_cmds

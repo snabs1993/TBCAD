@@ -36,6 +36,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeBTestBlockCommand());
     (void)registry.add(makeBAttOrderCommand());
     (void)registry.add(makeInsertCommand());
+    (void)registry.add(makeBlocksPaletteCommand());
+    (void)registry.add(makeBlocksPaletteCloseCommand());
     (void)registry.add(makeMinsertCommand());
     (void)registry.add(makeExplodeCommand());
     (void)registry.add(makeXplodeCommand());
@@ -94,6 +96,7 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Insert/External References Palette", "EXTERNALREFERENCES", "block.xrefpanel");
     ui.addMenuItem("Draw/Block/Make Block...", "BLOCK", "block.make", "B");
     ui.addMenuItem("Draw/Block/Insert Block...", "INSERT", "block.insert", "I");
+    ui.addMenuItem("Insert/Blocks Palette", "BLOCKSPALETTE", "block.palette");
     ui.addMenuItem("Draw/Block/Define Attribute...", "ATTDEF", "block.attdef");
     ui.addMenuItem("Modify/Edit Block in Place", "BEDIT", "block.bedit");
     ui.addMenuItem("Modify/Save Block Edit", "BSAVE", "block.bsave");

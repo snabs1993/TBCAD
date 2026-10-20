@@ -8,8 +8,9 @@
 //   kCommandsPayload: a palette tool. First line "palette<TAB>tool" (where it came from), then
 //                     the lines to run as typed; dropped on the drawing, or on a button of the
 //                     same palette to reorder.
-//   kContentPayload:  items of another drawing (content browser); dropped on the drawing (copy
-//                     and insert) or on a palette (add as tools).
+//   kContentPayload:  items of another drawing (content browser) or blocks of the open drawing
+//                     (block palette, empty file); dropped on the drawing (copy and insert) or on
+//                     a palette (add as tools).
 namespace tbcad::ui {
 
 inline constexpr const char* kCommandsPayload = "TBCAD_CMDS";
@@ -71,10 +72,16 @@ inline std::vector<std::string> toolDropLines(const std::string& payload) {
 }
 
 // Command lines that bring the dragged items into the drawing; a dropped block is also inserted.
+// An empty file is the open drawing (a tile of the block palette): its block is just inserted.
 inline std::vector<std::string> contentDropLines(const ContentDrag& d) {
     std::vector<std::string> out;
-    if (d.file.empty() || d.names.empty())
+    if (d.names.empty())
         return out;
+    if (d.file.empty()) {
+        if (d.kind == "Block")
+            out.push_back("INSERT " + d.names.front());
+        return out;
+    }
     std::string names;
     for (const std::string& n : d.names)
         names += (names.empty() ? "" : "|") + n;

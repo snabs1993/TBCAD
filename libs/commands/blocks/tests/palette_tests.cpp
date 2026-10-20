@@ -182,3 +182,80 @@ TEST_CASE("INSERT in a drawing with no blocks still takes a typed drawing file")
     CHECK(f.doc.blockByName("Frame") != nullptr);
     CHECK(f.modelSpace().size() == 1);
 }
+
+TEST_CASE("paletteInsertLines adds only the options that differ from plain INSERT") {
+    CHECK(paletteInsertLines("Door", {}) == std::vector<std::string>{"INSERT", "Door"});
+    InsertOptions o{.scale = 2.5, .rotationDeg = 90, .repeat = true, .explode = true};
+    CHECK(paletteInsertLines("Door", o) == std::vector<std::string>{"INSERT", "Door", "Scale",
+                                                                    "2.5", "Rotate", "90",
+                                                                    "Multiple", "Explode"});
+    CHECK(paletteInsertLines("D", {.scale = 0}) == std::vector<std::string>{"INSERT", "D"});
+}
+
+TEST_CASE("the recent block list keeps the newest first, once per block and file") {
+    std::string s = pushRecent("", {"Door", "", false});
+    s = pushRecent(s, {"Window", "C:/lib/w.tbcad", true});
+    s = pushRecent(s, {"door", "", false});  // the same block again moves to the front
+    auto list = parseRecent(s);
+    REQUIRE(list.size() == 2);
+    CHECK(list[0] == RecentBlock{"door", "", false});
+    CHECK(list[1] == RecentBlock{"Window", "C:/lib/w.tbcad", true});
+    // The same name from another drawing is another entry.
+    s = pushRecent(s, {"Door", "other.tbcad", false});
+    CHECK(parseRecent(s).size() == 3);
+    for (int i = 0; i < 40; ++i)
+        s = pushRecent(s, {"B" + std::to_string(i), "", false});
+    list = parseRecent(s);
+    CHECK(list.size() == kMaxRecentBlocks);
+    CHECK(list.front().name == "B39");
+    CHECK(parseRecent(formatRecent(list)) == list);
+    CHECK(parseRecent("broken\x1e\x1fno name\x1f"
+                      "0\x1eok\x1f\x1f"
+                      "1") == std::vector<RecentBlock>{{"ok", "", true}});
+}
+
+TEST_CASE("INSERT records recent blocks, with the drawing file for whole files") {
+    Dir dir("tbcad_insert_recent");
+    writeBox(dir.path / "Frame.tbcad", 10, 20);
+    Fixture f;
+    const std::string file = (dir.path / "Frame.tbcad").string();
+    f.host->run("INSERT", {file, "5,5"});
+    f.host->setSetting("tmp.insert.source", "C:/other.tbcad");  // as the palette does
+    f.host->run("INSERT", {"Frame", "15,5"});
+    const auto list = parseRecent(f.host->setting("block.recent").value_or(""));
+    REQUIRE(list.size() == 2);
+    CHECK(list[0] == RecentBlock{"Frame", "C:/other.tbcad", false});
+    CHECK(list[1].whole);
+    CHECK(fs::path(list[1].file) == dir.path / "Frame.tbcad");
+    CHECK(f.host->setting("tmp.insert.source").value_or("") == "");  // used once
+}
+
+TEST_CASE("INSERT asks for scale and rotation after the point when the palette says so") {
+    Dir dir("tbcad_insert_ask");
+    writeBox(dir.path / "Frame.tbcad", 10, 20);
+    Fixture f;
+    f.host->run("INSERT", {(dir.path / "Frame.tbcad").string(), "0,0"});
+    f.host->setSetting("tmp.insert.ask", "SR");
+    CHECK(f.host->run("INSERT", {"Frame", "100,0", "3", "0,100"}).finished);
+    const auto* ins = entityAs<InsertData>(*f.doc.find(f.modelSpace().back()));
+    REQUIRE(ins);
+    CHECK(ins->position == Vec2{100, 0});
+    CHECK(ins->scale == Vec2{3, 3});
+    CHECK(ins->rotation == doctest::Approx(3 * kPi / 4));  // toward the picked point
+    // Only for that one run.
+    CHECK(f.host->run("INSERT", {"Frame", "200,0"}).finished);
+    CHECK(entityAs<InsertData>(*f.doc.find(f.modelSpace().back()))->scale == Vec2{1, 1});
+    // Enter keeps the defaults.
+    f.host->setSetting("tmp.insert.ask", "SR");
+    CHECK(f.host->run("INSERT", {"Frame", "S", "2", "300,0", "", ""}).finished);
+    const auto* last = entityAs<InsertData>(*f.doc.find(f.modelSpace().back()));
+    CHECK(last->scale == Vec2{2, 2});
+    CHECK(last->rotation == doctest::Approx(0));
+}
+
+TEST_CASE("BLOCKSPALETTE opens the Blocks palette") {
+    Fixture f;
+    CHECK(f.host->run("BLOCKSPALETTE", {}).finished);
+    CHECK(f.host->run("BP", {}).finished);
+    CHECK(f.host->run("BLOCKSPALETTECLOSE", {}).finished);
+}

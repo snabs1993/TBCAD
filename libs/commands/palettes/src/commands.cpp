@@ -42,8 +42,8 @@ public:
         store.load();
         for (;;) {
             cmd::KeywordOptions ko;
-            ko.keywords = {"List",     "New",      "Rename", "Delete", "AddCommand",
-                           "AddBlock", "AddHatch", "Remove", "Done"};
+            ko.keywords = {"List",     "New",      "Rename",      "Delete", "AddCommand",
+                           "AddBlock", "AddHatch", "AddSelected", "Remove", "Done"};
             ko.defaultKeyword = "Done";
             auto k = co_await ctx.getKeyword("Palette option", ko);
             if (!k.ok() || k.keyword == "Done")
@@ -75,6 +75,21 @@ public:
                 std::string to;
                 co_await ask("New name", to);
                 err = store.renamePalette(palette, to);
+            } else if (k.keyword == "AddSelected") {
+                // Tools that draw more objects like the selected ones.
+                auto sel = co_await ctx.getSelection("Select objects to add as tools");
+                if (!sel.ok() || sel.ids.empty())
+                    continue;
+                const std::vector<Tool> tools =
+                    toolsFromObjects(ctx.doc(), sel.ids, ctx.host().documentFile());
+                std::size_t added = 0;
+                for (const Tool& t : tools) {
+                    if (std::string e = store.addTool(palette, t); e.empty())
+                        ++added;
+                    else
+                        ctx.message(e);
+                }
+                ctx.message(std::to_string(added) + " tool(s) added to " + palette + ".");
             } else if (k.keyword == "Remove") {
                 std::string tool;
                 co_await ask("Tool name", tool);

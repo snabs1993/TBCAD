@@ -180,3 +180,106 @@ TEST_CASE("-PALETTE without a settings folder explains - with one it edits palet
     store.load();
     CHECK(store.find("Entrances") == nullptr);
 }
+
+TEST_CASE("replaceTool edits a tool in place and checks the new values") {
+    TempDir dir;
+    PaletteStore store(dir.path / "palettes.json");
+    store.load();
+    REQUIRE(store.addPalette("P").empty());
+    Tool a;
+    a.name = "Zoom";
+    a.command = "ZOOM|E";
+    Tool b = a;
+    b.name = "Pan";
+    b.command = "PAN";
+    REQUIRE(store.addTool("P", a).empty());
+    REQUIRE(store.addTool("P", b).empty());
+    Tool edit = a;
+    edit.command = "ZOOM|W";
+    CHECK(store.replaceTool("P", "zoom", edit).empty());  // same name is fine
+    CHECK(store.find("P")->tools[0].command == "ZOOM|W");
+    edit.name = "pan";
+    CHECK_FALSE(store.replaceTool("P", "Zoom", edit).empty());  // taken by another tool
+    edit.name = "Zoom window";
+    edit.command = " ";
+    CHECK_FALSE(store.replaceTool("P", "Zoom", edit).empty());  // no command
+    edit.command = "ZOOM|W";
+    CHECK(store.replaceTool("P", "Zoom", edit).empty());
+    REQUIRE(store.find("P")->tools.size() == 2);
+    CHECK(store.find("P")->tools[0].name == "Zoom window");  // keeps its place
+    CHECK_FALSE(store.replaceTool("P", "Nope", edit).empty());
+}
+
+TEST_CASE("toolsFromObjects: inserts, hatches and other objects become tools on their layer") {
+    Document doc;
+    Transaction tx = doc.begin("setup");
+    const LayerId walls = tx.addLayer(Layer{.name = "A-WALL"}).value();
+    const LayerId edge = tx.addLayer(Layer{.name = "edge", .parent = walls}).value();
+    const BlockId door = tx.addBlock(BlockDef{.name = "Door"}).value();
+    auto put = [&](EntityData data, LayerId layer) {
+        Entity e;
+        e.common.layer = layer;
+        e.data = std::move(data);
+        return tx.add(std::move(e)).value();
+    };
+    const EntityId ins = put(
+        Indirect<InsertData>(InsertData{door, {5, 5}, {2, 2}, 3.14159265358979323846 / 2}), walls);
+    HatchData h;
+    h.solid = false;
+    h.pattern = "ANSI31";
+    h.patternScale = 0.5;
+    HatchLoop loop;
+    loop.edges.push_back(HatchPolylineEdge{{{{0, 0}}, {{4, 0}}, {{4, 4}}}, true});
+    h.loops.push_back(std::move(loop));
+    const EntityId hatch = put(Indirect<HatchData>(std::move(h)), edge);
+    const EntityId line1 = put(LineData{{0, 0}, {1, 0}}, kLayerZero);
+    const EntityId line2 = put(LineData{{0, 1}, {1, 1}}, kLayerZero);
+    const EntityId circle = put(CircleData{{0, 0}, 3}, edge);
+    tx.commit();
+
+    const auto tools = toolsFromObjects(doc, {ins, hatch, line1, line2, circle}, "lib.tbcad");
+    REQUIRE(tools.size() == 4);  // the second line adds nothing new
+    CHECK(tools[0].kind == ToolKind::Block);
+    CHECK(tools[0].name == "Door");
+    CHECK(tools[0].block == "Door");
+    CHECK(tools[0].file == "lib.tbcad");
+    CHECK(tools[0].scale == 2);
+    CHECK(tools[0].angle == doctest::Approx(90));
+    CHECK(tools[0].layer == "A-WALL");
+    CHECK(tools[1].kind == ToolKind::Hatch);
+    CHECK(tools[1].pattern == "ANSI31");
+    CHECK(tools[1].scale == 0.5);
+    CHECK(tools[1].layer == "A-WALL~edge");
+    CHECK(tools[2].kind == ToolKind::Command);
+    CHECK(tools[2].command == "LINE");
+    CHECK(tools[2].layer == "0");
+    CHECK(tools[3].command == "CIRCLE");
+    // The tools start the right commands.
+    CHECK(toolLines(tools[3], doc) ==
+          std::vector<std::string>{"-LAYER", "Set", "A-WALL~edge", "", "CIRCLE"});
+}
+
+TEST_CASE("-PALETTE AddSelected adds tools for the selected objects") {
+    Document doc;
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    cmd::ScriptHost host(doc, reg);
+    TempDir dir;
+    host.setSettingsFolder(dir.path);
+    EntityId line;
+    {
+        Transaction tx = doc.begin("l");
+        Entity e;
+        e.data = LineData{{0, 0}, {10, 0}};
+        line = tx.add(std::move(e)).value();
+        tx.commit();
+    }
+    host.run("-PALETTE", {"New", "Mine", "AddSelected", "Mine", cmd::ScriptItem::select({line}),
+                          cmd::ScriptItem::enter(), "Done"});
+    CHECK(host.logContains("1 tool(s) added to Mine."));
+    PaletteStore store(dir.path / "palettes.json");
+    store.load();
+    REQUIRE(store.find("Mine"));
+    REQUIRE(store.find("Mine")->tools.size() == 1);
+    CHECK(store.find("Mine")->tools[0].command == "LINE");
+}
