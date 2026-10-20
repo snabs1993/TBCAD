@@ -2248,3 +2248,34 @@ TEST_CASE("panels on a full drawing: every widget clicked, with each kind of obj
         h.frame(2);
     }
 }
+
+TEST_CASE("block editor: BEDIT opens Block Authoring, its buttons run the editor's commands") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    for (const char* s : {"LINE", "0,0", "10,0", ""})
+        h.core().submitText(s);
+    h.core().selectAll();
+    for (const char* s : {"BLOCK", "Sym", "0,0", "C"})
+        h.core().submitText(s);
+    h.frame(3);
+    REQUIRE(h.core().document().blockByName("Sym"));
+    for (const char* s : {"BEDIT", "Name", "Sym"})
+        h.core().submitText(s);
+    h.frame(6);
+    REQUIRE(h.windowOpen("Block Authoring"));
+    CHECK(h.has("Save As...", "Block Authoring"));
+    REQUIRE(h.click("New state...", "Block Authoring"));
+    h.frame(3);
+    for (const char* s : {"New", "Open", "Show"})
+        h.core().submitText(s);
+    h.frame(4);
+    CHECK(h.has("Open", "Block Authoring"));
+    REQUIRE(h.click("Close", "Block Authoring"));
+    h.frame(3);
+    h.core().submitText("");  // Save
+    h.frame(4);
+    CHECK_FALSE(h.windowOpen("Block Authoring"));
+    const BlockDef* def = h.core().document().blockByName("Sym");
+    REQUIRE((def && def->dynamic));
+    CHECK(def->dynamic->params[0].states.size() == 2);
+}

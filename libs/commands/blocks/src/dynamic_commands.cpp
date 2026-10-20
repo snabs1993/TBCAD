@@ -1,5 +1,7 @@
 #include <algorithm>
 #include <cmath>
+#include <optional>
+#include <unordered_set>
 
 #include "commands.h"
 #include "tbcad/blocks/tbcad_blocks.h"
@@ -41,6 +43,57 @@ const BlockDef* findEditableBlock(cmd::CommandContext& ctx, const std::string& n
     return def;
 }
 
+// Inside BEDIT the commands work on the block being edited: points are picked in the drawing and
+// taken into block space, objects are picked among the working copies.
+struct Target {
+    const BlockDef* def = nullptr;
+    std::optional<Transform2> toBlock;  // set while editing
+    std::string space() const { return toBlock ? "" : " (block coordinates)"; }
+    Vec2 map(Vec2 p) const { return toBlock ? toBlock->apply(p) : p; }
+};
+
+// The block BPARAM / BACTION work on: the one being edited, or one named at the prompt.
+cmd::Task target(cmd::CommandContext& ctx, Target& t) {
+    t = {};
+    if (const auto edit = detail::blockEdit(ctx.doc(), ctx.host())) {
+        if (edit->xref) {
+            ctx.message("An external reference cannot be made dynamic");
+            co_return;
+        }
+        auto inv = edit->xf.inverse();
+        if (!inv) {
+            ctx.message("The block being edited has a zero-scale reference.");
+            co_return;
+        }
+        t.def = ctx.doc().block(edit->block);
+        t.toBlock = inv.value();
+        co_return;
+    }
+    auto blockName = co_await ctx.getString("Enter block name");
+    if (!blockName.ok())
+        co_return;
+    t.def = findEditableBlock(ctx, cmd::trim(blockName.text));
+}
+
+// Picks working copies and returns the block objects they stand for (saving the edit first, so
+// objects drawn in the editor are in the block). Empty when nothing was picked.
+cmd::Task pickInEditor(cmd::CommandContext& ctx, std::string prompt, std::vector<EntityId>& out) {
+    out.clear();
+    const auto edit = detail::blockEdit(ctx.doc(), ctx.host());
+    if (!edit)
+        co_return;
+    const std::unordered_set<EntityId> working(edit->working.begin(), edit->working.end());
+    cmd::SelectionOptions so;
+    so.filter = [working](const Entity& e) { return working.count(e.common.id) > 0; };
+    so.allowPreselection = false;
+    auto sel = co_await ctx.getSelection(std::move(prompt), so);
+    if (!sel.ok() || sel.ids.empty())
+        co_return;
+    if (!detail::saveBlockEdit(ctx))
+        co_return;
+    out = detail::blockIdsOf(ctx.host(), sel.ids);
+}
+
 std::string describe(const DynParam& p) {
     switch (p.kind) {
         case DynParam::Kind::Linear:
@@ -67,13 +120,13 @@ public:
     }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
-        auto blockName = co_await ctx.getString("Enter block name");
-        if (!blockName.ok())
-            co_return;
-        const BlockDef* def = findEditableBlock(ctx, cmd::trim(blockName.text));
+        Target t;
+        co_await target(ctx, t);
+        const BlockDef* def = t.def;
         if (!def)
             co_return;
         const BlockId block = def->id;
+        const std::string space = t.space();
 
         auto type = co_await ctx.getKeyword(
             "Parameter type [Linear/Rotation/Flip/Visibility/Table] <Linear>",
@@ -94,10 +147,10 @@ public:
         }
         if (type.keyword == "Linear") {
             p.kind = DynParam::Kind::Linear;
-            auto a = co_await ctx.getPoint("Specify the start point (block coordinates)");
+            auto a = co_await ctx.getPoint("Specify the start point" + space);
             if (!a.ok())
                 co_return;
-            auto b = co_await ctx.getPoint("Specify the end point (block coordinates)",
+            auto b = co_await ctx.getPoint("Specify the end point" + space,
                                            cmd::PointOptions{.base = a.point});
             if (!b.ok())
                 co_return;
@@ -105,8 +158,8 @@ public:
                 ctx.message("The two points are the same");
                 co_return;
             }
-            p.base = a.point;
-            p.end = b.point;
+            p.base = t.map(a.point);
+            p.end = t.map(b.point);
             auto lo = co_await ctx.getReal("Minimum distance, 0 for no limit <0>",
                                            cmd::RealOptions{.defaultValue = 0.0});
             if (!lo.ok())
@@ -132,11 +185,11 @@ public:
                 ctx.message("The handle cannot sit on the centre");
                 co_return;
             }
-            p.base = c.point;
-            p.end = h.point;
+            p.base = t.map(c.point);
+            p.end = t.map(h.point);
         } else if (type.keyword == "Flip") {
             p.kind = DynParam::Kind::Flip;
-            auto a = co_await ctx.getPoint("Specify the first point of the mirror line");
+            auto a = co_await ctx.getPoint("Specify the first point of the mirror line" + space);
             if (!a.ok())
                 co_return;
             auto b = co_await ctx.getPoint("Specify the second point of the mirror line",
@@ -147,19 +200,18 @@ public:
                 ctx.message("The two points are the same");
                 co_return;
             }
-            p.base = a.point;
-            p.end = b.point;
+            p.base = t.map(a.point);
+            p.end = t.map(b.point);
         } else if (type.keyword == "Table") {
             p.kind = DynParam::Kind::Lookup;
             if (!def->dynamic || def->dynamic->params.empty()) {
                 ctx.message("Add the parameters the table drives first (BPARAM)");
                 co_return;
             }
-            auto at =
-                co_await ctx.getPoint("Specify where the lookup grip sits (block coordinates)");
+            auto at = co_await ctx.getPoint("Specify where the lookup grip sits" + space);
             if (!at.ok())
                 co_return;
-            p.base = at.point;
+            p.base = t.map(at.point);
             for (;;) {
                 auto n = co_await ctx.getString(
                     p.lookupParams.empty()
@@ -226,16 +278,23 @@ public:
                 const std::string stateName = cmd::trim(st.text);
                 if (stateName.empty())
                     break;
-                auto c1 = co_await ctx.getPoint("Specify first corner of the objects shown in \"" +
-                                                stateName + "\"");
-                if (!c1.ok())
-                    co_return;
-                auto c2 = co_await ctx.getPoint("Specify opposite corner",
-                                                cmd::PointOptions{.base = c1.point});
-                if (!c2.ok())
-                    co_return;
+                std::vector<EntityId> shown;
+                if (t.toBlock) {
+                    co_await pickInEditor(ctx, "Select the objects shown in \"" + stateName + "\"",
+                                          shown);
+                } else {
+                    auto c1 = co_await ctx.getPoint(
+                        "Specify first corner of the objects shown in \"" + stateName + "\"");
+                    if (!c1.ok())
+                        co_return;
+                    auto c2 = co_await ctx.getPoint("Specify opposite corner",
+                                                    cmd::PointOptions{.base = c1.point});
+                    if (!c2.ok())
+                        co_return;
+                    shown = objectsInWindow(ctx.doc(), *ctx.doc().block(block), c1.point, c2.point);
+                }
                 p.states.push_back(stateName);
-                p.stateObjects.push_back(objectsInWindow(ctx.doc(), *def, c1.point, c2.point));
+                p.stateObjects.push_back(std::move(shown));
             }
             if (p.states.size() < 2) {
                 ctx.message("A visibility parameter needs at least two states");
@@ -262,10 +321,9 @@ public:
     }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
-        auto blockName = co_await ctx.getString("Enter block name");
-        if (!blockName.ok())
-            co_return;
-        const BlockDef* def = findEditableBlock(ctx, cmd::trim(blockName.text));
+        Target t;
+        co_await target(ctx, t);
+        const BlockDef* def = t.def;
         if (!def)
             co_return;
         if (!def->dynamic || def->dynamic->params.empty()) {
@@ -319,20 +377,28 @@ public:
                                             cmd::PointOptions{.base = f1.point});
             if (!f2.ok())
                 co_return;
-            a.frameMin = f1.point;
-            a.frameMax = f2.point;
+            const Vec2 m1 = t.map(f1.point), m2 = t.map(f2.point);
+            a.frameMin = {std::min(m1.x, m2.x), std::min(m1.y, m2.y)};
+            a.frameMax = {std::max(m1.x, m2.x), std::max(m1.y, m2.y)};
         }
-        auto o1 = co_await ctx.getPoint("Specify first corner of the objects the action changes");
-        if (!o1.ok())
-            co_return;
-        auto o2 =
-            co_await ctx.getPoint("Specify opposite corner", cmd::PointOptions{.base = o1.point});
-        if (!o2.ok())
-            co_return;
-        a.objects = objectsInWindow(ctx.doc(), *def, o1.point, o2.point);
-        if (a.objects.empty()) {
-            ctx.message("No object of the block lies completely inside that window");
-            co_return;
+        if (t.toBlock) {
+            co_await pickInEditor(ctx, "Select the objects the action changes", a.objects);
+            if (a.objects.empty())
+                co_return;
+        } else {
+            auto o1 =
+                co_await ctx.getPoint("Specify first corner of the objects the action changes");
+            if (!o1.ok())
+                co_return;
+            auto o2 = co_await ctx.getPoint("Specify opposite corner",
+                                            cmd::PointOptions{.base = o1.point});
+            if (!o2.ok())
+                co_return;
+            a.objects = objectsInWindow(ctx.doc(), *def, o1.point, o2.point);
+            if (a.objects.empty()) {
+                ctx.message("No object of the block lies completely inside that window");
+                co_return;
+            }
         }
         const std::size_t n = a.objects.size();
         (void)ctx.tx().modifyBlock(

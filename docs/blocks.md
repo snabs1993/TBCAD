@@ -112,6 +112,42 @@ a parameter, `DYNSET` sets a value on an Insert. DXF has no dynamic blocks: expo
 current state of each dynamic Insert as plain objects. In `.tbcad` the definitions are the `DYNB`
 chunk and the values a trailing Insert section (format 1.4).
 
+## Block editor
+
+`BEDIT` (`BE`, also `REFEDIT`) copies a block's objects into the drawing at a picked insert (or at
+the origin for a block named with `Name`) and opens the **Block Authoring** panel. The copies are
+edited with any command; `BSAVE` writes them back into the block (every insert follows), `BCLOSE`
+(`REFCLOSE`) saves or discards and removes the copies, `REFSET` adds drawing objects to the working
+set or takes them out. While a block is edited:
+
+* `BPARAM` and `BACTION` work on it without asking for its name. Points are picked in the drawing
+  and taken into block space; the objects of a visibility state or an action are selected among
+  the copies (the edit is saved first, so objects drawn in the editor count).
+* Parameters, actions, visibility states and assembly bindings name block objects; every save
+  renames them to the new objects, and drops the objects erased in the editor.
+* `BSAVEAS` saves the working set as a new block (with a copy of its parameters) and goes on
+  editing that one; the original block is left as it was.
+* `BVSTATE` lists the visibility states and offers `New` (with `Hide all`, `Show all` or the
+  `Current` state's objects; the first one also creates the visibility parameter, with
+  `VisibilityState0` showing everything), `Set` (show a state: the copies it hides are hidden in
+  the editor), `Rename` and `Delete`. `BVHIDE` hides the selected objects in the state shown,
+  `BVSHOW` shows them again (the hidden objects show while you pick; `All` shows every object).
+* `BTESTBLOCK` saves the block and places a test reference to try with grips and DYNSET;
+  `BTESTBLOCK Close` or `BCLOSE` removes it.
+* `BATTORDER` sets the order of the attribute definitions (the order INSERT asks for values) by
+  typing the tags in the new order. Outside the editor it asks for the block name.
+
+`BLOOKUPTABLE` (in the editor, or with a block name) lists a lookup table and adds, deletes or
+changes rows. `BCLOSE Discard` drops the copies; what earlier saves wrote into the block stays (UNDO
+takes it back).
+
+`REFEDIT` on an external reference edits its objects in place the same way; `BSAVE` or `REFCLOSE`
+writes them into the referenced `.tbcad` file (the previous file is kept as `.bak`) and reloads the
+reference. Objects go back to the file's own layers (`site~walls` -> `walls`), layers, linetypes
+and styles of the host drawing are added to the file when it lacks them, and inserts of the
+reference's own blocks go back to those blocks. DXF and DWG references cannot be written from
+here, and the block editor's dynamic-block commands do not apply to references.
+
 See `docs/assembly.md` for parametric assemblies (named parameters, formulas, presets and joint assemblies built on dynamic blocks).
 
 ## Commands
@@ -125,7 +161,7 @@ See `docs/assembly.md` for parametric assemblies (named parameters, formulas, pr
 | `NCOPY` | | pick an insert or xref at an object inside it; the closest nested object is copied into the drawing at its place, then moved by base point and second point (Enter keeps it in place). |
 | `ARRAY` | `AR` | objects, type (`Rectangular`, `Polar` or `Path`). Rectangular and polar then show one prompt with the current setup (3 rows x 4 columns, spacing 1.5 x the object size rounded to two digits, or 6 items over 360 degrees) and the options `Rows`, `Columns`, `COUnt` (columns then rows), `Spacing`, `Angle` (or `Fill`), `Between` (angle between polar items; a step that goes round once makes a full circle), `Items`, `Rotate` and `Associative`; Enter accepts and makes an associative array. A path array asks for the path, base point, count or distance and alignment. MATCHPROP on an associative array also recolours its items. |
 | `ARRAYRECT` / `ARRAYPOLAR` / `ARRAYPATH` | | The same, for one type. |
-| `BPARAM` | | Block name, type (`Linear`, `Rotation`, `Flip`, `Visibility`), parameter name, then its points (and limits, or the states with the window of objects each shows). |
+| `BPARAM` | | Block name (not asked in the block editor), type (`Linear`, `Rotation`, `Flip`, `Visibility`, `Table`), parameter name, then its points (and limits, or the states with the window of objects each shows). |
 | `BACTION` | | Block name, parameter, action (`Stretch`/`Move`/`Scale` for linear), the stretch frame (stretch only) and the window of objects it changes. |
 | `DYNSET` | | Pick a dynamic Insert, name a parameter and give its value (distance, angle, `Yes`/`No`, or a state name). |
 | `ARRAYEDIT` | | Pick an associative array, then choose options until eXit (or Enter), as in AutoCAD: rectangular `Rows` and `Columns` (count, then spacing or `Total`); polar `Items`, `Angle` between items, `Fill` angle and `ROTate` items; path `Method` (Divide or Measure), `Items` and `Align` items. Each change shows at once; the whole edit is one undo step. Selecting an array also shows grips besides its base: on a rectangular array the last and second column and row change the count and the spacing, on a polar array the second and the last item change the angle between items and the fill angle, on a path array the second item sets the distance between items and the last item the count (both measured along the path, so the array switches to Measure). Every kind also has `Base` (a new base point: the base grip moves, the items stay; a copied array that shares the objects is left alone), `Source` (edit the source objects in place, as `BEDIT` at the first item; `BSAVE` or `BCLOSE` updates every item), `REPlace` (select replacement objects and their base point, default the centroid; then pick the items that show them, or `Source objects` for every item still showing the source; the objects are copied into a block of their own, the originals stay) and `RESet` (brings back removed and replaced items). Removed and replaced items keep their row and column when the counts change. |

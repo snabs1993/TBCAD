@@ -885,6 +885,192 @@ const Layer* layerByPath(const Document& doc, const std::string& path) {
 
 }  // namespace
 
+namespace {
+
+// The reverse of Filler, for writeBack: host rows -> rows of the source drawing.
+class Unfiller {
+public:
+    Unfiller(Transaction& tx, const Document& host, Document& src, std::string name)
+        : tx_(tx), host_(host), src_(src), name_(std::move(name)) {}
+
+    Result<Entity> map(const Entity& in) {
+        Entity e = in;
+        e.common.id = {};
+        e.common.layer = layer(in.common.layer);
+        e.common.level = {};
+        e.common.linetype = linetype(in.common.linetype);
+        if (auto* t = entityAs<TextData>(e))
+            t->style = textStyle(t->style);
+        else if (auto* m = entityAs<MTextData>(e))
+            m->style = textStyle(m->style);
+        else if (auto* tb = entityAs<TableData>(e))
+            tb->style = textStyle(tb->style);
+        else if (auto* d = entityAs<DimensionData>(e))
+            d->style = dimStyle(d->style);
+        else if (auto* l = entityAs<LeaderData>(e))
+            l->style = dimStyle(l->style);
+        else if (auto* ml = entityAs<MLeaderData>(e)) {
+            ml->style = dimStyle(ml->style);
+            if (ml->block)
+                ml->block = block(ml->block);
+        } else if (auto* ins = entityAs<InsertData>(e)) {
+            ins->block = block(ins->block);
+            if (ins->array)
+                for (ArrayItemSwap& sw : ins->array->swaps)
+                    sw.block = block(sw.block);
+        }
+        if (!failure_.empty())
+            return makeError(ErrorCode::InvalidArgument, failure_);
+        return e;
+    }
+
+private:
+    LayerId layer(LayerId id) {
+        if (!id)
+            return kLayerZero;
+        const std::string path = layerPathOf(host_, id);
+        if (path == name_)
+            return kLayerZero;  // the xref's own layer stands for the source's layer 0
+        const std::string prefix = name_ + "~";
+        const std::string want =
+            path.compare(0, prefix.size(), prefix) == 0 ? path.substr(prefix.size()) : path;
+        if (const Layer* l = layerByPath(src_, want))
+            return l->id;
+        // Missing: make the chain, copying the host layer's look.
+        LayerId parent{};
+        std::string sofar;
+        std::size_t from = 0;
+        for (;;) {
+            const std::size_t cut = want.find('~', from);
+            const std::string part = want.substr(from, cut == std::string::npos ? cut : cut - from);
+            sofar += (sofar.empty() ? "" : "~") + part;
+            if (const Layer* have = layerByPath(src_, sofar)) {
+                parent = have->id;
+            } else {
+                Layer row;
+                if (const Layer* hl = host_.layer(id))
+                    row = *hl;
+                row.id = {};
+                row.name = part;
+                row.parent = parent;
+                row.linetype = linetype(row.linetype);
+                if (!row.linetype || row.linetype == kLinetypeByLayer ||
+                    row.linetype == kLinetypeByBlock)
+                    row.linetype = kLinetypeContinuous;
+                auto r = tx_.addLayer(std::move(row));
+                if (!r) {
+                    failure_ = r.error().message;
+                    return kLayerZero;
+                }
+                parent = r.value();
+            }
+            if (cut == std::string::npos)
+                return parent;
+            from = cut + 1;
+        }
+    }
+
+    LinetypeId linetype(LinetypeId id) {
+        if (id == kLinetypeByLayer || id == kLinetypeByBlock || !id)
+            return id;
+        const Linetype* lt = host_.linetype(id);
+        if (!lt)
+            return kLinetypeContinuous;
+        if (const Linetype* same = src_.linetypeByName(lt->name))
+            return same->id;
+        Linetype row = *lt;
+        row.id = {};
+        auto r = tx_.addLinetype(std::move(row));
+        return r ? r.value() : kLinetypeContinuous;
+    }
+
+    TextStyleId textStyle(TextStyleId id) {
+        const TextStyle* ts = id ? host_.textStyle(id) : nullptr;
+        if (!ts)
+            return {};
+        if (const TextStyle* same = src_.textStyleByName(ts->name))
+            return same->id;
+        TextStyle row = *ts;
+        row.id = {};
+        auto r = tx_.addTextStyle(std::move(row));
+        return r ? r.value() : TextStyleId{};
+    }
+
+    DimStyleId dimStyle(DimStyleId id) {
+        const DimStyle* ds = id ? host_.dimStyle(id) : nullptr;
+        if (!ds)
+            return {};
+        if (const DimStyle* same = src_.dimStyleByName(ds->name))
+            return same->id;
+        DimStyle row = *ds;
+        row.id = {};
+        row.textStyle = textStyle(ds->textStyle);
+        auto r = tx_.addDimStyle(std::move(row));
+        return r ? r.value() : DimStyleId{};
+    }
+
+    BlockId block(BlockId id) {
+        const BlockDef* hb = host_.block(id);
+        if (!hb)
+            return {};
+        // "<xref>$<block>", maybe with "#n" when the name was taken in the host.
+        const std::string prefix = name_ + "$";
+        std::string want = hb->name;
+        if (want.compare(0, prefix.size(), prefix) == 0) {
+            want = want.substr(prefix.size());
+            if (const BlockDef* sb = src_.blockByName(want))
+                return sb->id;
+            if (const std::size_t hash = want.rfind('#'); hash != std::string::npos)
+                if (const BlockDef* sb = src_.blockByName(want.substr(0, hash)))
+                    return sb->id;
+        }
+        failure_ = "The block \"" + hb->name +
+                   "\" is not part of the reference; it cannot be written into its file.";
+        return {};
+    }
+
+    Transaction& tx_;
+    const Document& host_;
+    Document& src_;
+    std::string name_;
+    std::string failure_{};
+};
+
+}  // namespace
+
+Result<void> writeBack(const Document& host, BlockId block, const std::vector<Entity>& content,
+                       const std::filesystem::path& hostFile) {
+    const BlockDef* def = host.block(block);
+    if (!def || def->xrefPath.empty())
+        return makeError(ErrorCode::InvalidArgument, "That block is not an external reference");
+    const std::filesystem::path file = resolvePath(def->xrefPath, hostFile);
+    if (lower(file.extension().string()) != ".tbcad")
+        return makeError(ErrorCode::Unsupported,
+                         "Only .tbcad references can be saved from here; open " +
+                             file.filename().string() + " to change it.");
+    io::IoReport report;
+    auto read = io::readTbcad(file, report);
+    if (!read)
+        return read.error();
+    Document& src = *read.value();
+    {
+        Transaction tx = src.begin("Edit reference");
+        const std::vector<EntityId> old = src.modelSpace();
+        (void)tx.eraseMany(old);
+        Unfiller un(tx, host, src, def->name);
+        for (const Entity& e : content) {
+            auto mapped = un.map(e);
+            if (!mapped)
+                return mapped.error();
+            auto r = tx.add(std::move(mapped).value());
+            if (!r)
+                return r.error();
+        }
+        tx.commit();
+    }
+    return io::writeTbcad(src, file);
+}
+
 std::vector<ContentItem> listContent(const Document& src) {
     std::vector<ContentItem> out;
     auto sorted = [&](ContentKind kind, std::vector<std::string> names) {

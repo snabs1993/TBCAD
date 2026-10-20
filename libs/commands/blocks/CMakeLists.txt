@@ -7,6 +7,7 @@ set(_block_cmd_sources
   src/attext_command.cpp
   src/attribute_commands.cpp
   src/bedit_command.cpp
+  src/block_editor.cpp
   src/block_command.cpp
   src/block_count_command.cpp
   src/blockreplace_command.cpp
@@ -39,6 +40,7 @@ tbcad_add_tests(block_cmds
     tests/block_command_tests.cpp
     tests/starter_library_tests.cpp
     tests/bedit_command_tests.cpp
+    tests/block_editor_tests.cpp
     tests/insert_command_tests.cpp
     tests/snap_tests.cpp
     tests/snap_property_tests.cpp

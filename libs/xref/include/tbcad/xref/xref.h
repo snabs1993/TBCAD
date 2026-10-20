@@ -60,8 +60,9 @@ enum class State {
 
 // Resolves a stored path: absolute paths stay, relative ones are taken from the folder of the
 // host drawing (empty `hostFile` = the current folder). When there is no file there but the host
-// folder holds one of that name, that one is given (AutoCAD's search). An options part ("plan.pdf#page=2,fade=60",
-// see tbcad/underlay/pdf.h) is not a part of the file name and is dropped.
+// folder holds one of that name, that one is given (AutoCAD's search). An options part
+// ("plan.pdf#page=2,fade=60", see tbcad/underlay/pdf.h) is not a part of the file name and is
+// dropped.
 std::filesystem::path resolvePath(std::string_view stored, const std::filesystem::path& hostFile);
 // The stored path of an xref as it must read when the drawing moves from `fromHost` to `toHost`
 // (a paste into a drawing in another folder, SAVEAS): a relative path keeps pointing at the same
@@ -137,6 +138,14 @@ Result<void> bind(Transaction& tx, Document& doc, BlockId block, BindMode mode =
 // text is stored as given; an options part ("#page=2") of the old path is kept when the new path
 // has none.
 Result<void> changePath(Transaction& tx, Document& doc, BlockId block, std::string_view stored);
+
+// REFEDIT on an xref: makes `content` (objects of the host drawing, in the xref's block space) the
+// model space of the source drawing and saves the file; the previous one is kept as .bak. Only
+// .tbcad sources can be written. Layers below the xref's layer go back to the source's own
+// layers; other layers, linetypes and styles are matched by name and added when missing; inserts
+// of "<xref>$<block>" go back to the source's block. Reload the xref afterwards.
+Result<void> writeBack(const Document& host, BlockId block, const std::vector<Entity>& content,
+                       const std::filesystem::path& hostFile);
 
 // ---- content: single items of another drawing (the content browser)
 // ------------------------------

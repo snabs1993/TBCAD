@@ -2,8 +2,8 @@
 
 #include <memory>
 #include <optional>
-#include <utility>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "tbcad/block_cmds/block_cmds.h"
@@ -18,6 +18,12 @@ std::unique_ptr<cmd::Command> makeBaseCommand();
 std::unique_ptr<cmd::Command> makeBEditCommand();
 std::unique_ptr<cmd::Command> makeBSaveCommand(bool close);
 std::unique_ptr<cmd::Command> makeRefSetCommand();
+std::unique_ptr<cmd::Command> makeBSaveAsCommand();
+std::unique_ptr<cmd::Command> makeBvStateCommand();
+std::unique_ptr<cmd::Command> makeBvHideShowCommand(bool show);
+std::unique_ptr<cmd::Command> makeBLookupTableCommand();
+std::unique_ptr<cmd::Command> makeBTestBlockCommand();
+std::unique_ptr<cmd::Command> makeBAttOrderCommand();
 std::unique_ptr<cmd::Command> makeInsertCommand();
 std::unique_ptr<cmd::Command> makeMinsertCommand();
 std::unique_ptr<cmd::Command> makeExplodeCommand();
@@ -69,6 +75,7 @@ std::unique_ptr<cmd::Command> makeXRelinkCommand();
 std::unique_ptr<cmd::Command> makeBlockCountCommand();
 std::unique_ptr<cmd::Command> makeBlockReplaceCommand();
 void registerBlockPanel(ui::UiRegistry& ui);
+void registerBlockAuthoringPanel(ui::UiRegistry& ui);
 void registerXrefPanel(ui::UiRegistry& ui);
 
 namespace detail {
@@ -92,6 +99,30 @@ std::string objects(std::size_t n);
 // (block space to drawing). False, with a message, when another block is being edited or `def`
 // is an external reference.
 bool startBlockEdit(cmd::CommandContext& ctx, const BlockDef& def, const Transform2& xf);
+
+// The block being edited with BEDIT: `xf` takes block space to the drawing, `working` is the
+// working set (copies in the drawing, back to front) and `state` the visibility state shown.
+struct BlockEdit {
+    BlockId block{};
+    Transform2 xf{};
+    std::vector<EntityId> working{};
+    std::string state{};
+    bool xref = false;  // REFEDIT of an external reference: saving writes its file
+};
+std::optional<BlockEdit> blockEdit(const Document& doc, const cmd::IHost& host);
+// BSAVE without closing: afterwards every working copy stands for a block entity. With `into`
+// (BSAVEAS: a new block holding a copy of the definition) the working set goes there instead and
+// the edit goes on with that block.
+bool saveBlockEdit(cmd::CommandContext& ctx, BlockId into = {});
+// Working copies <-> the block entities they stand for (after the last save).
+std::vector<EntityId> blockIdsOf(const cmd::IHost& host, const std::vector<EntityId>& copies);
+std::vector<EntityId> copiesOf(const cmd::IHost& host, const std::vector<EntityId>& blockIds);
+// Shows the working set as visibility state `state` of the block (others hidden).
+void showEditState(cmd::CommandContext& ctx, const std::string& state);
+// BTESTBLOCK references: left out of the working set, erased when the edit ends.
+void addTestReference(cmd::CommandContext& ctx, EntityId id);
+std::vector<EntityId> testReferences(const cmd::IHost& host);
+void closeTestReferences(cmd::CommandContext& ctx);
 
 // The associative array (in model space, on an editable layer) and its item under `p`, within
 // `tol` of the item's extents.
