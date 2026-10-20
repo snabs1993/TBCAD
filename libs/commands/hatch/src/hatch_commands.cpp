@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <deque>
 #include <memory>
@@ -287,6 +288,8 @@ public:
         using cmd::Status;
         ctx.commitOnCancel();  // Esc ends the command but keeps the hatches already made
         Params p = loadParams(ctx.host());
+        last_.reset();  // each run starts a new hatch
+        lastSig_.clear();
         ctx.host().setSetting("ui.showPanel", "hatch");  // like AutoCAD's contextual tab
         std::size_t made = 0;
         HoverPreview hover;
@@ -294,10 +297,14 @@ public:
             cmd::PointOptions opt;
             opt.keywords =
                 gradient_
-                    ? std::vector<std::string>{"Objects", "Kind",   "First", "Second", "Angle",
-                                               "Gap",     "Island", "Link",  "Undo"}
-                    : std::vector<std::string>{"Objects", "Pattern", "Scale", "Angle", "Base",
-                                               "Gap",     "Island",  "Link",  "Undo"};
+                    ? std::vector<std::string>{"Objects",      "Kind",     "First",    "Second",
+                                               "One",          "Centered", "Angle",    "Gap",
+                                               "Island",       "Link",     "SEparate", "DRaworder",
+                                               "Transparency", "Undo"}
+                    : std::vector<std::string>{"Objects",      "Pattern",   "Scale",      "Angle",
+                                               "Base",         "Gap",       "Island",     "Link",
+                                               "SEparate",     "DRaworder", "ANnotative", "DOuble",
+                                               "Transparency", "Undo"};
             opt.preview = [&](Vec2 cursor, DisplayList& out) { hover.draw(ctx, p, cursor, out); };
             opt.snap = false;  // a snapped pick would sit on the boundary
             std::string what = gradient_ ? gradientSummary(p) : summary(p);
@@ -330,13 +337,87 @@ public:
                         p.base = b.point;
                 } else if (r.keyword == "Kind") {
                     cmd::KeywordOptions ko;
-                    ko.keywords = {"Linear", "Cylinder"};
-                    ko.defaultKeyword =
-                        p.gradient.kind == GradientKind::Cylinder ? "Cylinder" : "Linear";
-                    auto k = co_await ctx.getKeyword("Gradient kind", ko);
+                    ko.keywords = kGradientKeywords;
+                    ko.defaultKeyword = gradientKeyword(p.gradient.kind);
+                    auto k = co_await ctx.getKeyword(
+                        "Gradient kind [Linear/Cylinder/INVCylinder/Spherical/INVSpherical/"
+                        "Hemispherical/INVHemispherical/CUrved/INVCUrved] <" +
+                            std::string(gradientKeyword(p.gradient.kind)) + ">",
+                        ko);
                     if (k.ok())
-                        p.gradient.kind =
-                            k.keyword == "Cylinder" ? GradientKind::Cylinder : GradientKind::Linear;
+                        p.gradient.kind = gradientFromKeyword(k.keyword);
+                } else if (r.keyword == "One") {
+                    cmd::KeywordOptions ko;
+                    ko.keywords = {"Yes", "No"};
+                    ko.defaultKeyword = p.gradient.oneColor ? "Yes" : "No";
+                    auto k = co_await ctx.getKeyword(std::string("One colour gradient [Yes/No] <") +
+                                                         (p.gradient.oneColor ? "Yes" : "No") + ">",
+                                                     ko);
+                    if (k.ok())
+                        p.gradient.oneColor = k.keyword == "Yes";
+                    if (p.gradient.oneColor) {
+                        cmd::RealOptions ro;
+                        ro.defaultValue = p.gradient.tint;
+                        ro.min = 0;
+                        ro.max = 1;
+                        auto t = co_await ctx.getReal(
+                            "Shade to tint (0 black, 0.5 the colour, 1 white)", ro);
+                        if (t.ok())
+                            p.gradient.tint = t.value;
+                    }
+                } else if (r.keyword == "Centered") {
+                    cmd::RealOptions ro;
+                    ro.defaultValue = p.gradient.shift;
+                    ro.min = 0;
+                    ro.max = 1;
+                    auto t = co_await ctx.getReal(
+                        "Shift of the gradient's middle (0 = centred, AutoCAD uses 0.25)", ro);
+                    if (t.ok())
+                        p.gradient.shift = t.value;
+                } else if (r.keyword == "SEparate") {
+                    p.separate = !p.separate;
+                    ctx.message(p.separate ? "Each area picked makes its own hatch."
+                                           : "The areas picked in one HATCH make one hatch.");
+                } else if (r.keyword == "DRaworder") {
+                    cmd::KeywordOptions ko;
+                    ko.keywords = {"None", "Back", "Front", "BEhind", "InFront"};
+                    ko.defaultKeyword = orderKeyword(p.order);
+                    auto k = co_await ctx.getKeyword(
+                        "Draw order of new hatches [None/Back/Front/BEhind boundary/InFront of "
+                        "boundary] <" +
+                            std::string(orderKeyword(p.order)) + ">",
+                        ko);
+                    if (k.ok())
+                        p.order = k.keyword == "None"      ? Params::Order::None
+                                  : k.keyword == "Back"    ? Params::Order::Back
+                                  : k.keyword == "Front"   ? Params::Order::Front
+                                  : k.keyword == "InFront" ? Params::Order::InFront
+                                                           : Params::Order::Behind;
+                } else if (r.keyword == "ANnotative") {
+                    p.annotative = !p.annotative;
+                    ctx.message(p.annotative
+                                    ? "New hatches are annotative: the scale is the size on paper."
+                                    : "New hatches are not annotative.");
+                } else if (r.keyword == "DOuble") {
+                    p.doubled = !p.doubled;
+                    ctx.message(p.doubled ? "The pattern is drawn twice, crossed."
+                                          : "The pattern is drawn once.");
+                } else if (r.keyword == "Transparency") {
+                    cmd::StringOptions so;
+                    so.defaultValue = transparencyText(p.transparency);
+                    auto t = co_await ctx.getString("Transparency (ByLayer, ByBlock or 0-90)", so);
+                    if (t.ok()) {
+                        const std::string v = cmd::toUpperAscii(cmd::trim(t.text));
+                        double d = 0;
+                        if (v == "BYLAYER")
+                            p.transparency = kTransparencyByLayer;
+                        else if (v == "BYBLOCK")
+                            p.transparency = kTransparencyByBlock;
+                        else if (parseNumber(v, d) && d >= 0 && d <= 90 && d == std::floor(d))
+                            p.transparency = static_cast<std::int8_t>(d);
+                        else
+                            ctx.message("Transparency is ByLayer, ByBlock or 0 to 90.");
+                    }
                 } else if (r.keyword == "First" || r.keyword == "Second") {
                     bool first = r.keyword == "First";
                     cmd::StringOptions so;
@@ -403,7 +484,66 @@ public:
 
 private:
     bool gradient_;
+    std::optional<EntityId> last_;  // the hatch this command made last (Separate off)
+    std::string lastSig_;           // its settings: a change starts a new hatch
 
+    static constexpr const char* orderKeyword(Params::Order o) {
+        switch (o) {
+            case Params::Order::None:
+                return "None";
+            case Params::Order::Back:
+                return "Back";
+            case Params::Order::Front:
+                return "Front";
+            case Params::Order::InFront:
+                return "InFront";
+            default:
+                return "BEhind";
+        }
+    }
+
+public:
+    // HPDRAWORDER: puts a new hatch at the back, the front, or just behind / in front of the
+    // objects that bound it.
+    static void placeInOrder(cmd::CommandContext& ctx, EntityId id, const Params& p) {
+        switch (p.order) {
+            case Params::Order::None:
+                return;
+            case Params::Order::Back:
+                (void)ctx.tx().sendToBack(id);
+                return;
+            case Params::Order::Front:
+                (void)ctx.tx().bringToFront(id);
+                return;
+            default:
+                break;
+        }
+        const Entity* e = ctx.doc().find(id);
+        const HatchData* h = e ? entityAs<HatchData>(*e) : nullptr;
+        if (!h || h->sourceBoundary.empty())
+            return;
+        std::vector<EntityId> order = ctx.doc().modelSpace();
+        auto self = std::find(order.begin(), order.end(), id);
+        if (self == order.end())
+            return;  // not in model space
+        order.erase(self);
+        std::size_t first = order.size(), last = 0;
+        bool any = false;
+        for (std::size_t i = 0; i < order.size(); ++i)
+            if (std::find(h->sourceBoundary.begin(), h->sourceBoundary.end(), order[i]) !=
+                h->sourceBoundary.end()) {
+                first = std::min(first, i);
+                last = i;
+                any = true;
+            }
+        if (!any)
+            return;
+        const std::size_t at = p.order == Params::Order::Behind ? first : last + 1;
+        order.insert(order.begin() + static_cast<std::ptrdiff_t>(at), id);
+        (void)ctx.tx().setDrawOrder(order);
+    }
+
+private:
     static void setPattern(cmd::CommandContext& ctx, Params& p, const std::string& text) {
         std::string name = cmd::trim(text);
         if (name == "?") {
@@ -425,8 +565,13 @@ private:
     }
 
     static std::string gradientSummary(const Params& p) {
-        return std::string(p.gradient.kind == GradientKind::Cylinder ? "cylinder " : "linear ") +
-               colorText(p.gradient.color1) + " to " + colorText(p.gradient.color2) + ", angle " +
+        std::string kind = gradientKeyword(p.gradient.kind);
+        for (char& c : kind)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return kind + " " + colorText(p.gradient.color1) + " to " +
+               (p.gradient.oneColor ? "tint " + number(p.gradient.tint)
+                                    : colorText(p.gradient.color2)) +
+               (p.gradient.shift > 0 ? ", shift " + number(p.gradient.shift) : "") + ", angle " +
                number(p.angle * 180.0 / kPi) + (p.gap > 0 ? ", gap " + number(p.gap) : "") +
                (p.associative ? "" : ", not linked");
     }
@@ -444,13 +589,42 @@ private:
         return decade * (m >= 5 ? 5 : m >= 2 ? 2 : 1);
     }
 
-    std::size_t add(cmd::CommandContext& ctx, const Params& p, Boundary b) const {
+    std::size_t add(cmd::CommandContext& ctx, const Params& p, Boundary b) {
         const Document& sdoc = ctx.doc();
         applyIslandStyle(b, p.island, [&](EntityId id) { return sdoc.find(id); });
         const Pattern* pattern = PatternRegistry::find(gradient_ ? "SOLID" : p.pattern);
         if (!pattern)
             return 0;
         ctx.checkpoint();
+        // Separate off: a later area joins the hatch this command made (one object, like
+        // AutoCAD's HPSEPARATE 0).
+        const std::string sig = gradient_ ? gradientSummary(p) : summary(p);
+        if (!p.separate && last_ && sdoc.find(*last_) && sig == lastSig_) {
+            const bool linked = p.associative && !usesBlock(sdoc, b.sources);
+            const std::size_t loops = b.loops.size();
+            auto r = ctx.tx().modify(*last_, [&](Entity& e) {
+                HatchData* h = entityAs<HatchData>(e);
+                if (!h)
+                    return;
+                h->loops.insert(h->loops.end(), b.loops.begin(), b.loops.end());
+                if (linked && !h->sourceBoundary.empty()) {
+                    for (EntityId s : b.sources)
+                        if (std::find(h->sourceBoundary.begin(), h->sourceBoundary.end(), s) ==
+                            h->sourceBoundary.end())
+                            h->sourceBoundary.push_back(s);
+                } else {
+                    h->sourceBoundary.clear();
+                }
+            });
+            if (!r) {
+                ctx.message(r.error().message);
+                return 0;
+            }
+            placeInOrder(ctx, *last_, p);
+            ctx.message("Area added to the hatch (" + std::to_string(loops) + " " +
+                        loopWord(loops) + ").");
+            return 1;
+        }
         // The angle typed is from the UCS X axis.
         const double angle = p.angle + ctx.host().ucsAngle();
         Entity hatch = makeHatchEntity(b, *pattern, p.scale, angle, p.base);
@@ -461,14 +635,24 @@ private:
         if (gradient_) {
             GradientData g = p.gradient;
             g.angle = angle;
+            if (g.oneColor)
+                g.color2 = hatch::tintedColor(g.color1, g.tint);
             entityAs<HatchData>(hatch)->gradient = g;
         }
+        entityAs<HatchData>(hatch)->doubled = p.doubled && !gradient_;
         applyCurrentProperties(ctx.doc().header(), hatch);
+        if (p.transparency != kTransparencyByLayer)
+            hatch.common.transparency = p.transparency;
+        if (p.annotative && !gradient_)
+            hatch.common.annotative = true;
         auto id = ctx.tx().add(std::move(hatch));
         if (!id) {
             ctx.message(id.error().message);
             return 0;
         }
+        last_ = id.value();
+        lastSig_ = sig;
+        placeInOrder(ctx, id.value(), p);
         ctx.message("Hatch created (" + std::to_string(b.loops.size()) + " " +
                     loopWord(b.loops.size()) + ").");
         return 1;
@@ -547,12 +731,144 @@ public:
             if (changed > 0)
                 ctx.checkpoint();
             cmd::KeywordOptions ko;
-            ko.keywords = {"Pattern", "Scale", "Angle", "Base", "Done"};
+            ko.keywords = {"Pattern",    "Scale",        "Angle",        "Base",
+                           "Gradient",   "DIsassociate", "SEparate",     "DRaworder",
+                           "ANnotative", "DOuble",       "Transparency", "Done"};
             ko.defaultKeyword = "Done";
-            auto k = co_await ctx.getKeyword("Hatch option", ko);
+            auto k = co_await ctx.getKeyword(
+                "Hatch option [Pattern/Scale/Angle/Base/Gradient/DIsassociate/SEparate/"
+                "DRaworder/ANnotative/DOuble/Transparency/Done] <Done>",
+                ko);
             if (!k.ok() || k.keyword == "Done")
                 break;
-            if (k.keyword == "Pattern") {
+            if (k.keyword == "Gradient") {
+                GradientData g = first(ctx, ids.front()).gradient.value_or(GradientData{});
+                cmd::KeywordOptions gk;
+                gk.keywords = kGradientKeywords;
+                gk.keywords.push_back("Off");
+                gk.defaultKeyword = gradientKeyword(g.kind);
+                auto kk = co_await ctx.getKeyword(
+                    "Gradient kind, or Off for a solid fill [Linear/Cylinder/INVCylinder/"
+                    "Spherical/INVSpherical/Hemispherical/INVHemispherical/CUrved/INVCUrved/Off] "
+                    "<" +
+                        std::string(gradientKeyword(g.kind)) + ">",
+                    gk);
+                if (!kk.ok())
+                    continue;
+                if (kk.keyword == "Off") {
+                    changed += apply(ctx, ids, [&](HatchData& h) { h.gradient.reset(); });
+                    continue;
+                }
+                g.kind = gradientFromKeyword(kk.keyword);
+                cmd::StringOptions c1;
+                c1.defaultValue = colorText(g.color1);
+                auto s1 =
+                    co_await ctx.getString("First colour (index 1-255, r,g,b or #rrggbb)", c1);
+                if (!s1.ok())
+                    continue;
+                if (auto c = parseColor(s1.text))
+                    g.color1 = *c;
+                cmd::StringOptions c2;
+                c2.defaultValue = g.oneColor ? "Tint " + number(g.tint) : colorText(g.color2);
+                auto s2 = co_await ctx.getString(
+                    "Second colour, or T and a number 0-1 for a one-colour gradient", c2);
+                if (!s2.ok())
+                    continue;
+                const std::string t2 = cmd::toUpperAscii(cmd::trim(s2.text));
+                double tint = 0;
+                const std::size_t digits = t2.find_first_not_of("TINT ");
+                if (t2.rfind("T", 0) == 0 && digits != std::string::npos &&
+                    parseNumber(t2.substr(digits), tint) && tint >= 0 && tint <= 1) {
+                    g.oneColor = true;
+                    g.tint = tint;
+                    g.color2 = hatch::tintedColor(g.color1, tint);
+                } else if (auto c = parseColor(s2.text)) {
+                    g.oneColor = false;
+                    g.color2 = *c;
+                }
+                cmd::RealOptions ro;
+                ro.defaultValue = g.shift;
+                ro.min = 0;
+                ro.max = 1;
+                auto sh = co_await ctx.getReal("Shift (0 = centred)", ro);
+                if (sh.ok())
+                    g.shift = sh.value;
+                changed += apply(ctx, ids, [&](HatchData& h) {
+                    const double angle = h.gradient ? h.gradient->angle : h.patternAngle;
+                    h.gradient = g;
+                    h.gradient->angle = angle;
+                    h.solid = true;
+                });
+            } else if (k.keyword == "DIsassociate") {
+                changed += apply(ctx, ids, [](HatchData& h) { h.sourceBoundary.clear(); });
+                ctx.message("The hatches no longer follow their boundary objects.");
+            } else if (k.keyword == "SEparate") {
+                changed += separate(ctx, ids);
+            } else if (k.keyword == "DRaworder") {
+                cmd::KeywordOptions dk;
+                dk.keywords = {"Back", "Front", "BEhind", "InFront"};
+                dk.defaultKeyword = "BEhind";
+                auto d = co_await ctx.getKeyword(
+                    "Draw order [Back/Front/BEhind boundary/InFront of boundary] <BEhind>", dk);
+                if (!d.ok())
+                    continue;
+                Params order;
+                order.order = d.keyword == "Back"      ? Params::Order::Back
+                              : d.keyword == "Front"   ? Params::Order::Front
+                              : d.keyword == "InFront" ? Params::Order::InFront
+                                                       : Params::Order::Behind;
+                for (EntityId id : ids)
+                    HatchCommand::placeInOrder(ctx, id, order);
+                ++changed;
+            } else if (k.keyword == "ANnotative" || k.keyword == "DOuble") {
+                const bool annot = k.keyword == "ANnotative";
+                cmd::KeywordOptions yn;
+                yn.keywords = {"Yes", "No"};
+                const Entity* e0 = ctx.doc().find(ids.front());
+                const bool now =
+                    annot ? e0 && e0->common.annotative : first(ctx, ids.front()).doubled;
+                yn.defaultKeyword = now ? "Yes" : "No";
+                auto a = co_await ctx.getKeyword(std::string(annot ? "Annotative" : "Double") +
+                                                     " [Yes/No] <" + (now ? "Yes" : "No") + ">",
+                                                 yn);
+                if (!a.ok())
+                    continue;
+                const bool on = a.keyword == "Yes";
+                for (EntityId id : ids) {
+                    auto r = ctx.tx().modify(id, [&](Entity& e) {
+                        if (annot)
+                            e.common.annotative = on;
+                        else if (HatchData* h = entityAs<HatchData>(e))
+                            h->doubled = on && !h->solid;
+                    });
+                    if (r)
+                        ++changed;
+                }
+            } else if (k.keyword == "Transparency") {
+                cmd::StringOptions ts;
+                const Entity* e0 = ctx.doc().find(ids.front());
+                ts.defaultValue =
+                    transparencyText(e0 ? e0->common.transparency : kTransparencyByLayer);
+                auto t = co_await ctx.getString("Transparency (ByLayer, ByBlock or 0-90)", ts);
+                if (!t.ok())
+                    continue;
+                const std::string v = cmd::toUpperAscii(cmd::trim(t.text));
+                double d = 0;
+                std::int8_t value = 0;
+                if (v == "BYLAYER")
+                    value = kTransparencyByLayer;
+                else if (v == "BYBLOCK")
+                    value = kTransparencyByBlock;
+                else if (parseNumber(v, d) && d >= 0 && d <= 90 && d == std::floor(d))
+                    value = static_cast<std::int8_t>(d);
+                else {
+                    ctx.message("Transparency is ByLayer, ByBlock or 0 to 90.");
+                    continue;
+                }
+                for (EntityId id : ids)
+                    if (ctx.tx().modify(id, [&](Entity& e) { e.common.transparency = value; }))
+                        ++changed;
+            } else if (k.keyword == "Pattern") {
                 cmd::StringOptions so2;
                 so2.defaultValue = currentPattern(ctx, ids.front());
                 auto s = co_await ctx.getString("Pattern name, ? to list", so2);
@@ -598,6 +914,40 @@ public:
     }
 
 private:
+    // Each area of a hatch becomes a hatch of its own (HATCHEDIT Separate).
+    static std::size_t separate(cmd::CommandContext& ctx, std::vector<EntityId>& ids) {
+        std::size_t made = 0;
+        std::vector<EntityId> all;
+        for (EntityId id : ids) {
+            const Entity* e = ctx.doc().find(id);
+            const HatchData* h = e ? entityAs<HatchData>(*e) : nullptr;
+            if (!h) {
+                continue;
+            }
+            std::vector<HatchData> parts = hatch::separateAreas(*h);
+            all.push_back(id);
+            if (parts.size() < 2)
+                continue;
+            const Entity copy = *e;
+            (void)ctx.tx().modify(id, [&](Entity& x) { *entityAs<HatchData>(x) = parts[0]; });
+            for (std::size_t i = 1; i < parts.size(); ++i) {
+                Entity piece = copy;
+                piece.data = parts[i];
+                if (auto nid = ctx.tx().add(std::move(piece))) {
+                    all.push_back(nid.value());
+                    ++made;
+                }
+            }
+        }
+        if (made == 0) {
+            ctx.message("Each selected hatch has one area only.");
+            return 0;
+        }
+        ids = all;
+        ctx.message(std::to_string(made) + " more hatch(es) made from the separate areas.");
+        return made;
+    }
+
     static HatchData first(cmd::CommandContext& ctx, EntityId id) {
         const Entity* e = ctx.doc().find(id);
         const HatchData* h = e ? entityAs<HatchData>(*e) : nullptr;

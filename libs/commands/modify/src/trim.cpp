@@ -7,6 +7,7 @@
 
 #include "commands.h"
 #include "tbcad/blocks/blocks.h"
+#include "tbcad/hatch/hatch.h"
 #include "util.h"
 
 namespace tbcad::modifycmd {
@@ -201,8 +202,21 @@ std::optional<std::vector<EntityId>> doOne(cmd::CommandContext& ctx, EntityId id
     } else {
         auto edges =
             collectEdges(ctx.doc(), set, id, trimming, opt.extendEdges, owned, &ctx.host());
-        edit = trimming ? modify::trimEntity(*target, pick, edges, opt)
-                        : modify::extendEntity(*target, pick, edges, opt);
+        if (const auto* h = entityAs<HatchData>(*target)) {
+            if (!trimming) {
+                edit = Error{ErrorCode::InvalidArgument, "A hatch cannot be extended."};
+            } else if (auto cut = hatch::trimHatch(*h, pick, edges); cut) {
+                modify::EntityEdit e;
+                e.modified = *target;
+                e.modified->data = std::move(cut.value());
+                edit = std::move(e);
+            } else {
+                edit = cut.error();
+            }
+        } else {
+            edit = trimming ? modify::trimEntity(*target, pick, edges, opt)
+                            : modify::extendEntity(*target, pick, edges, opt);
+        }
     }
     if (!edit) {
         ctx.message(edit.error().message);

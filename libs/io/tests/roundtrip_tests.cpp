@@ -787,6 +787,38 @@ TEST_CASE("round trip: a gradient hatch keeps its gradient") {
     CHECK_FALSE(entityAs<HatchData>(*back->find(EntityId{2}))->gradient.has_value());
 }
 
+TEST_CASE("round trip: gradient kind, shift and one-colour tint") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("hatch");
+        HatchData h;
+        HatchLoop loop;
+        loop.edges.push_back(HatchLineEdge{{0, 0}, {10, 0}});
+        loop.edges.push_back(HatchLineEdge{{10, 0}, {10, 10}});
+        loop.edges.push_back(HatchLineEdge{{10, 10}, {0, 0}});
+        h.loops.push_back(loop);
+        GradientData g;
+        g.kind = GradientKind::InvHemispherical;
+        g.color1 = Color::index(3);
+        g.shift = 0.25;
+        g.oneColor = true;
+        g.tint = 0.8;
+        h.gradient = g;
+        Entity e;
+        e.data = std::move(h);
+        (void)tx.add(std::move(e));
+        tx.commit();
+    }
+    auto back = readOrFail(writeOrFail(doc));
+    const HatchData* h = entityAs<HatchData>(*back->find(EntityId{1}));
+    REQUIRE(h != nullptr);
+    REQUIRE(h->gradient.has_value());
+    CHECK(h->gradient->kind == GradientKind::InvHemispherical);
+    CHECK(h->gradient->shift == doctest::Approx(0.25));
+    CHECK(h->gradient->oneColor);
+    CHECK(h->gradient->tint == doctest::Approx(0.8));
+}
+
 TEST_CASE("round trip: levels, entity levels, current level and the level view") {
     auto doc = makeRichDocument();
     LevelId l2, l3;

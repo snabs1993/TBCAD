@@ -9,6 +9,7 @@
 #include "tbcad/dxf/reader.h"
 #include "tbcad/dxf/writer.h"
 #include "tbcad/gdt/gdt.h"
+#include "tbcad/hatch/hatch.h"
 #include "tbcad/hatch/pattern.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/underlay/image.h"
@@ -2123,6 +2124,47 @@ TEST_CASE("a gradient hatch keeps its colours and the objects it was made from")
         REQUIRE(rt.back->find(h->sourceBoundary[0]));
         CHECK(entityAs<PolylineData>(*rt.back->find(h->sourceBoundary[0])));
         CHECK(e.common.ext.get().xdata.empty());
+    });
+    CHECK(hatches == 1);
+}
+
+TEST_CASE("a gradient hatch keeps its kind, shift and one-colour tint") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("t");
+        HatchData h;
+        HatchLoop loop;
+        loop.outer = true;
+        loop.edges.push_back(HatchLineEdge{{0, 0}, {100, 0}});
+        loop.edges.push_back(HatchLineEdge{{100, 0}, {100, 50}});
+        loop.edges.push_back(HatchLineEdge{{100, 50}, {0, 0}});
+        h.loops.push_back(loop);
+        h.pattern = "SOLID";
+        GradientData g;
+        g.kind = GradientKind::InvSpherical;
+        g.color1 = Color::index(1);
+        g.shift = 0.3;
+        g.oneColor = true;
+        g.tint = 0.75;
+        g.color2 = hatch::tintedColor(g.color1, g.tint);
+        h.gradient = g;
+        REQUIRE(tx.add(make(Indirect<HatchData>(h))));
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    int hatches = 0;
+    rt.back->forEachEntity([&](const Entity& e) {
+        const auto* h = entityAs<HatchData>(e);
+        if (!h)
+            return;
+        ++hatches;
+        REQUIRE(h->gradient);
+        CHECK(h->gradient->kind == GradientKind::InvSpherical);
+        CHECK(h->gradient->color1 == Color::index(1));
+        CHECK(h->gradient->shift == doctest::Approx(0.3));
+        CHECK(h->gradient->oneColor);
+        CHECK(h->gradient->tint == doctest::Approx(0.75));
+        CHECK(h->gradient->color2 == hatch::tintedColor(Color::index(1), 0.75));
     });
     CHECK(hatches == 1);
 }

@@ -87,13 +87,22 @@ patterns (they shadow built-in ones); `parsePatterns(text)` reads the file forma
 
 ## Gradient fills and the pattern library
 
-* `HatchData::gradient` (`GradientData`: kind Linear or Cylinder, two colours, angle) turns a hatch
-  into a colour gradient. The hatch is solid (`solid == true`, pattern SOLID). The display
-  generator cuts the area into 64 bands across the gradient direction (`gradientBands`, rings
-  clipped per band, even-odd and holes kept) and fills each with the blended colour; bands overlap
-  their successor by a quarter band so no seams show. Cylinder runs colour 1 -> 2 -> 1. Saved
-  in `.tbcad` as a few bytes after the loops of the hatch record (older readers skip them); DXF
-  export writes a gradient hatch as a plain solid hatch.
+* `HatchData::gradient` (`GradientData`) turns a hatch into a colour gradient. The hatch is solid
+  (`solid == true`, pattern SOLID). AutoCAD's nine kinds: Linear, Cylinder, Curved (the strip
+  kinds) and Spherical, Hemispherical (the radial kinds), each with an Inv form that swaps the
+  colours. `angle` is the direction of the colour change, `shift` (0 = centred, 1 = towards the
+  start) moves the middle of the gradient, `oneColor` with `tint` (GFCLRLUM: 0 black, 0.5 the
+  colour, 1 white) makes the second colour from the first (`tintedColor`). The display cuts strip
+  kinds into 64 bands across the direction and radial kinds into nested discs (`gradientBands`;
+  rings clipped per band, even-odd and holes kept); bands overlap their successor so no seams
+  show. Saved in `.tbcad` after the loops of the hatch record (shift and tint in an optional tail
+  older readers skip); DXF writes and reads groups 450-470 (names via `gradientName` /
+  `gradientKindFromName`).
+* **Annotative hatches** (`EntityCommon::annotative`): the pattern scale is the size on paper and
+  is multiplied by the current annotation scale for display.
+* **TRIM** cuts hatches (`trimHatch`): the hatch's outline and the cutting edges split the area,
+  the piece under the pick goes, and the hatch becomes non-associative. A pick with nothing that
+  cuts the hatch there is refused rather than erasing it.
 * `assets/patterns/tbcad.patterns` has 34 patterns, all of our own design: LINE90, LINE135, LINE30,
   LINE60, LINE45F/W/D, DASHES, GRIDFINE, GRIDWIDE, DIAMOND, TRIANGLE, STEEL, TICKS, WOOD, MESH,
   BLOCK, STONE, TILEDOT, PLASTER, DOTSTAG, CROSSES, ZIGZAG, and the seeded random CONCRETE and
@@ -102,17 +111,22 @@ patterns (they shadow built-in ones); `parsePatterns(text)` reads the file forma
 
 ## Commands (`libs/commands/hatch`)
 
-* **HATCH [H]**: `Pick internal point (LINE45, scale 1, angle 0) or [Objects/Pattern/Scale/Angle/Base/Gap/Link/Undo]`.
-  Each pick adds a hatch (islands included). `Objects` hatches the selected shapes, `Undo` removes the
-  last hatch of this run, Esc keeps what was made. The boundary search sees the model-space entities
-  that are visible (entity visible, layer on and not frozen) and inside the current view; without a
-  viewport (scripts) it sees all of them. The chosen pattern, scale, angle and base are remembered in
-  the host settings (`hatch.pattern`, `hatch.scale`, `hatch.angle` in degrees, `hatch.base`, `hatch.gap`,
-  `hatch.associative`). `Gap` sets the gap tolerance (0 = off); `Link` toggles whether new hatches
-  are associative. While the command waits for a point, the region under the cursor is previewed
-  (outline plus a light tint), from a boundary graph that is cached per drawing revision, view and
-  gap. Candidates come from `IHost::entitiesInWindow` when the host has a spatial index, otherwise
-  from a scan of the document.
+* **HATCH [H]**: `Pick internal point (LINE45, scale 1, angle 0) or [Objects/Pattern/Scale/Angle/Base/Gap/Island/Link/SEparate/DRaworder/ANnotative/DOuble/Transparency/Undo]`.
+  The areas picked in one run make one hatch (HPSEPARATE off); `SEparate` makes one hatch per
+  area. A settings change in the middle of a run starts a new hatch. `Objects` hatches the selected
+  shapes, `Undo` takes back the last pick, Esc keeps what was made. `Island` is Normal, Outer or
+  Ignore. `DRaworder` places new hatches behind their boundary (the default, HPDRAWORDER 3), in
+  front of it, at the back, at the front or leaves them where they are. `ANnotative`, `DOuble`
+  (a second pattern set at 90 degrees) and `Transparency` (ByLayer, ByBlock or 0-90) apply to new
+  hatches. The boundary search sees the model-space entities that are visible (entity visible,
+  layer on and not frozen) and inside the current view; without a viewport (scripts) it sees all
+  of them. The choices are remembered in the host settings (`hatch.pattern`, `hatch.scale`,
+  `hatch.angle` in degrees, `hatch.base`, `hatch.gap`, `hatch.island`, `hatch.associative`,
+  `hatch.separate`, `hatch.drawOrder`, `hatch.annotative`, `hatch.double`,
+  `hatch.transparency`). While the command waits for a point, the region under the cursor is
+  previewed (outline plus a light tint), from a boundary graph that is cached per drawing
+  revision, view and gap. Candidates come from `IHost::entitiesInWindow` when the host has a
+  spatial index, otherwise from a scan of the document.
 * **Associative hatches.** A commit hook registered by the module calls
   `hatch::updateAssociativeHatches` at the end of every command that changed something. A hatch
   whose `sourceBoundary` contains a touched entity is rebuilt from its source entities (the
@@ -122,15 +136,23 @@ patterns (they shadow built-in ones); `parsePatterns(text)` reads the file forma
   rewritten. Limitation: a hatch that was closed with a gap is rebuilt without a gap tolerance, so it
   detaches once its sources move apart.
 * **GRADIENT [GR]**: the same command with a gradient instead of a pattern:
-  `Pick internal point (linear 30,60,200 to 190,220,255, angle 0) or [Objects/Kind/First/Second/Angle/Gap/Link/Undo]`.
-  `Kind` Linear or Cylinder, `First` and `Second` colours (index 1-255, `r,g,b` or `#rrggbb`), `Angle`
-  the direction of the colour change. Settings `hatch.gradient.kind`, `hatch.gradient.color1`,
-  `hatch.gradient.color2`. Preview, Gap and Link work as in HATCH. HATCHEDIT with a pattern removes
-  the gradient.
+  `Pick internal point (linear 30,60,200 to 190,220,255, angle 0) or [Objects/Kind/First/Second/One/Centered/Angle/Gap/Island/Link/SEparate/DRaworder/Transparency/Undo]`.
+  `Kind` is one of the nine kinds, `First` and `Second` colours (index 1-255, `r,g,b` or
+  `#rrggbb`), `One` a one-colour gradient with its tint, `Centered` the shift, `Angle` the
+  direction of the colour change. Settings `hatch.gradient.kind`, `hatch.gradient.color1`,
+  `hatch.gradient.color2`, `hatch.gradient.shift`, `hatch.gradient.oneColor`,
+  `hatch.gradient.tint`. HATCHEDIT with a pattern removes the gradient.
 * **HATCHEDIT [HE]**: select hatches (the current selection is used first), then
-  `[Pattern/Scale/Angle/Base/Done]`. All selected hatches change in one transaction, so editing
-  1,000 of them is one undo step. Esc throws the edits away. The property section and the panel call it
-  as `HATCHEDIT P LINE45 S 2 A 45 D`.
+  `[Pattern/Scale/Angle/Base/Gradient/DIsassociate/SEparate/DRaworder/ANnotative/DOuble/Transparency/Done]`.
+  `Gradient` sets the kind (or Off), colours, one-colour tint and shift; `SEparate` splits a hatch
+  of several areas into one hatch per area (`separateAreas`); `DIsassociate` detaches it from its
+  boundary. All selected hatches change in one transaction, so editing 1,000 of them is one undo
+  step. Esc throws the edits away. The property section and the panel call it as
+  `HATCHEDIT P LINE45 S 2 A 45 D`. HATCHTOBACK and MATCHPROP (hatch properties) work on hatches too.
 * UI (application builds only): menu entries Draw/Hatch and Modify/Edit Hatch, a *Hatch* panel
-  (pattern list with thumbnails, scale, angle, origin, "Pick internal point", "Apply to selected
-  hatches") and a Hatch section in the properties panel (pattern, scale, angle, origin).
+  (pattern list with thumbnails, scale, angle, origin, an Options group for associativity,
+  separate hatches, annotative, double, gap, islands, draw order and transparency, a Gradient group
+  for kind, one colour and tint, shift and direction, "Pick internal point", "Gradient", "Apply to
+  selected hatches"), a Hatch section in the properties panel (pattern, scale, angle, origin) and
+  a Hatch Editor contextual tab (pattern, scale, angle, Edit, Separate, Disassociate, Send to
+  back, Explode).

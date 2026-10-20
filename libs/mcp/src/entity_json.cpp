@@ -7,6 +7,7 @@
 
 #include "tbcad/core/units.h"
 #include "tbcad/dim/dim.h"
+#include "tbcad/hatch/hatch.h"
 
 namespace tbcad::mcp {
 
@@ -657,33 +658,45 @@ namespace {
 // ---- Hatch gradients, insert arrays, dimensions
 // ---------------------------------------------------
 
-const char* gradientKindName(GradientKind k) {
-    return k == GradientKind::Cylinder ? "cylinder" : "linear";
+std::string gradientKindName(GradientKind k) {
+    return lower(hatch::gradientName(k));
 }
 
 Json gradientToJson(const GradientData& g) {
-    return Json(Json::Object{{"type", gradientKindName(g.kind)},
-                             {"color1", colorToJson(g.color1)},
-                             {"color2", colorToJson(g.color2)},
-                             {"angle", g.angle}});
+    Json::Object o{{"type", gradientKindName(g.kind)},
+                   {"color1", colorToJson(g.color1)},
+                   {"color2", colorToJson(g.color2)},
+                   {"angle", g.angle}};
+    if (g.shift != 0)
+        o["shift"] = g.shift;
+    if (g.oneColor) {
+        o["oneColor"] = true;
+        o["tint"] = g.tint;
+    }
+    return Json(std::move(o));
 }
 
 GradientData gradientFromJson(const Json& j) {
     if (!j.isObject())
-        fail("gradient must be an object {type, color1, color2, angle}");
+        fail("gradient must be an object {type, color1, color2, angle, shift, oneColor, tint}");
     GradientData g;
-    std::string t = lower(strOr(j, "type", "linear"));
-    if (t == "linear")
-        g.kind = GradientKind::Linear;
-    else if (t == "cylinder")
-        g.kind = GradientKind::Cylinder;
-    else
-        fail("gradient type must be linear or cylinder");
+    const auto kind = hatch::gradientKindFromName(strOr(j, "type", "linear"));
+    if (!kind)
+        fail(
+            "gradient type must be linear, cylinder, invcylinder, spherical, invspherical, "
+            "hemispherical, invhemispherical, curved or invcurved");
+    g.kind = *kind;
     if (const Json* c = j.find("color1"))
         g.color1 = orFail(colorFromJson(*c, false));
     if (const Json* c = j.find("color2"))
         g.color2 = orFail(colorFromJson(*c, false));
     g.angle = angOr(j, "angle", 0);
+    g.shift = std::clamp(lenOr(j, "shift", 0), 0.0, 1.0);
+    g.tint = std::clamp(lenOr(j, "tint", 1), 0.0, 1.0);
+    if (boolOr(j, "oneColor", false)) {
+        g.oneColor = true;
+        g.color2 = hatch::tintedColor(g.color1, g.tint);
+    }
     return g;
 }
 

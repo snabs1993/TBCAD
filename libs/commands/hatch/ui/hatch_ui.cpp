@@ -115,6 +115,87 @@ std::string leftLabel(const char* label) {
     return std::string("##") + label;
 }
 
+// The Options and Gradient groups of AutoCAD's hatch tab. Returns true when something changed.
+bool drawOptions(Params& p) {
+    bool changed = false;
+    if (ImGui::CollapsingHeader("Options")) {
+        changed |= ImGui::Checkbox("Associative", &p.associative);
+        changed |= ImGui::Checkbox("Separate hatches", &p.separate);
+        changed |= ImGui::Checkbox("Annotative", &p.annotative);
+        changed |= ImGui::Checkbox("Double", &p.doubled);
+        double gap = p.gap;
+        if (ImGui::InputDouble(leftLabel("Gap").c_str(), &gap, 0, 0, "%.6g",
+                               ImGuiInputTextFlags_AutoSelectAll) &&
+            gap >= 0) {
+            p.gap = gap;
+            changed = true;
+        }
+        static const char* kIslands[] = {"Normal", "Outer", "Ignore"};
+        int island = p.island == IslandStyle::Outer ? 1 : p.island == IslandStyle::Ignore ? 2 : 0;
+        if (ImGui::Combo(leftLabel("Islands").c_str(), &island, kIslands, 3)) {
+            p.island = island == 1   ? IslandStyle::Outer
+                       : island == 2 ? IslandStyle::Ignore
+                                     : IslandStyle::Normal;
+            changed = true;
+        }
+        static const char* kOrders[] = {"Do not assign", "Send to back", "Bring to front",
+                                        "Behind boundary", "In front of boundary"};
+        int order = static_cast<int>(p.order);
+        if (ImGui::Combo(leftLabel("Order").c_str(), &order, kOrders, 5)) {
+            p.order = static_cast<Params::Order>(order);
+            changed = true;
+        }
+        // -1 ByLayer, -2 ByBlock, 0-90 percent.
+        int t = p.transparency;
+        if (ImGui::SliderInt(leftLabel("Transp.").c_str(), &t, -2, 90,
+                             t == kTransparencyByLayer   ? "ByLayer"
+                             : t == kTransparencyByBlock ? "ByBlock"
+                                                         : "%d%%")) {
+            p.transparency = static_cast<std::int8_t>(t);
+            changed = true;
+        }
+    }
+    if (ImGui::CollapsingHeader("Gradient")) {
+        GradientData& g = p.gradient;
+        if (ImGui::BeginCombo(leftLabel("Kind").c_str(), gradientName(g.kind))) {
+            for (std::uint8_t k = 1; k <= kGradientKindLast; ++k) {
+                const auto kind = static_cast<GradientKind>(k);
+                if (ImGui::Selectable(gradientName(kind), kind == g.kind)) {
+                    g.kind = kind;
+                    changed = true;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        changed |= ImGui::Checkbox("One colour", &g.oneColor);
+        if (g.oneColor) {
+            float tint = static_cast<float>(g.tint);
+            if (ImGui::SliderFloat(leftLabel("Tint").c_str(), &tint, 0, 1, "%.2f")) {
+                g.tint = tint;
+                changed = true;
+            }
+        }
+        bool centred = g.shift == 0;
+        if (ImGui::Checkbox("Centred", &centred)) {
+            g.shift = centred ? 0 : 0.5;
+            changed = true;
+        }
+        if (!centred) {
+            float shift = static_cast<float>(g.shift);
+            if (ImGui::SliderFloat(leftLabel("Shift").c_str(), &shift, 0, 1, "%.2f")) {
+                g.shift = shift;
+                changed = true;
+            }
+        }
+        float deg = static_cast<float>(g.angle * 180.0 / kPi);
+        if (ImGui::SliderFloat(leftLabel("Direction").c_str(), &deg, 0, 360, "%.0f")) {
+            g.angle = deg * kPi / 180.0;
+            changed = true;
+        }
+    }
+    return changed;
+}
+
 void drawPanel(ui::PanelContext& pc) {
     if (!pc.host)
         return;
@@ -164,11 +245,15 @@ void drawPanel(ui::PanelContext& pc) {
         p.base = {base[0], base[1]};
         changed = true;
     }
+    changed |= drawOptions(p);
     if (changed)
         saveParams(*pc.host, p);
 
     if (ImGui::Button("Pick internal point") && pc.runCommand)
         pc.runCommand("HATCH");
+    ImGui::SameLine();
+    if (ImGui::Button("Gradient") && pc.runCommand)
+        pc.runCommand("GRADIENT");
     ImGui::SameLine();
     ImGui::BeginDisabled(!hasHatchSelected(pc));
     if (ImGui::Button("Apply to selected hatches") && pc.runCommand)
@@ -246,7 +331,8 @@ void drawContextTab(ui::PanelContext& pc) {
     if (ImGui::IsItemDeactivatedAfterEdit())
         pc.runCommand("HATCHEDIT A " + number(angle) + " D");
     for (const auto& [label, command] :
-         {std::pair{"Edit...", "HATCHEDIT"}, std::pair{"Send to back", "HATCHTOBACK"},
+         {std::pair{"Edit...", "HATCHEDIT"}, std::pair{"Separate", "HATCHEDIT SE D"},
+          std::pair{"Disassociate", "HATCHEDIT DI D"}, std::pair{"Send to back", "HATCHTOBACK"},
           std::pair{"Explode", "EXPLODE"}}) {
         ImGui::SameLine();
         if (ImGui::SmallButton(label))

@@ -206,6 +206,13 @@ struct PayloadWriter {
             color(d.gradient->color1);
             color(d.gradient->color2);
             w.f64(d.gradient->angle);
+            // 0xF1: shift and the one-colour fade (written only when used).
+            if (d.gradient->shift != 0 || d.gradient->oneColor) {
+                w.u8(0xF1);
+                w.f64(d.gradient->shift);
+                w.u8(d.gradient->oneColor ? 1 : 0);
+                w.f64(d.gradient->tint);
+            }
         }
     }
     void hatchEdge(const HatchLineEdge& e) {
@@ -1152,14 +1159,18 @@ struct PayloadReader {
                 k = r.remaining() > 0 ? r.u8() : std::uint8_t{0};
             }
             if (k != 0) {
-                if (k != static_cast<std::uint8_t>(GradientKind::Linear) &&
-                    k != static_cast<std::uint8_t>(GradientKind::Cylinder))
+                if (k > kGradientKindLast)
                     bad("unknown gradient kind");
                 GradientData g;
                 g.kind = static_cast<GradientKind>(k);
                 g.color1 = color();
                 g.color2 = color();
                 g.angle = r.f64();
+                if (r.remaining() > 0 && r.u8() == 0xF1) {
+                    g.shift = r.f64();
+                    g.oneColor = r.u8() != 0;
+                    g.tint = r.f64();
+                }
                 d.gradient = g;
             }
         }

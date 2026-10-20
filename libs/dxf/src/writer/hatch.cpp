@@ -1,4 +1,6 @@
 // DXF export: HATCH, including embedded pattern definitions.
+#include "tbcad/hatch/hatch.h"
+
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -324,11 +326,12 @@ void Writer::writeHatch(const Props& p, const HatchData& d, std::uint64_t owner)
     o.d(47, 1);
     o.i(98, 0);
     if (d.gradient) {
-        // Two colours, each as its index (when it has one) and as RGB.
+        // Kind, angle, shift, one-colour tint and the two colours, each as its index (when it
+        // has one) and as RGB.
         const GradientData& gd = *d.gradient;
         o.i(450, 1);
         o.i(451, 0);
-        o.i(452, 0);
+        o.i(452, gd.oneColor ? 1 : 0);
         o.i(453, 2);
         double at = 0;
         for (const Color& c : {gd.color1, gd.color2}) {
@@ -342,9 +345,9 @@ void Writer::writeHatch(const Props& p, const HatchData& d, std::uint64_t owner)
             at = 1;
         }
         o.d(460, gd.angle);
-        o.d(461, 0);
-        o.d(462, 1);
-        o.str(470, gd.kind == GradientKind::Cylinder ? "CYLINDER" : "LINEAR");
+        o.d(461, gd.shift);
+        o.d(462, gd.tint);
+        o.str(470, hatch::gradientName(gd.kind));
     }
     count("HATCH");
 }

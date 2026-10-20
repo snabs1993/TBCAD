@@ -178,6 +178,45 @@ TEST_CASE("TRIM in fast mode, Shift extends, Undo and Edge") {
     CHECK(near(entityAs<LineData>(f.get(s))->b, {5, 20}));
 }
 
+TEST_CASE("TRIM cuts a hatch back to a cutting edge and keeps its pattern") {
+    Fixture f;
+    HatchData hd;
+    hd.solid = false;
+    hd.pattern = "ANSI31";
+    hd.patternScale = 2;
+    HatchLoop loop;
+    HatchPolylineEdge pl;
+    for (Vec2 p : {Vec2{0, 0}, Vec2{100, 0}, Vec2{100, 50}, Vec2{0, 50}})
+        pl.v.push_back(PolyVertex{p});
+    loop.edges.emplace_back(std::move(pl));
+    hd.loops.push_back(std::move(loop));
+    EntityId h = f.add(std::move(hd));
+    f.add(LineData{{60, -10}, {60, 60}});
+    f.host.run("TRIM", {ScriptItem::enter(), ScriptItem::pick(h, {80, 25}), ScriptItem::enter()});
+    const auto* t = entityAs<HatchData>(f.get(h));
+    REQUIRE(t);
+    CHECK(t->pattern == "ANSI31");
+    CHECK(t->patternScale == doctest::Approx(2));
+    BBox2 box;
+    for (const HatchLoop& l : t->loops)
+        for (const HatchEdge& e : l.edges)
+            if (const auto* p = std::get_if<HatchPolylineEdge>(&e))
+                for (const PolyVertex& v : p->v)
+                    box.expand(v.p);
+    CHECK(box.max.x == doctest::Approx(60));
+    CHECK(box.min.x == doctest::Approx(0));
+    f.host.undo();
+    CHECK(entityAs<HatchData>(f.get(h))->loops.size() == 1);
+
+    // Nothing crosses the hatch at the pick: the hatch stays.
+    Fixture g;
+    HatchData lone = *entityAs<HatchData>(f.get(h));
+    EntityId k = g.add(std::move(lone));
+    g.host.run("TRIM", {ScriptItem::enter(), ScriptItem::pick(k, {80, 25}), ScriptItem::enter()});
+    CHECK(g.host.logContains("No cutting edge crosses the hatch"));
+    CHECK(g.count(EntityKind::Hatch) == 1);
+}
+
 TEST_CASE("TRIM with chosen cutting edges, and implied edge extension") {
     Fixture f;
     EntityId h = f.add(LineData{{0, 0}, {10, 0}});

@@ -442,15 +442,36 @@ struct HatchLoop {
 };
 
 // A gradient fill: the colour runs from `color1` to `color2` across the hatch, along `angle`
-// (radians, direction of the colour change). Linear goes colour 1 -> colour 2; Cylinder goes
-// 1 -> 2 -> 1 (brightest in the middle). A hatch with a gradient is solid (`HatchData::solid`).
-enum class GradientKind : std::uint8_t { Linear = 1, Cylinder = 2 };
+// (radians, direction of the colour change). AutoCAD's nine kinds: Linear goes colour 1 ->
+// colour 2; Cylinder 1 -> 2 -> 1 (brightest in the middle); Spherical from colour 2 at a centre
+// point out to colour 1; Hemispherical the same from the middle of the lower edge; Curved a
+// cylinder that brightens towards one side. The Inv kinds swap the two colours. A hatch with a
+// gradient is solid (`HatchData::solid`).
+enum class GradientKind : std::uint8_t {
+    Linear = 1,
+    Cylinder = 2,
+    InvCylinder = 3,
+    Spherical = 4,
+    InvSpherical = 5,
+    Hemispherical = 6,
+    InvHemispherical = 7,
+    Curved = 8,
+    InvCurved = 9,
+};
+inline constexpr std::uint8_t kGradientKindLast = 9;
 
 struct GradientData {
     GradientKind kind = GradientKind::Linear;
     Color color1 = Color::rgb(30, 60, 200);
     Color color2 = Color::rgb(190, 220, 255);
     double angle = 0;
+    // 0 = centred (AutoCAD's "Centered"); up to 1 moves the middle of the gradient towards the
+    // start, as if lit from that side (AutoCAD uses 0.25 when Centered is off). DXF 461.
+    double shift = 0;
+    // One-colour gradient: colour 1 runs to itself at the lightness `tint` (0 black, 0.5 the
+    // colour, 1 white; AutoCAD's GFCLRLUM). `color2` holds that colour (DXF 452 and 462).
+    bool oneColor = false;
+    double tint = 1;
 };
 
 struct HatchData {
