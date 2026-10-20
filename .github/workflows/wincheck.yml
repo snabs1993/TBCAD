@@ -1,0 +1,45 @@
+# Windows compile check for branches that have no pull request yet: push a branch named
+# wincheck/<anything> (tools/wincheck.sh does it) or run it by hand on any branch. It builds the
+# whole tree with MSVC and warnings as errors, keeps going past the first failure so every error
+# shows in one run, lists the errors at the end of the build log and in the run summary, then
+# runs the tests when the build passed.
+name: Windows check
+
+on:
+  push:
+    branches: ["wincheck/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wincheck-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  msvc:
+    name: windows-2022 (MSVC, all errors)
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: ilammy/msvc-dev-cmd@a102174a2b586eec2ea151a69e6fd14404a8ce7c # v1.13.0
+      - name: Configure
+        run: cmake --preset windows-msvc-release -DTBCAD_WARNINGS_AS_ERRORS=ON
+      - name: Build (every error)
+        shell: pwsh
+        run: |
+          cmake --build --preset windows-msvc-release -- -k 0 2>&1 | Tee-Object -FilePath build.log
+          $code = $LASTEXITCODE
+          $errors = Select-String -Path build.log -Pattern ': (fatal )?error |: warning C\d+' |
+            ForEach-Object { $_.Line.Trim() } | Sort-Object -Unique
+          "### MSVC: $($errors.Count) error and warning lines" >> $env:GITHUB_STEP_SUMMARY
+          '```' >> $env:GITHUB_STEP_SUMMARY
+          $errors | Select-Object -First 300 >> $env:GITHUB_STEP_SUMMARY
+          '```' >> $env:GITHUB_STEP_SUMMARY
+          Write-Output "===== MSVC errors ($($errors.Count)) ====="
+          $errors | Select-Object -First 300
+          exit $code
+      - name: Test
+        run: ctest --preset windows-msvc-release --output-on-failure -j 4 -E "perf|performance"

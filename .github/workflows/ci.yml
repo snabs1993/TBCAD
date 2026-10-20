@@ -8,9 +8,11 @@ on:
 permissions:
   contents: read
 
+# Pull requests cancel their older runs; main keeps every run, so each merge gets a full result
+# (with several merges an hour, cancelling there meant the MSVC job almost never finished).
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.ref }}-${{ github.event_name == 'push' && github.sha || 'pr' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   windows:
