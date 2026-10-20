@@ -776,9 +776,13 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
             }
             // The arrow kind has no group TBCAD can write (DIMBLK wants a block record's handle):
             // it travels as extended data of the style.
-            if (ds.arrowType != ArrowType::ClosedFilled) {
+            if (ds.arrowType != ArrowType::ClosedFilled ||
+                ds.leaderArrow != ArrowType::ClosedFilled) {
                 o.raw(1001, "TBCAD");
-                o.raw(1000, "arrow=" + std::to_string(static_cast<int>(ds.arrowType)));
+                if (ds.arrowType != ArrowType::ClosedFilled)
+                    o.raw(1000, "arrow=" + std::to_string(static_cast<int>(ds.arrowType)));
+                if (ds.leaderArrow != ArrowType::ClosedFilled)
+                    o.raw(1000, "leaderArrow=" + std::to_string(static_cast<int>(ds.leaderArrow)));
             }
         }
     }

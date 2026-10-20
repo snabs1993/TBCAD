@@ -627,6 +627,9 @@ Result<void> checkRow(const Document& doc, DimStyle& r, const DimStyle* old) {
         return invalid("fixed extension line length must not be negative");
     if (!std::isfinite(r.textVertPos))
         return invalid("text vertical position must be a number");
+    if (static_cast<int>(r.leaderArrow) < 0 ||
+        static_cast<int>(r.leaderArrow) > static_cast<int>(ArrowType::None))
+        return invalid("unknown leader arrow");
     r.textVertPos = std::clamp(r.textVertPos, -100.0, 100.0);
     r.textJustify = std::clamp(r.textJustify, 0, 2);
     r.angularPrecision = std::clamp(r.angularPrecision, -1, 8);

@@ -117,6 +117,7 @@ struct DimStyle {
     TextStyleId textStyle{};  // null = document's current text style
     double textGap = 0.625;
     ArrowType arrowType = ArrowType::ClosedFilled;
+    ArrowType leaderArrow = ArrowType::ClosedFilled;  // DIMLDRBLK: the arrow of leaders
     double arrowSize = 2.5;
     double extLineOffset = 0.625;
     double extLineExtension = 1.25;

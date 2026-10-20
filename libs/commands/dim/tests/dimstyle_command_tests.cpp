@@ -491,3 +491,17 @@ TEST_CASE("DIMSTYLE FixedExt and FixedExtLength") {
         listed |= k == "FixedExt" && v == "On";
     CHECK(listed);
 }
+
+TEST_CASE("DIMSTYLE LeaderArrow sets the arrow leaders draw with") {
+    Fixture f;
+    f.host->run("DIMSTYLE", {"New", "Ld", "Edit", "Ld", "ArrowType", "Tick", "LeaderArrow", "Dot",
+                             "Done", "Done"});
+    const DimStyle* s = f.doc.dimStyleByName("Ld");
+    REQUIRE(s);
+    CHECK(s->arrowType == ArrowType::ArchTick);
+    CHECK(s->leaderArrow == ArrowType::Dot);
+    // A leader of the style draws a dot (an arrow ring), not a tick.
+    LeaderData l{{{0, 0}, {10, 10}, {20, 10}}, s->id, "", {}};
+    const dim::Layout L = dim::layoutLeader(f.doc, l);
+    CHECK(L.arrows.size() == 1);
+}

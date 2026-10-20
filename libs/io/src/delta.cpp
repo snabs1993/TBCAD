@@ -15,7 +15,7 @@ namespace {
 
 constexpr std::uint8_t kDeltaMagic[4] = {'T', 'B', 'D', 'L'};
 // 3: text style rows carry the fixed height. Version 2 records are still read.
-constexpr std::uint8_t kDeltaVersion = 14;
+constexpr std::uint8_t kDeltaVersion = 15;
 
 [[noreturn]] void bad(const char* msg) {
     throw FormatError(msg);
@@ -138,6 +138,8 @@ void putRow(ByteWriter& w, StringTable& st, const DimStyle& r) {
     w.f64(r.fixedExtLength);
     // (version 14) DIMTVP
     w.f64(r.textVertPos);
+    // (version 15) leader arrow
+    w.u8(static_cast<std::uint8_t>(r.leaderArrow));
 }
 
 void putRow(ByteWriter& w, StringTable& st, const BlockDef& r) {
@@ -362,6 +364,8 @@ struct Reader {
             if (!std::isfinite(d.textVertPos))
                 bad("invalid text vertical position");
         }
+        if (version >= 15)
+            d.leaderArrow = enumeration(ArrowType::None);
     }
     void row(BlockDef& b) {
         b.name = str();

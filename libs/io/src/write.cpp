@@ -278,16 +278,24 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
         }
 
         // More dimension style variables: per style its id, the count of values, then each value
-        // as a tag and a number. Tag 1: DIMTVP.
+        // as a tag and a number. Tag 1: DIMTVP; tag 2: the leader arrow (since 1.19).
         ByteWriter dstv;
         std::size_t dstvCount = 0;
         for (const auto& [id, r] : doc.dimStyles()) {
-            if (r.textVertPos == 0)
+            const bool tvp = r.textVertPos != 0;
+            const bool ldr = r.leaderArrow != ArrowType::ClosedFilled;
+            if (!tvp && !ldr)
                 continue;
             dstv.varint(id.value);
-            dstv.varint(1);
-            dstv.varint(1);
-            dstv.f64(r.textVertPos);
+            dstv.varint((tvp ? 1 : 0) + (ldr ? 1 : 0));
+            if (tvp) {
+                dstv.varint(1);
+                dstv.f64(r.textVertPos);
+            }
+            if (ldr) {
+                dstv.varint(2);
+                dstv.f64(static_cast<double>(r.leaderArrow));
+            }
             ++dstvCount;
         }
 

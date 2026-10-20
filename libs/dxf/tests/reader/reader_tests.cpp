@@ -1227,12 +1227,13 @@ TEST_CASE("dimension style: a built-in arrow block name picks the arrow kind") {
 TEST_CASE("dimension style: arrow blocks named by block record handle, as AutoCAD writes them") {
     Pairs p;
     p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE");
-    p.g(0, "DIMSTYLE").g(105, "30").g(2, "Tick").g(342, "1F").g(140, 2.5).g(41, 2.5);
+    p.g(0, "DIMSTYLE").g(105, "30").g(2, "Tick").g(342, "1F").g(341, "3B").g(140, 2.5).g(41, 2.5);
     p.g(0, "ENDTAB");
     // The block record table comes after the dimension styles.
     p.g(0, "TABLE").g(2, "BLOCK_RECORD");
     p.g(0, "BLOCK_RECORD").g(5, "1F").g(2, "_ArchTick");
     p.g(0, "BLOCK_RECORD").g(5, "2a").g(2, "_Dot");
+    p.g(0, "BLOCK_RECORD").g(5, "3B").g(2, "_Open30");
     p.g(0, "ENDTAB").end();
     p.section("ENTITIES");
     p.g(0, "DIMENSION").g(8, "0").g(2, "*D1").g(3, "Tick").g(10, 5.0).g(20, 5.0).g(11, 5.0);
@@ -1246,6 +1247,7 @@ TEST_CASE("dimension style: arrow blocks named by block record handle, as AutoCA
     const DimStyle* tick = l.doc().dimStyleByName("Tick");
     REQUIRE(tick != nullptr);
     CHECK(tick->arrowType == ArrowType::ArchTick);
+    CHECK(tick->leaderArrow == ArrowType::Open30);  // DIMLDRBLK
     auto dims = modelEntities<DimensionData>(l.doc());
     REQUIRE(dims.size() == 2);
     int dots = 0, ticks = 0;

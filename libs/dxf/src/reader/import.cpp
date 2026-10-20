@@ -1697,6 +1697,10 @@ void Importer::readDimStyle(const Record& r) {
         const ArrowType blk1 = arrowOf(343, ArrowType::ClosedFilled);
         ds.arrowType = r.integer(173) != 0 ? blk1 : blk;
         dimArrows_[name] = {blk, blk1};
+        ds.leaderArrow = arrowOf(341, ArrowType::ClosedFilled);  // DIMLDRBLK
+        // A leader child style ("name$7") draws leaders with its arrow: that is DIMLDRBLK.
+        if (name.size() > 2 && name.compare(name.size() - 2, 2, "$7") == 0 && r.has(341))
+            ds.arrowType = ds.leaderArrow;
     }
     // DIMTSZ: oblique strokes of that size instead of arrowheads, whatever DIMBLK says.
     if (const Group* g = r.find(142); g && std::isfinite(g->number()) && g->number() > 0) {
@@ -1711,6 +1715,10 @@ void Importer::readDimStyle(const Record& r) {
             const int a = std::atoi(std::string(v.substr(6)).c_str());
             if (a >= 0 && a <= static_cast<int>(ArrowType::None))
                 ds.arrowType = static_cast<ArrowType>(a);
+        } else if (v.rfind("leaderArrow=", 0) == 0) {
+            const int a = std::atoi(std::string(v.substr(12)).c_str());
+            if (a >= 0 && a <= static_cast<int>(ArrowType::None))
+                ds.leaderArrow = static_cast<ArrowType>(a);
         }
     }
     if (const Group* g = r.find(147); g && std::isfinite(g->number())) {  // DIMGAP
