@@ -15,6 +15,7 @@
 #include "tbcad/ui/app_core.h"
 #include "tbcad/ui/command_match.h"
 #include "tbcad/ui/input_history.h"
+#include "tbcad/ui/radial_wheel.h"
 #include "tbcad/ui/theme.h"
 #include "tbcad/ui/ui_registry.h"
 #include "tbcad/ui/workspace.h"
@@ -296,6 +297,7 @@ private:
     Vec2 pressPos_{};
     bool panning_ = false;
     bool rightDown_ = false;  // right button pressed in the drawing, wheel or menu pending
+    ui::RightClick rightAction_ = ui::RightClick::Menu;  // what releasing it soon will do
     WheelMenu wheel_;
     double pendingNotches_ = 0;
     Vec2 zoomAnchor_{};
@@ -304,8 +306,8 @@ private:
     ViewportRect lastRect_{};
     std::string layoutDialog_{};  // "new" / "rename", while its name popup is open
     std::string layoutTarget_{};
-    std::string shownLayout_{};     // the layout on screen last frame ("" = Model)
-    std::string previousLayout_{};  // the one shown before it
+    std::string shownLayout_{};       // the layout on screen last frame ("" = Model)
+    std::string previousLayout_{};    // the one shown before it
     float layoutScrollDelta_ = 0.0f;  // pending sideways scroll of the tab strip
     float layoutScrollMax_ = 0.0f;
     std::string layoutFollowed_{};  // the tab the strip last scrolled to

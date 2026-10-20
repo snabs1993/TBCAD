@@ -1178,7 +1178,7 @@ Result<void> AppCore::saveDxf(const fs::path& path) {
             return makeError(ErrorCode::Io, "Cannot write " + path.string());
         }
     }
-    if (fs::exists(path, ec)) {
+    if (settings_.getBool("files.backup", true) && fs::exists(path, ec)) {
         fs::path bak = path;
         bak += ".bak";
         fs::remove(bak, ec);
@@ -1462,7 +1462,9 @@ Result<void> AppCore::saveAs(const fs::path& requested) {
         if (rebased)
             tx.commit();
     }
-    auto r = isDxfPath(path) ? saveDxf(path) : io::writeTbcad(session_->doc, path);
+    io::WriteOptions writeOpt;
+    writeOpt.keepBackup = settings_.getBool("files.backup", true);  // ISAVEBAK
+    auto r = isDxfPath(path) ? saveDxf(path) : io::writeTbcad(session_->doc, path, writeOpt);
     if (!r && rebased) {  // the file did not move: put the paths back
         Transaction tx = session_->doc.begin("SAVEAS");
         (void)xref::rebaseAll(tx, session_->doc, path, oldFile);
@@ -2179,6 +2181,7 @@ void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
     }
     followLockedViewport();
     hideViewportFrozenLayers();
+    session_->sync->setLockedFade(settings_.getNumber("view.lockFade", 60));
     {
         profile::EditTimer t("frame: re-tile");
         retileIfFragmented();
@@ -2832,12 +2835,19 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
     }
     if (cursorInside_ && !drag_ && lasso_.empty()) {
         const Vec2 c = lastPointer_.screen;
-        // view.crosshair: "full" (across the viewport), "short" (5 % of its width) or "off".
+        // view.crosshair: "full" or "off" ("short", from older settings, is 10 %); the length is
+        // view.crosshairSize % of the drawing area (CURSORSIZE), across it at 100.
         const std::string mode = settings_.getString("view.crosshair", "full");
-        const double arm = mode == "short" ? std::max(8.0, camera_.viewportW * 0.05)
-                                           : std::max(camera_.viewportW, camera_.viewportH);
+        const double size =
+            mode == "short"
+                ? 10.0
+                : std::clamp(settings_.getNumber("view.crosshairSize", 100), 1.0, 100.0);
+        const double full = std::max(camera_.viewportW, camera_.viewportH);
+        const double arm = size >= 100 ? full : std::max(8.0, full * size / 200.0);
         render::OverlayStyle cross;
         cross.color = inPaperSpace() ? Rgba{110, 110, 110, 200} : ui::withAlpha(theme_.text, 0.6);
+        if (auto custom = ui::parseHexColor(settings_.getString("view.crosshairColor", "")))
+            cross.color = *custom;
         cross.widthPx = 1.0;
         if (mode != "off") {
             overlay.line(render::Space::Screen, {c.x - arm, c.y}, {c.x + arm, c.y}, cross);
@@ -2854,6 +2864,15 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
             render::OverlayStyle pb;
             pb.color = inPaperSpace() ? Rgba{90, 90, 90, 230} : ui::withAlpha(theme_.text, 0.85);
             overlay.polyline(render::Space::Screen, box, true, pb);
+        } else if (settings_.getBool("osnap.apbox", false)) {
+            // APBOX: the object snap aperture around the crosshair at point prompts.
+            const auto ap = setting("drafting.osnap.aperture");
+            const double h = ap ? std::clamp(std::strtod(ap->c_str(), nullptr), 1.0, 50.0) : 10.0;
+            Vec2 box[4] = {
+                {c.x - h, c.y - h}, {c.x + h, c.y - h}, {c.x + h, c.y + h}, {c.x - h, c.y + h}};
+            render::OverlayStyle ab;
+            ab.color = ui::withAlpha(cross.color, 0.8);
+            overlay.polyline(render::Space::Screen, box, true, ab);
         }
     }
     // A selected or hovered hatch is a fill without strokes, so outline its boundary: otherwise

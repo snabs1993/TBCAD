@@ -91,6 +91,31 @@ TEST_CASE("entities on a locked layer are drawn faded and back to normal when un
     CHECK(alphaOf() == 255);
 }
 
+TEST_CASE("LAYLOCKFADECTL sets how much locked layers fade, 0 shows them as they are") {
+    Document doc;
+    render::Scene scene;
+    SceneSync sync(doc, scene);
+    LayerId layer = addLayer(doc, "L");
+    addLine(doc, {0, 0}, {10, 0}, layer);
+    auto alphaOf = [&] {
+        for (const auto& [key, tile] : scene.tiles())
+            for (const auto& [bk, batch] : tile.batches)
+                return static_cast<int>(bk.rgba >> 24);
+        return -1;
+    };
+    modifyLayer(doc, layer, [](Layer& l) { l.locked = true; });
+    const int defaultFade = alphaOf();
+    sync.setLockedFade(20);
+    CHECK(alphaOf() == 204);  // 80 % of 255
+    CHECK(alphaOf() > defaultFade);
+    sync.setLockedFade(0);
+    CHECK(alphaOf() == 255);
+    sync.setLockedFade(-50);  // switched off, the amount remembered
+    CHECK(alphaOf() == 255);
+    sync.setLockedFade(90);
+    CHECK(alphaOf() == 25);
+}
+
 TEST_CASE("rebuildAll mirrors an existing document") {
     Document doc;
     addLine(doc, {0, 0}, {10, 0});

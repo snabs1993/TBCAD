@@ -26,14 +26,33 @@ Settings Settings::withDefaults() {
     o["drafting.osnap"] = true;
     o["pick.aperturePx"] = 6;
     o["files.defaultFormat"] = "tbcad";
+    o["files.backup"] = true;       // ISAVEBAK: keep the previous file as <name>.bak
+    o["view.crosshairSize"] = 100;  // CURSORSIZE: % of the drawing area
+    o["view.lockFade"] = 60;        // LAYLOCKFADECTL: % faded on locked layers
+    o["grips.size"] = 4;            // GRIPSIZE: half the side of a grip, pixels
+    o["osnap.markerSize"] = 12;     // AutoSnap marker size, pixels
+    o["osnap.marker"] = true;       // AutoSnap marker shown
+    o["osnap.apbox"] = false;       // APBOX: aperture box at point prompts
     return s;
 }
 
 void Settings::resetToDefaults() {
     // The options of the Settings dialog; recent files, workspaces and folders stay.
-    static constexpr std::string_view kPrefixes[] = {
-        "ui.theme", "ui.scale",  "ui.wheel.", "ui.rightClick",      "view.", "hover.", "hud.",
-        "pick.",    "autosave.", "drafting.", "files.defaultFormat"};
+    static constexpr std::string_view kPrefixes[] = {"ui.theme",
+                                                     "ui.scale",
+                                                     "ui.wheel.",
+                                                     "ui.rightClick",
+                                                     "view.",
+                                                     "hover.",
+                                                     "hud.",
+                                                     "pick.",
+                                                     "autosave.",
+                                                     "drafting.",
+                                                     "files.defaultFormat",
+                                                     "files.backup",
+                                                     "grips.",
+                                                     "osnap.",
+                                                     "ui.viewportBackground"};
     auto& o = root_.object();
     for (auto it = o.begin(); it != o.end();) {
         bool drop = false;
@@ -90,16 +109,21 @@ std::vector<std::string> Settings::repair() {
         double lo, hi, fallback;
     };
     static constexpr Range kRanges[] = {{"ui.scale", 0.75, 2.0, 1.0},
-                                        {"pick.aperturePx", 3, 20, 6},
+                                        {"pick.aperturePx", 1, 50, 6},
+                                        {"view.crosshairSize", 1, 100, 100},
+                                        {"view.lockFade", -90, 90, 60},
+                                        {"grips.size", 1, 20, 4},
+                                        {"osnap.markerSize", 4, 40, 12},
                                         {"ui.wheel.delayMs", 100, 800, 250},
-                                        {"autosave.minutes", 1, 60, 10}};
+                                        {"autosave.minutes", 1, 600, 10}};
     for (const Range& r : kRanges) {
         auto it = o.find(r.key);
         if (it == o.end())
             continue;
         if (!it->second.isNumber()) {
             o.erase(it);
-            fixed.push_back(std::string("Setting ") + r.key + " was not a number; using the default");
+            fixed.push_back(std::string("Setting ") + r.key +
+                            " was not a number; using the default");
             continue;
         }
         const double v = it->second.asNumber();

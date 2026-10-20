@@ -1,5 +1,9 @@
+#include <algorithm>
+#include <cstdlib>
+
 #include "module_state.h"
 #include "tbcad/draftingcmds/drafting_cmds.h"
+#include "tbcad/ui/theme.h"
 
 namespace tbcad::draftingcmds {
 
@@ -76,9 +80,17 @@ void registerUi(ui::UiRegistry& ui) {
         if (!pc.host || !pc.camera)
             return;
         const bool dark = pc.host->setting("ui.theme").value_or("dark") != "light";
-        if (pc.feedback && pc.feedback->active && !pc.feedback->marker.empty())
-            drafting::drawSnapMarker(overlay, *pc.camera, pc.feedback->markerPos,
-                                     pc.feedback->marker, dark);
+        // The AutoSnap marker: shown unless osnap.marker is off, osnap.markerSize px wide, in
+        // osnap.markerColor (#RRGGBB) or the theme's snap colour.
+        if (pc.feedback && pc.feedback->active && !pc.feedback->marker.empty() &&
+            pc.host->setting("osnap.marker").value_or("1") != "0") {
+            double size = 12;
+            if (const auto v = pc.host->setting("osnap.markerSize"))
+                size = std::clamp(std::strtod(v->c_str(), nullptr), 4.0, 40.0);
+            drafting::drawSnapMarker(
+                overlay, *pc.camera, pc.feedback->markerPos, pc.feedback->marker, dark, size,
+                ui::parseHexColor(pc.host->setting("osnap.markerColor").value_or("")));
+        }
         // Object snap tracking: a small cross on every acquired point, and the ray the cursor
         // is snapped to.
         if (st.otrack && pc.commandActive && drafting::DraftingSettings::read(*pc.host).otrack) {

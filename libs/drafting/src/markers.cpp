@@ -26,11 +26,13 @@ std::vector<Vec2> circlePts(Vec2 c, double r, int n = 20) {
 }  // namespace
 
 void drawSnapMarker(Overlay& o, const render::Camera2D& camera, Vec2 p, SnapMode mode,
-                    bool darkTheme, double sizePx) {
+                    bool darkTheme, double sizePx, std::optional<Rgba> color) {
     const Vec2 c = camera.worldToScreen(p);
     const double h = sizePx / 2;
     render::OverlayStyle st;
-    st.color = darkTheme ? Rgba{0xF2, 0xA9, 0x3B, 255} : Rgba{0xC7, 0x77, 0x00, 255};
+    st.color = color       ? *color
+               : darkTheme ? Rgba{0xF2, 0xA9, 0x3B, 255}
+                           : Rgba{0xC7, 0x77, 0x00, 255};
     st.widthPx = 2.0;
     switch (mode) {
         case SnapMode::Endpoint:
@@ -113,11 +115,11 @@ void drawSnapMarker(Overlay& o, const render::Camera2D& camera, Vec2 p, SnapMode
 }
 
 bool drawSnapMarker(Overlay& o, const render::Camera2D& camera, Vec2 p, std::string_view name,
-                    bool darkTheme, double sizePx) {
+                    bool darkTheme, double sizePx, std::optional<Rgba> color) {
     auto mode = parseSnapMode(name);
     if (!mode || snapModeName(*mode) != name)
         return false;
-    drawSnapMarker(o, camera, p, *mode, darkTheme, sizePx);
+    drawSnapMarker(o, camera, p, *mode, darkTheme, sizePx, color);
     return true;
 }
 

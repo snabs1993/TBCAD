@@ -61,4 +61,42 @@ double wheelSliceCentre(int index, int slots) {
     return slots < 1 ? 0.0 : 6.283185307179586 * index / slots;
 }
 
+RightClick rightClickAction(const RightClickModes& modes, bool commandActive, bool promptHasOptions,
+                            bool hasSelection) {
+    if (modes.legacy == "enter")
+        return commandActive ? RightClick::Enter : RightClick::Repeat;
+    if (commandActive) {
+        if (modes.command == "enter")
+            return RightClick::Enter;
+        if (modes.command == "options")
+            return promptHasOptions ? RightClick::Menu : RightClick::Enter;
+        return RightClick::Menu;
+    }
+    const std::string& m = hasSelection ? modes.edit : modes.idle;
+    return m == "repeat" ? RightClick::Repeat : RightClick::Menu;
+}
+
+int shortcutMenuCode(const RightClickModes& modes) {
+    if (modes.legacy == "enter")
+        return 0;
+    int code = 0;
+    if (modes.idle != "repeat")
+        code |= 1;
+    if (modes.edit != "repeat")
+        code |= 2;
+    if (modes.command == "options")
+        code |= 8;
+    else if (modes.command != "enter")
+        code |= 4;
+    return code;
+}
+
+RightClickModes rightClickModesFromCode(int code) {
+    RightClickModes m;
+    m.idle = (code & 1) ? "menu" : "repeat";
+    m.edit = (code & 2) ? "menu" : "repeat";
+    m.command = (code & 4) ? "menu" : (code & 8) ? "options" : "enter";
+    return m;
+}
+
 }  // namespace tbcad::ui

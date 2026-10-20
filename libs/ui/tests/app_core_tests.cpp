@@ -458,6 +458,15 @@ TEST_CASE("save, reopen: same canonical dump, title and modified flag follow") {
     REQUIRE(f.core->save().ok());
     CHECK_FALSE(f.core->modified());
     CHECK(fs::exists(f.dir / "drawing.tbcad.bak"));
+
+    // ISAVEBAK 0: no backup is kept.
+    fs::remove(f.dir / "drawing.tbcad.bak");
+    f.core->setSetting("files.backup", "0");
+    f.line("7,7", "8,8");
+    REQUIRE(f.core->save().ok());
+    CHECK_FALSE(fs::exists(f.dir / "drawing.tbcad.bak"));
+    CHECK(fs::exists(file));
+    f.core->setSetting("files.backup", "1");
 }
 
 TEST_CASE("opening a missing or corrupt file reports and keeps the current drawing") {

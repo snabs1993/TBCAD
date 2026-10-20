@@ -276,6 +276,52 @@ TEST_CASE("QPMODE and ROLLOVERTIPS switch Quick Properties and hover tooltips") 
     CHECK(f.host.logContains("QPMODE is 0 or 1"));
 }
 
+TEST_CASE("the Options dialog's variables read and write its settings") {
+    Fixture f;
+    f.host.run("PICKBOX", {""});  // Enter keeps the default
+    CHECK(f.host.logContains("PICKBOX = 6"));
+    f.host.run("PICKBOX", {"9"});
+    CHECK(f.host.setting("pick.aperturePx") == "9");
+    f.host.run("PICKBOX", {"80"});
+    CHECK(f.host.logContains("PICKBOX is a whole number from 1 to 50"));
+    CHECK(f.host.setting("pick.aperturePx") == "9");
+    f.host.run("CURSORSIZE", {"5"});
+    CHECK(f.host.setting("view.crosshairSize") == "5");
+    f.host.run("APERTURE", {"15"});
+    CHECK(f.host.setting("drafting.osnap.aperture") == "15");
+    f.host.run("GRIPSIZE", {"7"});
+    CHECK(f.host.setting("grips.size") == "7");
+    f.host.run("GRIPCOLOR", {"3"});
+    CHECK(f.host.setting("grips.color") == "3");
+    f.host.run("GRIPHOT", {"256"});
+    CHECK(f.host.logContains("GRIPHOT is a whole number from 1 to 255"));
+    f.host.run("LAYLOCKFADECTL", {"-40"});
+    CHECK(f.host.setting("view.lockFade") == "-40");
+    f.host.run("ISAVEBAK", {"0"});
+    CHECK(f.host.setting("files.backup") == "0");
+    f.host.run("APBOX", {"1"});
+    CHECK(f.host.setting("osnap.apbox") == "1");
+
+    f.host.run("SAVETIME", {"25"});
+    CHECK(f.host.setting("autosave.enabled") == "1");
+    CHECK(f.host.setting("autosave.minutes") == "25");
+    f.host.run("SAVETIME", {"0"});
+    CHECK(f.host.setting("autosave.enabled") == "0");
+    CHECK(f.host.setting("autosave.minutes") == "25");  // kept for when it is switched back on
+    f.host.run("SAVETIME", {""});
+    CHECK(f.host.logContains("SAVETIME = 0"));
+
+    f.host.run("SHORTCUTMENU", {""});
+    CHECK(f.host.logContains("SHORTCUTMENU = 7"));
+    f.host.run("SHORTCUTMENU", {"11"});
+    CHECK(f.host.setting("ui.rightClick.default") == "menu");
+    CHECK(f.host.setting("ui.rightClick.edit") == "menu");
+    CHECK(f.host.setting("ui.rightClick.command") == "options");
+    f.host.run("SHORTCUTMENU", {"0"});
+    CHECK(f.host.setting("ui.rightClick.default") == "repeat");
+    CHECK(f.host.setting("ui.rightClick.command") == "enter");
+}
+
 TEST_CASE("SCRIPT types each line of the file, RSCRIPT repeats it, Esc stops") {
     namespace fs = std::filesystem;
     const fs::path dir = fs::temp_directory_path() / "tbcad_script_test";

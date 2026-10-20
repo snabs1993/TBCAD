@@ -36,4 +36,22 @@ int wheelSliceAt(double dx, double dy, double innerRadius, int slots = kWheelSlo
 // the point is (sin a, -cos a)).
 double wheelSliceCentre(int index, int slots = kWheelSlots);
 
+// What a short right-click in the drawing does (the right-click customization of AutoCAD's
+// Options, SHORTCUTMENU). Each mode has its own choice: with nothing selected and no command
+// ("default": "menu" or "repeat" the last command), with objects selected ("edit": the same two)
+// and while a command runs ("command": "menu", "enter", or "options" = the menu only when the
+// prompt offers options, else Enter). `legacy` is the older ui.rightClick switch: "enter" makes
+// every mode act as Enter, which repeats the last command when none runs.
+struct RightClickModes {
+    std::string idle = "menu", edit = "menu", command = "menu", legacy = "menu";
+};
+enum class RightClick { Menu, Enter, Repeat };
+RightClick rightClickAction(const RightClickModes& modes, bool commandActive, bool promptHasOptions,
+                            bool hasSelection);
+
+// SHORTCUTMENU's bit code: 1 default-mode menu, 2 edit-mode menu, 4 command-mode menu, 8
+// command-mode menu only when the prompt has options. 0 makes every right-click Enter.
+int shortcutMenuCode(const RightClickModes& modes);
+RightClickModes rightClickModesFromCode(int code);
+
 }  // namespace tbcad::ui

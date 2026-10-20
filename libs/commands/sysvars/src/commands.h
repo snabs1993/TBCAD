@@ -14,6 +14,9 @@ std::unique_ptr<cmd::Command> makeVarCommand(const std::string& name);
 std::unique_ptr<cmd::Command> makeLwDisplayCommand();
 std::unique_ptr<cmd::Command> makeQpModeCommand();
 std::unique_ptr<cmd::Command> makeRolloverTipsCommand();
+// The Options dialog's variables: PICKBOX, APERTURE, CURSORSIZE, GRIPSIZE, GRIPCOLOR, GRIPHOVER,
+// GRIPHOT, LAYLOCKFADECTL, SAVETIME, ISAVEBAK, APBOX, SHORTCUTMENU. Null for any other name.
+std::unique_ptr<cmd::Command> makeOptionVarCommand(std::string_view name);
 std::unique_ptr<cmd::Command> makeViewCommand();
 std::unique_ptr<cmd::Command> makeAddSelectedCommand();
 std::unique_ptr<cmd::Command> makeHyperlinkCommand();

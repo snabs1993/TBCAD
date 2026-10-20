@@ -6,16 +6,20 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdint>
+#include <cstdlib>
 #include <fstream>
 #include <iterator>
 
 #include "key_map.h"
 #include "tbcad/cmd/input.h"
+#include "tbcad/core/color.h"
 #include "tbcad/drafting/settings.h"
 #include "tbcad/platform/keybindings.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/tmpl/tmpl.h"
 #include "tbcad/ui/radial_wheel.h"
+#include "tbcad/ui/theme.h"
 
 namespace tbcad::app {
 
@@ -32,6 +36,54 @@ bool containsNoCase(const std::string& hay, const std::string& needle) {
                std::tolower(static_cast<unsigned char>(b));
     });
     return it != hay.end();
+}
+
+// A colour kept as "#RRGGBB" in `key`; empty means `fallback` (the theme's). Default puts it back.
+void hexColorSetting(ui::AppCore& core, const char* label, const char* key, Rgba fallback) {
+    const auto cur = ui::parseHexColor(core.setting(key).value_or(""));
+    const Rgba c = cur.value_or(fallback);
+    float rgb[3] = {c.r / 255.0f, c.g / 255.0f, c.b / 255.0f};
+    ImGui::PushID(key);
+    if (ImGui::ColorEdit3("##c", rgb, ImGuiColorEditFlags_NoInputs)) {
+        auto byte = [](float f) {
+            return static_cast<std::uint8_t>(std::lround(std::clamp(f, 0.0f, 1.0f) * 255.0f));
+        };
+        core.setSetting(key, ui::toHexColor(Rgba{byte(rgb[0]), byte(rgb[1]), byte(rgb[2]), 255}));
+    }
+    ImGui::SameLine();
+    ImGui::TextUnformatted(label);
+    if (cur) {
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Default"))
+            core.setSetting(key, "");
+    }
+    ImGui::PopID();
+}
+
+// A colour number (1-255) kept in `key`, as GRIPCOLOR stores it; unset shows `fallbackAci`
+// and draws the built-in colour.
+void aciSetting(ui::AppCore& core, const char* label, const char* key, int fallbackAci) {
+    const auto v = core.setting(key);
+    const long stored = v ? std::strtol(v->c_str(), nullptr, 10) : 0;
+    int n = stored >= 1 && stored <= 255 ? static_cast<int>(stored) : fallbackAci;
+    ImGui::PushID(key);
+    const Rgba c = paletteColor(static_cast<std::uint8_t>(n));
+    ImGui::ColorButton("##swatch", ImVec4(c.r / 255.0f, c.g / 255.0f, c.b / 255.0f, 1.0f),
+                       ImGuiColorEditFlags_NoTooltip);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(110);
+    if (ImGui::InputInt(label, &n) && n >= 1 && n <= 255)
+        core.setSetting(key, std::to_string(n));
+    ImGui::PopID();
+}
+
+// A whole-number setting on a slider, saved through the host so the variable reads it back.
+void intSlider(ui::AppCore& core, const char* label, const char* key, int lo, int hi,
+               int fallback) {
+    int v = static_cast<int>(std::lround(core.settings().getNumber(key, fallback)));
+    ImGui::SetNextItemWidth(260);
+    if (ImGui::SliderInt(label, &v, lo, hi))
+        core.setSetting(key, std::to_string(v));
 }
 
 }  // namespace
@@ -56,23 +108,21 @@ void SettingsDialog::draw(ui::AppCore& core) {
         ImGui::CloseCurrentPopup();
     }
     const bool capturingAtStart = !capturing_.empty();
+    // The option pages scroll above the Close row, which stays in view however long they get.
+    const float footer = ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y * 2;
+    auto page = [&](const char* name, void (SettingsDialog::*fn)(ui::AppCore&)) {
+        if (!ImGui::BeginTabItem(name, nullptr, pageFlags(name)))
+            return;
+        if (ImGui::BeginChild("##page", ImVec2(0, -footer)))
+            (this->*fn)(core);
+        ImGui::EndChild();
+        ImGui::EndTabItem();
+    };
     if (ImGui::BeginTabBar("##settingsPages")) {
-        if (ImGui::BeginTabItem("General", nullptr, pageFlags("General"))) {
-            general(core);
-            ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("Display", nullptr, pageFlags("Display"))) {
-            display(core);
-            ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("Drafting", nullptr, pageFlags("Drafting"))) {
-            drafting(core);
-            ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("Files", nullptr, pageFlags("Files"))) {
-            files(core);
-            ImGui::EndTabItem();
-        }
+        page("General", &SettingsDialog::general);
+        page("Display", &SettingsDialog::display);
+        page("Drafting", &SettingsDialog::drafting);
+        page("Files", &SettingsDialog::files);
         if (ImGui::BeginTabItem("Aliases", nullptr, pageFlags("Aliases"))) {
             aliases(core);
             ImGui::EndTabItem();
@@ -121,14 +171,48 @@ void SettingsDialog::draw(ui::AppCore& core) {
 
 void SettingsDialog::general(ui::AppCore& core) {
     auto& s = core.settings();
-    int aperture = static_cast<int>(s.getNumber("pick.aperturePx", 6));
-    ImGui::SetNextItemWidth(260);
-    if (ImGui::SliderInt("Pick box (pixels)", &aperture, 3, 20))
-        s.setNumber("pick.aperturePx", aperture);
     bool lw = s.getBool("view.lineweights", true);
-    if (ImGui::Checkbox("Show line weights", &lw))
+    if (ImGui::Checkbox("Show line weights (LWDISPLAY)", &lw))
         s.setBool("view.lineweights", lw);
+    rightClick(core);
     wheel(core);
+}
+
+// Right-click customization (AutoCAD's User Preferences page, SHORTCUTMENU): what a short
+// right-click in the drawing does with nothing selected, with objects selected, and while a
+// command runs.
+void SettingsDialog::rightClick(ui::AppCore& core) {
+    auto& s = core.settings();
+    ImGui::SeparatorText("Right-click in the drawing");
+    bool allEnter = s.getString("ui.rightClick", "menu") == "enter";
+    if (ImGui::Checkbox("Right-click is always Enter (no menu)", &allEnter))
+        s.setString("ui.rightClick", allEnter ? "enter" : "menu");
+    ImGui::BeginDisabled(allEnter);
+    auto choice = [&](const char* label, const char* key, const char* const* values,
+                      const char* const* labels, int count) {
+        const std::string cur = s.getString(key, values[0]);
+        int idx = 0;
+        for (int i = 0; i < count; ++i)
+            if (cur == values[i])
+                idx = i;
+        ImGui::SetNextItemWidth(260);
+        if (ImGui::BeginCombo(label, labels[idx])) {
+            for (int i = 0; i < count; ++i)
+                if (ImGui::Selectable(labels[i], i == idx))
+                    s.setString(key, values[i]);
+            ImGui::EndCombo();
+        }
+    };
+    static const char* const kIdle[] = {"menu", "repeat"};
+    static const char* const kIdleLabel[] = {"Shortcut menu", "Repeat last command"};
+    static const char* const kCmd[] = {"menu", "options", "enter"};
+    static const char* const kCmdLabel[] = {"Shortcut menu", "Menu when there are options",
+                                            "Enter"};
+    choice("Nothing selected", "ui.rightClick.default", kIdle, kIdleLabel, 2);
+    choice("Objects selected", "ui.rightClick.edit", kIdle, kIdleLabel, 2);
+    choice("While a command runs", "ui.rightClick.command", kCmd, kCmdLabel, 3);
+    ImGui::EndDisabled();
+    ImGui::TextDisabled("Shift + right-click at a point prompt always shows the snap overrides.");
 }
 
 // The radial tool wheel: hold the right mouse button in the drawing to show it.
@@ -215,23 +299,33 @@ void SettingsDialog::display(ui::AppCore& core) {
     bool grid = s.getBool("view.grid", false);
     if (ImGui::Checkbox("Show grid", &grid))
         s.setBool("view.grid", grid);
-    static const char* const kCross[] = {"full", "short", "off"};
-    static const char* const kCrossLabel[] = {"Full screen", "Short (5 %)", "Off"};
-    const std::string cross = s.getString("view.crosshair", "full");
-    int crossIdx = cross == "short" ? 1 : cross == "off" ? 2 : 0;
-    ImGui::SetNextItemWidth(260);
-    if (ImGui::BeginCombo("Crosshair", kCrossLabel[crossIdx])) {
-        for (int i = 0; i < 3; ++i)
-            if (ImGui::Selectable(kCrossLabel[i], i == crossIdx))
-                s.setString("view.crosshair", kCross[i]);
-        ImGui::EndCombo();
-    }
     bool hoverTip = s.getBool("hover.tooltip", true);
     if (ImGui::Checkbox("Tooltip with type, layer and size when resting on an object", &hoverTip))
         s.setBool("hover.tooltip", hoverTip);
-    bool rightIsEnter = s.getString("ui.rightClick", "menu") == "enter";
-    if (ImGui::Checkbox("Right-click in the drawing acts as Enter (no menu)", &rightIsEnter))
-        s.setString("ui.rightClick", rightIsEnter ? "enter" : "menu");
+
+    ImGui::SeparatorText("Crosshair");
+    bool crossOn = s.getString("view.crosshair", "full") != "off";
+    if (ImGui::Checkbox("Show the crosshair", &crossOn)) {
+        s.setString("view.crosshair", crossOn ? "full" : "off");
+    }
+    if (s.getString("view.crosshair", "full") == "short") {  // older setting: 10 %
+        s.setString("view.crosshair", "full");
+        s.setNumber("view.crosshairSize", 10);
+    }
+    ImGui::BeginDisabled(!crossOn);
+    intSlider(core, "Crosshair size, % (CURSORSIZE)", "view.crosshairSize", 1, 100, 100);
+    ImGui::EndDisabled();
+
+    ImGui::SeparatorText("Colours");
+    const bool light = hooks_.themeMode && hooks_.themeMode() == 1;
+    const ui::Theme theme = light ? ui::lightTheme() : ui::darkTheme();
+    hexColorSetting(core, "Model space background", "ui.viewportBackground", theme.bgViewport);
+    hexColorSetting(core, "Crosshair", "view.crosshairColor", ui::withAlpha(theme.text, 0.6));
+    hexColorSetting(core, "AutoSnap marker", "osnap.markerColor",
+                    light ? Rgba{0xC7, 0x77, 0x00, 255} : Rgba{0xF2, 0xA9, 0x3B, 255});
+
+    ImGui::SeparatorText("Fading");
+    intSlider(core, "Locked layer fade, % (LAYLOCKFADECTL)", "view.lockFade", 0, 90, 60);
 }
 
 void SettingsDialog::drafting(ui::AppCore& core) {
@@ -331,14 +425,19 @@ void SettingsDialog::drafting(ui::AppCore& core) {
         ImGui::Separator();
         auto mask = cur.modes;
         bool changed = false;
-        for (int i = 0; i < drafting::kSnapModeCount; ++i) {
-            const auto mode = static_cast<drafting::SnapMode>(i);
-            bool on = (mask & drafting::maskOf(mode)) != 0;
-            const std::string label(drafting::snapModeLabel(mode));
-            if (ImGui::Checkbox(label.c_str(), &on)) {
-                mask = on ? (mask | drafting::maskOf(mode)) : (mask & ~drafting::maskOf(mode));
-                changed = true;
+        // Two columns, as in AutoCAD's Object Snap tab.
+        if (ImGui::BeginTable("##snapmodes", 2)) {
+            for (int i = 0; i < drafting::kSnapModeCount; ++i) {
+                ImGui::TableNextColumn();
+                const auto mode = static_cast<drafting::SnapMode>(i);
+                bool on = (mask & drafting::maskOf(mode)) != 0;
+                const std::string label(drafting::snapModeLabel(mode));
+                if (ImGui::Checkbox(label.c_str(), &on)) {
+                    mask = on ? (mask | drafting::maskOf(mode)) : (mask & ~drafting::maskOf(mode));
+                    changed = true;
+                }
             }
+            ImGui::EndTable();
         }
         if (ImGui::SmallButton("Select all")) {
             mask = drafting::kAllSnapModes;
@@ -353,6 +452,11 @@ void SettingsDialog::drafting(ui::AppCore& core) {
             core.setSetting(drafting::keys::osnapModes, drafting::formatSnapModes(mask));
         ImGui::Separator();
         number("Aperture (pixels)", drafting::keys::osnapAperture, cur.aperturePx, "%.0f");
+        toggle("Show the aperture box at point prompts (APBOX)", "osnap.apbox");
+        ImGui::SeparatorText("AutoSnap");
+        toggle("Show the snap marker", "osnap.marker", true);
+        intSlider(core, "Marker size (pixels)", "osnap.markerSize", 4, 40, 12);
+        ImGui::TextDisabled("The marker colour is on the Display page.");
         ImGui::Separator();
         toggle("Object snap tracking (OTRACK)", drafting::keys::otrack);
         ImGui::EndTabItem();
@@ -394,6 +498,17 @@ void SettingsDialog::drafting(ui::AppCore& core) {
         }
         flag("Quick properties (QPMODE)", "ui.quickProps", false,
              "A small panel next to the cursor shows the common properties of the selection.");
+        ImGui::SeparatorText("Pick box and grips");
+        intSlider(core, "Pick box size (PICKBOX)", "pick.aperturePx", 1, 50, 6);
+        intSlider(core, "Grip size (GRIPSIZE)", "grips.size", 1, 20, 4);
+        aciSetting(core, "Grip colour (GRIPCOLOR)", "grips.color", 150);
+        aciSetting(core, "Grip under the cursor (GRIPHOVER)", "grips.hover", 11);
+        aciSetting(core, "Selected grip (GRIPHOT)", "grips.hot", 12);
+        if (ImGui::SmallButton("Default grip colours")) {
+            for (const char* k : {"grips.color", "grips.hover", "grips.hot"})
+                core.setSetting(k, "");
+        }
+        ImGui::Spacing();
         {
             bool corner = core.setting("ui.quickProps.location").value_or("cursor") == "corner";
             if (ImGui::Checkbox("Quick properties in the corner of the drawing", &corner))
@@ -413,9 +528,12 @@ void SettingsDialog::files(ui::AppCore& core) {
     int minutes = static_cast<int>(s.getNumber("autosave.minutes", 10));
     ImGui::BeginDisabled(!on);
     ImGui::SetNextItemWidth(260);
-    if (ImGui::SliderInt("Every (minutes)", &minutes, 1, 60))
+    if (ImGui::SliderInt("Every (minutes, SAVETIME)", &minutes, 1, 120))
         s.setNumber("autosave.minutes", minutes);
     ImGui::EndDisabled();
+    bool bak = s.getBool("files.backup", true);
+    if (ImGui::Checkbox("Keep the previous file as .bak when saving (ISAVEBAK)", &bak))
+        s.setBool("files.backup", bak);
     ImGui::Spacing();
     int fmt = s.getString("files.defaultFormat", "tbcad") == "dxf" ? 1 : 0;
     ImGui::SetNextItemWidth(260);
