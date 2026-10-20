@@ -189,6 +189,10 @@ struct DimStyle {
     // toward the origin (never nearer to it than the offset).
     bool fixedExtLines = false;
     double fixedExtLength = 1;
+    // DIMTVP: with the text centred on the line (DIMTAD 0), the text is moved this many text
+    // heights above (or below, negative) the dimension line; the line breaks round it only below
+    // 0.7.
+    double textVertPos = 0;
     bool hasFixedExt() const { return fixedExtLines || fixedExtLength != 1; }
     bool hasTextBox() const { return textFill != 0 || textFrame; }
     bool hasLinearFormat() const {

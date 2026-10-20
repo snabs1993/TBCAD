@@ -52,6 +52,7 @@ error, an unknown chunk is kept whatever its flags.
 | `TSTX` | shape font names and annotative flag of text styles (format 1.13; ancillary) | 0..1 |
 | `TSTY` | text styles | 0..1 |
 | `DSTY` | dimension styles | 0..1 |
+| `DSTV` | more dimension style variables as tagged numbers (since 1.17; ancillary) | 0..1, only when a style sets one |
 | `LAYR` | layers, including the sub-layer tree | 0..1 |
 | `LVLS` | levels (floors) (since 1.7) | 0..1, only when there is more than the untouched first level |
 | `BLKS` | block definitions | 0..1 |
@@ -265,6 +266,12 @@ Since 1.16. The draw order (back to front) of every block whose members are not 
 layout sheets are blocks too. `varint count`, then per block `varint blockId`, `varint n`,
 `n` × `varint entityId`. A list that is not a permutation of the block's members is ignored
 with a warning; before 1.16 this order was lost on saving.
+
+## DSTV
+
+Since 1.17. More dimension style variables, for the styles that set one: `varint count`, then per
+style `varint dimStyleId`, `varint n`, `n` × (`varint tag`, `f64 value`). Tag 1 is DIMTVP (text
+heights). A reader skips tags it does not know, so later variables need no new chunk.
 
 ## Reading safely
 

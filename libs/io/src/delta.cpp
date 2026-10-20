@@ -15,7 +15,7 @@ namespace {
 
 constexpr std::uint8_t kDeltaMagic[4] = {'T', 'B', 'D', 'L'};
 // 3: text style rows carry the fixed height. Version 2 records are still read.
-constexpr std::uint8_t kDeltaVersion = 13;
+constexpr std::uint8_t kDeltaVersion = 14;
 
 [[noreturn]] void bad(const char* msg) {
     throw FormatError(msg);
@@ -136,6 +136,8 @@ void putRow(ByteWriter& w, StringTable& st, const DimStyle& r) {
     // (version 13) fixed length extension lines
     w.u8(r.fixedExtLines ? 1 : 0);
     w.f64(r.fixedExtLength);
+    // (version 14) DIMTVP
+    w.f64(r.textVertPos);
 }
 
 void putRow(ByteWriter& w, StringTable& st, const BlockDef& r) {
@@ -354,6 +356,11 @@ struct Reader {
             d.fixedExtLength = r.f64();
             if (!std::isfinite(d.fixedExtLength) || d.fixedExtLength < 0)
                 bad("invalid extension line length");
+        }
+        if (version >= 14) {
+            d.textVertPos = r.f64();
+            if (!std::isfinite(d.textVertPos))
+                bad("invalid text vertical position");
         }
     }
     void row(BlockDef& b) {

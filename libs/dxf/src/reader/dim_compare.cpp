@@ -159,7 +159,7 @@ std::string dstyleGroups(const Record& r) {
         }
         if (var >= 0) {
             o += (o.empty() ? "" : " ") + std::to_string(var) + "=";
-            o += g.code == 1040 ? num(g.number())
+            o += g.code == 1040                     ? num(g.number())
                  : g.code == 1070 || g.code == 1071 ? std::to_string(g.integer())
                                                     : std::string(g.str());
             var = -1;
@@ -238,9 +238,9 @@ void Importer::compareDimension(const Record& r, const Entity& dim) {
         c.stale = d->textOverride.empty() && !c.textMatch && isNumber(c.storedText) &&
                   isNumber(c.generatedText);
     }
-    const double unit = storedHeight > 0       ? storedHeight
-                        : L.text.height > 0    ? L.text.height
-                                               : std::max(style.arrowSize * style.overallScale, 1e-6);
+    const double unit = storedHeight > 0    ? storedHeight
+                        : L.text.height > 0 ? L.text.height
+                                            : std::max(style.arrowSize * style.overallScale, 1e-6);
     if (storedHeight > 0 && L.text.height > 0)
         c.heightRatio = L.text.height / storedHeight;
     if (storedCenter && L.text.valid())
@@ -330,31 +330,30 @@ void Importer::compareDimension(const Record& r, const Entity& dim) {
                "\" family=\"" + ts->fontFamily + "\" wf=" + num(ts->widthFactor) +
                " fixedH=" + num(ts->height);
     c.style = style.name;
-    c.detail = "override=\"" + dec(r.raw(1)) + "\" storedRaw=\"" + storedRaw + "\" style=\"" +
-               style.name + "\" txt=" + num(style.textHeight) + " scale=" +
-               num(style.overallScale) + " annotation=" + num(factor) +
-               " lfac=" + num(style.linearFactor) + " prefix=\"" + style.prefix +
-               "\" suffix=\"" + style.suffix + "\" units=" + num(k_) +
-               " asz=" + num(style.arrowSize) + " gap=" + num(style.textGap) +
-               " fit=" + std::to_string(static_cast<int>(style.fit)) +
-               " tad=" + std::to_string(static_cast<int>(style.textPlacement)) +
-               " tih=" + std::to_string(static_cast<int>(style.textAlign)) +
-               " toh=" + std::to_string(static_cast<int>(style.textAlignOutside)) +
-               " tmove=" + std::to_string(static_cast<int>(style.textMove)) +
-               " tix=" + std::to_string(style.textInsideForced) +
-               " tofl=" + std::to_string(style.forceLineInside) +
-               " soxd=" + std::to_string(style.suppressArrowsOutside) +
-               " just=" + std::to_string(style.textJustify) +
-               " flags=" + std::to_string(r.integer(70)) + " user=" +
-               std::to_string(d->textPosUser) + " textStyle=" + font +
-               " textWidth=" + num(L.text.width) + " storedHeight=" + num(storedHeight) +
-               " generatedHeight=" + num(L.text.height) + storedSize +
-               " measured=" + num(dim::measurement(*d)) + " at=" + pt(o) + " defPts=" +
-               rel(d->defPts[0]) + rel(d->defPts[1]) + rel(d->defPts[2]) + rel(d->defPts[3]) +
-               " textPos=" + rel(d->textPos) + " storedText@" +
-               (storedCenter ? rel(*storedCenter) : std::string("none")) +
-               " generatedText@" + rel(L.text.center) + " storedBox=" + relBox(storedBox) +
-               " generatedBox=" + relBox(generatedBox) + " dstyle={" + dstyleGroups(r) + "}";
+    c.detail =
+        "override=\"" + dec(r.raw(1)) + "\" storedRaw=\"" + storedRaw + "\" style=\"" + style.name +
+        "\" txt=" + num(style.textHeight) + " scale=" + num(style.overallScale) +
+        " annotation=" + num(factor) + " lfac=" + num(style.linearFactor) + " prefix=\"" +
+        style.prefix + "\" suffix=\"" + style.suffix + "\" units=" + num(k_) +
+        " asz=" + num(style.arrowSize) + " gap=" + num(style.textGap) +
+        " fit=" + std::to_string(static_cast<int>(style.fit)) +
+        " tad=" + std::to_string(static_cast<int>(style.textPlacement)) +
+        " tvp=" + num(style.textVertPos) +
+        " tih=" + std::to_string(static_cast<int>(style.textAlign)) +
+        " toh=" + std::to_string(static_cast<int>(style.textAlignOutside)) +
+        " tmove=" + std::to_string(static_cast<int>(style.textMove)) +
+        " tix=" + std::to_string(style.textInsideForced) +
+        " tofl=" + std::to_string(style.forceLineInside) +
+        " soxd=" + std::to_string(style.suppressArrowsOutside) +
+        " just=" + std::to_string(style.textJustify) + " flags=" + std::to_string(r.integer(70)) +
+        " user=" + std::to_string(d->textPosUser) + " textStyle=" + font +
+        " textWidth=" + num(L.text.width) + " storedHeight=" + num(storedHeight) +
+        " generatedHeight=" + num(L.text.height) + storedSize +
+        " measured=" + num(dim::measurement(*d)) + " at=" + pt(o) + " defPts=" + rel(d->defPts[0]) +
+        rel(d->defPts[1]) + rel(d->defPts[2]) + rel(d->defPts[3]) + " textPos=" + rel(d->textPos) +
+        " storedText@" + (storedCenter ? rel(*storedCenter) : std::string("none")) +
+        " generatedText@" + rel(L.text.center) + " storedBox=" + relBox(storedBox) +
+        " generatedBox=" + relBox(generatedBox) + " dstyle={" + dstyleGroups(r) + "}";
     if (r.has(12))
         c.detail += " p12=" + rel(P(r, 12, 22));
     // The lines themselves (the longest first, at most twelve of each), so a difference can be
@@ -368,8 +367,8 @@ void Importer::compareDimension(const Record& r, const Entity& dim) {
             list += " " + rel(v[i].a) + rel(v[i].b);
         return list;
     };
-    c.detail += " storedLines=[" + segments(stored) + "] generatedLines=[" +
-                segments(generatedLines) + "]";
+    c.detail +=
+        " storedLines=[" + segments(stored) + "] generatedLines=[" + segments(generatedLines) + "]";
     sum_.dimCompare.push_back(std::move(c));
 }
 

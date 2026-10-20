@@ -93,6 +93,7 @@ public:
         step("text heights", [&] { loadTextHeights(tx); });
         step("dimension styles", [&] { loadDimStyles(tx); });
         step("dimension style extras", [&] { loadDimStyleExtras(tx); });
+        step("dimension style variables", [&] { loadDimStyleVariables(tx); });
         step("layers", [&] { loadLayers(tx); });
         step("levels", [&] { loadLevels(tx); });
         step("entity levels", [&] { loadEntityLevels(); });
@@ -136,6 +137,7 @@ private:
                 case kTsty:
                 case kTsth:
                 case kDstx:
+                case kDstv:
                 case kLtmk:
                 case kTstx:
                 case kDsty:
@@ -507,6 +509,35 @@ private:
         }
         if (!r.atEnd())
             bad("trailing data in TSTH");
+    }
+
+    // More dimension style variables (the DSTV chunk): tagged numbers; unknown tags are skipped.
+    void loadDimStyleVariables(Transaction& tx) {
+        const RawChunk* c = find(kDstv);
+        if (!c)
+            return;
+        Payload p(*c);
+        ByteReader r(p.data);
+        std::size_t n = r.count(3);
+        for (std::size_t i = 0; i < n; ++i) {
+            const DimStyleId id{id32(r)};
+            const std::size_t values = r.count(9);
+            double tvp = 0;
+            for (std::size_t k = 0; k < values; ++k) {
+                const std::uint64_t tag = r.varint();
+                const double v = r.f64();
+                if (!std::isfinite(v))
+                    bad("invalid dimension style variable");
+                if (tag == 1)
+                    tvp = v;
+            }
+            if (!doc_->dimStyle(id))
+                continue;
+            check(tx.modifyDimStyle(id, [&](DimStyle& d) { d.textVertPos = tvp; }),
+                  "dimension style");
+        }
+        if (!r.atEnd())
+            bad("trailing data in DSTV");
     }
 
     // Alternate units and tolerances of dimension styles (the DSTX chunk, absent when no style

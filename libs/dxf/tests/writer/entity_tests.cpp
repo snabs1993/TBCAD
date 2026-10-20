@@ -1709,6 +1709,7 @@ TEST_CASE("every dimension style rule survives the DXF and the .tbcad round trip
         s.tolHeightFactor = 0.6;
         s.fixedExtLines = true;
         s.fixedExtLength = 3.5;
+        s.textVertPos = 0.4;
         REQUIRE(tx.addDimStyle(s).ok());
         tx.commit();
     }
@@ -1747,6 +1748,7 @@ TEST_CASE("every dimension style rule survives the DXF and the .tbcad round trip
         CHECK(s->tolHeightFactor == doctest::Approx(0.6));
         CHECK(s->fixedExtLines);
         CHECK(s->fixedExtLength == doctest::Approx(3.5));
+        CHECK(s->textVertPos == doctest::Approx(0.4));
     };
     RoundTrip rt = roundTrip(doc);
     check(*rt.back);

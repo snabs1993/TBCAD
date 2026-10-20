@@ -230,6 +230,9 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
                 if (v > 0)
                     ds.tolHeightFactor = std::min(v, 10.0);
                 break;
+            case 145:  // DIMTVP
+                ds.textVertPos = std::clamp(v, -100.0, 100.0);
+                break;
             case 45:  // DIMRND
                 if (v >= 0)
                     ds.roundOff = v * k_;

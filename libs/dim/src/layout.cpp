@@ -117,6 +117,8 @@ void addArrow(Layout& L, const Ctx& c, Vec2 tip, Vec2 body) {
 struct Lift {
     bool centered = false;
     Vec2 offset{};
+    // DIMTVP moved the text off the line by `offset`: the line breaks round it when this is set.
+    std::optional<bool> tvpBreak{};
 };
 Lift liftFor(const Ctx& c, Vec2 lineDir, double rotText,
              std::optional<DimTextAlign> align = std::nullopt) {
@@ -124,9 +126,17 @@ Lift liftFor(const Ctx& c, Vec2 lineDir, double rotText,
     const DimTextAlign al = align.value_or(c.st.textAlign);
     l.centered = c.st.textPlacement == DimTextPlacement::Centered ||
                  (al == DimTextAlign::Horizontal && std::abs(lineDir.y) > 0.5);
-    if (!l.centered)
+    if (!l.centered) {
         l.offset = perp(unit(rotText)) *
                    ((c.gap + c.th / 2) * (c.st.textPlacement == DimTextPlacement::Below ? -1 : 1));
+    } else if (c.st.textVertPos != 0 &&
+               !(al == DimTextAlign::Horizontal && std::abs(lineDir.y) > 0.5)) {
+        // DIMTVP, as in AutoCAD: the text moves DIMTVP text heights off the line, which breaks
+        // round it only when the move is less than 0.7 of the text height.
+        l.offset = perp(unit(rotText)) * (c.st.textVertPos * c.th);
+        l.tvpBreak = std::abs(c.st.textVertPos) < 0.7;
+        l.centered = *l.tvpBreak;
+    }
     return l;
 }
 
@@ -321,7 +331,9 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
     bool brk = false;
     if (tw > 0 && textIn && !gapInside) {
         double lateral = std::abs(dot(center - A, perp(uu)));
-        if (textOnLine(c, lateral)) {
+        const bool byTvp =
+            lift.tvpBreak && std::abs(lateral - length(lift.offset)) < 1e-6 * std::max(1.0, c.th);
+        if (byTvp ? *lift.tvpBreak : textOnLine(c, lateral)) {
             double tc = dot(center - A, uu);
             double hb = he + c.gap;
             b0 = tc - hb;

@@ -228,6 +228,39 @@ TEST_CASE("a fixed-height text style sets the dimension text height") {
     CHECK(arrowBox(L.arrows[0]).width() == doctest::Approx(5));
 }
 
+// DIMTVP, as in AutoCAD: with the text centred on the line (DIMTAD 0) the text moves DIMTVP text
+// heights off the line; the line breaks round it only below 0.7.
+TEST_CASE("DIMTVP moves centred text off the dimension line") {
+    Document doc;
+    auto withTvp = [&](double tvp) {
+        Transaction tx = doc.begin("style");
+        REQUIRE(tx.modifyDimStyle(kDimStyleStandard, [&](DimStyle& s) {
+            s.textPlacement = DimTextPlacement::Centered;
+            s.textVertPos = tvp;
+        }));
+        tx.commit();
+        return layoutDimension(doc, linear({0, 0}, {100, 0}, {50, 10}));
+    };
+    auto dimLines = [](const Layout& L) {
+        int n = 0;
+        for (const auto& l : L.lines)
+            n += l.role == Role::DimLine ? 1 : 0;
+        return n;
+    };
+    const Layout none = withTvp(0);
+    const double th = none.text.height;
+    CHECK(none.text.center.y == doctest::Approx(10));
+    const Layout half = withTvp(0.5);
+    CHECK(half.text.center.y == doctest::Approx(10 + 0.5 * th));
+    CHECK(dimLines(half) == dimLines(none));  // still broken round the text
+    const Layout up = withTvp(1);
+    CHECK(up.text.center.y == doctest::Approx(10 + th));
+    CHECK(dimLines(up) == dimLines(none) - 1);  // one whole line under the text
+    CHECK(up.text.point.y == doctest::Approx(10));
+    const Layout down = withTvp(-1);
+    CHECK(down.text.center.y == doctest::Approx(10 - th));
+}
+
 TEST_CASE("DIMSCALE scales text and arrows but not the measurement") {
     Document doc;
     DimensionData d = linear({0, 0}, {10000, 0}, {5000, 1000});

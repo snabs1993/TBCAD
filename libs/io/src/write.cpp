@@ -277,6 +277,20 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
             ++dstxCount;
         }
 
+        // More dimension style variables: per style its id, the count of values, then each value
+        // as a tag and a number. Tag 1: DIMTVP.
+        ByteWriter dstv;
+        std::size_t dstvCount = 0;
+        for (const auto& [id, r] : doc.dimStyles()) {
+            if (r.textVertPos == 0)
+                continue;
+            dstv.varint(id.value);
+            dstv.varint(1);
+            dstv.varint(1);
+            dstv.f64(r.textVertPos);
+            ++dstvCount;
+        }
+
         // Layers carry their parent id; ByParent colour / linetype / lineweight are stored as the
         // special values of those fields (colour kind 4, linetype 0xFFFFFFFD, lineweight -4).
         ByteWriter layr;
@@ -586,6 +600,12 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
             body.varint(dstxCount);
             body.raw(dstx.bytes());
             addRaw(kDstx, std::move(body.bytes()));
+        }
+        if (dstvCount > 0) {
+            ByteWriter body;
+            body.varint(dstvCount);
+            body.raw(dstv.bytes());
+            addRaw(kDstv, std::move(body.bytes()));
         }
         addRaw(kLayr, std::move(layr.bytes()));
         if (writeLvls)

@@ -722,6 +722,8 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
         }
         if (ds.linearFactor != 1)
             o.d(144, ds.linearFactor);  // DIMLFAC
+        if (ds.textVertPos != 0)
+            o.d(145, ds.textVertPos);  // DIMTVP
         if (ds.tolHeightFactor != 1)
             o.d(146, ds.tolHeightFactor);                                  // DIMTFAC
         o.i(73, ds.textAlign == DimTextAlign::Horizontal ? 1 : 0);         // DIMTIH
@@ -732,8 +734,8 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
         o.i(174, ds.textInsideForced ? 1 : 0);                             // DIMTIX
         o.i(175, ds.suppressArrowsOutside ? 1 : 0);                        // DIMSOXD
         o.i(77, ds.textPlacement == DimTextPlacement::AboveLine ? 1
-               : ds.textPlacement == DimTextPlacement::Below  ? 4
-                                                              : 0);
+                : ds.textPlacement == DimTextPlacement::Below   ? 4
+                                                                : 0);
         o.i(78, (ds.suppressLeadingZeros ? 4 : 0) | (ds.suppressTrailingZeros ? 8 : 0));
         o.d(140, ds.textHeight);
         o.d(147, ds.textFrame ? -ds.textGap : ds.textGap);  // DIMGAP (negative: framed)
@@ -1803,10 +1805,10 @@ std::string Writer::headerSection(std::uint64_t handSeed) {
         }
         if (shown != LengthUnit::Millimeter && slot) {
             var(slot);
-            o.i(70, 8100 + (shown == LengthUnit::Inch     ? 1
-                             : shown == LengthUnit::Foot   ? 2
-                             : shown == LengthUnit::Centimeter ? 5
-                                                           : 6));
+            o.i(70, 8100 + (shown == LengthUnit::Inch         ? 1
+                            : shown == LengthUnit::Foot       ? 2
+                            : shown == LengthUnit::Centimeter ? 5
+                                                              : 6));
         }
         for (const auto& [key, value] : custom) {
             if (key.compare(0, kKeptVarPrefix.size(), kKeptVarPrefix) != 0)
@@ -1922,8 +1924,9 @@ Result<ExportResult> Writer::run() {
         for (const Sheet& s : sheets_)
             viewports = viewports || !s.viewports.empty();
         if (sheets_.size() > 1 || viewports)
-            downgrade("LAYOUT", "R12 has one paper space: only the first layout's objects are "
-                                "written, without viewports");
+            downgrade("LAYOUT",
+                      "R12 has one paper space: only the first layout's objects are "
+                      "written, without viewports");
     }
 
     std::string blocks;
