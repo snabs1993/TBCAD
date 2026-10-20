@@ -130,4 +130,7 @@ TEST_CASE("MLEADERSTYLE block, annotative, leader points and dogleg length - MLE
     f.host->run("-MLEADERSTYLE", {"Rename", "Tag", "Tag2", "Done"});
     CHECK(dimcmd::currentMLeaderStyle(f.doc).block == "TagCircle");
     CHECK(!f.doc.header().custom.count("tbcad.mleaderopt.Tag"));
+    // An empty block name goes back to asking.
+    f.host->run("-MLEADERSTYLE", {"Edit", "Tag2", "Block", "", "Done", "Done"});
+    CHECK(dimcmd::currentMLeaderStyle(f.doc).block.empty());
 }

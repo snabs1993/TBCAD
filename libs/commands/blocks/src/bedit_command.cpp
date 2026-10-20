@@ -451,6 +451,8 @@ public:
         for (;;) {
             cmd::EntityOptions eo;
             eo.keywords = {"Name"};
+            // One block reference picked beforehand (a double click on it) is edited at once.
+            eo.allowPreselection = true;
             // A block name typed at the prompt works as well as the Name option.
             for (const auto& [id, b] : doc.blocks())
                 if (!b.name.empty() && b.name.front() != '*' && eo.keywords.size() < 400)

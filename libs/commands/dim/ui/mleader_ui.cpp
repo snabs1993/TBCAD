@@ -117,6 +117,22 @@ void drawMLeaderStyles(ui::PanelContext& pc) {
                 edit(pc, sel, "Content", c);
         ImGui::EndCombo();
     }
+    const MLeaderStyle ms = mleaderStyleNamed(doc, sel);
+    if (content == "Block") {
+        ImGui::SetNextItemWidth(160);
+        if (ImGui::BeginCombo("Source block", ms.block.empty() ? "(ask)" : ms.block.c_str())) {
+            if (ImGui::Selectable("(ask)", ms.block.empty()))
+                edit(pc, sel, "Block", "");
+            for (const auto& [id, b] : doc.blocks())
+                if (!b.name.empty() && b.name[0] != '*' && b.xrefPath.empty() &&
+                    ImGui::Selectable(b.name.c_str(), b.name == ms.block))
+                    edit(pc, sel, "Block", b.name);
+            ImGui::EndCombo();
+        }
+    }
+    bool anno = ms.annotative;
+    if (ImGui::Checkbox("Annotative", &anno))
+        edit(pc, sel, "Annotative", anno ? "Yes" : "No");
     if (d) {
         const DimStyle s = *d;
         const TextStyle* ts = s.textStyle.value ? doc.textStyle(s.textStyle) : nullptr;
@@ -161,6 +177,21 @@ void drawMLeaderStyles(ui::PanelContext& pc) {
         if (ImGui::IsItemDeactivatedAfterEdit() && gap != s.textGap && gap >= 0)
             edit(pc, sel, "Gap", num(gap));
     }
+    int pts = static_cast<int>(ms.maxPoints);
+    ImGui::SetNextItemWidth(160);
+    ImGui::InputInt("Maximum leader points", &pts);
+    if (ImGui::IsItemDeactivatedAfterEdit() && pts != ms.maxPoints && pts >= 2 && pts <= 100)
+        edit(pc, sel, "MaxPoints", std::to_string(pts));
+    bool dogleg = ms.dogleg;
+    if (ImGui::Checkbox("Automatically include landing", &dogleg))
+        edit(pc, sel, "Dogleg", dogleg ? "Yes" : "No");
+    ImGui::BeginDisabled(!ms.dogleg);
+    double len = ms.doglegLength;
+    ImGui::SetNextItemWidth(160);
+    ImGui::InputDouble("Landing distance (0 = arrow size)", &len, 0, 0, "%.6g");
+    if (ImGui::IsItemDeactivatedAfterEdit() && len != ms.doglegLength && len >= 0)
+        edit(pc, sel, "DoglegLength", num(len));
+    ImGui::EndDisabled();
     ImGui::EndDisabled();
     ImGui::EndGroup();
 }

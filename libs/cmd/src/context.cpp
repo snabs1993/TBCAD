@@ -122,6 +122,7 @@ CommandContext::Awaiter<EntityResult> CommandContext::getEntity(std::string prom
                                                                 EntityOptions opts) {
     auto r = make(detail::PromptKind::Entity, std::move(prompt), std::move(opts.keywords));
     r.filter = std::move(opts.filter);
+    r.allowPreselection = opts.allowPreselection;
     return {*this, std::move(r)};
 }
 
@@ -130,6 +131,19 @@ bool CommandContext::tryImmediate(detail::PromptRequest& req) {
         answer_ = {};
         answer_.status = Status::Cancel;
         return true;
+    }
+    if (req.kind == detail::PromptKind::Entity && req.allowPreselection &&
+        host_.selection().size() == 1 && usedPreselection_.empty() &&
+        host_.setting("selection.pickfirst").value_or("1") != "0") {
+        const EntityId id = host_.selection().front();
+        const Entity* e = doc_.find(id);
+        if (e && (!req.filter || req.filter(*e))) {
+            usedPreselection_ = host_.selection();
+            answer_ = {};
+            answer_.status = Status::Ok;
+            answer_.entity = id;
+            return true;
+        }
     }
     if (req.kind == detail::PromptKind::Selection && req.allowPreselection &&
         host_.setting("selection.pickfirst").value_or("1") != "0") {

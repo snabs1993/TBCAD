@@ -2517,3 +2517,94 @@ TEST_CASE("Quick Select and Object Selection Filters dialogs select from the dra
     CHECK(h.windowOpen("Select Similar Settings"));
     h.core().pressEscape();
 }
+
+TEST_CASE("double click edits each type with its own command, as AutoCAD's CUI sets it") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    ui::AppCore& c = h.core();
+    for (const char* s : {"PLINE", "0,0", "100,0", "100,100", "0,100", "C"})
+        c.submitText(s);
+    for (const char* s : {"LINE", "300,0", "320,0", ""})
+        c.submitText(s);
+    {
+        // A block "Mark" of one line, inserted at (300, 50).
+        Transaction tx = c.document().begin("block");
+        BlockDef def;
+        def.name = "Mark";
+        const BlockId b = tx.addBlock(std::move(def)).value();
+        (void)tx.add(Entity{{}, LineData{{0, 0}, {20, 0}}}, b);
+        InsertData ins;
+        ins.block = b;
+        ins.position = {300, 50};
+        (void)tx.add(Entity{{}, std::move(ins)});
+        tx.commit();
+    }
+    c.pressEscape();
+    c.zoomExtents();
+    h.frame(3);
+    auto dbl = [&](Vec2 world) {
+        c.pressEscape();
+        c.clearSelection();
+        h.frame(2);
+        const ImVec2 at = screenOf(h, world);
+        h.doubleClick(at.x, at.y);
+        h.frame(3);
+    };
+    // A polyline goes straight to PEDIT's options: the double-clicked one is taken.
+    dbl({50, 0});
+    CHECK(runningName(h) == "PEDIT");
+    REQUIRE(c.runner().prompt());
+    CHECK(c.runner().prompt()->text.rfind("Select", 0) != 0);
+    c.pressEscape();
+    // A block opens the block editor on that block.
+    REQUIRE(c.document().blockByName("Mark"));
+    dbl({310, 50});
+    CHECK(c.setting("tmp.bedit.block").value_or("") == "Mark");
+    c.submitText("BCLOSE");
+    c.submitText("Discard");
+    h.frame(3);
+    // A different action set on the Customize page.
+    c.settings().setString("dblclick.Polyline", "LIST");
+    dbl({50, 0});
+    bool listed = false;
+    for (const auto& line : c.history())
+        listed = listed || line.find("POLYLINE") != std::string::npos ||
+                 line.find("Polyline") != std::string::npos;
+    CHECK(listed);
+}
+
+TEST_CASE("Customize page: Quick Access buttons and own right-click menu commands") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    h.core().submitText("CUI");
+    h.frame(4);
+    REQUIRE(h.windowOpen("Settings"));
+    CHECK(h.has("Double-click edits the object (DBLCLKEDIT)", "Settings"));
+    CHECK(h.has("##dblclick.Polyline", "Settings"));
+    // A command typed in the first list becomes a button on the toolbar.
+    REQUIRE(h.enterText("##add", "circle", "Settings", 0));
+    h.frame(3);
+    CHECK(h.core().settings().getStrings("ui.quickAccess") == std::vector<std::string>{"circle"});
+    // An unknown command is refused.
+    REQUIRE(h.enterText("##add", "nosuchthing", "Settings", 1));
+    h.frame(3);
+    CHECK(h.core().settings().getStrings("ui.contextMenu").empty());
+    h.key(ImGuiKey_Escape);
+    h.frame(3);
+    REQUIRE(h.click("CIRCLE##quick"));
+    h.frame(2);
+    CHECK(runningName(h) == "CIRCLE");
+    h.core().pressEscape();
+
+    // Own commands at the end of the drawing's right-click menu.
+    h.core().settings().setStrings("ui.contextMenu", {"ZOOM E"});
+    const ImVec2 at = screenOf(h, h.core().camera().center);
+    h.click(at.x, at.y, 1);
+    h.frame(3);
+    REQUIRE(h.click("ZOOM E", "Popup"));
+    h.frame(3);
+    bool zoomed = false;
+    for (const auto& line : h.core().history())
+        zoomed = zoomed || line.find("ZOOM") != std::string::npos;
+    CHECK(zoomed);
+}

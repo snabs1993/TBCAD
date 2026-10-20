@@ -233,6 +233,7 @@ public:
                     if (!p.ok() || p.keyword == "Done")
                         break;
                     cmd::StringOptions vo;
+                    vo.allowEmpty = p.keyword == "Block";  // Enter: ask for the block
                     auto v = co_await ctx.getString(p.keyword + " value", vo);
                     if (!v.ok())
                         continue;
@@ -342,6 +343,10 @@ std::string mleaderContent(const Document& doc, const std::string& name) {
 }
 std::string mleaderCompanionName(const std::string& name) {
     return companionName(name);
+}
+
+MLeaderStyle mleaderStyleNamed(const Document& doc, const std::string& name) {
+    return styleNamed(doc, name);
 }
 
 MLeaderStyle currentMLeaderStyle(const Document& doc) {

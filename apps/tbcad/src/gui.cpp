@@ -28,6 +28,7 @@
 #include "tbcad/platform/file_dialog.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/text/text.h"
+#include "tbcad/ui/customize.h"
 #include "tbcad/ui/drag_payload.h"
 #include "tbcad/ui/radial_wheel.h"
 #include "tbcad/ui/selection.h"
@@ -1098,15 +1099,8 @@ void Gui::toolStrip() {
     const float h = iconSize + ImGui::GetStyle().WindowPadding.y * 2.0f;
     if (ImGui::BeginViewportSideBar("##toolstrip", vp, ImGuiDir_Up, h, flags)) {
         bool first = true;
-        for (const Group& group : groups) {
-            const std::string key = std::string("ui.toolgroup.") + group.name;
-            if (!flag(key, true))
-                continue;
-            bool any = false;
-            for (const Tool& t : group.tools)
-                any = any || t.action || core_.registry().find(t.command);
-            if (!any)
-                continue;
+        // A line between groups.
+        auto groupGap = [&] {
             if (!first) {
                 ImGui::SameLine(0, ImGui::GetStyle().ItemSpacing.x * 2);
                 const ImVec2 p = ImGui::GetCursorScreenPos();
@@ -1116,6 +1110,17 @@ void Gui::toolStrip() {
                     ImGui::GetColorU32(ImGuiCol_Separator));
             }
             first = false;
+        };
+        for (const Group& group : groups) {
+            const std::string key = std::string("ui.toolgroup.") + group.name;
+            if (!flag(key, true))
+                continue;
+            bool any = false;
+            for (const Tool& t : group.tools)
+                any = any || t.action || core_.registry().find(t.command);
+            if (!any)
+                continue;
+            groupGap();
             bool firstInGroup = true;
             for (const Tool& t : group.tools) {
                 if (t.command && !core_.registry().find(t.command))
@@ -1157,7 +1162,30 @@ void Gui::toolStrip() {
                 }
             }
         }
-        // Right-click the strip to show or hide a group.
+        // The user's Quick Access commands (Settings > Customize, or CUI), as text buttons.
+        const std::vector<std::string> quick = core_.settings().getStrings(ui::kQuickAccessKey);
+        bool firstQuick = true;
+        for (std::size_t i = 0; i < quick.size(); ++i) {
+            const std::string label = ui::commandLabel(quick[i]);
+            if (label.empty())
+                continue;
+            if (firstQuick)
+                groupGap();
+            else
+                ImGui::SameLine(0, 2);
+            firstQuick = false;
+            ImGui::PushID(static_cast<int>(i));
+            if (ImGui::Button((label + "##quick").c_str(), ImVec2(0, iconSize)))
+                core_.submitText(quick[i]);
+            ImGui::PopID();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                std::string tip = quick[i];
+                if (cmd::Command* c = core_.registry().find(label); c && !c->description().empty())
+                    tip += "\n" + std::string(c->description());
+                ImGui::SetTooltip("%s", tip.c_str());
+            }
+        }
+        // Right-click the strip to show or hide a group, or to change the Quick Access buttons.
         if (ImGui::BeginPopupContextWindow("##toolstripMenu")) {
             for (const Group& group : groups) {
                 const std::string key = std::string("ui.toolgroup.") + group.name;
@@ -1165,6 +1193,9 @@ void Gui::toolStrip() {
                 if (ImGui::MenuItem(group.name, nullptr, &shown))
                     core_.settings().setBool(key, shown);
             }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Customize..."))
+                core_.requestUi("settings:Customize");
             ImGui::EndPopup();
         }
     }
@@ -3689,6 +3720,18 @@ void Gui::viewportMenu() {
                 if (ImGui::MenuItem(r.c_str()))
                     run(r);
             ImGui::EndMenu();
+        }
+        // The user's own commands for this menu (Settings > Customize).
+        const std::vector<std::string> mine = core_.settings().getStrings(
+            core_.selection().empty() ? ui::kContextMenuKey : ui::kContextMenuEditKey);
+        if (!mine.empty()) {
+            ImGui::Separator();
+            for (std::size_t i = 0; i < mine.size(); ++i) {
+                ImGui::PushID(static_cast<int>(i));
+                if (ImGui::MenuItem(mine[i].c_str()))
+                    run(mine[i]);
+                ImGui::PopID();
+            }
         }
         if (!core_.selection().empty()) {
             // Edits that suit the kinds of object picked come first.

@@ -938,6 +938,7 @@ public:
                    k == EntityKind::Spline;
         };
         eo.keywords = {"Multiple"};
+        eo.allowPreselection = true;
         auto pick = co_await ctx.getEntity("Select polyline or [Multiple]", eo);
         if (pick.status == cmd::Status::Keyword && pick.keyword == "Multiple") {
             co_await editMultiple(ctx, eo.filter);

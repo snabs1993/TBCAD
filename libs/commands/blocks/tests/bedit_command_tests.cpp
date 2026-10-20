@@ -13,6 +13,8 @@ struct BEditFixture : Fixture {
         EntityId line = addLine(0, 0, 10, 0);
         host->setSelection({line});
         host->run("BLOCK", {"Sym", "0,0", "C"});
+        // The window clears a selection a command used; BEDIT would take the one left here.
+        host->setSelection({});
         const BlockDef& def = doc.blocks().begin()->second;
         Entity e;
         e.data = Indirect<InsertData>(InsertData{def.id, {100, 50}, {1, 1}, 0});
@@ -156,6 +158,7 @@ TEST_CASE("Editing a block that contains another block updates both levels, and 
     EntityId nested = f.add(std::move(in));
     f.host->setSelection({nested});
     f.host->run("BLOCK", {"Outer", "0,0", "C"});
+    f.host->setSelection({});
     const BlockDef* outer = f.doc.blockByName("Outer");
     REQUIRE(outer);
     Entity oi;

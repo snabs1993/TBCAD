@@ -11,6 +11,7 @@ tbcad_add_library(appcore
   SOURCES
     src/app_commands.cpp
     src/app_core.cpp
+    src/customize.cpp
     src/paper_view.cpp
     src/scene_sync.cpp
     src/selection.cpp
