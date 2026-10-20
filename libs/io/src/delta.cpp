@@ -15,7 +15,7 @@ namespace {
 
 constexpr std::uint8_t kDeltaMagic[4] = {'T', 'B', 'D', 'L'};
 // 3: text style rows carry the fixed height. Version 2 records are still read.
-constexpr std::uint8_t kDeltaVersion = 17;
+constexpr std::uint8_t kDeltaVersion = 18;
 
 [[noreturn]] void bad(const char* msg) {
     throw FormatError(msg);
@@ -147,6 +147,9 @@ void putRow(ByteWriter& w, StringTable& st, const DimStyle& r) {
     putString(w, st, r.dimLinetype);
     putString(w, st, r.ext1Linetype);
     putString(w, st, r.ext2Linetype);
+    // (version 18) DIMAZIN, DIMTZIN, DIMALTZ, each plus one (0: as the length)
+    for (int z : {r.angularZeros, r.tolZeros, r.altZeros})
+        w.u8(static_cast<std::uint8_t>(std::clamp(z, -1, 3) + 1));
 }
 
 void putRow(ByteWriter& w, StringTable& st, const BlockDef& r) {
@@ -381,6 +384,13 @@ struct Reader {
             d.dimLinetype = str();
             d.ext1Linetype = str();
             d.ext2Linetype = str();
+        }
+        if (version >= 18) {
+            for (int* z : {&d.angularZeros, &d.tolZeros, &d.altZeros}) {
+                *z = static_cast<int>(r.u8()) - 1;
+                if (*z > 3)
+                    bad("invalid dimension zero suppression");
+            }
         }
     }
     void row(BlockDef& b) {

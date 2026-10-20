@@ -747,6 +747,20 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
                 : ds.textPlacement == DimTextPlacement::Below   ? 4
                                                                 : 0);
         o.i(78, (ds.suppressLeadingZeros ? 4 : 0) | (ds.suppressTrailingZeros ? 8 : 0));
+        {
+            // DIMAZIN, DIMTZIN, DIMALTZ (a style that follows the length setting writes it).
+            auto bits = [&](int z) {
+                return z >= 0
+                           ? z
+                           : (ds.suppressLeadingZeros ? 1 : 0) | (ds.suppressTrailingZeros ? 2 : 0);
+            };
+            auto zin = [&](int z) { return ((bits(z) & 1) ? 4 : 0) | ((bits(z) & 2) ? 8 : 0); };
+            if (!r12_) {
+                o.i(79, bits(ds.angularZeros));
+                o.i(284, zin(ds.tolZeros));
+                o.i(285, zin(ds.altZeros));
+            }
+        }
         o.d(140, ds.textHeight);
         o.d(147, ds.textFrame ? -ds.textGap : ds.textGap);  // DIMGAP (negative: framed)
         o.i(69, ds.textFill);                               // DIMTFILL

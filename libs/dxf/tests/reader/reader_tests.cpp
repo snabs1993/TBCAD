@@ -1292,6 +1292,32 @@ TEST_CASE("dimension style: DIMLTYPE and DIMLTEX1/2 by LTYPE handle, also as an 
     CHECK(ds->ext2Linetype == "HIDDEN");
 }
 
+TEST_CASE("dimension style: DIMAZIN, DIMTZIN and DIMALTZ, also as overrides") {
+    Pairs p;
+    p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE");
+    p.g(0, "DIMSTYLE").g(105, "30").g(2, "Z").g(78, 8).g(79, 3).g(284, 4).g(140, 2.5).g(41, 2.5);
+    p.g(0, "ENDTAB").end();
+    p.section("ENTITIES");
+    p.g(0, "DIMENSION").g(8, "0").g(2, "*D1").g(3, "Z").g(10, 5.0).g(20, 25.0).g(11, 5.0);
+    p.g(21, 28.0).g(70, 1).g(13, 0.0).g(23, 20.0).g(14, 10.0).g(24, 20.0).g(42, 10.0);
+    p.g(1001, "ACAD").g(1000, "DSTYLE").g(1002, "{").g(1070, 79).g(1070, 0).g(1070, 285);
+    p.g(1070, 12).g(1002, "}");
+    p.end().g(0, "EOF");
+    Loaded l = load(p.text);
+    const DimStyle* z = l.doc().dimStyleByName("Z");
+    REQUIRE(z != nullptr);
+    CHECK(z->suppressTrailingZeros);
+    CHECK(z->angularZeros == 3);
+    CHECK(z->tolZeros == 1);
+    CHECK(z->altZeros == 0);
+    auto dims = modelEntities<DimensionData>(l.doc());
+    REQUIRE(dims.size() == 1);
+    const DimStyle* ds = l.doc().dimStyle(dims[0]->style);
+    REQUIRE(ds != nullptr);
+    CHECK(ds->angularZeros == 0);
+    CHECK(ds->altZeros == 3);
+}
+
 TEST_CASE("dimension style: a built-in arrow block name picks the arrow kind") {
     Pairs p;
     p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE");

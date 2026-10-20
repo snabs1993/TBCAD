@@ -92,7 +92,13 @@ const std::vector<std::string> kProps = {
     "DecimalMark",    "BaselineSpacing", "CenterMark",    "TextFill",    "TextFillColor",
     "TextFrame",      "LengthFormat",    "TolHeight",     "TextVertPos", "FixedExt",
     "FixedExtLength", "LeaderArrow",     "LineWeight",    "ExtWeight",   "Linetype",
-    "ExtLinetype1",   "ExtLinetype2"};
+    "ExtLinetype1",   "ExtLinetype2",    "AngleZeros",    "TolZeros",    "AltZeros"};
+
+// DIMAZIN / DIMTZIN / DIMALTZ as text.
+const char* const kZeros[] = {"Show", "Leading", "Trailing", "Both"};
+std::string zerosText(int z) {
+    return z < 0 ? "Same" : kZeros[z & 3];
+}
 
 std::string num(double v) {
     char buf[40];
@@ -204,6 +210,9 @@ std::vector<std::pair<std::string, std::string>> describe(const Document& doc, c
         {"Linetype", s.dimLinetype.empty() ? "ByBlock" : s.dimLinetype},
         {"ExtLinetype1", s.ext1Linetype.empty() ? "ByBlock" : s.ext1Linetype},
         {"ExtLinetype2", s.ext2Linetype.empty() ? "ByBlock" : s.ext2Linetype},
+        {"AngleZeros", zerosText(s.angularZeros)},
+        {"TolZeros", zerosText(s.tolZeros)},
+        {"AltZeros", zerosText(s.altZeros)},
     };
 }
 
@@ -573,6 +582,23 @@ std::string applyProperty(const Document& doc, DimStyle& s, std::string_view key
         else
             return "A lineweight is ByBlock, ByLayer, Default or millimetres from 0 to 2.11.";
         return {};
+    }
+    // DIMAZIN / DIMTZIN / DIMALTZ: which zeros angles, tolerances and alternate units drop
+    // (Same: as lengths).
+    if (same(key, "AngleZeros") || same(key, "TolZeros") || same(key, "AltZeros")) {
+        int& z = same(key, "AngleZeros") ? s.angularZeros
+                 : same(key, "TolZeros") ? s.tolZeros
+                                         : s.altZeros;
+        if (same(value, "Same")) {
+            z = -1;
+            return {};
+        }
+        for (int i = 0; i < 4; ++i)
+            if (same(value, kZeros[i])) {
+                z = i;
+                return {};
+            }
+        return "Answer Same, Show, Leading, Trailing or Both.";
     }
     // DIMLTYPE / DIMLTEX1 / DIMLTEX2: ByBlock, ByLayer or a linetype of the drawing.
     if (same(key, "Linetype") || same(key, "ExtLinetype1") || same(key, "ExtLinetype2")) {

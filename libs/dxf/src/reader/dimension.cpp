@@ -361,6 +361,14 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
             case 280:
                 ds.textJustify = whole == 1 || whole == 2 ? static_cast<int>(whole) : 0;
                 break;
+            case 79:  // DIMAZIN
+                ds.angularZeros = static_cast<int>(whole & 3);
+                break;
+            case 284:  // DIMTZIN
+            case 285:  // DIMALTZ
+                (var == 284 ? ds.tolZeros : ds.altZeros) =
+                    ((whole & 4) != 0 ? 1 : 0) | ((whole & 8) != 0 ? 2 : 0);
+                break;
             case 279:
                 ds.textMove = whole == 1   ? DimTextMove::Leader
                               : whole == 2 ? DimTextMove::Free
