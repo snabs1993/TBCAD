@@ -6,9 +6,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <map>
 #include <regex>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -124,8 +126,8 @@ private:
         // A DXF hatch has one colour: a ByLayer hatch with its own fill colour comes back with
         // that colour as the hatch's and a ByLayer fill, which draws the same.
         Entity e = in;
-        if (auto* h = entityAs<HatchData>(e); h && e.common.color.kind == ColorKind::ByLayer &&
-                                              h->fill.kind != ColorKind::ByLayer) {
+        if (auto* h = entityAs<HatchData>(e);
+            h && e.common.color.kind == ColorKind::ByLayer && h->fill.kind != ColorKind::ByLayer) {
             e.common.color = h->fill;
             h->fill = Color::byLayer();
         }
@@ -231,7 +233,50 @@ private:
         s = replaceWith(s, blockTok, [&](unsigned long id) {
             return "block=" + blockName(BlockId{static_cast<std::uint32_t>(id)});
         });
+        // Objects named by id (an associative point's object, the objects of DIMBREAK Auto):
+        // a hash of that object's own semantic line.
+        {
+            static const std::regex assocTok(R"(\b(assoc\d=)(\d+))");
+            std::string r;
+            std::size_t last = 0;
+            for (auto it = std::sregex_iterator(s.begin(), s.end(), assocTok);
+                 it != std::sregex_iterator(); ++it) {
+                r.append(s, last, static_cast<std::size_t>(it->position()) - last);
+                r += (*it)[1].str() + refOf(EntityId{std::stoull((*it)[2].str())});
+                last = static_cast<std::size_t>(it->position() + it->length());
+            }
+            r.append(s, last, std::string::npos);
+            s = r;
+        }
+        {
+            static const std::regex withTok(R"(\bwith((?: \d+)+))");
+            std::string r;
+            std::size_t last = 0;
+            for (auto it = std::sregex_iterator(s.begin(), s.end(), withTok);
+                 it != std::sregex_iterator(); ++it) {
+                r.append(s, last, static_cast<std::size_t>(it->position()) - last);
+                r += "with";
+                std::istringstream ids((*it)[1].str());
+                for (std::uint64_t id; ids >> id;)
+                    r += " " + refOf(EntityId{id});
+                last = static_cast<std::size_t>(it->position() + it->length());
+            }
+            r.append(s, last, std::string::npos);
+            s = r;
+        }
         return s;
+    }
+
+    // An object named by another one, by what it is rather than by its id.
+    std::string refOf(EntityId id) const {
+        const Entity* t = doc_.find(id);
+        if (!t)
+            return "?";
+        static const std::regex named(R"(\b(assoc\d=\d+|with(?: \d+)+))");
+        const std::string line = rewrite(std::regex_replace(dumpEntity(*t), named, ""), *t);
+        char buf[24];
+        std::snprintf(buf, sizeof buf, "#%016zx", std::hash<std::string>{}(line));
+        return buf;
     }
 
     template <class Fn>
