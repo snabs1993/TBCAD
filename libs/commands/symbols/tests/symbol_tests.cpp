@@ -40,8 +40,12 @@ TEST_CASE("every symbol has geometry and the attributes it promises") {
     for (const auto& info : symbolscmd::symbolList()) {
         auto es = symbolscmd::symbolEntities(info.symbol);
         CHECK_MESSAGE(!es.empty(), info.command);
-        for (const Entity& e : es)
+        for (const Entity& e : es) {
             CHECK(e.common.layer.value == 0);  // layer 0: follows the layer of the insert
+            // A definition shows its tag (the value is its default), as a DXF gives it back.
+            if (const auto* t = entityAs<TextData>(e); t && t->attdef)
+                CHECK(t->utf8 == t->attdef->tag);
+        }
     }
     int attdefs = 0;
     for (const Entity& e : symbolscmd::symbolEntities(symbolscmd::Symbol::SectionMarker))
