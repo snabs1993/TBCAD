@@ -32,6 +32,12 @@ enum class GripAction {
     MoveWithLeader,
     AboveLine,
     CenterVertically,
+    // Multileader, as AutoCAD's grips: a new leader line to the landing (landing grip), the
+    // leader line of this arrowhead removed (arrowhead grip), the dogleg made longer or shorter
+    // (landing and dogleg grips).
+    AddLeader,
+    RemoveLeader,
+    LengthenDogleg,
 };
 
 // Menu text ("Add vertex") and the keyword GRIPEDIT understands ("AddVertex").
