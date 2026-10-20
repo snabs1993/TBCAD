@@ -189,6 +189,12 @@ private:
         if (pos_ < s_.size() && (s_[pos_] == '-' || s_[pos_] == '!' || s_[pos_] == '+')) {
             char op = s_[pos_];
             if (!(op == '!' && s_.substr(pos_, 2) == "!=")) {
+                if (++depth_ > 64)
+                    return fail("the formula is nested too deeply");
+                struct Leave {
+                    int& d;
+                    ~Leave() { --d; }
+                } leave{depth_};
                 ++pos_;
                 auto r = unary();
                 if (!r)
@@ -233,12 +239,18 @@ private:
             return r;
         }
         if (std::isdigit(c) || c == '.') {
-            const char* start = s_.data() + pos_;
+            // strtod reads up to a NUL, which the view need not have: it gets a copy of the
+            // characters a number can be made of.
+            std::size_t stop = pos_;
+            while (stop < s_.size() && (std::isalnum(static_cast<unsigned char>(s_[stop])) ||
+                                        s_[stop] == '.' || s_[stop] == '+' || s_[stop] == '-'))
+                ++stop;
+            const std::string text(s_.substr(pos_, stop - pos_));
             char* end = nullptr;
-            double v = std::strtod(start, &end);
-            if (end == start)
+            double v = std::strtod(text.c_str(), &end);
+            if (end == text.c_str())
                 return fail("bad number");
-            pos_ += static_cast<std::size_t>(end - start);
+            pos_ += static_cast<std::size_t>(end - text.c_str());
             return make(Expression::Node::Kind::Number, {}, v);
         }
         if (c == '"') {

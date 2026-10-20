@@ -19,6 +19,7 @@ option(TBCAD_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 # For sanitizer builds: every entity edit reallocates the object's data, so a pointer kept across
 # an edit points at freed memory (which AddressSanitizer reports) instead of at the new value.
 option(TBCAD_HARDEN_EDITS "Reallocate entity data on every edit (sanitizer builds)" OFF)
+option(TBCAD_FORMATS_FUZZ "Build fuzz targets for fonts, PDF underlays, plot styles, formulas and hatch patterns (libFuzzer + ASan/UBSan, clang)" OFF)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 

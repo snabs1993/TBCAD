@@ -234,7 +234,7 @@ Result<PlotStyleTable> fromText(const std::string& text) {
             const std::string head = at == std::string::npos ? line : line.substr(0, at);
             if (at != std::string::npos)
                 e.name = line.substr(at + 6);
-            std::istringstream ls(head.substr(2));
+            std::istringstream ls(head.size() > 2 ? head.substr(2) : std::string());
             std::string kv;
             while (ls >> kv) {
                 auto eq = kv.find('=');

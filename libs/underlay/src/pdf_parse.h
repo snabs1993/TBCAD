@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -83,6 +84,7 @@ private:
     Obj root_{};
     bool encrypted_ = false;
     std::vector<Page> pages_{};
+    std::set<const Obj*> pageNodes_{};  // page tree nodes already visited
 };
 
 }  // namespace tbcad::underlay::pdf

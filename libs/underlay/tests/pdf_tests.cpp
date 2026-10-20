@@ -239,6 +239,21 @@ TEST_CASE("bad input is rejected with a message") {
     CHECK(r.error().message.find("1 page") != std::string::npos);
 }
 
+TEST_CASE("a page tree that lists itself many times is read once (found by fuzzing)") {
+    std::string pdf = simplePdf("0 0 m 10 10 l S");
+    const std::string kids = "/Kids [3 0 R]";
+    std::string many = "/Kids [";
+    for (int i = 0; i < 8; ++i)
+        many += "2 0 R ";
+    many += "3 0 R]";
+    pdf.replace(pdf.find(kids), kids.size(), many);
+    PdfReport rep;
+    auto doc = importPdf(bytesOf(pdf), {}, &rep);
+    REQUIRE(doc.ok());
+    CHECK(rep.pageCount == 1);
+    CHECK(polylines(*doc.value()).size() == 1);
+}
+
 TEST_CASE("the vertex limit stops the import and says so") {
     std::string content;
     for (int i = 0; i < 100; ++i)

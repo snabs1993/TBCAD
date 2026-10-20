@@ -1,6 +1,8 @@
 #include <doctest/doctest.h>
 
 #include <map>
+#include <string>
+#include <string_view>
 
 #include "tbcad/expr/expr.h"
 
@@ -103,4 +105,20 @@ TEST_CASE("expr: names() lists each parameter once") {
     REQUIRE(names.size() == 2);
     CHECK(names[0] == "A");
     CHECK(names[1] == "B");
+}
+
+TEST_CASE("expr: hostile formulas give errors, not crashes (found by fuzzing)") {
+    // A number at the end of a view that is not NUL-terminated was read past its end.
+    const std::string whole = "12345";
+    auto e = Expression::parse(std::string_view(whole).substr(0, 2));
+    REQUIRE(e.ok());
+    auto v = e.value().eval([](std::string_view) { return std::nullopt; });
+    REQUIRE(v.ok());
+    CHECK(v.value().number == 12);
+    CHECK(num("1.5e-3*2") == doctest::Approx(0.003));
+    CHECK(num("2-1") == 1);
+    // Signs nest like brackets: deep enough fails cleanly instead of overflowing the stack.
+    CHECK(num("--3") == 3);
+    CHECK_FALSE(run(std::string(100000, '-').append("1").c_str()).ok());
+    CHECK_FALSE(run(std::string(100000, '!').append("1").c_str()).ok());
 }

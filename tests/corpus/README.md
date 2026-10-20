@@ -11,6 +11,9 @@ the repository; real-world samples that the owner provides stay in a private loc
   Extra expectation keys: `proxy_items_min` (display items of Proxy entities).
   `gen/check_corpus_ezdxf.py` cross-checks the expected counts against ezdxf.
   `gen/gen_big_dxf.py` writes a 50 MB file for timing `tbcad-convert`.
+- `fuzz/` - seed inputs for the libFuzzer targets of fonts (`stroke/`: .shx, .tbsf), PDF underlays
+  (`pdf/`), plot styles (`ctb/`), formulas (`expr/`) and hatch patterns (`patterns/`); files named
+  `repro-*` are inputs that once crashed or hung, kept so the fuzzers re-check them.
 - `roundtrip/` - reserved for the DXF exporter tests (W4-6).
 
 Regenerating rewrites the files (ezdxf puts fresh timestamps and GUIDs in the headers), so only

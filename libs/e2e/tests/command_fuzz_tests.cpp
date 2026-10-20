@@ -29,9 +29,9 @@ namespace {
 
 // Commands that talk to files, printers or the window rather than the drawing.
 bool skipped(const std::string& name) {
-    static const char* const kParts[] = {"EXPORT", "IMPORT",  "SAVE",   "PRINT",   "PLOT",
-                                         "DEVGEN", "NEWFROM", "ATTACH", "RELOAD",  "OPEN",
-                                         "QUIT",   "EXIT",    "NEW",    "TEMPLATE"};
+    static const char* const kParts[] = {"EXPORT", "IMPORT",  "SAVE",   "PRINT",    "PLOT",
+                                         "DEVGEN", "NEWFROM", "ATTACH", "RELOAD",   "OPEN",
+                                         "QUIT",   "EXIT",    "NEW",    "TEMPLATE", "WBLOCK"};
     for (const char* part : kParts)
         if (name.find(part) != std::string::npos)
             return true;

@@ -306,6 +306,7 @@ bool File::open(std::string_view bytes, std::string& error) {
     bytes_ = bytes;
     objs_.clear();
     pages_.clear();
+    pageNodes_.clear();
     encrypted_ = false;
     if (bytes.size() < 8 || bytes.find("%PDF-") == std::string_view::npos) {
         error = "This is not a PDF file";
@@ -538,6 +539,10 @@ void File::collectPages(const Obj& nodeIn, const Obj& inherited, int depth) {
     const Obj& node = resolve(nodeIn);
     if (!node.isDict())
         return;
+    // A page tree is a tree: a node listed twice (or a kid that is its own ancestor) is taken
+    // once, else a damaged file can make the walk exponential.
+    if (!pageNodes_.insert(&node).second || pages_.size() >= 100000)
+        return;
     Obj inh;
     inh.type = Obj::Type::Dict;
     inh.dict = std::make_shared<Dict>(inherited.dict ? *inherited.dict : Dict{});
@@ -580,7 +585,10 @@ std::vector<std::uint8_t> inflate(const std::uint8_t* in, std::size_t n, bool& o
             break;
         }
         if (st == TINFL_STATUS_HAS_MORE_OUTPUT) {
-            if (out.size() >= kMaxDecoded)
+            // Deflate expands at most 1032:1, so a damaged stream that keeps asking for room
+            // without making progress stops here instead of growing the buffer to the limit.
+            if (out.size() >= kMaxDecoded || out.size() > n * 1032 + 4096 ||
+                (inN == 0 && outN == 0))
                 break;
             out.resize(out.size() * 2);
             continue;

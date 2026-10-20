@@ -91,6 +91,11 @@ TEST_CASE("the text format round-trips and rejects nonsense") {
     CHECK_FALSE(fromText("TBCAD-PLOT-STYLE 1\n300 color=#000000\n").ok());
     CHECK_FALSE(fromText("TBCAD-PLOT-STYLE 1\n1 color=red\n").ok());
     CHECK_FALSE(fromText("TBCAD-PLOT-STYLE 1\n1 lineweight=-1\n").ok());
+    // A named style with only a name (found by fuzzing: threw out_of_range).
+    auto onlyName = fromText("TBCAD-PLOT-STYLE 1\nnamed 1\nS name=Thin\n");
+    REQUIRE(onlyName.ok());
+    REQUIRE(onlyName.value().styles.size() == 1);
+    CHECK(onlyName.value().styles[0].name == "Thin");
 }
 
 TEST_CASE("ctbText returns the decompressed text of a .ctb file") {
@@ -160,7 +165,8 @@ TEST_CASE("a .ctb file is imported: colours, lineweights, screening") {
 // AutoCAD writes custom_lineweight_table after plot_style, as here.
 // Pens count from 1 into the table: _EP-100's pens 5 / 12 / 13 / 18 plot 0.13 / 0.30 / 0.33 / 0.55
 // mm in AutoCAD's PDF of the owner's drawing.
-TEST_CASE("AutoCAD's custom_lineweight_table gives each pen its width, 0 and 255 keep the object's") {
+TEST_CASE(
+    "AutoCAD's custom_lineweight_table gives each pen its width, 0 and 255 keep the object's") {
     const std::string text =
         "description=\"Color 7 = 0.35mm\"\n"
         "aci_table_available=TRUE\n"
