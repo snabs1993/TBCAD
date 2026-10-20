@@ -213,6 +213,8 @@ private:
     // TBCAD XDATA naming the entity's level ("level=<name>"), written at the end of the
     // record that setLevelTag() prepared; a no-op when no tag is pending.
     void emitLevelTag();
+    // Opens the record's TBCAD XDATA unless it is open already (one 1001 per application).
+    void openTbcadXdata();
     void setLevelTag(const EntityCommon& c);
     void levelsXdata(Out& o);
     void skipEntity(std::string_view what, const std::string& why);
@@ -349,6 +351,7 @@ private:
         std::uint64_t entHandle = 0;  // the handle the next head() gives the entity, 0 = a new one
         std::uint64_t lastHead = 0;   // the handle the last head() wrote
         std::string levelTag{};
+        bool tbcadOpen = false;             // the record's TBCAD XDATA has begun (head() clears it)
         const EntityCommon* cur = nullptr;  // the entity writeEntity is on
         std::vector<PendingDict> pendingDicts{};
         std::unordered_set<std::uint64_t> handlesWritten{};

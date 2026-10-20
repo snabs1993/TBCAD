@@ -921,7 +921,8 @@ TEST_CASE("multileaders in a block, with a Thai note, and pieces lost in another
         m.lines = {{{0, 0}, {5, 5}}};
         m.landing = {5, 5};
         m.contentPos = {7, 5};
-        m.utf8 = std::string(300, 'x') + " \xe0\xb8\x84\xe0\xb8\xb2\xe0\xb8\x99";  // long, then Thai
+        m.utf8 =
+            std::string(300, 'x') + " \xe0\xb8\x84\xe0\xb8\xb2\xe0\xb8\x99";  // long, then Thai
         REQUIRE(tx.add(make(Indirect<MLeaderData>(m)), b).ok());
         REQUIRE(tx.add(make(InsertData{b, {100, 0}, {1, 1}, 0})).ok());
         m.utf8 = "plain";
@@ -1846,5 +1847,88 @@ TEST_CASE("the unit a drawing shows lengths in survives a DXF round trip") {
     }
 }
 
-}  // namespace tbcad::dxf
+TEST_CASE("text fields survive a DXF round trip while they still work out the same") {
+    // With `gap`, an erased line comes first, so the ids after it move up on re-import and a
+    // field naming an object by id would show something else: it keeps the value it showed.
+    const auto texts = [](bool gap) {
+        Document doc;
+        {
+            Transaction tx = doc.begin("fields");
+            LineData l;
+            l.a = {0, 0};
+            l.b = {300, 400};
+            if (gap)
+                REQUIRE(tx.erase(tx.add(make(l)).value()));
+            const EntityId line = tx.add(make(l)).value();
+            TextData t;
+            t.position = {0, 10};
+            t.alignPoint = t.position;
+            t.height = 2.5;
+            t.utf8 = "Plotted %<date>%";
+            REQUIRE(tx.add(make(Indirect<TextData>(t))));
+            MTextData m;
+            m.position = {0, 20};
+            m.height = 2.5;
+            m.utf8 = "{\\b1;L} = %<length:#" + std::to_string(line.value) + ":0>%";
+            Entity me = make(Indirect<MTextData>(m));
+            me.common.annotative = true;
+            REQUIRE(tx.add(std::move(me)));
+            tx.commit();
+        }
+        RoundTrip rt = roundTrip(doc);
+        std::vector<std::string> out;
+        rt.back->forEachEntity([&](const Entity& e) {
+            if (const auto* t = entityAs<TextData>(e))
+                out.push_back(t->utf8);
+            if (const auto* m = entityAs<MTextData>(e)) {
+                out.push_back(m->utf8);
+                CHECK(e.common.annotative);
+            }
+        });
+        // One TBCAD application per record, holding the field and the annotative flag.
+        const std::size_t mtext = rt.bytes.find("MTEXT");
+        const std::size_t app = rt.bytes.find("TBCAD", mtext);
+        REQUIRE(app != std::string::npos);
+        CHECK(rt.bytes.find("TBCAD", app + 1) > rt.bytes.find("annotative=1", app));
+        return out;
+    };
+    std::vector<std::string> same = texts(false);
+    REQUIRE(same.size() == 2);
+    CHECK(same[0] == "Plotted %<date>%");
+    CHECK(same[1] == "{\\b1;L} = %<length:#1:0>%");
+    std::vector<std::string> moved = texts(true);
+    REQUIRE(moved.size() == 2);
+    CHECK(moved[0] == "Plotted %<date>%");
+    CHECK(moved[1] == "{\\b1;L} = 500");
+}
 
+TEST_CASE("a text with fields changed in another program keeps what it shows") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("field");
+        TextData t;
+        t.position = {0, 10};
+        t.alignPoint = t.position;
+        t.height = 2.5;
+        t.utf8 = "Plotted %<date>%";
+        REQUIRE(tx.add(make(Indirect<TextData>(t))));
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    std::string edited = rt.bytes;
+    const std::size_t at = edited.find("\nPlotted ");
+    REQUIRE(at != std::string::npos);
+    edited.replace(at + 1, 7, "Printed");
+    Report report;
+    auto in = importDxf(testing::bytesOf(edited), ImportOptions{}, report);
+    REQUIRE(in.ok());
+    std::string got;
+    in.value().document->forEachEntity([&](const Entity& e) {
+        if (const auto* t = entityAs<TextData>(e))
+            got = t->utf8;
+    });
+    CHECK(got.rfind("Printed 20", 0) == 0);
+    CHECK(got.find("%<") == std::string::npos);
+}
+
+}  // namespace tbcad::dxf

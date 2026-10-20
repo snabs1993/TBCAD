@@ -25,7 +25,9 @@
 #include "tbcad/cmd/script_host.h"
 #include "tbcad/core/dump.h"
 #include "tbcad/dxf/reader.h"
+#include "tbcad/dxf/writer.h"
 #include "tbcad/io/tbcad.h"
+#include "writer/semantic_dump.h"
 
 using namespace tbcad;
 using cmd::ScriptItem;
@@ -233,6 +235,28 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
             std::fclose(f);
         }
         std::abort();
+    }
+    // With TBCAD_FUZZ_DXF_CHECK, the drawing must also come back from DXF R2000 with the same
+    // objects and properties (as the version round-trip test checks the corpus).
+    if (std::getenv("TBCAD_FUZZ_DXF_CHECK")) {
+        dxf::ExportOptions opt;
+        opt.version = dxf::DxfVersion::R2000;
+        dxf::Report wrote;
+        auto out = dxf::exportDxf(*doc, opt, wrote);
+        if (!out.ok())
+            std::abort();
+        dxf::Report read;
+        auto back = dxf::importDxf(std::as_bytes(std::span<const char>(out.value().bytes.data(),
+                                                                       out.value().bytes.size())),
+                                   {}, read);
+        if (!back.ok())
+            std::abort();
+        const std::string diff = dxf::testing::SemanticDump::diff(
+            dxf::testing::SemanticDump(*doc), dxf::testing::SemanticDump(*back.value().document));
+        if (!diff.empty()) {
+            std::fprintf(stderr, "DXF round trip differs: %s\n", diff.c_str());
+            std::abort();
+        }
     }
     while (host.undo()) {
     }

@@ -735,8 +735,8 @@ void Importer::note3d(const Record& r) {
 // ---------------------------------------------------------------------------------------------
 // Dispatch
 
-void Importer::add(Entity&& e, BlockId owner, std::string_view type, int line,
-                   std::optional<std::uint64_t> handle, const Record* source) {
+EntityId Importer::add(Entity&& e, BlockId owner, std::string_view type, int line,
+                       std::optional<std::uint64_t> handle, const Record* source) {
     EntityCount& cnt = sum_.entities[std::string(type)];
     const EntityCommon common = e.common;
     tbcad::Result<EntityId> res = tx_->add(std::move(e), owner);
@@ -744,7 +744,7 @@ void Importer::add(Entity&& e, BlockId owner, std::string_view type, int line,
         ++cnt.imported;
         if (handle && *handle != 0)
             srcHandles_.emplace_back(res.value().value, *handle);
-        return;
+        return res.value();
     }
     if (res.error().code == ErrorCode::OutOfRange) {
         ++sum_.beyondHardCap;
@@ -760,7 +760,7 @@ void Importer::add(Entity&& e, BlockId owner, std::string_view type, int line,
                                  ": coordinates beyond the hard limit of 1e12 mm; kept for "
                                  "saving, not shown",
                              line, handle);
-                return;
+                return EntityId{};
             }
         }
         ++cnt.skipped;
@@ -772,6 +772,7 @@ void Importer::add(Entity&& e, BlockId owner, std::string_view type, int line,
         report_.warn(code::kRejected,
                      std::string(type) + " rejected by the document: " + res.error().message, line);
     }
+    return EntityId{};
 }
 
 static std::string upperAscii(std::string s) {
@@ -822,6 +823,7 @@ void Importer::handleEntity(Record& r, RecordReader& rr, BlockId owner) {
 
     std::vector<Entity> out;
     emptyRecord_ = false;
+    pendingField_.reset();
     if (!convert(r, rr, out, owner)) {
         ++cnt.skipped;
         auto& s = skippedTypes_[type];
@@ -856,9 +858,13 @@ void Importer::handleEntity(Record& r, RecordReader& rr, BlockId owner) {
             if (wipeout)
                 e.common.wipeout = true;
         }
-        add(std::move(e), owner, type, r.line, handle, source);
+        const EntityId id = add(std::move(e), owner, type, r.line, handle, source);
+        if (pendingField_ && out.size() == 1 && id)
+            fieldTexts_.push_back(
+                {id, std::move(pendingField_->first), std::move(pendingField_->second)});
         handle.reset();
     }
+    pendingField_.reset();
 }
 
 bool Importer::convert(Record& r, RecordReader& rr, std::vector<Entity>& out, BlockId owner) {
@@ -1411,6 +1417,36 @@ bool Importer::convSpline(const Record& r, std::vector<Entity>& out) {
 // ---------------------------------------------------------------------------------------------
 // Text
 
+namespace {
+
+// The field source and check hash a text's TBCAD XDATA keeps (see fieldHash), when `written`
+// (the text groups as they are in the file) is still the text we wrote.
+std::optional<std::pair<std::string, std::string>> fieldNoteOf(const Record& r,
+                                                               std::string_view written) {
+    bool ours = false;
+    std::string hash, source;
+    for (const Group& g : r.g) {
+        if (g.code == 1001) {
+            ours = g.str() == "TBCAD";
+            continue;
+        }
+        if (!ours || g.code != 1000)
+            continue;
+        const std::string_view v = g.str();
+        if (v.rfind("fieldof=", 0) == 0)
+            hash = v.substr(8);
+        else if (v.rfind("field=", 0) == 0 && !appendFieldPiece(v.substr(6), source))
+            return std::nullopt;
+    }
+    const std::size_t semi = hash.find(';');
+    if (semi == std::string::npos || source.empty() ||
+        std::string_view(hash).substr(0, semi) != fieldHash(written))
+        return std::nullopt;
+    return std::pair{std::move(source), hash.substr(semi + 1)};
+}
+
+}  // namespace
+
 bool Importer::convText(const Record& r, const Frame& f, TextKind kind, std::vector<Entity>& out) {
     const bool attrib = kind != TextKind::Text;  // ATTRIB and ATTDEF use group 74 for the baseline
     if (kind == TextKind::Attrib && (r.integer(70) & 1))
@@ -1436,6 +1472,8 @@ bool Importer::convText(const Record& r, const Frame& f, TextKind kind, std::vec
             d.attdef = std::move(info);
         }
         text = d.utf8;
+    } else if (kind == TextKind::Text) {
+        pendingField_ = fieldNoteOf(r, r.raw(1));
     }
     if (text.empty()) {
         emptyRecord_ = true;
@@ -1483,6 +1521,7 @@ bool Importer::convMText(const Record& r, const Frame& f, std::vector<Entity>& o
             raw += g.str();
     }
     std::string text = convertMText(dec(raw), k_, mtextDropped_);
+    pendingField_ = fieldNoteOf(r, raw);
     if (text.empty()) {
         emptyRecord_ = true;
         return true;

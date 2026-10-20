@@ -15,6 +15,7 @@
 #include "keep.h"
 #include "tbcad/blocks/array.h"
 #include "tbcad/dim/dim.h"
+#include "tbcad/text/field.h"
 
 namespace tbcad::dxf::detail {
 
@@ -2842,6 +2843,22 @@ Result<ImportResult> Importer::run() {
             }
             tx.commit();
         }
+    }
+    // Texts with fields we wrote get their fields back where they still work out the same here.
+    if (!fieldTexts_.empty()) {
+        Transaction tx = doc_->begin("fields");
+        for (FieldText& t : fieldTexts_) {
+            if (fieldHash(text::expandFields(*doc_, t.source, kFieldCheckDate)) != t.check)
+                continue;
+            (void)tx.modify(t.id, [&](Entity& e) {
+                if (auto* d = entityAs<TextData>(e))
+                    d->utf8 = t.source;
+                else if (auto* m = entityAs<MTextData>(e))
+                    m->utf8 = t.source;
+            });
+        }
+        tx.commit();
+        fieldTexts_.clear();
     }
     // A multileader is written as its leaders, dogleg line, note and block, each with a
     // TBCAD_MLEADER note (the first one also carries the multileader); they become one again.

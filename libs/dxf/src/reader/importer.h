@@ -148,9 +148,18 @@ private:
     void handleEntity(Record& r, RecordReader& rr, BlockId owner);
     bool convert(Record& r, RecordReader& rr, std::vector<Entity>& out, BlockId owner);
     // `source` (the record `e` came from) lets an object beyond the hard coordinate limit be
-    // kept unshown, as keepUnshown does.
-    void add(Entity&& e, BlockId owner, std::string_view type, int line,
-             std::optional<std::uint64_t> handle = std::nullopt, const Record* source = nullptr);
+    // kept unshown, as keepUnshown does. Returns the new object's id (none when not added).
+    EntityId add(Entity&& e, BlockId owner, std::string_view type, int line,
+                 std::optional<std::uint64_t> handle = std::nullopt,
+                 const Record* source = nullptr);
+    // Texts whose fields come back once every object is read (see fieldHash in keep.h): the
+    // source and check hash of the record being converted, then each added text's.
+    struct FieldText {
+        EntityId id{};
+        std::string source{}, check{};
+    };
+    std::optional<std::pair<std::string, std::string>> pendingField_{};
+    std::vector<FieldText> fieldTexts_{};
     EntityCommon commonOf(const Record& r);
     bool frameOf(const Record& r, Frame& f, std::string_view type);
     // Set when the entity's extrusion is tilted beyond what frameOf reads as flat.
