@@ -544,6 +544,42 @@ TEST_CASE("multileader: add a bend to a leader line, remove one, the landing end
     CHECK(get<MLeaderData>(f.doc, id).lines[0].size() == 3);
 }
 
+TEST_CASE(
+    "multileader: add a leader at the landing, remove one at its arrowhead, lengthen the dogleg") {
+    Fixture f;
+    MLeaderData ml;
+    ml.lines = {{{0, 0}, {10, 5}}};
+    ml.landing = {10, 5};
+    ml.contentPos = {14, 5};
+    auto id = add(f.doc, Indirect<MLeaderData>(ml));
+    f.host.setSelection({id});
+    CHECK(offers(f.doc, id, 1, GripAction::AddLeader));           // the line's landing end
+    CHECK(offers(f.doc, id, 2, GripAction::AddLeader));           // the landing grip
+    CHECK(offers(f.doc, id, 3, GripAction::LengthenDogleg));      // the dogleg end
+    CHECK_FALSE(offers(f.doc, id, 0, GripAction::RemoveLeader));  // the only leader
+    auto r = f.host.run("GRIPEDIT", {"10,5", "AddLeader", "0,10"});
+    CHECK(r.finished);
+    {
+        const auto& m = get<MLeaderData>(f.doc, id);
+        REQUIRE(m.lines.size() == 2);
+        CHECK(near(m.lines[1].front(), {0, 10}));
+        CHECK(near(m.lines[1].back(), {10, 5}));
+    }
+    CHECK(offers(f.doc, id, 0, GripAction::RemoveLeader));
+    r = f.host.run("GRIPEDIT", {"0,0", "RemoveLeader"});
+    CHECK(r.finished);
+    {
+        const auto& m = get<MLeaderData>(f.doc, id);
+        REQUIRE(m.lines.size() == 1);
+        CHECK(near(m.lines[0].front(), {0, 10}));
+    }
+    r = f.host.run("GRIPEDIT", {"14,5", "LengthenDogleg", "20,7"});
+    CHECK(r.finished);
+    CHECK(near(get<MLeaderData>(f.doc, id).contentPos, {20, 5}));  // along the dogleg
+    CHECK(f.host.undo());
+    CHECK(near(get<MLeaderData>(f.doc, id).contentPos, {14, 5}));
+}
+
 TEST_CASE("multiline: add and remove a vertex keep the cuts of the other segments") {
     Fixture f;
     MlineData m;

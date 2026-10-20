@@ -13,12 +13,13 @@ namespace tbcad::transform {
 namespace {
 
 constexpr GripAction kAll[] = {
-    GripAction::Stretch,         GripAction::AddVertex,      GripAction::RemoveVertex,
-    GripAction::ConvertToArc,    GripAction::ConvertToLine,  GripAction::Lengthen,
-    GripAction::Radius,          GripAction::ResetText,      GripAction::Continue,
-    GripAction::Baseline,        GripAction::FlipArrow,      GripAction::MoveWithLine,
-    GripAction::MoveTextOnly,    GripAction::MoveWithLeader, GripAction::AboveLine,
-    GripAction::CenterVertically};
+    GripAction::Stretch,          GripAction::AddVertex,      GripAction::RemoveVertex,
+    GripAction::ConvertToArc,     GripAction::ConvertToLine,  GripAction::Lengthen,
+    GripAction::Radius,           GripAction::ResetText,      GripAction::Continue,
+    GripAction::Baseline,         GripAction::FlipArrow,      GripAction::MoveWithLine,
+    GripAction::MoveTextOnly,     GripAction::MoveWithLeader, GripAction::AboveLine,
+    GripAction::CenterVertically, GripAction::AddLeader,      GripAction::RemoveLeader,
+    GripAction::LengthenDogleg};
 
 bool iequals(const std::string& a, const char* b) {
     std::size_t n = 0;
@@ -103,6 +104,12 @@ const char* gripActionLabel(GripAction a) {
             return "Above dim line";
         case GripAction::CenterVertically:
             return "Center vertically";
+        case GripAction::AddLeader:
+            return "Add leader";
+        case GripAction::RemoveLeader:
+            return "Remove leader";
+        case GripAction::LengthenDogleg:
+            return "Lengthen dogleg";
     }
     return "";
 }
@@ -141,6 +148,12 @@ const char* gripActionKeyword(GripAction a) {
             return "AboveLine";
         case GripAction::CenterVertically:
             return "CenterVertically";
+        case GripAction::AddLeader:
+            return "AddLeader";
+        case GripAction::RemoveLeader:
+            return "RemoveLeader";
+        case GripAction::LengthenDogleg:
+            return "LengthenDogleg";
     }
     return "";
 }
@@ -164,6 +177,7 @@ bool gripActionNeedsPoint(GripAction a) {
         case GripAction::FlipArrow:
         case GripAction::AboveLine:
         case GripAction::CenterVertically:
+        case GripAction::RemoveLeader:
             return false;
         default:
             return true;
@@ -259,17 +273,34 @@ std::vector<GripAction> gripActions(const Document& doc, const Grip& grip) {
             // after them the landing and the content.
             const auto& ml = *entityAs<MLeaderData>(*e);
             int at = grip.index;
+            bool onLine = false;
             for (const auto& line : ml.lines) {
                 const int n = static_cast<int>(line.size());
                 if (at < n) {
+                    onLine = true;
                     out.push_back(GripAction::AddVertex);
                     // The last point of a line is where it meets the landing: it stays.
                     if (n > 2 && at < n - 1)
                         out.push_back(GripAction::RemoveVertex);
+                    // The arrowhead takes its whole line away (one line always stays).
+                    if (at == 0 && ml.lines.size() > 1)
+                        out.push_back(GripAction::RemoveLeader);
+                    // Its landing end is the landing grip too.
+                    if (at == n - 1) {
+                        out.push_back(GripAction::AddLeader);
+                        if (ml.dogleg)
+                            out.push_back(GripAction::LengthenDogleg);
+                    }
                     break;
                 }
                 at -= n;
             }
+            if (onLine)
+                break;
+            if (at == 0)  // the landing
+                out.push_back(GripAction::AddLeader);
+            if ((at == 0 || at == 1) && ml.dogleg)
+                out.push_back(GripAction::LengthenDogleg);
             break;
         }
         case EntityKind::Spline: {
@@ -517,6 +548,37 @@ Result<Entity> applyGripAction(const Entity& e, int index, GripAction action, Ve
         case EntityKind::MLeader: {
             auto& ml = *entityAs<MLeaderData>(out);
             int at = index;
+            if (action == GripAction::AddLeader) {
+                if (distance(target, ml.landing) <= tol::kLinear)
+                    return fail("the new leader would have no length");
+                ml.lines.push_back({target, ml.landing});
+                return out;
+            }
+            if (action == GripAction::LengthenDogleg) {
+                // Along the dogleg, from the landing: the content follows its end.
+                const Vec2 dir = normalized(ml.contentPos - ml.landing);
+                if (tol::isZeroLength(dir))
+                    return fail("the dogleg has no direction");
+                const double len = dot(target - ml.landing, dir);
+                if (!(len > tol::kLinear))
+                    return fail("the dogleg would have no length");
+                ml.contentPos = ml.landing + dir * len;
+                return out;
+            }
+            if (action == GripAction::RemoveLeader) {
+                for (std::size_t i = 0; i < ml.lines.size(); ++i) {
+                    if (at == 0) {
+                        if (ml.lines.size() < 2)
+                            return fail("a multileader keeps at least one leader");
+                        ml.lines.erase(ml.lines.begin() + static_cast<std::ptrdiff_t>(i));
+                        return out;
+                    }
+                    at -= static_cast<int>(ml.lines[i].size());
+                    if (at < 0)
+                        break;
+                }
+                return fail("not the arrowhead of a leader");
+            }
             for (auto& line : ml.lines) {
                 const int n = static_cast<int>(line.size());
                 if (at >= n) {
