@@ -401,6 +401,7 @@ void AppCore::leavePaper() {
     paper_.clear();
     paperIndex_.bulkLoad(std::span<const index::IdBox>{});
     selection_.clear();
+    ++selectionRevision_;
     lastTessellatedFor_ = {};
     notifySessionHooks();
     settings_.setString("plot.layout", "");  // PLOT follows what is on screen
@@ -442,6 +443,7 @@ bool AppCore::setActiveLayout(const std::string& name) {
 
 void AppCore::clearTransientState() {
     selection_.clear();
+    ++selectionRevision_;
     outOfArea_.reset();
     drag_.reset();
     hasPreview_ = false;
@@ -475,6 +477,7 @@ void AppCore::enterSlot(std::size_t index, bool fitView) {
         selection_.erase(std::remove_if(selection_.begin(), selection_.end(),
                                         [&](EntityId id) { return !session_->doc.find(id); }),
                          selection_.end());
+        ++selectionRevision_;
     }
     auto step = [&](const char* name) { openStep(name); };
     // Fit the view first: the scene is then built for the zoom the drawing is first seen at, not
@@ -2749,6 +2752,7 @@ void AppCore::applyPick(const std::vector<EntityId>& picked, bool remove) {
     }
     if (trusted) {
         selection_ = std::move(sel);
+        ++selectionRevision_;
         scene_.setSelected(selection_);
     } else {
         setSelection(std::move(sel));
@@ -3041,6 +3045,7 @@ void AppCore::setSelection(std::vector<EntityId> ids) {
             clean.push_back(id);
     }
     selection_ = std::move(clean);
+    ++selectionRevision_;
     scene_.setSelected(selection_);
 }
 
@@ -3071,6 +3076,7 @@ void AppCore::selectAll() {
             all.push_back(id);
     }
     selection_ = std::move(all);
+    ++selectionRevision_;
     scene_.setSelected(selection_);
 }
 
@@ -3086,6 +3092,7 @@ void AppCore::pruneSelection() {
     }
     if (keep.size() != selection_.size()) {
         selection_ = std::move(keep);
+        ++selectionRevision_;
         scene_.setSelected(selection_);
     }
 }

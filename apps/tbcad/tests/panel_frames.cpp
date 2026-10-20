@@ -79,6 +79,7 @@ void drawPanels(Rig& rig, int frames) {
     pc.doc = &rig.core->document();
     pc.host = rig.core.get();
     pc.selection = &rig.core->selection();
+    pc.selectionRevision = rig.core->selectionRevision();
     pc.camera = &rig.core->camera();
     pc.runCommand = [](const std::string&) {};
     pc.cancelCommand = [] {};
@@ -151,6 +152,7 @@ TEST_CASE("panel frame time stays under 1 ms with 393k objects selected") {
     pc.doc = &rig.core->document();
     pc.host = rig.core.get();
     pc.selection = &rig.core->selection();
+    pc.selectionRevision = rig.core->selectionRevision();
     pc.camera = &rig.core->camera();
     pc.runCommand = [](const std::string&) {};
     pc.cancelCommand = [] {};

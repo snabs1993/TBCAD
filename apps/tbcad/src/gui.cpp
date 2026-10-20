@@ -16,6 +16,7 @@
 #include <optional>
 #include <set>
 #include <sstream>
+#include <tuple>
 
 #include "icons.h"
 #include "key_map.h"
@@ -3111,6 +3112,7 @@ void Gui::fillPanelContext(ui::PanelContext& pc) {
             core_.pressEscape();
     };
     pc.commandActive = core_.runner().active();
+    pc.selectionRevision = core_.selectionRevision();
     pc.drawPropertySections = [this, &pc](EntityId id) {
         const Entity* e = core_.document().find(id);
         if (!e)
@@ -3125,12 +3127,11 @@ void Gui::fillPanelContext(ui::PanelContext& pc) {
         // One call per kind in the selection, each with the first object of that kind. Finding
         // them walks the whole selection, so the result is kept until the selection or the
         // drawing changes (select-all on a big drawing would otherwise walk it every frame).
-        static std::uint64_t cachedKey = ~0ull;
+        static std::tuple<std::uint64_t, std::uint64_t, std::uint64_t> cachedKey{};
         static std::vector<EntityId> firsts;
         const std::vector<EntityId>& sel = *pc.selection;
-        std::uint64_t key = core_.document().revision() * 1000003ull + sel.size();
-        for (EntityId id : sel)
-            key = (key ^ id.value) * 1099511628211ull;
+        const std::tuple key{core_.document().uid(), core_.document().revision(),
+                             core_.selectionRevision()};
         if (key != cachedKey) {
             cachedKey = key;
             firsts.clear();

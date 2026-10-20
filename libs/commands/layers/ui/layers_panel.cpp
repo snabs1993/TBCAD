@@ -10,6 +10,7 @@
 #include <map>
 #include <set>
 #include <sstream>
+#include <tuple>
 
 #include "panel_util.h"
 #include "panels.h"
@@ -105,6 +106,14 @@ std::string lowered(std::string s) {
 std::vector<Row> buildRows(const Document& doc, const PanelState& st) {
     std::vector<Row> rows;
     std::string f = lowered(st.filter);
+    // Children of every layer from one pass over the table: asking childrenOf for each layer
+    // walks all layers each time.
+    const auto kidsOf = childIndex(doc);
+    auto childrenOf = [&](const Document&, LayerId parent) -> const std::vector<LayerId>& {
+        static const std::vector<LayerId> none;
+        auto it = kidsOf.find(parent.value);
+        return it == kidsOf.end() ? none : it->second;
+    };
     // "name:S-* frozen", "branch:Walls" ... use the filter language of -LAYERFILTER; plain text is
     // a substring of the layer path.
     // A filter made only of state words ("off", "frozen locked", "not:used") is an expression too;
@@ -1085,10 +1094,23 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
         ImGui::SetTooltip("Rename or merge layers to an office standard");
     layerTranslator(ctx, doc, st);
 
-    std::vector<Row> rows = buildRows(doc, st);
-    st.order.clear();
-    for (const Row& r : rows)
-        st.order.push_back(r.id.value);
+    // The rows only change with the drawing or the panel's filter, sort and folding.
+    static std::vector<Row> cachedRows;
+    static std::tuple<std::uint64_t, std::uint64_t, std::string, bool, int, bool,
+                      std::set<std::uint32_t>, std::set<std::string>>
+        cachedKey{};
+    auto rowsKey = [&] {
+        return std::tuple{doc.uid(),     doc.revision(),    st.filter,    st.invert,
+                          st.sortColumn, st.sortDescending, st.collapsed, st.collapsedXrefs};
+    };
+    if (auto key = rowsKey(); key != cachedKey) {
+        cachedRows = buildRows(doc, st);
+        cachedKey = std::move(key);
+        st.order.clear();
+        for (const Row& r : cachedRows)
+            st.order.push_back(r.id.value);
+    }
+    std::vector<Row> rows = cachedRows;
 
     // Widths, order, shown columns and the sort are remembered with the panel layout (imgui.ini).
     constexpr ImGuiTableFlags kFlags =
@@ -1138,7 +1160,8 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
             if (col != st.sortColumn || desc != st.sortDescending) {
                 st.sortColumn = col;
                 st.sortDescending = desc;
-                rows = buildRows(doc, st);
+                rows = cachedRows = buildRows(doc, st);
+                cachedKey = rowsKey();
                 st.order.clear();
                 for (const Row& r : rows)
                     st.order.push_back(r.id.value);

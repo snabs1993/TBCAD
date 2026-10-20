@@ -2,6 +2,7 @@
 
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 #include "tbcad/core/core.h"
@@ -21,6 +22,10 @@ std::string layerPath(const Document& doc, LayerId id);
 int layerDepth(const Document& doc, LayerId id);
 // Direct children, sorted by name (case-insensitive).
 std::vector<LayerId> childrenOf(const Document& doc, LayerId parent);
+// The children of every layer at once, keyed by the parent's id value (0 = top level, where
+// layer 0 also sits), each list as childrenOf gives it. One pass over the table: use it instead of
+// calling childrenOf for each layer of a big table.
+std::unordered_map<std::uint32_t, std::vector<LayerId>> childIndex(const Document& doc);
 // Every layer, depth-first with parents before children and siblings sorted by name.
 std::vector<LayerId> layerTreeOrder(const Document& doc);
 // Number of entities (model space and block definitions) on the layer itself.

@@ -59,6 +59,7 @@ public:
     Harness& operator=(const Harness&) = delete;
 
     ui::AppCore& core() { return *core_; }
+    const ui::UiRegistry& ui() const { return *uiRegistry_; }
     // Runs `n` frames (input queued so far is delivered on the first).
     void frame(int n = 1);
     // Frames until nothing changes for a few frames in a row (at most `limit`).
