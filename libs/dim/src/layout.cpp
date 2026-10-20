@@ -904,6 +904,10 @@ Layout layoutDimension(const Document& doc, const DimensionData& d, double toler
     Layout L;
     const DimStyle st = scaledStyle(styleOf(doc, d.style), annoScale);
     Ctx c(doc, st, tolerance > 0 ? tolerance : 0.01);
+    // A dimension style's text style with a fixed height sets the text's height, as in AutoCAD:
+    // DIMTXT and DIMSCALE do not apply to it.
+    if (st.textStyle.value != 0 && c.tstyle && c.tstyle->height > 0)
+        c.th = c.tstyle->height;
     DimensionData shown = d;
     if (text::hasFields(shown.textOverride))
         shown.textOverride = text::expandFields(doc, shown.textOverride);

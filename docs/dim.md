@@ -41,7 +41,9 @@ where the cursor is.
 `precision`, rounded to `roundOff` when set, zero suppression (`.5`, `12`), then the kind prefix
 (`R` radius, `Ø` diameter), `prefix`, number, `suffix`. Angles show degrees with `°`. A text
 override replaces everything, with `<>` standing for the measured text. `overallScale` multiplies
-text height, gap, arrow size and the extension distances, never the measurement.
+text height, gap, arrow size and the extension distances, never the measurement. A text style
+with a fixed height (the dimension style's own text style) sets the text height instead, as in
+AutoCAD: neither the style's text height nor `overallScale` applies to it.
 
 ### Alternate units and tolerances
 
