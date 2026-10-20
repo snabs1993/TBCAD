@@ -225,8 +225,10 @@ Defaults: Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S, Ctrl+Z, Ctrl+Y, Ctrl+A, Esc. Act
   `ui::AliasEditor`. The Keybindings tab captures the next key press for an action, warns when the keys are
   already used (Take over / Cancel), and can unbind or restore the default, through
   `ui::KeybindingEditor` and `keybindings.json`. A hidden `SETTINGSPAGE <page>` opens a tab directly.
-- **Ctrl+L** (`view.expandLog`): the whole command history in one read-only box that can be selected and
-  copied. **F11** (`view.cleanScreen`): hides menus, tool strip, status bar and panels, leaving the
+- **Ctrl+L** (`view.expandLog`) or **F2** (`view.textWindow`, also `TEXTSCR`): the whole command
+  history in one read-only box that can be selected and copied. The command line's AutoComplete
+  also finds commands by synonym (ROUND finds FILLET) and by text inside the name (LINE finds
+  XLINE and PLINE). **F11** (`view.cleanScreen`): hides menus, tool strip, status bar and panels, leaving the
   viewport and the command line. Both are rebindable like any other action.
 - `IHost::requestUi(what)` lets a command ask the window to open something; `AppCore::takeUiRequests()`
   hands the requests to the window.

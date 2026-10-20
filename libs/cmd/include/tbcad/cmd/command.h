@@ -139,6 +139,11 @@ public:
 
     // Writes a line to the command line / log.
     void message(std::string text) { host_.print(text); }
+    // Run transparently ('CAL inside LINE): whether another command's prompt is waiting under
+    // this one, and the text to answer that prompt with once this command ends, as if typed.
+    bool transparentRun() const { return parent_ != nullptr; }
+    void answerParent(std::string text) { parentAnswer_ = std::move(text); }
+    const std::optional<std::string>& parentAnswer() const { return parentAnswer_; }
 
     // ---- prompts: `auto r = co_await ctx.getPoint("Specify first point");` ---------------------
     template <class R>
@@ -221,6 +226,7 @@ private:
     std::string name_;
     std::string label_;
     CommandContext* parent_;
+    std::optional<std::string> parentAnswer_{};
 
     std::optional<Transaction> tx_{};
     std::vector<ChangeSet> segments_{};

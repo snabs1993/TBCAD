@@ -6,6 +6,7 @@
 #include <misc/cpp/imgui_stdlib.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -226,6 +227,7 @@ std::string Gui::actionLabel(const std::string& action) const {
         {"view.zoomExtents", "View > Zoom Extents"},
         {"view.toggleCommandLine", "View > Command Line"},
         {"view.expandLog", "View > Command Log"},
+        {"view.textWindow", "Command history window (F2)"},
         {"view.cleanScreen", "View > Clean Screen"},
         {"help.quickStart", "Help > Quick Start"},
         {"tools.settings", "Tools > Settings"}};
@@ -315,7 +317,11 @@ void Gui::runAction(const std::string& action) {
         core_.settings().setBool("hud.enabled", cursorHud_);
     } else if (action == "view.expandLog")
         logExpanded_ = !logExpanded_;
-    else if (action == "view.cleanScreen")
+    else if (action == "view.textWindow") {
+        // F2 as in AutoCAD; F2 over a row of a panel (a layer to rename) belongs to that row.
+        if (!ImGui::IsAnyItemHovered())
+            logExpanded_ = !logExpanded_;
+    } else if (action == "view.cleanScreen")
         cleanScreen_ = !cleanScreen_;
     else if (action == "help.quickStart") {
         // F1 during a command explains that command; otherwise the quick start opens.
@@ -2113,7 +2119,7 @@ void Gui::logWindow() {
         if (ImGui::SmallButton("Copy all"))
             ImGui::SetClipboardText(text.c_str());
         ImGui::SameLine();
-        ImGui::TextDisabled("%zu lines. Ctrl+L or Esc closes.", lines.size());
+        ImGui::TextDisabled("%zu lines. F2, Ctrl+L or Esc closes.", lines.size());
         const ImGuiID logId = ImGui::GetID("##log");
         const std::string logChild =
             std::string(ImGui::GetCurrentWindow()->Name) + "/##log_" + [&] {
@@ -2348,7 +2354,15 @@ void Gui::drawSuggestions(ImVec2 inputPos, float width) {
             ImGui::PushStyleColor(ImGuiCol_Text, muted);
             ImGui::TextUnformatted(m.alias.empty() ? "" : ("(" + m.alias + ")").c_str());
             ImGui::SameLine(descX);
-            ImGui::TextUnformatted(m.description.c_str());
+            if (m.synonym.empty()) {
+                ImGui::TextUnformatted(m.description.c_str());
+            } else {
+                // Found through a synonym: say which word, so the name is learned.
+                std::string word = m.synonym;
+                for (char& ch : word)
+                    ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+                ImGui::Text("\"%s\": %s", word.c_str(), m.description.c_str());
+            }
             ImGui::PopStyleColor();
             ImGui::PopID();
         }

@@ -231,6 +231,10 @@ void CommandRunner::finishTop(bool failed, std::string_view error, bool notify) 
         host_.feedbackChanged(feedback_);
         refreshPrompt();
     }
+    // A transparent command that worked something out for the prompt under it ('CAL at "Specify
+    // next point") answers that prompt now, as if the result had been typed there.
+    if (!failed && !a.ctx->cancelled() && a.ctx->parentAnswer() && !stack_.empty())
+        (void)submitInput(Input::typed(*a.ctx->parentAnswer()));
     // MULTIPLE: the next run of the repeated command. A run that never asked for anything would
     // repeat forever, so it ends the repeating.
     if (!multiple_.empty() && stack_.empty()) {

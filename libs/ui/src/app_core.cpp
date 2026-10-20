@@ -173,6 +173,7 @@ AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
     keybindings_.declare("view.commandPalette", "Ctrl+Shift+P");
     keybindings_.declare("view.cursorHud", "F12");
     keybindings_.declare("view.expandLog", "Ctrl+L");
+    keybindings_.declare("view.textWindow", "F2");
     keybindings_.declare("view.cleanScreen", "F11");
     keybindings_.declare("help.quickStart", "F1");
     keybindings_.declare("tools.settings", "");

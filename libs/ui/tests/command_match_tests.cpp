@@ -34,6 +34,8 @@ struct Fx {
         add("CIRCLE", {"C", "CI"}, "Draw a circle");
         add("COPY", {"CO"}, "Copy objects");
         add("POLYLINE", {"PL"}, "Draw connected segments");
+        add("FILLET", {"F"}, "Round the corner between two objects");
+        add("XLINE", {"XL"}, "Draw an infinite construction line");
     }
 };
 
@@ -69,16 +71,33 @@ TEST_CASE("exact alias beats alias prefix beats name prefix beats fuzzy") {
     CHECK(m[0].rank == CommandMatch::Rank::Fuzzy);
 }
 
+TEST_CASE("synonyms and the middle of a name find commands, as AutoCAD's AutoComplete") {
+    Fx fx;
+    auto m = matchCommands(fx.reg, "rou");
+    REQUIRE_FALSE(m.empty());
+    CHECK(m[0].name == "FILLET");
+    CHECK(m[0].rank == CommandMatch::Rank::Synonym);
+    CHECK(m[0].synonym == "ROUND");
+    CHECK(matchCommands(fx.reg, "ro").empty() == false);  // two letters: description words
+    // LINE leads, then the names that hold it: XLINE, POLYLINE.
+    m = matchCommands(fx.reg, "line");
+    REQUIRE(m.size() >= 3);
+    CHECK(m[0].name == "LINE");
+    CHECK(m[1].rank == CommandMatch::Rank::MidString);
+    CHECK(m[1].name == "XLINE");  // the shorter name first
+    CHECK(m[2].name == "POLYLINE");
+}
+
 TEST_CASE("description words match as the last resort") {
     Fx fx;
     auto m = matchCommands(fx.reg, "straight");
     CHECK(names(m) == std::vector<std::string>{"LINE"});
-    CHECK(matchCommands(fx.reg, "x").empty());  // one letter never goes fuzzy
+    CHECK(matchCommands(fx.reg, "q").empty());  // one letter never goes fuzzy
 }
 
 TEST_CASE("empty query lists everything, limited") {
     Fx fx;
-    CHECK(matchCommands(fx.reg, "").size() == 5);
+    CHECK(matchCommands(fx.reg, "").size() == 7);
     CHECK(matchCommands(fx.reg, "", 2).size() == 2);
 }
 

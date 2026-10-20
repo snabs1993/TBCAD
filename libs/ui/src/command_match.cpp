@@ -18,6 +18,24 @@ bool startsWith(const std::string& s, const std::string& prefix) {
     return s.size() >= prefix.size() && s.compare(0, prefix.size(), prefix) == 0;
 }
 
+// Words people type for a command they do not know the name of (AutoCAD's synonym list).
+struct Synonym {
+    const char* word;
+    const char* command;
+};
+constexpr Synonym kSynonyms[] = {
+    {"ROUND", "FILLET"},        {"CORNER", "FILLET"},   {"BEVEL", "CHAMFER"},
+    {"SYMBOL", "INSERT"},       {"DELETE", "ERASE"},    {"REMOVE", "ERASE"},
+    {"DUPLICATE", "COPY"},      {"TURN", "ROTATE"},     {"SPIN", "ROTATE"},
+    {"FLIP", "MIRROR"},         {"PARALLEL", "OFFSET"}, {"CUT", "TRIM"},
+    {"RESIZE", "SCALE"},        {"ENLARGE", "SCALE"},   {"ELONGATE", "LENGTHEN"},
+    {"NOTE", "MTEXT"},          {"LABEL", "MTEXT"},     {"WRITE", "MTEXT"},
+    {"SQUARE", "RECTANG"},      {"BOX", "RECTANG"},     {"HEXAGON", "POLYGON"},
+    {"PATTERN", "HATCH"},       {"RULER", "DIST"},      {"PRINT", "PLOT"},
+    {"PICTURE", "IMAGEATTACH"}, {"CALCULATOR", "CAL"},  {"SHIFT", "MOVE"},
+    {"GROUPS", "GROUP"},        {"COUNT", "QSELECT"},
+};
+
 }  // namespace
 
 bool isSubsequence(std::string_view query, std::string_view text) {
@@ -85,6 +103,18 @@ std::vector<CommandMatch> matchCommands(const cmd::Registry& registry, std::stri
                 }
         if (!matched && startsWith(name, query)) {
             m.rank = CommandMatch::Rank::NamePrefix;
+            matched = true;
+        }
+        if (!matched && query.size() >= 3)
+            for (const Synonym& syn : kSynonyms)
+                if (name == syn.command && startsWith(syn.word, query)) {
+                    m.rank = CommandMatch::Rank::Synonym;
+                    m.synonym = syn.word;
+                    matched = true;
+                    break;
+                }
+        if (!matched && query.size() >= 2 && name.find(query) != std::string::npos) {
+            m.rank = CommandMatch::Rank::MidString;
             matched = true;
         }
         if (!matched && query.size() >= 2 &&

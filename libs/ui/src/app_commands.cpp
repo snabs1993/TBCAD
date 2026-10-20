@@ -367,6 +367,20 @@ public:
     }
 };
 
+// TEXTSCR: the whole command history in a window (F2, as in AutoCAD).
+class TextScrCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "TEXTSCR"; }
+    std::string_view description() const override {
+        return "Show the command history in a window (F2)";
+    }
+    bool isTransparent() const override { return true; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().requestUi("action:view.textWindow");
+        co_return;
+    }
+};
+
 // Hidden (no description): opens the Settings dialog on one page, for scripts and screenshots.
 class SettingsPageCommand final : public cmd::Command {
 public:
@@ -786,6 +800,7 @@ void registerAppCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<PanCommand>());
     (void)registry.add(std::make_unique<DevGenCommand>());
     (void)registry.add(std::make_unique<SettingsCommand>());
+    (void)registry.add(std::make_unique<TextScrCommand>());
     (void)registry.add(std::make_unique<SettingsPageCommand>());
     (void)registry.add(std::make_unique<DraftingSettingsCommand>());
     (void)registry.add(

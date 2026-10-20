@@ -67,6 +67,10 @@ it `Input` events: `Input::typed("0,0")`, `enter()`, `cancel()` (Esc), `click(Ra
 * Transparent commands (`isTransparent()` is true, e.g. ZOOM): typed with a leading apostrophe
   (`'ZOOM`) or started with `startTransparent()` while another command waits for input. They share
   the parent's transaction, so their document edits belong to the parent's undo step.
+  `CommandContext::answerParent(text)` hands a result back: when the transparent command ends,
+  the text answers the prompt it interrupted as if typed there (`'CAL` at "Specify next point"
+  takes `1200/4,50*2` and the line goes to 300,100). Transparent: ZOOM, PAN, CAL, DIST, ID,
+  REDRAW, REGEN, TEXTSCR and the drafting toggles.
 * Typed points: `x,y`, `@dx,dy` (relative to the last point entered), `@d<a`, `d<a` (polar from
   the origin), `#x,y`. Lengths accept units (`1m`, `3in`); angles are in degrees by default.
   Drafting aids extend this by installing a `CommandLineParser` with `runner.setLineParser(...)`
