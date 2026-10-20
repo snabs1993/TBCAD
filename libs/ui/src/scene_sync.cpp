@@ -503,6 +503,21 @@ std::size_t SceneSync::pumpPending(const render::Camera2D& camera, std::size_t l
     }
     buildSlice();
     if (built == 0 && !stopped) {  // nothing in view: use the time to catch up on the rest
+        // Out of view, so built as for a view of everything still waiting: built at a close zoom,
+        // 6,000 big AR-CONC hatches took 1.5 GB. They count as stale and are rebuilt for the
+        // camera when it comes to them.
+        BBox2 rest;
+        for (const PendingRec& rec : pending_)
+            if (!rec.dead && !rec.box.empty())
+                rest.merge(rec.box);
+        const double viewSize = std::max(view.width(), view.height()) - 2 * pad;
+        if (!rest.empty() && viewSize > 0) {
+            const double coarse = pixelSizeMm_ * std::max(rest.width(), rest.height()) / viewSize;
+            if (coarse > 4 * pixelSizeMm_) {
+                pixelSizeMm_ = coarse;
+                skippedOffscreen_ = true;
+            }
+        }
         for (PendingRec& rec : pending_) {
             if (built + slice.size() >= limit / 2)
                 break;
@@ -516,6 +531,7 @@ std::size_t SceneSync::pumpPending(const render::Camera2D& camera, std::size_t l
             }
         }
         buildSlice();
+        pixelSizeMm_ = camera.pixelSizeMm();
     }
     if (pendingDead_ * 2 > pending_.size())
         compactPending();

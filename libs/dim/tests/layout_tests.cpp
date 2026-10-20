@@ -182,6 +182,32 @@ TEST_CASE("angular dimension: arc, extension lines, arrows, text on the arc") {
     CHECK(count(layoutDimension(doc, inside), Role::ExtLine) == 0);
 }
 
+// As in AutoCAD: text on the arc that fits there, but not together with the arrows, sends the
+// arrows outside (best fit); with "text first" the arrows stay in.
+TEST_CASE("angular dimension: arrows go outside when the text takes the room on the arc") {
+    Document doc;
+    auto sweepOf = [](const Layout& L) {
+        double total = 0;
+        for (const auto& a : L.arcs)
+            total += normalizeAngle(a.endAngle - a.startAngle);
+        return total;
+    };
+    // The text's width, from an arc with room for everything.
+    const Layout roomy = layoutDimension(doc, angular2({0, 0}, {10, 0}, {0, 0}, {0, 10}, {50, 50}));
+    CHECK(sweepOf(roomy) == doctest::Approx(kPi / 2));
+    const double textW = roomy.text.width + 2 * 0.625;
+    // An arc as long as the text and one arrow: the text fits, the arrows do not.
+    const double r = (textW + 2.5) / (kPi / 2);
+    const DimensionData d =
+        angular2({0, 0}, {10, 0}, {0, 0}, {0, 10}, {r / std::sqrt(2.0), r / std::sqrt(2.0)});
+    CHECK(sweepOf(layoutDimension(doc, d)) > kPi / 2 + 0.1);
+
+    Transaction tx = doc.begin("style");
+    REQUIRE(tx.modifyDimStyle(kDimStyleStandard, [](DimStyle& s) { s.fit = DimFit::TextFirst; }));
+    tx.commit();
+    CHECK(sweepOf(layoutDimension(doc, d)) == doctest::Approx(kPi / 2));
+}
+
 TEST_CASE("DIMSCALE scales text and arrows but not the measurement") {
     Document doc;
     DimensionData d = linear({0, 0}, {10000, 0}, {5000, 1000});

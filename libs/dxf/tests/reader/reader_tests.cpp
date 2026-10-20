@@ -1160,6 +1160,33 @@ TEST_CASE("dimension: style overrides in its extended data and a relative text h
     CHECK(near(ds->arrowSize, 400.0));
 }
 
+// Only a height code that starts the text sizes the whole dimension text; one in the middle
+// ("9d{\\H0.8x;b}", a smaller "b") leaves the style's height alone.
+TEST_CASE("dimension: a relative height in the middle of the text is not the text height") {
+    auto heightFor = [](const std::string& text) {
+        Pairs p;
+        p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE");
+        p.g(0, "DIMSTYLE").g(2, "S").g(140, 2.0).g(41, 1.0).g(40, 1.0);
+        p.g(0, "ENDTAB").end();
+        p.section("ENTITIES");
+        p.g(0, "DIMENSION").g(8, "0").g(2, "*D1").g(3, "S").g(10, 5.0).g(20, 5.0).g(11, 5.0);
+        p.g(21, 8.0).g(70, 1).g(13, 0.0).g(23, 0.0).g(14, 10.0).g(24, 0.0).g(42, 10.0);
+        p.g(1, text);
+        p.end().g(0, "EOF");
+        Loaded l = load(p.text);
+        auto dims = modelEntities<DimensionData>(l.doc());
+        REQUIRE(dims.size() == 1);
+        const DimStyle* ds = l.doc().dimStyle(dims[0]->style);
+        REQUIRE(ds != nullptr);
+        return ds->textHeight;
+    };
+    CHECK(near(heightFor("9d{\\H0.8x;b}"), 2.0));
+    CHECK(near(heightFor("<>{\\H0.5x;mm}"), 2.0));
+    CHECK(near(heightFor("{\\H0.5x;<>}"), 1.0));
+    CHECK(near(heightFor("\\A1;{\\H0.5x;<>}"), 1.0));
+    CHECK(near(heightFor("{\\Fromans|c0;\\H0.5x;<>}"), 1.0));
+}
+
 TEST_CASE("hatch: gradient colours, angle and name are kept") {
     Pairs p;
     p.section("ENTITIES");

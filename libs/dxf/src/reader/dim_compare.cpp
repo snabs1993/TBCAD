@@ -202,7 +202,8 @@ void Importer::compareDimension(const Record& r, const Entity& dim) {
         if (const auto* m = entityAs<MTextData>(t)) {
             c.storedText = plain(m->utf8);
             storedRaw = m->utf8;
-            storedHeight = m->height;
+            // A relative height that starts the text sizes all of it.
+            storedHeight = m->height * leadingHeightFactor(m->utf8);
             if (m->attach == Attachment::MiddleCenter)
                 storedCenter = m->position;
             storedSize = " attach=" + std::to_string(static_cast<int>(m->attach));
