@@ -344,7 +344,8 @@ std::string Writer::handleRef(EntityId id) const {
 }
 
 void Writer::writeDimExtras(const std::vector<DimBreak>& breaks, const std::vector<EntityId>& with,
-                            std::uint32_t autoBreaks, const DimensionData* dim) {
+                            std::uint32_t autoBreaks, const DimensionData* dim,
+                            const LeaderData* leader) {
     std::vector<std::string> items;
     const auto num = [](double v) {
         char buf[32];
@@ -359,6 +360,8 @@ void Writer::writeDimExtras(const std::vector<DimBreak>& breaks, const std::vect
         for (EntityId id : with)
             items.push_back("w=" + handleRef(id));
     }
+    if (leader && leaderKeepsTextPos(*leader))
+        items.push_back("tp=" + pt(leader->textPos));
     if (dim) {
         for (const Vec2& j : dim->jogs)
             items.push_back("j=" + pt(j));
@@ -1652,7 +1655,7 @@ void Writer::writeLeader(const Props& p, const LeaderData& d, std::uint64_t owne
         o.pt(211, {1, 0});
         o.pt(212, {0, 0});
         o.pt(213, {0, 0});
-        writeDimExtras(d.breaks, d.breakWith, d.autoBreaks, nullptr);
+        writeDimExtras(d.breaks, d.breakWith, d.autoBreaks, nullptr, &d);
         count("LEADER");
     }
     if (!d.utf8.empty()) {
