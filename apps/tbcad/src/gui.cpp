@@ -1235,20 +1235,26 @@ void Gui::blockEditBar() {
 }
 
 // The contextual tab: while the selection is made only of hatches, text, dimensions or blocks,
-// a strip under the menu offers the tools for them (what the ribbon's contextual tab holds).
-// Setting ui.contextTabs ("0" hides it).
+// a strip over the top of the drawing offers the tools for them (what the ribbon's contextual tab
+// holds). Setting ui.contextTabs ("0" hides it).
 void Gui::contextualBar() {
     if (core_.runner().active() || !flag("ui.contextTabs", true))
         return;
     const ui::ContextualTab* tab = registry_.contextualTabFor(core_.document(), core_.selection());
     if (!tab)
         return;
-    ImGuiViewport* vp = ImGui::GetMainViewport();
-    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
-                                   ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoNav;
-    const float h = ImGui::GetFrameHeight() + ImGui::GetStyle().WindowPadding.y * 0.8f;
-    if (ImGui::BeginViewportSideBar("##contexttab", vp, ImGuiDir_Up, h, flags)) {
-        ImGui::AlignTextToFramePadding();
+    // Floats over the top of the drawing (where the last frame put it), so the drawing does not
+    // jump when the selection changes.
+    if (lastRect_.w < 200 || lastRect_.h < 100)
+        return;
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                   ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+                                   ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking |
+                                   ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing |
+                                   ImGuiWindowFlags_AlwaysAutoResize;
+    ImGui::SetNextWindowPos(ImVec2(lastRect_.x + 8, lastRect_.y + 6));
+    ImGui::SetNextWindowBgAlpha(0.92f);
+    if (ImGui::Begin("##contexttab", nullptr, flags)) {
         ImGui::TextColored(ImVec4(0.35f, 0.65f, 1.0f, 1.0f), "%s", tab->title.c_str());
         ImGui::SameLine(0, 18);
         ui::PanelContext pc;

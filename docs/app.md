@@ -40,7 +40,7 @@ Command modules call these from their `registerUi(UiRegistry&)` function (declar
 | `addStatusToggle(id, label, get, set)` | A toggle in the status bar (SNAP, GRID ...). The built-in ones store `drafting.snap`, `view.grid`, `drafting.ortho`, `drafting.polar` and `drafting.osnap` in the settings; drafting aids read them through `IHost::setting`. |
 | `addOverlayDrawer(fn)` | Draw into the per-frame overlay (grips, tracking lines). |
 | `addPropertySection(kind, fn)` | A section of the Properties panel for one entity kind. |
-| `addContextualTab(id, title, kinds, fn)` | A strip of tools over the drawing, shown while the selection is made only of these entity kinds and no command runs (the ribbon's contextual tab). `contextualTabFor(doc, selection)` picks the first tab that covers the selection. The hatch, text, dimension and block modules each add one. Setting `ui.contextTabs` = `0` turns the strip off. |
+| `addContextualTab(id, title, kinds, fn)` | A strip of tools floating over the top of the drawing, shown while the selection is made only of these entity kinds and no command runs (the ribbon's contextual tab). `contextualTabFor(doc, selection)` picks the first tab that covers the selection. The hatch, text, dimension and block modules each add one. Setting `ui.contextTabs` = `0` turns the strip off. |
 
 `PanelContext` holds the document, host, selection, camera and a `runCommand` function. Link
 `tbcad::ui`, not `tbcad::appcore`: the latter would make a cycle through the generated registry.
