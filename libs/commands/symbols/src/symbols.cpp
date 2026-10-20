@@ -45,7 +45,7 @@ Entity attribute(Vec2 at, double height, const char* tag, const char* prompt, co
     TextData t;
     t.position = t.alignPoint = at;
     t.height = height;
-    t.utf8 = value;
+    t.utf8 = tag;  // a definition shows its tag, as ATTDEF and a DXF give it
     t.h = h;
     t.v = v;
     AttDefInfo a;
