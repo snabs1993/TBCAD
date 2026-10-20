@@ -233,7 +233,7 @@ private:
     // are given handles before any is written (see loadSourceHandles).
     void writeDimExtras(const std::vector<DimBreak>& breaks, const std::vector<EntityId>& with,
                         std::uint32_t autoBreaks, const DimensionData* dim,
-                        const LeaderData* leader = nullptr);
+                        const LeaderData* leader = nullptr, std::uint64_t leaderText = 0);
     // A leader without text keeps its text point (where text added later goes) only here: DXF
     // reads it back at the last vertex.
     static bool leaderKeepsTextPos(const LeaderData& l) {

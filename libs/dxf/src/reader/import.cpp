@@ -3097,6 +3097,7 @@ Result<ImportResult> Importer::run() {
                 return out.size() == want && !*at ? out : std::vector<double>{};
             };
             Transaction tx = doc_->begin("dimension notes");
+            std::vector<EntityId> leaderTexts;
             for (EntityId id : noted) {
                 (void)tx.modify(id, [&](Entity& e) {
                     ExtData x = e.common.ext.get();
@@ -3109,6 +3110,7 @@ Result<ImportResult> Importer::run() {
                     std::array<DimAssoc, 4> assoc{};
                     std::optional<Vec2> textPos;
                     std::vector<EntityId> sources;
+                    EntityId text;
                     for (const XdataApp& a : x.xdata) {
                         if (!isNote(a))
                             continue;
@@ -3128,6 +3130,8 @@ Result<ImportResult> Importer::run() {
                                 withWhole = withWhole && w;
                                 if (w)
                                     with.push_back(w);
+                            } else if (t.rfind("txt=", 0) == 0) {
+                                text = target(t.substr(4));
                             } else if (t.rfind("src=", 0) == 0) {
                                 if (const EntityId on = target(t.substr(4)))
                                     sources.push_back(on);
@@ -3183,11 +3187,22 @@ Result<ImportResult> Importer::run() {
                         l->autoBreaks = autoBreaks;
                         if (textPos && l->utf8.empty())
                             l->textPos = *textPos;
+                        // The leader's text came as a multiline text of its own.
+                        const Entity* te = text ? doc_->find(text) : nullptr;
+                        if (const auto* m = te ? entityAs<MTextData>(*te) : nullptr) {
+                            l->utf8 = m->utf8;
+                            l->textPos = m->position;
+                            e.common.annotative = te->common.annotative;
+                            e.common.annoScales = te->common.annoScales;
+                            leaderTexts.push_back(text);
+                        }
                     } else if (auto* h = entityAs<HatchData>(e)) {
                         h->sourceBoundary = std::move(sources);
                     }
                 });
             }
+            for (EntityId id : leaderTexts)
+                (void)tx.erase(id);
             tx.commit();
         }
     }

@@ -1002,7 +1002,7 @@ std::string Writer::tablesSection() {
                     d->flipArrow2)
                     extApps.insert("TBCAD_DIM");
             } else if (const auto* l = entityAs<LeaderData>(e);
-                       l && (!l->breaks.empty() || leaderKeepsTextPos(*l))) {
+                       l && (!l->breaks.empty() || leaderKeepsTextPos(*l) || !l->utf8.empty())) {
                 extApps.insert("TBCAD_DIM");
             } else if (const auto* h = entityAs<HatchData>(e); h && hatchNamesSources(*h)) {
                 extApps.insert("TBCAD_DIM");

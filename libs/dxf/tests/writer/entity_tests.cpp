@@ -2206,4 +2206,40 @@ TEST_CASE("a gradient hatch keeps its kind, shift and one-colour tint") {
     CHECK(hatches == 1);
 }
 
+TEST_CASE("a leader keeps its text: the multiline text written after it comes back into it") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("t");
+        LeaderData ld;
+        ld.vertices = {{0, 0}, {30, 20}};
+        ld.textPos = {33.5, 20};
+        ld.utf8 = "first\nsecond";
+        Entity e = make(Indirect<LeaderData>(ld));
+        e.common.annotative = true;
+        REQUIRE(tx.add(std::move(e)));
+        MTextData m;  // an unrelated text stays
+        m.position = {100, 100};
+        m.height = 2.5;
+        m.utf8 = "other";
+        REQUIRE(tx.add(make(Indirect<MTextData>(m))));
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    CHECK_MESSAGE(rt.diff.empty(), rt.diff);
+    int leaders = 0, texts = 0;
+    rt.back->forEachEntity([&](const Entity& e) {
+        if (const auto* l = entityAs<LeaderData>(e)) {
+            ++leaders;
+            CHECK(l->utf8 == "first\nsecond");
+            CHECK(l->textPos.x == doctest::Approx(33.5));
+            CHECK(e.common.annotative);
+            CHECK(e.common.ext.get().xdata.empty());
+        }
+        if (entityAs<MTextData>(e))
+            ++texts;
+    });
+    CHECK(leaders == 1);
+    CHECK(texts == 1);
+}
+
 }  // namespace tbcad::dxf

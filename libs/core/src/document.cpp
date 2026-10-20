@@ -72,41 +72,46 @@ EntityStore::Chunk::~Chunk() {
     ::operator delete(mem, std::align_val_t{alignof(Entity)});
 }
 
-void EntityStore::detach(std::shared_ptr<Chunk>& c) {
+void EntityStore::detach(std::size_t chunk) {
+    std::shared_ptr<Chunk>& c = chunks_[chunk];
     auto copy = std::make_shared<Chunk>();
     for (; copy->count < c->count; ++copy->count)
         new (&copy->mem[copy->count]) Entity(c->mem[copy->count]);
     c = std::move(copy);
+    mems_[chunk] = c->mem;
 }
 
 EntityStore::~EntityStore() = default;
 
 std::size_t EntityStore::pushBack(Entity&& e) {
-    if (size_ == chunks_.size() * kChunk)
+    if (size_ == chunks_.size() * kChunk) {
         chunks_.push_back(std::make_shared<Chunk>());
+        mems_.push_back(chunks_.back()->mem);
+    }
+    if (chunks_[size_ / kChunk].use_count() > 1)
+        detach(size_ / kChunk);
     std::shared_ptr<Chunk>& c = chunks_[size_ / kChunk];
-    if (c.use_count() > 1)
-        detach(c);
     new (&c->mem[c->count]) Entity(std::move(e));
     ++c->count;
     return size_++;
 }
 
 void EntityStore::popBack() {
+    if (chunks_[(size_ - 1) / kChunk].use_count() > 1)
+        detach((size_ - 1) / kChunk);
     std::shared_ptr<Chunk>& c = chunks_[(size_ - 1) / kChunk];
-    if (c.use_count() > 1)
-        detach(c);
     c->mem[--c->count].~Entity();
     --size_;
 }
 
 void EntityStore::shareInto(EntityStore& out) const {
-    out.chunks_.clear();
     const std::size_t full = size_ / kChunk;
     out.chunks_.assign(chunks_.begin(), chunks_.begin() + static_cast<std::ptrdiff_t>(full));
+    out.mems_.assign(mems_.begin(), mems_.begin() + static_cast<std::ptrdiff_t>(full));
     if (size_ % kChunk) {
         out.chunks_.push_back(chunks_[full]);
-        detach(out.chunks_.back());
+        out.mems_.push_back(mems_[full]);
+        out.detach(full);
     }
     out.size_ = size_;
 }
