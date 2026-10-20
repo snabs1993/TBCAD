@@ -162,6 +162,27 @@ TEST_CASE("DIMRADIUS and DIMDIAMETER on a circle and an arc") {
     CHECK(g.dims().empty());
 }
 
+// As AutoCAD: the dimension commands take Mtext (the text, like Text) and Angle (the text fixed at
+// an angle) before the location.
+TEST_CASE("dimension commands: Mtext and Angle before the location") {
+    Fixture f;
+    f.host->run("DIMLINEAR", {"0,0", "100,0", "Mtext", "L=<>", "Angle", "30", "50,-20"});
+    auto d = f.dims();
+    REQUIRE(d.size() == 1);
+    CHECK(d[0]->textOverride == "L=<>");
+    CHECK(d[0]->textRotated);
+    CHECK(d[0]->textRotation == doctest::Approx(kPi / 6));
+    CHECK(dim::layoutDimension(f.doc, *d[0]).text.rotation == doctest::Approx(kPi / 6));
+
+    Fixture g;
+    EntityId c = g.addEntity(CircleData{{0, 0}, 10});
+    g.host->run("DIMRADIUS", {ScriptItem::pick(c, {10, 0}), "Angle", "45", "20,0"});
+    auto r = g.dims();
+    REQUIRE(r.size() == 1);
+    CHECK(r[0]->textRotated);
+    CHECK(dim::layoutDimension(g.doc, *r[0]).text.rotation == doctest::Approx(kPi / 4));
+}
+
 TEST_CASE("DIMANGULAR: two lines, perpendicular reads 90 degrees - three points") {
     Fixture f;
     EntityId a = f.addEntity(LineData{{0, 0}, {50, 0}});

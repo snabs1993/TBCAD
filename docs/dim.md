@@ -117,13 +117,15 @@ entities for the arrowheads and a Text (MText for leaders); the command module r
 
 | Command | Alias | Flow |
 | --- | --- | --- |
-| DIMLINEAR | DLI | two points (Enter = pick an object), then the line position. Keywords: Text, Horizontal, Vertical, Rotated. The cursor side picks horizontal or vertical |
-| DIMALIGNED | DAL | two points or an object, then the line position. Keyword: Text |
-| DIMRADIUS | DRA | pick an arc or circle, then where the text goes. Keyword: Text |
+| DIMLINEAR | DLI | two points (Enter = pick an object), then the line position. Keywords: Mtext, Text, Angle, Horizontal, Vertical, Rotated. The cursor side picks horizontal or vertical |
+| DIMALIGNED | DAL | two points or an object, then the line position. Keywords: Mtext, Text, Angle |
+| DIMRADIUS | DRA | pick an arc or circle, then where the text goes. Keywords: Mtext, Text, Angle |
 | DIMDIAMETER | DDI | same |
-| DIMANGULAR | DAN | two lines then the arc position; Enter at the first prompt = vertex and two points. Keyword: Text |
+| DIMANGULAR | DAN | two lines then the arc position; Enter at the first prompt = vertex and two points. Keywords: Mtext, Text, Angle |
 | LEADER | LE | points, Enter, annotation text |
 | DIMSTYLE | D | `Current`, `New`, `Delete`, `Edit`, `List`, `Done` |
+
+As in AutoCAD, **Mtext** and **Text** set the dimension text (`<>` = the measurement) and **Angle** fixes the text at an angle, the same as DIMEDIT Rotate; DIMARC and DIMORDINATE take them too.
 
 DIMSTYLE Edit takes property/value pairs, so a style can be changed from one command line:
 `DIMSTYLE Edit Arch TextHeight 3.5 ArrowType Tick Done Done`. Properties: TextHeight, TextGap,

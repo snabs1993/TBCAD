@@ -15,6 +15,15 @@ namespace tbcad::dimcmd {
 
 namespace {
 
+// The Angle option of the dimension commands, as in AutoCAD: the text is fixed at this angle (a
+// direction in the current UCS).
+auto askTextAngle(cmd::CommandContext& ctx) {
+    cmd::AngleOptions ao;
+    ao.defaultValue = 0;
+    ao.inUcs = true;
+    return ctx.getAngle("Specify angle of dimension text", std::move(ao));
+}
+
 // ---- DIMLINEAR / DIMALIGNED --------------------------------------------------------------------
 
 class LengthDimCommand final : public cmd::Command {
@@ -69,11 +78,12 @@ public:
         Mode mode = aligned_ ? Mode::Rotated : Mode::Auto;
         double rotation = 0;
         std::string override;
+        std::optional<double> textAngle;  // Angle: the text fixed at this angle
         for (;;) {
             cmd::PointOptions lo;
-            lo.keywords =
-                aligned_ ? std::vector<std::string>{"Text"}
-                         : std::vector<std::string>{"Text", "Horizontal", "Vertical", "Rotated"};
+            lo.keywords = aligned_ ? std::vector<std::string>{"Mtext", "Text", "Angle"}
+                                   : std::vector<std::string>{"Mtext",      "Text",     "Angle",
+                                                              "Horizontal", "Vertical", "Rotated"};
             auto* c = &ctx;
             const bool aligned = aligned_;
             const double ucs = ctx.host().ucsAngle();
@@ -96,6 +106,10 @@ public:
                 }
                 d.defPts = {p1, p2, cursor, {}};
                 d.textOverride = override;
+                if (textAngle) {
+                    d.textRotated = true;
+                    d.textRotation = *textAngle;
+                }
                 return d;
             };
             lo.preview = [c, build](Vec2 cursor, DisplayList& out) {
@@ -103,7 +117,10 @@ public:
             };
             auto where = co_await ctx.getPoint("Specify dimension line location", lo);
             if (where.status == Status::Keyword) {
-                if (where.keyword == "Text") {
+                if (where.keyword == "Angle") {
+                    if (auto a = co_await askTextAngle(ctx); a.ok())
+                        textAngle = a.value;
+                } else if (where.keyword == "Text" || where.keyword == "Mtext") {
                     cmd::StringOptions so;
                     so.defaultValue = "<>";
                     auto s = co_await ctx.getString("Dimension text, <> is the measurement", so);
@@ -168,9 +185,10 @@ public:
             co_return;
         }
         std::string override;
+        std::optional<double> textAngle;  // Angle: the text fixed at this angle
         for (;;) {
             cmd::PointOptions lo;
-            lo.keywords = {"Text"};
+            lo.keywords = {"Mtext", "Text", "Angle"};
             auto* c = &ctx;
             const bool dia = diameter_;
             auto build = [=](Vec2 cursor) {
@@ -185,6 +203,10 @@ public:
                 d.textPos = cursor;
                 d.textPosUser = true;
                 d.textOverride = override;
+                if (textAngle) {
+                    d.textRotated = true;
+                    d.textRotation = *textAngle;
+                }
                 return d;
             };
             lo.preview = [c, build](Vec2 cursor, DisplayList& out) {
@@ -192,6 +214,11 @@ public:
             };
             auto where = co_await ctx.getPoint("Specify dimension line location", lo);
             if (where.status == Status::Keyword) {
+                if (where.keyword == "Angle") {
+                    if (auto a = co_await askTextAngle(ctx); a.ok())
+                        textAngle = a.value;
+                    continue;
+                }
                 cmd::StringOptions so;
                 so.defaultValue = "<>";
                 auto s = co_await ctx.getString("Dimension text, <> is the measurement", so);
@@ -235,9 +262,10 @@ public:
         }
         const ArcData a = *arc;
         std::string override;
+        std::optional<double> textAngle;  // Angle: the text fixed at this angle
         for (;;) {
             cmd::PointOptions lo;
-            lo.keywords = {"Text"};
+            lo.keywords = {"Mtext", "Text", "Angle"};
             auto* c = &ctx;
             auto build = [=](Vec2 cursor) {
                 DimensionData d;
@@ -247,6 +275,10 @@ public:
                     a.center + Vec2{std::cos(a.startAngle), std::sin(a.startAngle)} * a.radius,
                     a.center + Vec2{std::cos(a.endAngle), std::sin(a.endAngle)} * a.radius, cursor};
                 d.textOverride = override;
+                if (textAngle) {
+                    d.textRotated = true;
+                    d.textRotation = *textAngle;
+                }
                 dim::refresh(c->doc(), d);
                 return d;
             };
@@ -255,6 +287,11 @@ public:
             };
             auto where = co_await ctx.getPoint("Specify arc length dimension location", lo);
             if (where.status == Status::Keyword) {
+                if (where.keyword == "Angle") {
+                    if (auto a = co_await askTextAngle(ctx); a.ok())
+                        textAngle = a.value;
+                    continue;
+                }
                 cmd::StringOptions so;
                 so.defaultValue = "<>";
                 auto s = co_await ctx.getString("Dimension text, <> is the measurement", so);
@@ -290,10 +327,11 @@ public:
         const Vec2 datum = drafting::currentUcs(&ctx.doc(), &ctx.host()).origin;
         std::optional<bool> forceX;  // set by the Xdatum / Ydatum keywords
         std::string override;
+        std::optional<double> textAngle;  // Angle: the text fixed at this angle
         for (;;) {
             cmd::PointOptions lo;
             lo.base = P;
-            lo.keywords = {"Xdatum", "Ydatum", "Text"};
+            lo.keywords = {"Xdatum", "Ydatum", "Mtext", "Text", "Angle"};
             auto* c = &ctx;
             const double ucs = ctx.host().ucsAngle();
             auto build = [=](Vec2 cursor) {
@@ -308,20 +346,27 @@ public:
                 d.rotation = xDatum ? 0 : kPi / 2;
                 d.defPts = {P, cursor, datum, Vec2{}};
                 d.textOverride = override;
+                if (textAngle) {
+                    d.textRotated = true;
+                    d.textRotation = *textAngle;
+                }
                 dim::refresh(c->doc(), d);
                 return d;
             };
             lo.preview = [c, build](Vec2 cursor, DisplayList& out) {
                 previewDim(*c, build(cursor), out);
             };
-            auto where =
-                co_await ctx.getPoint("Specify leader endpoint or [Xdatum/Ydatum/Text]", lo);
+            auto where = co_await ctx.getPoint(
+                "Specify leader endpoint or [Xdatum/Ydatum/Mtext/Text/Angle]", lo);
             if (where.status == Status::Keyword) {
                 if (where.keyword == "Xdatum")
                     forceX = true;
                 else if (where.keyword == "Ydatum")
                     forceX = false;
-                else {
+                else if (where.keyword == "Angle") {
+                    if (auto a = co_await askTextAngle(ctx); a.ok())
+                        textAngle = a.value;
+                } else {
                     cmd::StringOptions so;
                     so.defaultValue = "<>";
                     auto s = co_await ctx.getString("Dimension text, <> is the measurement", so);
@@ -476,9 +521,10 @@ public:
         }
 
         std::string override;
+        std::optional<double> textAngle;  // Angle: the text fixed at this angle
         for (;;) {
             cmd::PointOptions lo;
-            lo.keywords = {"Text"};
+            lo.keywords = {"Mtext", "Text", "Angle"};
             auto* c = &ctx;
             auto build = [=](Vec2 cursor) {
                 DimensionData d = base;
@@ -487,6 +533,10 @@ public:
                 else
                     d.textPos = cursor;
                 d.textOverride = override;
+                if (textAngle) {
+                    d.textRotated = true;
+                    d.textRotation = *textAngle;
+                }
                 return d;
             };
             lo.preview = [c, build](Vec2 cursor, DisplayList& out) {
@@ -494,6 +544,11 @@ public:
             };
             auto where = co_await ctx.getPoint("Specify dimension arc line location", lo);
             if (where.status == Status::Keyword) {
+                if (where.keyword == "Angle") {
+                    if (auto a = co_await askTextAngle(ctx); a.ok())
+                        textAngle = a.value;
+                    continue;
+                }
                 cmd::StringOptions so;
                 so.defaultValue = "<>";
                 auto s = co_await ctx.getString("Dimension text, <> is the measurement", so);

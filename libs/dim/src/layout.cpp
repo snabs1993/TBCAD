@@ -1005,6 +1005,10 @@ Layout layoutDimension(const Document& doc, const DimensionData& d, double toler
     }
     if (d.kind != DimKind::Linear && d.kind != DimKind::Aligned)
         L.text.point = L.text.center;
+    // Text fixed at an angle (the Angle option, DIMEDIT Rotate); linear and aligned dimensions
+    // already lay their text out at it.
+    if (d.textRotated && d.kind != DimKind::Linear && d.kind != DimKind::Aligned)
+        L.text.rotation = d.textRotation;
     if (stacked && L.text.utf8 == txt) {
         L.text.utf8 = stacked->markup;
         L.text.stacked = true;
