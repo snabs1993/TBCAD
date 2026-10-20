@@ -592,6 +592,10 @@ struct DimensionData {
     // object is edited the point moves with it; moving the dimension alone, or copying it, cuts the
     // link.
     std::array<DimAssoc, 4> assoc{};
+    // Flip Arrow (a dimension line end grip): the arrowhead at the first or second extension line
+    // turns the other way (a diameter dimension's first or second point, a radius dimension's
+    // only arrowhead is the first).
+    bool flipArrow1 = false, flipArrow2 = false;
 };
 
 struct LeaderData {

@@ -362,6 +362,11 @@ struct PayloadWriter {
                 w.varint(a.index);
             }
         }
+        if (d.flipArrow1 ||
+            d.flipArrow2) {  // tag 5: Flip Arrow (after tag 4, which older readers know)
+            w.u8(5);
+            w.u8(static_cast<std::uint8_t>((d.flipArrow1 ? 1 : 0) | (d.flipArrow2 ? 2 : 0)));
+        }
     }
     void operator()(const LeaderData& d) {
         points(d.vertices);
@@ -862,6 +867,12 @@ struct PayloadReader {
                         d.jogs.reserve(nj);
                         for (std::size_t i = 0; i < nj; ++i)
                             d.jogs.push_back(r.vec2());
+                        continue;
+                    }
+                    if (tag == 5) {
+                        const std::uint8_t flips = r.u8();
+                        d.flipArrow1 = (flips & 1) != 0;
+                        d.flipArrow2 = (flips & 2) != 0;
                         continue;
                     }
                     if (tag == 4) {
