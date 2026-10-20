@@ -325,21 +325,28 @@ void Writer::writeHatch(const Props& p, const HatchData& d, std::uint64_t owner)
     o.d(47, 1);
     o.i(98, 0);
     if (d.gradient) {
-        // Gradient fill (AutoCAD 2004 and later): kind, angle, shift and the two colours.
-        const GradientData& gr = *d.gradient;
+        // Kind, angle, shift, one-colour tint and the two colours, each as its index (when it
+        // has one) and as RGB.
+        const GradientData& gd = *d.gradient;
         o.i(450, 1);
         o.i(451, 0);
-        o.i(452, gr.oneColor ? 1 : 0);
+        o.i(452, gd.oneColor ? 1 : 0);
         o.i(453, 2);
-        o.d(460, gr.angle);
-        o.d(461, gr.shift);
-        o.d(462, gr.tint);
-        for (const Color& c : {gr.color1, gr.color2}) {
-            const Color rgb = c.kind == ColorKind::Rgb ? c : hatch::tintedColor(c, 0.5);
-            o.d(463, &c == &gr.color1 ? 0 : 1);
-            o.i(421, (static_cast<long long>(rgb.r) << 16) | (rgb.g << 8) | rgb.b);
+        double at = 0;
+        for (const Color& c : {gd.color1, gd.color2}) {
+            Rgba v{c.r, c.g, c.b};
+            o.d(463, at);
+            if (c.kind == ColorKind::Index) {
+                v = paletteColor(c.r);
+                o.i(63, c.r);
+            }
+            o.i(421, (static_cast<long long>(v.r) << 16) | (v.g << 8) | v.b);
+            at = 1;
         }
-        o.str(470, hatch::gradientName(gr.kind));
+        o.d(460, gd.angle);
+        o.d(461, gd.shift);
+        o.d(462, gd.tint);
+        o.str(470, hatch::gradientName(gd.kind));
     }
     count("HATCH");
 }

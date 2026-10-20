@@ -998,6 +998,8 @@ std::string Writer::tablesSection() {
             } else if (const auto* l = entityAs<LeaderData>(e);
                        l && (!l->breaks.empty() || leaderKeepsTextPos(*l))) {
                 extApps.insert("TBCAD_DIM");
+            } else if (const auto* h = entityAs<HatchData>(e); h && hatchNamesSources(*h)) {
+                extApps.insert("TBCAD_DIM");
             }
         });
         bool layerNotes = false;

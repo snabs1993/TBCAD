@@ -239,6 +239,15 @@ private:
     static bool leaderKeepsTextPos(const LeaderData& l) {
         return l.utf8.empty() && !l.vertices.empty() && l.textPos != l.vertices.back();
     }
+    // A hatch names the objects it was made from (those still in the drawing) in a TBCAD_DIM note.
+    bool hatchNamesSources(const HatchData& h) const {
+        if (r12_)
+            return false;
+        for (EntityId id : h.sourceBoundary)
+            if (doc_.find(id))
+                return true;
+        return false;
+    }
     std::string handleRef(EntityId id) const;
     void reserveNamedHandles();
     void setLevelTag(const EntityCommon& c);

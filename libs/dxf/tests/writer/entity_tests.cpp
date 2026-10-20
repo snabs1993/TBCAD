@@ -2078,4 +2078,53 @@ TEST_CASE("dimension breaks, jogs, flipped arrows and associative points survive
     CHECK(uses == 3);
 }
 
+TEST_CASE("a gradient hatch keeps its colours and the objects it was made from") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("t");
+        PolylineData pl;
+        pl.v = {pv(0, 0), pv(100, 0), pv(100, 50), pv(0, 50)};
+        pl.closed = true;
+        const EntityId source = tx.add(make(pl)).value();
+        HatchData h;
+        HatchLoop loop;
+        loop.outer = true;
+        loop.edges.push_back(HatchLineEdge{{0, 0}, {100, 0}});
+        loop.edges.push_back(HatchLineEdge{{100, 0}, {100, 50}});
+        loop.edges.push_back(HatchLineEdge{{100, 50}, {0, 50}});
+        loop.edges.push_back(HatchLineEdge{{0, 50}, {0, 0}});
+        h.loops.push_back(loop);
+        h.pattern = "SOLID";
+        h.patternScale = 20;
+        h.sourceBoundary = {source};
+        GradientData g;
+        g.kind = GradientKind::Cylinder;
+        g.color1 = Color::index(5);
+        g.color2 = Color::rgb(190, 220, 255);
+        g.angle = 0.5;
+        h.gradient = g;
+        REQUIRE(tx.add(make(Indirect<HatchData>(h))));
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    CHECK_MESSAGE(rt.diff.empty(), rt.diff);
+    int hatches = 0;
+    rt.back->forEachEntity([&](const Entity& e) {
+        const auto* h = entityAs<HatchData>(e);
+        if (!h)
+            return;
+        ++hatches;
+        REQUIRE(h->gradient);
+        CHECK(h->gradient->kind == GradientKind::Cylinder);
+        CHECK(h->gradient->color1 == Color::index(5));
+        CHECK(h->gradient->color2 == Color::rgb(190, 220, 255));
+        CHECK(h->gradient->angle == doctest::Approx(0.5));
+        REQUIRE(h->sourceBoundary.size() == 1);
+        REQUIRE(rt.back->find(h->sourceBoundary[0]));
+        CHECK(entityAs<PolylineData>(*rt.back->find(h->sourceBoundary[0])));
+        CHECK(e.common.ext.get().xdata.empty());
+    });
+    CHECK(hatches == 1);
+}
+
 }  // namespace tbcad::dxf

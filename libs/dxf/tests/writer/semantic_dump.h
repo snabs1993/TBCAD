@@ -131,6 +131,13 @@ private:
             e.common.color = h->fill;
             h->fill = Color::byLayer();
         }
+        // A solid fill has no pattern: its name, scale and angle mean nothing.
+        if (auto* h = entityAs<HatchData>(e); h && h->solid) {
+            h->pattern.clear();
+            h->patternScale = 1;
+            h->patternAngle = 0;
+            h->doubled = false;
+        }
         // A left-aligned text on its baseline is placed by its position alone: DXF writes no
         // alignment point for it, and the importer sets it to the position.
         if (auto* t = entityAs<TextData>(e); t && t->h == HAlign::Left && t->v == VAlign::Baseline)
@@ -268,6 +275,24 @@ private:
             r.append(s, last, std::string::npos);
             s = r;
         }
+        // A hatch's source objects, those still in the drawing.
+        {
+            static const std::regex srcTok(R"(\bsrc((?: \d+)*))");
+            std::string r;
+            std::size_t last = 0;
+            for (auto it = std::sregex_iterator(s.begin(), s.end(), srcTok);
+                 it != std::sregex_iterator(); ++it) {
+                r.append(s, last, static_cast<std::size_t>(it->position()) - last);
+                r += "src";
+                std::istringstream ids((*it)[1].str());
+                for (std::uint64_t id; ids >> id;)
+                    if (doc_.find(EntityId{id}))
+                        r += " " + refOf(EntityId{id});
+                last = static_cast<std::size_t>(it->position() + it->length());
+            }
+            r.append(s, last, std::string::npos);
+            s = r;
+        }
         return s;
     }
 
@@ -276,7 +301,7 @@ private:
         const Entity* t = doc_.find(id);
         if (!t)
             return "?";
-        static const std::regex named(R"(\b(assoc\d=\d+|with(?: \d+)+))");
+        static const std::regex named(R"(\b(assoc\d=\d+|with(?: \d+)+|src(?: \d+)+))");
         const std::string line = rewrite(std::regex_replace(dumpEntity(*t), named, ""), *t);
         char buf[24];
         std::snprintf(buf, sizeof buf, "#%016zx", std::hash<std::string>{}(line));
