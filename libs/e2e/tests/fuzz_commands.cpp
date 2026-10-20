@@ -20,6 +20,7 @@
 #include <string>
 #include <vector>
 
+#include "tbcad/clipboard/clipboard.h"
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/cmd/script_host.h"
@@ -184,6 +185,8 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
         for (const auto& f : std::filesystem::directory_iterator(".", ec))
             std::filesystem::remove_all(f.path(), ec);
     }
+    // Nor may what an earlier input copied (the clipboard outlives the drawing).
+    clipboard::setCurrent(clipboard::Clip{});
     Reader in{data, size};
     const std::size_t which = in.byte() % w.drawings.size();
     const Drawing& start = w.drawings[which];

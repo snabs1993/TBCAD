@@ -491,3 +491,51 @@ TEST_CASE("DIMSTYLE FixedExt and FixedExtLength") {
         listed |= k == "FixedExt" && v == "On";
     CHECK(listed);
 }
+
+TEST_CASE("DIMSTYLE LeaderArrow sets the arrow leaders draw with") {
+    Fixture f;
+    f.host->run("DIMSTYLE", {"New", "Ld", "Edit", "Ld", "ArrowType", "Tick", "LeaderArrow", "Dot",
+                             "Done", "Done"});
+    const DimStyle* s = f.doc.dimStyleByName("Ld");
+    REQUIRE(s);
+    CHECK(s->arrowType == ArrowType::ArchTick);
+    CHECK(s->leaderArrow == ArrowType::Dot);
+    // A leader of the style draws a dot (an arrow ring), not a tick.
+    LeaderData l{{{0, 0}, {10, 10}, {20, 10}}, s->id, "", {}};
+    const dim::Layout L = dim::layoutLeader(f.doc, l);
+    CHECK(L.arrows.size() == 1);
+}
+
+TEST_CASE("DIMSTYLE LineWeight and ExtWeight set DIMLWD and DIMLWE") {
+    Fixture f;
+    f.host->run("DIMSTYLE", {"New", "Lw", "Edit", "Lw", "LineWeight", "0.35", "ExtWeight",
+                             "ByLayer", "Done", "Done"});
+    const DimStyle* s = f.doc.dimStyleByName("Lw");
+    REQUIRE(s);
+    CHECK(s->dimLineWeight == LineWeight::hundredths(35));
+    CHECK(s->extLineWeight == LineWeight::byLayer());
+    bool listed = false;
+    for (const auto& [k, v] : dimcmd::describeStyle(f.doc, *s))
+        listed |= k == "LineWeight" && v == "0.35";
+    CHECK(listed);
+}
+
+TEST_CASE("DIMSTYLE Linetype and ExtLinetype1/2 set DIMLTYPE and DIMLTEX1/2") {
+    Fixture f;
+    {
+        Transaction tx = f.doc.begin("setup");
+        REQUIRE(tx.addLinetype({.name = "CENTER", .pattern = {12, -3, 3, -3}}).ok());
+        tx.commit();
+    }
+    f.host->run("DIMSTYLE", {"New", "Lt", "Edit", "Lt", "Linetype", "center", "ExtLinetype1",
+                             "ByLayer", "ExtLinetype2", "NOPE", "Done", "Done"});
+    const DimStyle* s = f.doc.dimStyleByName("Lt");
+    REQUIRE(s);
+    CHECK(s->dimLinetype == "CENTER");  // the drawing's spelling
+    CHECK(s->ext1Linetype == "ByLayer");
+    CHECK(s->ext2Linetype.empty());  // an unknown linetype is refused
+    bool listed = false;
+    for (const auto& [k, v] : dimcmd::describeStyle(f.doc, *s))
+        listed |= k == "ExtLinetype2" && v == "ByBlock";
+    CHECK(listed);
+}

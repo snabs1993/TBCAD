@@ -1,3 +1,5 @@
+#include <cmath>
+
 #include "support.h"
 #include "tbcad/text/text.h"
 
@@ -36,6 +38,40 @@ TEST_CASE("explode a linear dimension into lines, solid arrowheads and text") {
     CHECK(lines == 3);
     CHECK(hatches == 2);
     CHECK(texts == 1);
+}
+
+TEST_CASE("DIMLTYPE and DIMLTEX1/2 give the dimension and extension lines their linetypes") {
+    Document doc;
+    Transaction tx = doc.begin("style");
+    const LinetypeId hidden = tx.addLinetype({.name = "HIDDEN", .pattern = {6, -3}}).value();
+    const LinetypeId own = tx.addLinetype({.name = "OWN", .pattern = {2, -2}}).value();
+    REQUIRE(tx.modifyDimStyle(kDimStyleStandard, [](DimStyle& s) {
+        s.dimLinetype = "ByLayer";
+        s.ext1Linetype = "hidden";  // names are matched without case
+        s.ext2Linetype = "ByBlock";
+    }));
+    tx.commit();
+    Entity e = entityOf(Indirect<DimensionData>(linear({0, 0}, {100, 0}, {50, 10})));
+    e.common.linetype = own;
+    EntityId id = add(doc, std::move(e));
+    auto r = explodeDimension(doc, *doc.find(id));
+    REQUIRE(r.ok());
+    int seen = 0;
+    for (const Entity& x : r.value()) {
+        const auto* l = entityAs<LineData>(x);
+        if (!l)
+            continue;
+        ++seen;
+        if (std::abs(l->a.y - l->b.y) < 1e-9)
+            CHECK(x.common.linetype == kLinetypeByLayer);  // the dimension line
+        else if (std::abs(l->a.x) < 1e-9)
+            CHECK(x.common.linetype == hidden);  // first extension line
+        else
+            CHECK(x.common.linetype == own);  // second: ByBlock keeps the dimension's
+    }
+    CHECK(seen == 3);
+    // A linetype a style names is in use (PURGE keeps it).
+    CHECK_FALSE(doc.begin("erase").eraseLinetype(hidden).ok());
 }
 
 TEST_CASE("explode keeps the text fill box and frame: a wipeout behind the text, then the frame") {

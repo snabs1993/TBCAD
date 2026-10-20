@@ -627,6 +627,12 @@ Result<void> checkRow(const Document& doc, DimStyle& r, const DimStyle* old) {
         return invalid("fixed extension line length must not be negative");
     if (!std::isfinite(r.textVertPos))
         return invalid("text vertical position must be a number");
+    for (LineWeight w : {r.dimLineWeight, r.extLineWeight})
+        if (w.v < -3 || w.v > 211)
+            return invalid("dimension lineweight out of range");
+    if (static_cast<int>(r.leaderArrow) < 0 ||
+        static_cast<int>(r.leaderArrow) > static_cast<int>(ArrowType::None))
+        return invalid("unknown leader arrow");
     r.textVertPos = std::clamp(r.textVertPos, -100.0, 100.0);
     r.textJustify = std::clamp(r.textJustify, 0, 2);
     r.angularPrecision = std::clamp(r.angularPrecision, -1, 8);
@@ -768,6 +774,13 @@ bool inUse(const Document& d, LinetypeId id, const detail::ObjectRefs* refs = nu
     for (const auto& [lid, l] : d.layers()) {
         if (l.linetype == id)
             return true;
+    }
+    // Dimension styles name their linetypes (DIMLTYPE, DIMLTEX1, DIMLTEX2).
+    if (const Linetype* lt = d.linetype(id)) {
+        for (const auto& [sid, s] : d.dimStyles())
+            for (const std::string* n : {&s.dimLinetype, &s.ext1Linetype, &s.ext2Linetype})
+                if (!n->empty() && d.linetypeByName(*n) == lt)
+                    return true;
     }
     if (refs)
         return refs->linetypes.count(id.value) != 0;

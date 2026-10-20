@@ -1286,6 +1286,8 @@ LevelId Importer::levelFor(const Record& r) {
 void Importer::readLinetype(const Record& r) {
     std::string name = dec(r.raw(2));
     std::string f = fold(name);
+    if (r.has(5) && !name.empty())
+        ltypeNameByHandle_[upperHandle(r.raw(5))] = name;
     if (f.empty() || f == "continuous" || f == "bylayer" || f == "byblock") {
         if (f == "continuous")
             ltypeByRaw_[fold(r.raw(2))] = kLinetypeContinuous;
@@ -1680,10 +1682,32 @@ void Importer::readDimStyle(const Record& r) {
                 out = Color::index(static_cast<std::uint8_t>(c));
         }
     };
+    auto dimWeight = [&](int code, LineWeight& out) {  // DIMLWD, DIMLWE
+        if (const Group* g = r.find(code); g && g->integer() >= -3 && g->integer() <= 211)
+            out = LineWeight{static_cast<std::int16_t>(g->integer())};
+    };
+    dimWeight(371, ds.dimLineWeight);
+    dimWeight(372, ds.extLineWeight);
+    // DIMLTYPE, DIMLTEX1, DIMLTEX2: linetypes by the handle of their LTYPE record.
+    auto dimLinetype = [&](int code, std::string& out) {
+        if (!r.has(code))
+            return;
+        if (const auto l = ltypeNameByHandle_.find(upperHandle(r.raw(code)));
+            l != ltypeNameByHandle_.end())
+            out = fold(l->second) == "byblock" ? std::string() : l->second;
+    };
+    dimLinetype(345, ds.dimLinetype);
+    dimLinetype(346, ds.ext1Linetype);
+    dimLinetype(347, ds.ext2Linetype);
     dimColor(176, ds.dimLineColor);
     dimColor(177, ds.extLineColor);
     dimColor(178, ds.textColor);
     if (r.has(340)) {
+        // DIMTXSTY: the text style, by the handle of its STYLE record.
+        if (const auto s = styleNameByHandle_.find(std::string(r.raw(340)));
+            s != styleNameByHandle_.end())
+            if (const TextStyle* t = doc_->textStyleByName(s->second))
+                ds.textStyle = t->id;
         const auto fixed = styleHeights_.find(std::string(r.raw(340)));
         if (fixed != styleHeights_.end() && ds.overallScale > 0)
             ds.textHeight = fixed->second / ds.overallScale;
@@ -1697,6 +1721,10 @@ void Importer::readDimStyle(const Record& r) {
         const ArrowType blk1 = arrowOf(343, ArrowType::ClosedFilled);
         ds.arrowType = r.integer(173) != 0 ? blk1 : blk;
         dimArrows_[name] = {blk, blk1};
+        ds.leaderArrow = arrowOf(341, ArrowType::ClosedFilled);  // DIMLDRBLK
+        // A leader child style ("name$7") draws leaders with its arrow: that is DIMLDRBLK.
+        if (name.size() > 2 && name.compare(name.size() - 2, 2, "$7") == 0 && r.has(341))
+            ds.arrowType = ds.leaderArrow;
     }
     // DIMTSZ: oblique strokes of that size instead of arrowheads, whatever DIMBLK says.
     if (const Group* g = r.find(142); g && std::isfinite(g->number()) && g->number() > 0) {
@@ -1711,6 +1739,10 @@ void Importer::readDimStyle(const Record& r) {
             const int a = std::atoi(std::string(v.substr(6)).c_str());
             if (a >= 0 && a <= static_cast<int>(ArrowType::None))
                 ds.arrowType = static_cast<ArrowType>(a);
+        } else if (v.rfind("leaderArrow=", 0) == 0) {
+            const int a = std::atoi(std::string(v.substr(12)).c_str());
+            if (a >= 0 && a <= static_cast<int>(ArrowType::None))
+                ds.leaderArrow = static_cast<ArrowType>(a);
         }
     }
     if (const Group* g = r.find(147); g && std::isfinite(g->number())) {  // DIMGAP
@@ -3005,6 +3037,137 @@ Result<ImportResult> Importer::run() {
                 for (const Part& p : g.parts)
                     if (p.id != g.anchor)
                         (void)tx.erase(p.id);
+            }
+            tx.commit();
+        }
+    }
+    // A dimension's or leader's TBCAD_DIM note (see Writer::writeDimExtras): DIMBREAK gaps and
+    // the objects that make them, jogs, flipped arrows and associative points, the objects named
+    // by their handles in this file.
+    {
+        const auto isNote = [](const XdataApp& a) { return a.app == "TBCAD_DIM"; };
+        std::vector<EntityId> noted;
+        doc_->forEachEntity([&](const Entity& e) {
+            if (!entityAs<DimensionData>(e) && !entityAs<LeaderData>(e))
+                return;
+            for (const XdataApp& a : e.common.ext.get().xdata)
+                if (isNote(a)) {
+                    noted.push_back(e.common.id);
+                    return;
+                }
+        });
+        if (!noted.empty()) {
+            std::unordered_map<std::uint64_t, EntityId> byHandle;
+            for (const auto& [id, handle] : srcHandles_)
+                byHandle.emplace(handle, EntityId{id});
+            const auto target = [&](std::string_view hex) {
+                const std::string h(hex);
+                char* end = nullptr;
+                const std::uint64_t v = std::strtoull(h.c_str(), &end, 16);
+                if (h.empty() || *end != '\0')
+                    return EntityId{};
+                const auto it = byHandle.find(v);
+                return it == byHandle.end() || !doc_->find(it->second) ? EntityId{} : it->second;
+            };
+            const auto numbers = [](std::string_view text, std::size_t want) {
+                std::vector<double> out;
+                std::string t(text);
+                const char* at = t.c_str();
+                while (*at && out.size() < want) {
+                    char* end = nullptr;
+                    const double v = std::strtod(at, &end);
+                    if (end == at || !std::isfinite(v))
+                        return std::vector<double>{};
+                    out.push_back(v);
+                    at = *end == ',' ? end + 1 : end;
+                }
+                return out.size() == want && !*at ? out : std::vector<double>{};
+            };
+            Transaction tx = doc_->begin("dimension notes");
+            for (EntityId id : noted) {
+                (void)tx.modify(id, [&](Entity& e) {
+                    ExtData x = e.common.ext.get();
+                    std::vector<DimBreak> breaks;
+                    std::vector<EntityId> with;
+                    bool withWhole = true;
+                    std::uint32_t autoBreaks = 0;
+                    std::vector<Vec2> jogs;
+                    bool flip1 = false, flip2 = false;
+                    std::array<DimAssoc, 4> assoc{};
+                    std::optional<Vec2> textPos;
+                    for (const XdataApp& a : x.xdata) {
+                        if (!isNote(a))
+                            continue;
+                        for (const DataItem& it : a.items) {
+                            const std::string_view t = it.text;
+                            if (it.code != 1000)
+                                continue;
+                            if (t.rfind("b=", 0) == 0) {
+                                if (auto v = numbers(t.substr(2), 4); !v.empty())
+                                    breaks.push_back(
+                                        {Vec2{v[0], v[1]} * k_, Vec2{v[2], v[3]} * k_});
+                            } else if (t.rfind("auto=", 0) == 0) {
+                                autoBreaks = static_cast<std::uint32_t>(
+                                    std::strtoul(std::string(t.substr(5)).c_str(), nullptr, 10));
+                            } else if (t.rfind("w=", 0) == 0) {
+                                const EntityId w = target(t.substr(2));
+                                withWhole = withWhole && w;
+                                if (w)
+                                    with.push_back(w);
+                            } else if (t.rfind("tp=", 0) == 0) {
+                                if (auto v = numbers(t.substr(3), 2); !v.empty())
+                                    textPos = Vec2{v[0], v[1]} * k_;
+                            } else if (t.rfind("j=", 0) == 0) {
+                                if (auto v = numbers(t.substr(2), 2); !v.empty())
+                                    jogs.push_back(Vec2{v[0], v[1]} * k_);
+                            } else if (t == "flip=10" || t == "flip=01" || t == "flip=11") {
+                                flip1 = t[5] == '1';
+                                flip2 = t[6] == '1';
+                            } else if (t.size() > 4 && t.rfind("as", 0) == 0 && t[3] == '=' &&
+                                       t[2] >= '0' && t[2] <= '3') {
+                                // as<point>=<kind>:<handle>:<index>
+                                const std::string rest(t.substr(4));
+                                const std::size_t c1 = rest.find(':'), c2 = rest.find(':', c1 + 1);
+                                if (c1 == std::string::npos || c2 == std::string::npos)
+                                    continue;
+                                const int kind = std::atoi(rest.substr(0, c1).c_str());
+                                const EntityId on = target(rest.substr(c1 + 1, c2 - c1 - 1));
+                                if (kind < 1 || kind > 3 || !on)
+                                    continue;
+                                DimAssoc& d = assoc[static_cast<std::size_t>(t[2] - '0')];
+                                d.kind = static_cast<DimAssoc::Kind>(kind);
+                                d.target = on;
+                                d.index = static_cast<std::uint32_t>(
+                                    std::strtoul(rest.substr(c2 + 1).c_str(), nullptr, 10));
+                            }
+                        }
+                    }
+                    std::erase_if(x.xdata, isNote);
+                    e.common.ext = ExtDataPtr(std::move(x));
+                    // The automatic gaps follow their objects; without all of them they stay
+                    // where they are, as gaps placed by hand.
+                    if (!withWhole || autoBreaks > breaks.size()) {
+                        with.clear();
+                        autoBreaks = 0;
+                    }
+                    if (with.empty())
+                        autoBreaks = 0;
+                    if (auto* d = entityAs<DimensionData>(e)) {
+                        d->breaks = std::move(breaks);
+                        d->breakWith = std::move(with);
+                        d->autoBreaks = autoBreaks;
+                        d->jogs = std::move(jogs);
+                        d->flipArrow1 = flip1;
+                        d->flipArrow2 = flip2;
+                        d->assoc = assoc;
+                    } else if (auto* l = entityAs<LeaderData>(e)) {
+                        l->breaks = std::move(breaks);
+                        l->breakWith = std::move(with);
+                        l->autoBreaks = autoBreaks;
+                        if (textPos && l->utf8.empty())
+                            l->textPos = *textPos;
+                    }
+                });
             }
             tx.commit();
         }

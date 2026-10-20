@@ -18,6 +18,16 @@ namespace tbcad::dxf::detail {
 
 namespace {
 
+bool isByBlock(std::string_view n) {
+    static constexpr std::string_view k = "byblock";
+    if (n.size() != k.size())
+        return false;
+    for (std::size_t i = 0; i < k.size(); ++i)
+        if (std::tolower(static_cast<unsigned char>(n[i])) != k[i])
+            return false;
+    return true;
+}
+
 constexpr double kDeg = kPi / 180.0;
 constexpr int kMaxInsertDepth = 4;
 
@@ -99,8 +109,9 @@ double leadingHeightFactor(std::string_view t) {
 DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
     std::optional<double> txt, asz, scale, gap, exo, exe, dle, tp, tm;
     std::optional<std::int64_t> tolOn, limOn, altOn;
-    std::map<int, double> extra;         // the other overridable variables, by variable number
-    std::map<int, std::string> handles;  // DIMBLK, DIMBLK1, DIMBLK2: block record handles
+    std::map<int, double> extra;  // the other overridable variables, by variable number
+    // DIMLDRBLK, DIMBLK, DIMBLK1, DIMBLK2: block record handles
+    std::map<int, std::string> handles;
     bool inDstyle = false, inAcad = false;
     int var = -1;
     for (const Group& g : r.g) {
@@ -127,9 +138,13 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
             std::string h(g.str());
             for (char& c : h)
                 c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-            if ((var == 342 || var == 343 || var == 344) &&
+            if ((var == 341 || var == 342 || var == 343 || var == 344) &&
                 (h == "0" || blockNameByHandle_.count(h)))
                 handles[var] = h;
+            else if (var == 340 && styleNameByHandle_.count(std::string(g.str())))
+                handles[var] = std::string(g.str());  // DIMTXSTY
+            else if ((var == 345 || var == 346 || var == 347) && ltypeNameByHandle_.count(h))
+                handles[var] = h;  // DIMLTYPE, DIMLTEX1, DIMLTEX2
             var = -1;
             continue;
         }
@@ -220,6 +235,33 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
     // Arrow blocks named by handle (DIMBLK, DIMBLK1, DIMBLK2), with DIMSAH as overridden or as
     // the style has it. DIMTSZ, below, still turns the arrows into ticks.
     std::string extraKey;
+    if (const auto h = handles.find(340); h != handles.end()) {
+        // DIMTXSTY: the text style, and its fixed height when it has one.
+        if (const TextStyle* t = doc_->textStyleByName(styleNameByHandle_.at(h->second))) {
+            ds.textStyle = t->id;
+            if (const auto f = styleHeights_.find(h->second);
+                f != styleHeights_.end() && ds.overallScale > 0 && !txt)
+                ds.textHeight = f->second / ds.overallScale * factor;
+            extraKey += "|txsty=" + std::to_string(t->id.value);
+        }
+        handles.erase(h);
+    }
+    for (int code : {345, 346, 347}) {
+        const auto h = handles.find(code);
+        if (h == handles.end())
+            continue;
+        std::string name = ltypeNameByHandle_.at(h->second);
+        if (isByBlock(name))
+            name.clear();
+        (code == 345 ? ds.dimLinetype : code == 346 ? ds.ext1Linetype : ds.ext2Linetype) = name;
+        extraKey += "|lt" + std::to_string(code) + "=" + name;
+        handles.erase(h);
+    }
+    if (const auto h = handles.find(341); h != handles.end()) {
+        ds.leaderArrow = arrowKindOf(h->second, ArrowType::ClosedFilled);
+        extraKey += "|ldr=" + std::to_string(static_cast<int>(ds.leaderArrow));
+        handles.erase(h);
+    }
     if (!handles.empty()) {
         const auto a = dimArrows_.find(ds.name);
         ArrowType blk = a != dimArrows_.end() ? a->second.first : ArrowType::ClosedFilled;
@@ -329,6 +371,12 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
                          : whole == 1 ? DimFit::ArrowsFirst
                          : whole == 2 ? DimFit::TextFirst
                                       : DimFit::Best;
+                break;
+            case 371:  // DIMLWD
+            case 372:  // DIMLWE
+                if (whole >= -3 && whole <= 211)
+                    (var == 371 ? ds.dimLineWeight : ds.extLineWeight) =
+                        LineWeight{static_cast<std::int16_t>(whole)};
                 break;
             case 176:
             case 177:

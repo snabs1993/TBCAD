@@ -28,7 +28,14 @@ public:
     std::string buf{};
     std::size_t badNumbers = 0;
 
-    void raw(int code, std::string_view ascii) { emit(code, ascii.data(), ascii.size()); }
+    // The XDATA application the record is in (the last 1001 group since its "0" group).
+    std::string xdataApp{};
+
+    void raw(int code, std::string_view ascii) {
+        if (code == 1001)
+            xdataApp = ascii;
+        emit(code, ascii.data(), ascii.size());
+    }
     void str(int code, std::string_view utf8) { raw(code, encodeText(utf8, utf8_)); }
     void i(int code, long long v) {
         char b[24];
@@ -76,7 +83,10 @@ public:
         d(code + 10, p.y);
     }
     // Section / table / entity type: "0 <type>".
-    void zero(std::string_view type) { raw(0, type); }
+    void zero(std::string_view type) {
+        xdataApp.clear();
+        raw(0, type);
+    }
 
     bool r12() const { return r12_; }
     bool utf8() const { return utf8_; }
@@ -213,8 +223,24 @@ private:
     // TBCAD XDATA naming the entity's level ("level=<name>"), written at the end of the
     // record that setLevelTag() prepared; a no-op when no tag is pending.
     void emitLevelTag();
-    // Opens the record's TBCAD XDATA unless it is open already (one 1001 per application).
+    // Opens the record's TBCAD XDATA unless it is the application being written (one 1001 per
+    // application and record).
     void openTbcadXdata();
+    // TBCAD XDATA flags every kind of object can carry: wipeout, annotative and its scales.
+    void writeCommonFlags(const EntityCommon& c);
+    // TBCAD_DIM XDATA: what a dimension or leader has beyond its DXF record (DIMBREAK gaps and
+    // the objects that make them, jogs, flipped arrows, associative points); the objects named
+    // are given handles before any is written (see loadSourceHandles).
+    void writeDimExtras(const std::vector<DimBreak>& breaks, const std::vector<EntityId>& with,
+                        std::uint32_t autoBreaks, const DimensionData* dim,
+                        const LeaderData* leader = nullptr);
+    // A leader without text keeps its text point (where text added later goes) only here: DXF
+    // reads it back at the last vertex.
+    static bool leaderKeepsTextPos(const LeaderData& l) {
+        return l.utf8.empty() && !l.vertices.empty() && l.textPos != l.vertices.back();
+    }
+    std::string handleRef(EntityId id) const;
+    void reserveNamedHandles();
     void setLevelTag(const EntityCommon& c);
     void levelsXdata(Out& o);
     void skipEntity(std::string_view what, const std::string& why);
@@ -328,6 +354,8 @@ private:
     std::unordered_map<std::uint32_t, std::uint64_t> tsHandle_{};
     std::map<std::string, std::uint64_t> shapeFileHandle_{};  // shape files named by linetypes
     std::unordered_map<std::uint32_t, std::uint64_t> layerHandle_{};  // LAYER record handles
+    // LTYPE record handles by folded name (DIMLTYPE, DIMLTEX1 and DIMLTEX2 point at them).
+    std::map<std::string, std::uint64_t> ltHandle_{};
     std::unordered_map<std::uint32_t, std::string> layerName_{}, ltName_{}, tsName_{}, dsName_{},
         blockName_{};
     NameSet layerSet_{}, ltSet_{}, tsSet_{}, dsSet_{}, blockSet_{};

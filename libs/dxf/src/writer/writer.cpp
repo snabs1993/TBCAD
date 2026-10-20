@@ -485,15 +485,18 @@ void Writer::writeLinetypes(Out& o, std::uint64_t table) {
         const char* desc;
     };
     for (const Std& s : {Std{"ByBlock", ""}, Std{"ByLayer", ""}, Std{"Continuous", "Solid line"}}) {
-        tableRecord(o, "LTYPE", newHandle(), table, "AcDbLinetypeTableRecord", s.name, 0);
+        const std::uint64_t h = newHandle();
+        ltHandle_[NameSet::fold(s.name)] = h;
+        tableRecord(o, "LTYPE", h, table, "AcDbLinetypeTableRecord", s.name, 0);
         o.str(3, s.desc);
         o.i(72, 65);
         o.i(73, 0);
         o.d(40, 0);
     }
     for (const Linetype* lt : rows) {
-        tableRecord(o, "LTYPE", newHandle(), table, "AcDbLinetypeTableRecord",
-                    ltName_[lt->id.value], 0);
+        const std::uint64_t h = newHandle();
+        ltHandle_[NameSet::fold(lt->name)] = h;
+        tableRecord(o, "LTYPE", h, table, "AcDbLinetypeTableRecord", ltName_[lt->id.value], 0);
         o.str(3, lt->description);
         o.i(72, 65);
         double total = 0;
@@ -701,6 +704,10 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
                     0);
         if (!ds.prefix.empty() || !ds.suffix.empty())
             o.str(3, ds.prefix + "<>" + ds.suffix);
+        // DIMTXSTY: the text style's STYLE record (the STYLE table is written first).
+        if (const auto t = tsHandle_.find(ds.textStyle.value);
+            !r12_ && ds.textStyle.value && t != tsHandle_.end() && t->second != 0)
+            o.h(340, t->second);
         o.d(40, ds.overallScale);
         o.d(41, ds.arrowSize);
         o.d(42, ds.extLineOffset);
@@ -749,6 +756,16 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
         o.i(177, clr(ds.extLineColor));
         o.i(178, clr(ds.textColor));
         if (!r12_) {
+            o.i(371, ds.dimLineWeight.v);  // DIMLWD
+            o.i(372, ds.extLineWeight.v);  // DIMLWE
+            // DIMLTYPE, DIMLTEX1, DIMLTEX2: the LTYPE records (the LTYPE table is written first).
+            for (const auto& [code, name] :
+                 {std::pair<int, const std::string*>{345, &ds.dimLinetype},
+                  {346, &ds.ext1Linetype},
+                  {347, &ds.ext2Linetype}})
+                if (const auto l = ltHandle_.find(NameSet::fold(*name));
+                    !name->empty() && l != ltHandle_.end())
+                    o.h(code, l->second);
             o.i(271, std::clamp(ds.precision, 0, 16));
             o.i(280, ds.textJustify);                    // DIMJUST
             o.i(275, static_cast<int>(ds.angleFormat));  // DIMAUNIT (same numbering)
@@ -779,9 +796,13 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
             }
             // The arrow kind has no group TBCAD can write (DIMBLK wants a block record's handle):
             // it travels as extended data of the style.
-            if (ds.arrowType != ArrowType::ClosedFilled) {
+            if (ds.arrowType != ArrowType::ClosedFilled ||
+                ds.leaderArrow != ArrowType::ClosedFilled) {
                 o.raw(1001, "TBCAD");
-                o.raw(1000, "arrow=" + std::to_string(static_cast<int>(ds.arrowType)));
+                if (ds.arrowType != ArrowType::ClosedFilled)
+                    o.raw(1000, "arrow=" + std::to_string(static_cast<int>(ds.arrowType)));
+                if (ds.leaderArrow != ArrowType::ClosedFilled)
+                    o.raw(1000, "leaderArrow=" + std::to_string(static_cast<int>(ds.leaderArrow)));
             }
         }
     }
@@ -953,6 +974,17 @@ std::string Writer::tablesSection() {
                 extApps.insert("TBCAD_ARRAY");
             if (kind(e) == EntityKind::MLeader)
                 extApps.insert("TBCAD_MLEADER");
+            if (const auto* d = entityAs<DimensionData>(e)) {
+                bool assoc = false;
+                for (const DimAssoc& a : d->assoc)
+                    assoc = assoc || a.kind != DimAssoc::Kind::None;
+                if (assoc || !d->breaks.empty() || !d->jogs.empty() || d->flipArrow1 ||
+                    d->flipArrow2)
+                    extApps.insert("TBCAD_DIM");
+            } else if (const auto* l = entityAs<LeaderData>(e);
+                       l && (!l->breaks.empty() || leaderKeepsTextPos(*l))) {
+                extApps.insert("TBCAD_DIM");
+            }
         });
         bool layerNotes = false;
         for (const auto& [lid, layer] : doc_.layers())
@@ -1841,6 +1873,7 @@ Result<ExportResult> Writer::run() {
     }
 
     loadSourceHandles();
+    reserveNamedHandles();
     if (!r12_) {
         for (const tbcad::Group& g : readGroups(doc_))
             for (EntityId m : g.members)

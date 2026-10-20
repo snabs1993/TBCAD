@@ -1207,6 +1207,91 @@ TEST_CASE("hatch: gradient colours, angle and name are kept") {
     CHECK(hatches[0]->gradient->color2 == Color::rgb(0, 0, 255));
 }
 
+TEST_CASE("dimension style: DIMTXSTY names the text style by handle, also as an override") {
+    Pairs p;
+    p.section("TABLES").g(0, "TABLE").g(2, "STYLE");
+    p.g(0, "STYLE").g(5, "11").g(2, "Notes").g(70, 0).g(40, 0.0).g(3, "arial.ttf");
+    p.g(0, "STYLE").g(5, "12").g(2, "Fixed").g(70, 0).g(40, 3.5).g(3, "arial.ttf");
+    p.g(0, "ENDTAB");
+    p.g(0, "TABLE").g(2, "DIMSTYLE");
+    p.g(0, "DIMSTYLE").g(105, "30").g(2, "Dn").g(340, "11").g(140, 2.5).g(41, 2.5);
+    p.g(0, "ENDTAB").end();
+    p.section("ENTITIES");
+    p.g(0, "DIMENSION").g(8, "0").g(2, "*D1").g(3, "Dn").g(10, 5.0).g(20, 25.0).g(11, 5.0);
+    p.g(21, 28.0).g(70, 1).g(13, 0.0).g(23, 20.0).g(14, 10.0).g(24, 20.0).g(42, 10.0);
+    p.g(1001, "ACAD").g(1000, "DSTYLE").g(1002, "{").g(1070, 340).g(1005, "12").g(1002, "}");
+    p.end().g(0, "EOF");
+    Loaded l = load(p.text);
+    const DimStyle* dn = l.doc().dimStyleByName("Dn");
+    REQUIRE(dn != nullptr);
+    const TextStyle* notes = l.doc().textStyleByName("Notes");
+    REQUIRE(notes != nullptr);
+    CHECK(dn->textStyle == notes->id);
+    auto dims = modelEntities<DimensionData>(l.doc());
+    REQUIRE(dims.size() == 1);
+    const DimStyle* ds = l.doc().dimStyle(dims[0]->style);
+    REQUIRE(ds != nullptr);
+    const TextStyle* fixed = l.doc().textStyleByName("Fixed");
+    REQUIRE(fixed != nullptr);
+    CHECK(ds->textStyle == fixed->id);
+    CHECK(near(ds->textHeight * ds->overallScale, 3.5));
+}
+
+TEST_CASE("dimension style: DIMLWD and DIMLWE, also as an override") {
+    Pairs p;
+    p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE");
+    p.g(0, "DIMSTYLE").g(105, "30").g(2, "Lw").g(371, 25).g(372, -1).g(140, 2.5).g(41, 2.5);
+    p.g(0, "ENDTAB").end();
+    p.section("ENTITIES");
+    p.g(0, "DIMENSION").g(8, "0").g(2, "*D1").g(3, "Lw").g(10, 5.0).g(20, 25.0).g(11, 5.0);
+    p.g(21, 28.0).g(70, 1).g(13, 0.0).g(23, 20.0).g(14, 10.0).g(24, 20.0).g(42, 10.0);
+    p.g(1001, "ACAD").g(1000, "DSTYLE").g(1002, "{").g(1070, 372).g(1070, 50).g(1002, "}");
+    p.end().g(0, "EOF");
+    Loaded l = load(p.text);
+    const DimStyle* lw = l.doc().dimStyleByName("Lw");
+    REQUIRE(lw != nullptr);
+    CHECK(lw->dimLineWeight == LineWeight::hundredths(25));
+    CHECK(lw->extLineWeight == LineWeight::byLayer());
+    auto dims = modelEntities<DimensionData>(l.doc());
+    REQUIRE(dims.size() == 1);
+    const DimStyle* ds = l.doc().dimStyle(dims[0]->style);
+    REQUIRE(ds != nullptr);
+    CHECK(ds->dimLineWeight == LineWeight::hundredths(25));
+    CHECK(ds->extLineWeight == LineWeight::hundredths(50));
+}
+
+TEST_CASE("dimension style: DIMLTYPE and DIMLTEX1/2 by LTYPE handle, also as an override") {
+    Pairs p;
+    p.section("TABLES").g(0, "TABLE").g(2, "LTYPE");
+    p.g(0, "LTYPE").g(5, "14").g(2, "ByBlock").g(70, 0).g(3, "").g(72, 65).g(73, 0).g(40, 0.0);
+    p.g(0, "LTYPE").g(5, "15").g(2, "ByLayer").g(70, 0).g(3, "").g(72, 65).g(73, 0).g(40, 0.0);
+    p.g(0, "LTYPE").g(5, "a1").g(2, "HIDDEN").g(70, 0).g(3, "__ __").g(72, 65).g(73, 2);
+    p.g(40, 9.0).g(49, 6.0).g(74, 0).g(49, -3.0).g(74, 0);
+    p.g(0, "ENDTAB").g(0, "TABLE").g(2, "DIMSTYLE");
+    p.g(0, "DIMSTYLE").g(105, "30").g(2, "Lt").g(345, "15").g(346, "A1").g(347, "14");
+    p.g(140, 2.5).g(41, 2.5);
+    p.g(0, "ENDTAB").end();
+    p.section("ENTITIES");
+    p.g(0, "DIMENSION").g(8, "0").g(2, "*D1").g(3, "Lt").g(10, 5.0).g(20, 25.0).g(11, 5.0);
+    p.g(21, 28.0).g(70, 1).g(13, 0.0).g(23, 20.0).g(14, 10.0).g(24, 20.0).g(42, 10.0);
+    p.g(1001, "ACAD").g(1000, "DSTYLE").g(1002, "{").g(1070, 345).g(1005, "14").g(1070, 347);
+    p.g(1005, "a1").g(1002, "}");
+    p.end().g(0, "EOF");
+    Loaded l = load(p.text);
+    const DimStyle* lt = l.doc().dimStyleByName("Lt");
+    REQUIRE(lt != nullptr);
+    CHECK(lt->dimLinetype == "ByLayer");
+    CHECK(lt->ext1Linetype == "HIDDEN");
+    CHECK(lt->ext2Linetype.empty());
+    auto dims = modelEntities<DimensionData>(l.doc());
+    REQUIRE(dims.size() == 1);
+    const DimStyle* ds = l.doc().dimStyle(dims[0]->style);
+    REQUIRE(ds != nullptr);
+    CHECK(ds->dimLinetype.empty());
+    CHECK(ds->ext1Linetype == "HIDDEN");
+    CHECK(ds->ext2Linetype == "HIDDEN");
+}
+
 TEST_CASE("dimension style: a built-in arrow block name picks the arrow kind") {
     Pairs p;
     p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE");
@@ -1227,12 +1312,13 @@ TEST_CASE("dimension style: a built-in arrow block name picks the arrow kind") {
 TEST_CASE("dimension style: arrow blocks named by block record handle, as AutoCAD writes them") {
     Pairs p;
     p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE");
-    p.g(0, "DIMSTYLE").g(105, "30").g(2, "Tick").g(342, "1F").g(140, 2.5).g(41, 2.5);
+    p.g(0, "DIMSTYLE").g(105, "30").g(2, "Tick").g(342, "1F").g(341, "3B").g(140, 2.5).g(41, 2.5);
     p.g(0, "ENDTAB");
     // The block record table comes after the dimension styles.
     p.g(0, "TABLE").g(2, "BLOCK_RECORD");
     p.g(0, "BLOCK_RECORD").g(5, "1F").g(2, "_ArchTick");
     p.g(0, "BLOCK_RECORD").g(5, "2a").g(2, "_Dot");
+    p.g(0, "BLOCK_RECORD").g(5, "3B").g(2, "_Open30");
     p.g(0, "ENDTAB").end();
     p.section("ENTITIES");
     p.g(0, "DIMENSION").g(8, "0").g(2, "*D1").g(3, "Tick").g(10, 5.0).g(20, 5.0).g(11, 5.0);
@@ -1246,6 +1332,7 @@ TEST_CASE("dimension style: arrow blocks named by block record handle, as AutoCA
     const DimStyle* tick = l.doc().dimStyleByName("Tick");
     REQUIRE(tick != nullptr);
     CHECK(tick->arrowType == ArrowType::ArchTick);
+    CHECK(tick->leaderArrow == ArrowType::Open30);  // DIMLDRBLK
     auto dims = modelEntities<DimensionData>(l.doc());
     REQUIRE(dims.size() == 2);
     int dots = 0, ticks = 0;

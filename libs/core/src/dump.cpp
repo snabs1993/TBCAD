@@ -531,6 +531,18 @@ std::string canonicalDump(const Document& doc) {
             o << " fixedext" << (r.fixedExtLines ? 1 : 0) << "/" << r.fixedExtLength;
         if (r.textVertPos != 0)
             o << " tvp" << r.textVertPos;
+        if (r.dimLineWeight != LineWeight::byBlock() || r.extLineWeight != LineWeight::byBlock())
+            o << " lw" << r.dimLineWeight.v << "/" << r.extLineWeight.v;
+        if (r.leaderArrow != ArrowType::ClosedFilled)
+            o << " ldrarrow" << static_cast<int>(r.leaderArrow);
+        if (!r.dimLinetype.empty() || !r.ext1Linetype.empty() || !r.ext2Linetype.empty()) {
+            o << " lt";
+            o.quoted(r.dimLinetype);
+            o << "/";
+            o.quoted(r.ext1Linetype);
+            o << "/";
+            o.quoted(r.ext2Linetype);
+        }
         if (r.hasNumberFormat())
             o << " numfmt" << static_cast<int>(r.angleFormat) << "/" << r.angularPrecision << "/"
               << (r.commaDecimal ? 1 : 0) << "/" << r.baselineSpacing << "/" << r.centerMark;

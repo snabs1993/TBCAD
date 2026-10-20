@@ -15,7 +15,7 @@ namespace {
 
 constexpr std::uint8_t kDeltaMagic[4] = {'T', 'B', 'D', 'L'};
 // 3: text style rows carry the fixed height. Version 2 records are still read.
-constexpr std::uint8_t kDeltaVersion = 14;
+constexpr std::uint8_t kDeltaVersion = 17;
 
 [[noreturn]] void bad(const char* msg) {
     throw FormatError(msg);
@@ -138,6 +138,15 @@ void putRow(ByteWriter& w, StringTable& st, const DimStyle& r) {
     w.f64(r.fixedExtLength);
     // (version 14) DIMTVP
     w.f64(r.textVertPos);
+    // (version 15) leader arrow
+    w.u8(static_cast<std::uint8_t>(r.leaderArrow));
+    // (version 16) DIMLWD, DIMLWE
+    w.i16(r.dimLineWeight.v);
+    w.i16(r.extLineWeight.v);
+    // (version 17) DIMLTYPE, DIMLTEX1, DIMLTEX2
+    putString(w, st, r.dimLinetype);
+    putString(w, st, r.ext1Linetype);
+    putString(w, st, r.ext2Linetype);
 }
 
 void putRow(ByteWriter& w, StringTable& st, const BlockDef& r) {
@@ -361,6 +370,17 @@ struct Reader {
             d.textVertPos = r.f64();
             if (!std::isfinite(d.textVertPos))
                 bad("invalid text vertical position");
+        }
+        if (version >= 15)
+            d.leaderArrow = enumeration(ArrowType::None);
+        if (version >= 16) {
+            d.dimLineWeight = LineWeight{r.i16()};
+            d.extLineWeight = LineWeight{r.i16()};
+        }
+        if (version >= 17) {
+            d.dimLinetype = str();
+            d.ext1Linetype = str();
+            d.ext2Linetype = str();
         }
     }
     void row(BlockDef& b) {

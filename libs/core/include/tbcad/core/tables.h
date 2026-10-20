@@ -117,6 +117,7 @@ struct DimStyle {
     TextStyleId textStyle{};  // null = document's current text style
     double textGap = 0.625;
     ArrowType arrowType = ArrowType::ClosedFilled;
+    ArrowType leaderArrow = ArrowType::ClosedFilled;  // DIMLDRBLK: the arrow of leaders
     double arrowSize = 2.5;
     double extLineOffset = 0.625;
     double extLineExtension = 1.25;
@@ -133,6 +134,16 @@ struct DimStyle {
     bool suppressTrailingZeros = false;
     Color dimLineColor = Color::byBlock();
     Color extLineColor = Color::byBlock();
+    // DIMLWD / DIMLWE: the lineweights of dimension and extension lines (ByBlock: the
+    // dimension's own lineweight).
+    LineWeight dimLineWeight = LineWeight::byBlock();
+    LineWeight extLineWeight = LineWeight::byBlock();
+    // DIMLTYPE / DIMLTEX1 / DIMLTEX2: the linetypes of the dimension line and of each extension
+    // line, by name ("ByLayer", or a linetype of the document). Empty or "ByBlock": the
+    // dimension's own linetype; a name the document lacks is ignored the same way.
+    std::string dimLinetype{};
+    std::string ext1Linetype{};
+    std::string ext2Linetype{};
     Color textColor = Color::byBlock();
     // Alternate units: the measurement a second time, in brackets after the first
     // ("100.00 [3.94]"). `altScale` multiplies the millimetres before they are shown in

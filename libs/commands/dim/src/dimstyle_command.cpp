@@ -80,23 +80,34 @@ std::string spaced(std::string_view v) {
 }
 
 const std::vector<std::string> kProps = {
-    "TextHeight",    "TextGap",         "TextStyle",     "ArrowType",   "ArrowSize",
-    "ExtOffset",     "ExtExtension",    "LineExtension", "Placement",   "Alignment",
-    "Units",         "Precision",       "Prefix",        "Suffix",      "RoundOff",
-    "Scale",         "LeadingZeros",    "TrailingZeros", "LineColor",   "ExtColor",
-    "TextColor",     "AltUnits",        "AltScale",      "AltUnit",     "AltPrecision",
-    "AltPrefix",     "AltSuffix",       "Tolerance",     "TolUpper",    "TolLower",
-    "TolPrecision",  "LinearFactor",    "Fit",           "TextMove",    "AlignmentOutside",
-    "TextInside",    "ArrowsOutside",   "LineInside",    "ExtLine1",    "ExtLine2",
-    "DimLine1",      "DimLine2",        "Justify",       "AngleFormat", "AngularPrecision",
-    "DecimalMark",   "BaselineSpacing", "CenterMark",    "TextFill",    "TextFillColor",
-    "TextFrame",     "LengthFormat",    "TolHeight",     "TextVertPos", "FixedExt",
-    "FixedExtLength"};
+    "TextHeight",     "TextGap",         "TextStyle",     "ArrowType",   "ArrowSize",
+    "ExtOffset",      "ExtExtension",    "LineExtension", "Placement",   "Alignment",
+    "Units",          "Precision",       "Prefix",        "Suffix",      "RoundOff",
+    "Scale",          "LeadingZeros",    "TrailingZeros", "LineColor",   "ExtColor",
+    "TextColor",      "AltUnits",        "AltScale",      "AltUnit",     "AltPrecision",
+    "AltPrefix",      "AltSuffix",       "Tolerance",     "TolUpper",    "TolLower",
+    "TolPrecision",   "LinearFactor",    "Fit",           "TextMove",    "AlignmentOutside",
+    "TextInside",     "ArrowsOutside",   "LineInside",    "ExtLine1",    "ExtLine2",
+    "DimLine1",       "DimLine2",        "Justify",       "AngleFormat", "AngularPrecision",
+    "DecimalMark",    "BaselineSpacing", "CenterMark",    "TextFill",    "TextFillColor",
+    "TextFrame",      "LengthFormat",    "TolHeight",     "TextVertPos", "FixedExt",
+    "FixedExtLength", "LeaderArrow",     "LineWeight",    "ExtWeight",   "Linetype",
+    "ExtLinetype1",   "ExtLinetype2"};
 
 std::string num(double v) {
     char buf[40];
     std::snprintf(buf, sizeof buf, "%g", v);
     return buf;
+}
+
+std::string weightText(LineWeight w) {
+    if (w.isByBlock())
+        return "ByBlock";
+    if (w.isByLayer())
+        return "ByLayer";
+    if (w.isDefault())
+        return "Default";
+    return num(w.toMm());
 }
 
 std::string colourText(Color c) {
@@ -187,6 +198,12 @@ std::vector<std::pair<std::string, std::string>> describe(const Document& doc, c
         {"TextVertPos", num(s.textVertPos)},
         {"FixedExt", s.fixedExtLines ? "On" : "Off"},
         {"FixedExtLength", num(s.fixedExtLength)},
+        {"LeaderArrow", arrow[static_cast<int>(s.leaderArrow)]},
+        {"LineWeight", weightText(s.dimLineWeight)},
+        {"ExtWeight", weightText(s.extLineWeight)},
+        {"Linetype", s.dimLinetype.empty() ? "ByBlock" : s.dimLinetype},
+        {"ExtLinetype1", s.ext1Linetype.empty() ? "ByBlock" : s.ext1Linetype},
+        {"ExtLinetype2", s.ext2Linetype.empty() ? "ByBlock" : s.ext2Linetype},
     };
 }
 
@@ -254,17 +271,19 @@ std::string applyProperty(const Document& doc, DimStyle& s, std::string_view key
         s.textStyle = t->id;
         return {};
     }
-    if (same(key, "ArrowType")) {
+    // ArrowType: the dimension arrows; LeaderArrow: the arrow of leaders (DIMLDRBLK).
+    if (same(key, "ArrowType") || same(key, "LeaderArrow")) {
+        ArrowType& a = same(key, "ArrowType") ? s.arrowType : s.leaderArrow;
         if (same(value, "Filled") || same(value, "Closed"))
-            s.arrowType = ArrowType::ClosedFilled;
+            a = ArrowType::ClosedFilled;
         else if (same(value, "Open"))
-            s.arrowType = ArrowType::Open30;
+            a = ArrowType::Open30;
         else if (same(value, "Tick") || same(value, "Architectural"))
-            s.arrowType = ArrowType::ArchTick;
+            a = ArrowType::ArchTick;
         else if (same(value, "Dot"))
-            s.arrowType = ArrowType::Dot;
+            a = ArrowType::Dot;
         else if (same(value, "None"))
-            s.arrowType = ArrowType::None;
+            a = ArrowType::None;
         else
             return "Arrow type is Filled, Open, Tick, Dot or None.";
         return {};
@@ -537,6 +556,38 @@ std::string applyProperty(const Document& doc, DimStyle& s, std::string_view key
         if (!parseBool(value, b))
             return "Answer Suppress or Show.";
         (same(key, "LeadingZeros") ? s.suppressLeadingZeros : s.suppressTrailingZeros) = b;
+        return {};
+    }
+    // DIMLWD / DIMLWE: ByBlock, ByLayer, Default or a weight in mm (0.25).
+    if (same(key, "LineWeight") || same(key, "ExtWeight")) {
+        LineWeight& w = same(key, "LineWeight") ? s.dimLineWeight : s.extLineWeight;
+        double mm = 0;
+        if (same(value, "ByBlock"))
+            w = LineWeight::byBlock();
+        else if (same(value, "ByLayer"))
+            w = LineWeight::byLayer();
+        else if (same(value, "Default"))
+            w = LineWeight::defaultWeight();
+        else if (parseReal(value, mm) && mm >= 0 && mm <= 2.11)
+            w = LineWeight::hundredths(static_cast<std::int16_t>(std::lround(mm * 100)));
+        else
+            return "A lineweight is ByBlock, ByLayer, Default or millimetres from 0 to 2.11.";
+        return {};
+    }
+    // DIMLTYPE / DIMLTEX1 / DIMLTEX2: ByBlock, ByLayer or a linetype of the drawing.
+    if (same(key, "Linetype") || same(key, "ExtLinetype1") || same(key, "ExtLinetype2")) {
+        std::string& lt = same(key, "Linetype")       ? s.dimLinetype
+                          : same(key, "ExtLinetype1") ? s.ext1Linetype
+                                                      : s.ext2Linetype;
+        const std::string v = spaced(value);
+        if (same(v, "ByBlock"))
+            lt.clear();
+        else if (same(v, "ByLayer"))
+            lt = "ByLayer";
+        else if (const Linetype* found = doc.linetypeByName(v))
+            lt = found->name;
+        else
+            return "No linetype named \"" + v + "\" in this drawing.";
         return {};
     }
     if (same(key, "LineColor"))

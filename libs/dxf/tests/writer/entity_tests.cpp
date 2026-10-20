@@ -1958,4 +1958,124 @@ TEST_CASE("Active Only does not lock the other layers in the DXF") {
     CHECK(b->locked);
 }
 
+TEST_CASE("an annotative insert with attributes and a clip stays annotative through DXF") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("block");
+        BlockDef def;
+        def.name = "MARK";
+        const BlockId block = tx.addBlock(def).value();
+        LineData l;
+        l.a = {0, 0};
+        l.b = {10, 0};
+        REQUIRE(tx.add(make(l), block));
+        TextData t;
+        t.position = t.alignPoint = {0, 2};
+        t.height = 2.5;
+        t.utf8 = "TAG";
+        AttDefInfo a;
+        a.tag = "TAG";
+        a.defaultValue = "A";
+        t.attdef = a;
+        REQUIRE(tx.add(make(Indirect<TextData>(t)), block));
+        InsertData in;
+        in.block = block;
+        in.position = {5, 5};
+        in.attribs.push_back(AttribValue{"TAG", "B", {}});
+        in.clip = {{-1, -1}, {11, -1}, {11, 5}, {-1, 5}};
+        Entity e = make(Indirect<InsertData>(in));
+        e.common.annotative = true;
+        e.common.annoScales = ScaleList(std::vector<double>{50, 100});
+        REQUIRE(tx.add(std::move(e)));
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    CHECK_MESSAGE(rt.diff.empty(), rt.diff);
+    bool seen = false;
+    rt.back->forEachEntity([&](const Entity& e) {
+        if (const auto* in = entityAs<InsertData>(e)) {
+            seen = true;
+            CHECK(e.common.annotative);
+            CHECK(e.common.annoScales.size() == 2);
+            CHECK(in->clip.size() == 4);
+        }
+    });
+    CHECK(seen);
+    // One TBCAD application in the INSERT record, holding the clip and the flags.
+    const std::size_t insert = rt.bytes.find("INSERT");
+    const std::size_t app = rt.bytes.find("TBCAD", insert);
+    REQUIRE(app != std::string::npos);
+    CHECK(rt.bytes.find("TBCAD", app + 1) > rt.bytes.find("annotative=1", app));
+}
+
+TEST_CASE("dimension breaks, jogs, flipped arrows and associative points survive DXF") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("dimensions");
+        LineData l;
+        l.a = {0, 0};
+        l.b = {100, 0};
+        DimensionData d;
+        d.kind = DimKind::Linear;
+        d.defPts = {Vec2{0, 0}, Vec2{100, 0}, Vec2{50, 10}, Vec2{}};
+        d.style = kDimStyleStandard;
+        d.breaks = {DimBreak{{20, 10}, {25, 10}}, DimBreak{{60, 10}, {64.5, 10}}};
+        d.jogs = {Vec2{40, 10}};
+        d.flipArrow2 = true;
+        d.textPos = {50, 10};
+        d.measurement = 100;
+        // Added first, so it is written before the line it follows.
+        const EntityId dim = tx.add(make(Indirect<DimensionData>(d))).value();
+        const EntityId line = tx.add(make(l)).value();
+        LineData cross;
+        cross.a = {22.5, -5};
+        cross.b = {22.5, 20};
+        const EntityId crossing = tx.add(make(cross)).value();
+        REQUIRE(tx.modify(dim, [&](Entity& e) {
+            auto* dd = entityAs<DimensionData>(e);
+            dd->assoc[0] = DimAssoc{DimAssoc::Kind::Vertex, line, 0};
+            dd->assoc[1] = DimAssoc{DimAssoc::Kind::Vertex, line, 1};
+            dd->breakWith = {crossing};
+            dd->autoBreaks = 1;
+        }));
+        LeaderData ld;
+        ld.vertices = {{0, 50}, {30, 60}};
+        ld.textPos = {34, 60};  // no text: only TBCAD_DIM keeps where it would go
+        ld.breaks = {DimBreak{{10, 53.333}, {12, 54}}};
+        ld.breakWith = {crossing};
+        ld.autoBreaks = 1;
+        REQUIRE(tx.add(make(Indirect<LeaderData>(ld))));
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    CHECK_MESSAGE(rt.diff.empty(), rt.diff);
+    int dims = 0, leaders = 0;
+    rt.back->forEachEntity([&](const Entity& e) {
+        if (const auto* d = entityAs<DimensionData>(e)) {
+            ++dims;
+            CHECK(d->breaks.size() == 2);
+            CHECK(d->jogs.size() == 1);
+            CHECK(d->flipArrow2);
+            REQUIRE(rt.back->find(d->assoc[1].target));
+            CHECK(entityAs<LineData>(*rt.back->find(d->assoc[1].target)));
+            CHECK(d->autoBreaks == 1);
+            CHECK(d->breakWith.size() == 1);
+            CHECK(e.common.ext.get().xdata.empty());
+        }
+        if (const auto* l = entityAs<LeaderData>(e)) {
+            ++leaders;
+            CHECK(l->breaks.size() == 1);
+            CHECK(l->breakWith.size() == 1);
+        }
+    });
+    CHECK(dims == 1);
+    CHECK(leaders == 1);
+    // Registered in the APPID table, then used by the dimension and the leader.
+    std::size_t uses = 0;
+    for (std::size_t at = rt.bytes.find("TBCAD_DIM"); at != std::string::npos;
+         at = rt.bytes.find("TBCAD_DIM", at + 1))
+        ++uses;
+    CHECK(uses == 3);
+}
+
 }  // namespace tbcad::dxf

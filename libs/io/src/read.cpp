@@ -523,6 +523,9 @@ private:
             const DimStyleId id{id32(r)};
             const std::size_t values = r.count(9);
             double tvp = 0;
+            ArrowType leader = ArrowType::ClosedFilled;
+            LineWeight lwd = LineWeight::byBlock(), lwe = LineWeight::byBlock();
+            std::string lts[3];
             for (std::size_t k = 0; k < values; ++k) {
                 const std::uint64_t tag = r.varint();
                 const double v = r.f64();
@@ -530,10 +533,32 @@ private:
                     bad("invalid dimension style variable");
                 if (tag == 1)
                     tvp = v;
+                else if (tag == 2) {
+                    if (v < 0 || v > static_cast<double>(ArrowType::None) || v != std::floor(v))
+                        bad("invalid leader arrow");
+                    leader = static_cast<ArrowType>(static_cast<int>(v));
+                } else if (tag == 3 || tag == 4) {
+                    if (v < -3 || v > 211 || v != std::floor(v))
+                        bad("invalid dimension lineweight");
+                    (tag == 3 ? lwd : lwe) = LineWeight{static_cast<std::int16_t>(v)};
+                } else if (tag >= 5 && tag <= 7) {
+                    if (v < 0 || v >= static_cast<double>(strings_.size()) || v != std::floor(v))
+                        bad("invalid dimension linetype");
+                    lts[tag - 5] = strings_[static_cast<std::size_t>(v)];
+                }
             }
             if (!doc_->dimStyle(id))
                 continue;
-            check(tx.modifyDimStyle(id, [&](DimStyle& d) { d.textVertPos = tvp; }),
+            check(tx.modifyDimStyle(id,
+                                    [&](DimStyle& d) {
+                                        d.textVertPos = tvp;
+                                        d.leaderArrow = leader;
+                                        d.dimLineWeight = lwd;
+                                        d.extLineWeight = lwe;
+                                        d.dimLinetype = lts[0];
+                                        d.ext1Linetype = lts[1];
+                                        d.ext2Linetype = lts[2];
+                                    }),
                   "dimension style");
         }
         if (!r.atEnd())

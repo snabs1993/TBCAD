@@ -227,7 +227,6 @@ void Writer::head(std::string_view type, const Props& p, std::uint64_t owner,
                   std::string_view subclass) {
     Out& o = *L().o;
     o.zero(type);
-    L().tbcadOpen = false;
     if (r12_ && owner == paperRec_ && owner != 0)
         o.i(67, 1);
     if (!r12_) {
@@ -307,6 +306,79 @@ void Writer::loadSourceHandles() {
         srcHandle_[id] = handle;
         srcHandleTop_ = std::max(srcHandleTop_, handle);
     }
+}
+
+// Objects a dimension or leader names (associative points, DIMBREAK Auto) take their handle now,
+// so TBCAD_DIM can name them whether they are written before or after it.
+void Writer::reserveNamedHandles() {
+    if (r12_)
+        return;
+    const auto reserve = [&](EntityId id) {
+        if (!id || srcHandle_.count(id.value) || !doc_.find(id))
+            return;
+        const std::uint64_t h = newHandle();
+        srcHandleReserved_.insert(h);
+        srcHandle_[id.value] = h;
+    };
+    doc_.forEachEntity([&](const Entity& e) {
+        if (const auto* d = entityAs<DimensionData>(e)) {
+            for (const DimAssoc& a : d->assoc)
+                if (a.kind != DimAssoc::Kind::None)
+                    reserve(a.target);
+            for (EntityId id : d->breakWith)
+                reserve(id);
+        } else if (const auto* l = entityAs<LeaderData>(e)) {
+            for (EntityId id : l->breakWith)
+                reserve(id);
+        }
+    });
+}
+
+std::string Writer::handleRef(EntityId id) const {
+    const auto it = srcHandle_.find(id.value);
+    if (it == srcHandle_.end())
+        return "0";
+    char buf[24];
+    std::snprintf(buf, sizeof buf, "%llX", static_cast<unsigned long long>(it->second));
+    return buf;
+}
+
+void Writer::writeDimExtras(const std::vector<DimBreak>& breaks, const std::vector<EntityId>& with,
+                            std::uint32_t autoBreaks, const DimensionData* dim,
+                            const LeaderData* leader) {
+    std::vector<std::string> items;
+    const auto num = [](double v) {
+        char buf[32];
+        std::snprintf(buf, sizeof buf, "%.17g", std::isfinite(v) ? v : 0.0);
+        return std::string(buf);
+    };
+    const auto pt = [&](Vec2 p) { return num(p.x) + "," + num(p.y); };
+    for (const DimBreak& b : breaks)
+        items.push_back("b=" + pt(b.a) + "," + pt(b.b));
+    if (!with.empty() && !r12_) {
+        items.push_back("auto=" + std::to_string(autoBreaks));
+        for (EntityId id : with)
+            items.push_back("w=" + handleRef(id));
+    }
+    if (leader && leaderKeepsTextPos(*leader))
+        items.push_back("tp=" + pt(leader->textPos));
+    if (dim) {
+        for (const Vec2& j : dim->jogs)
+            items.push_back("j=" + pt(j));
+        if (dim->flipArrow1 || dim->flipArrow2)
+            items.push_back(std::string("flip=") + (dim->flipArrow1 ? "1" : "0") +
+                            (dim->flipArrow2 ? "1" : "0"));
+        for (std::size_t k = 0; k < dim->assoc.size() && !r12_; ++k)
+            if (const DimAssoc& a = dim->assoc[k]; a.kind != DimAssoc::Kind::None)
+                items.push_back("as" + std::to_string(k) + "=" +
+                                std::to_string(static_cast<int>(a.kind)) + ":" +
+                                handleRef(a.target) + ":" + std::to_string(a.index));
+    }
+    if (items.empty())
+        return;
+    L().o->raw(1001, "TBCAD_DIM");
+    for (const std::string& it : items)
+        L().o->raw(1000, it);
 }
 
 void Writer::pickEntityHandle(EntityId id) {
@@ -692,6 +764,8 @@ void Writer::mleaderNote(const MLeaderData& m, std::vector<DataItem>& items) {
 // turns it back into the flag. Written after the last group of the record.
 void Writer::writeAnnotativeData(const Entity& e) {
     writeTbcadFlags(e);
+    if (const auto* d = entityAs<DimensionData>(e))
+        writeDimExtras(d->breaks, d->breakWith, d->autoBreaks, d);
     writeExtXdata(e.common);
 }
 
@@ -717,10 +791,8 @@ void Writer::writeExtXdata(const EntityCommon& c) {
 }
 
 void Writer::openTbcadXdata() {
-    if (L().tbcadOpen)
-        return;
-    L().o->raw(1001, "TBCAD");
-    L().tbcadOpen = true;
+    if (L().o->xdataApp != "TBCAD")
+        L().o->raw(1001, "TBCAD");
 }
 
 void Writer::writeTbcadFlags(const Entity& e) {
@@ -735,24 +807,28 @@ void Writer::writeTbcadFlags(const Entity& e) {
         if (source.find("%<") != std::string::npos)
             written = encodeText(toDxfMarkup(text::expandFields(doc_, source)), utf8_);
     }
-    const bool field = !written.empty() && written != encodeText(source, utf8_);
-    if (!e.common.annotative && !e.common.wipeout && !field)
-        return;
-    openTbcadXdata();
-    if (field) {
+    if (!written.empty() && written != encodeText(source, utf8_)) {
+        openTbcadXdata();
         L().o->raw(1000, "fieldof=" + fieldHash(written) + ";" +
                              fieldHash(text::expandFields(doc_, source, kFieldCheckDate)));
         for (const std::string& piece : fieldPieces(source))
             L().o->raw(1000, piece);
     }
-    if (e.common.wipeout)
+    writeCommonFlags(e.common);
+}
+
+void Writer::writeCommonFlags(const EntityCommon& c) {
+    if (!c.annotative && !c.wipeout)
+        return;
+    openTbcadXdata();
+    if (c.wipeout)
         L().o->str(1000, "wipeout=1");
-    if (!e.common.annotative)
+    if (!c.annotative)
         return;
     L().o->str(1000, "annotative=1");
-    if (!e.common.annoScales.empty()) {
+    if (!c.annoScales.empty()) {
         std::string s = "annoscales=";
-        for (double v : e.common.annoScales) {
+        for (double v : c.annoScales) {
             char buf[40];
             std::snprintf(buf, sizeof buf, "%.12g", v);
             s += (s.back() == '=' ? "" : ",") + std::string(buf);
@@ -1484,7 +1560,7 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
         o.d(50, d.rotation * kDeg);
     if (d.clip.size() >= 3) {
         // No DXF form for a clipping boundary: TBCAD restores it from XDATA (block coordinates).
-        o.raw(1001, "TBCAD");
+        openTbcadXdata();
         o.str(1000, d.clipOn ? "clip=1" : "clip=0");
         if (d.clipInvert)
             o.str(1000, "clipinvert=1");
@@ -1494,6 +1570,8 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
                   "a clipping boundary is kept only in TBCAD XDATA; other programs "
                   "show the whole block");
     }
+    if (L().cur)  // in the INSERT record itself, ahead of its ATTRIBs (see writeEntity)
+        writeCommonFlags(*L().cur);
     if (!arrayTag_.empty()) {
         o.raw(1001, "TBCAD_ARRAY");
         for (const DataItem& it : arrayTag_)
@@ -1577,6 +1655,7 @@ void Writer::writeLeader(const Props& p, const LeaderData& d, std::uint64_t owne
         o.pt(211, {1, 0});
         o.pt(212, {0, 0});
         o.pt(213, {0, 0});
+        writeDimExtras(d.breaks, d.breakWith, d.autoBreaks, nullptr, &d);
         count("LEADER");
     }
     if (!d.utf8.empty()) {
