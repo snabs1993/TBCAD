@@ -7,6 +7,7 @@
 #include "tbcad/core/dim_assoc.h"
 #include "tbcad/dim/dim.h"
 #include "tbcad/dimcmd/dimcmd.h"
+#include "tbcad/text/text.h"
 
 using namespace tbcad;
 using namespace tbcad::cmd;
@@ -510,6 +511,71 @@ TEST_CASE("DIMBREAK opens a gap in the dimension line where another object cross
                 .finished);
     CHECK(entityAs<DimensionData>(*f.doc.find(id))->breaks.empty());
     CHECK(count() == before);
+}
+
+// As AutoCAD: the arc of an angular dimension breaks too, and other dimensions and text break a
+// dimension where they cross it.
+TEST_CASE("DIMBREAK breaks angular arcs, and at other dimensions and text") {
+    text::registerDisplay();
+    Chain f;
+    auto add = [&](EntityData data) {
+        auto tx = f.doc.begin("setup");
+        Entity e;
+        e.data = std::move(data);
+        EntityId id = tx.add(std::move(e)).value();
+        tx.commit();
+        return id;
+    };
+    auto newest = [&] {
+        EntityId id{};
+        f.doc.forEachEntity([&](const Entity& e) {
+            if (kind(e) == EntityKind::Dimension && e.common.id.value > id.value)
+                id = e.common.id;
+        });
+        return id;
+    };
+    auto dimOf = [&](EntityId id) { return entityAs<DimensionData>(*f.doc.find(id)); };
+
+    // An angular dimension (arc radius 30) crossed by a line at 45 degrees.
+    REQUIRE(f.host->run("DIMANGULAR", {"", "0,0", "50,0", "0,50", "21.2132,21.2132"}).finished);
+    const EntityId ang = newest();
+    const std::size_t arcsBefore = dim::layoutDimension(f.doc, *dimOf(ang)).arcs.size();
+    add(LineData{{10, 10}, {40, 40}});
+    REQUIRE(f.host->run("DIMBREAK", {ScriptItem::select({ang}), ScriptItem::enter(), "Auto", "All"})
+                .finished);
+    REQUIRE(dimOf(ang)->breaks.size() == 1);
+    CHECK(distance(dimOf(ang)->breaks[0].a, {0, 0}) == doctest::Approx(30));
+    CHECK(dim::layoutDimension(f.doc, *dimOf(ang)).arcs.size() == arcsBefore + 1);
+
+    // A horizontal dimension crossed by the dimension line of a vertical one at x = 140, and by a
+    // text at x = 170. The vertical one's extension lines end where they start: no break there.
+    REQUIRE(f.host->run("DIMLINEAR", {"100,0", "200,0", "150,-30"}).finished);
+    const EntityId h = newest();
+    REQUIRE(f.host->run("DIMLINEAR", {"160,-60", "160,20", "140,-20"}).finished);
+    const EntityId v = newest();
+    REQUIRE(dimOf(v)->defPts[2].x == doctest::Approx(140));
+    TextData t;
+    t.position = {168, -31};
+    t.height = 2.5;
+    t.utf8 = "XX";
+    add(t);
+    REQUIRE(f.host->run("DIMBREAK", {ScriptItem::select({h}), ScriptItem::enter(), "Auto", "All"})
+                .finished);
+    const auto& br = dimOf(h)->breaks;
+    REQUIRE(br.size() == 2);
+    std::vector<double> mids;
+    for (const DimBreak& b : br) {
+        CHECK(b.a.y == doctest::Approx(-30));
+        mids.push_back((b.a.x + b.b.x) / 2);
+    }
+    std::sort(mids.begin(), mids.end());
+    CHECK(mids[0] == doctest::Approx(140));
+    CHECK(mids[1] > 168);
+    CHECK(mids[1] < 173);
+    // The gap round the text takes the whole text box, not one gap at each side of it.
+    const DimBreak& textGap = br[0].a.x > 150 ? br[0] : br[1];
+    CHECK(std::min(textGap.a.x, textGap.b.x) < 168);
+    CHECK(std::max(textGap.a.x, textGap.b.x) > 170);
 }
 
 TEST_CASE("DIMBREAK Manual opens a gap between two picked points on one line") {
