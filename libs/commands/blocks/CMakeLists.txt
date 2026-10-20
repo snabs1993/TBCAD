@@ -19,6 +19,7 @@ set(_block_cmd_sources
   src/ncopy_command.cpp
   src/palette.cpp
   src/purge_panel.cpp
+  src/select_panels.cpp
   src/snap_provider.cpp
   src/xclip_command.cpp
   src/xref_commands.cpp

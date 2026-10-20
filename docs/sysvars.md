@@ -48,6 +48,14 @@ Millimeters/Centimeters/Meters/Inches/Feet set INSUNITS, then **Precision**, **T
 **Direction** and **Base** set the rest. DIST, ID, AREA, LIST and MEASUREGEOM show lengths and angles in
 these types (Engineering and Architectural read the drawing as inches: 15 shows as 1'-3").
 
+# DIST, ID and MEASUREGEOM
+
+**DIST** shows the distance, the angle in the XY plane, the angle from the XY plane and Delta X / Y / Z
+(TBCAD drawings are flat, so the Z values are 0). **Multiple points** at the second point keeps a
+running total along the points picked (**Undo** steps back, Enter or **Total** ends). **ID** shows X, Y
+and Z. **MEASUREGEOM** (MEA) stays open after each measurement and asks for the next one (Distance,
+Radius, Angle, Area, Volume, Quick) until **eXit** or Enter.
+
 # AUDIT and RECOVER
 
 **AUDIT** (menu File > Drawing Utilities) checks every object and reports what it finds: objects on a layer

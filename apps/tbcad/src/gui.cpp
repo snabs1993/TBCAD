@@ -3312,11 +3312,25 @@ void Gui::viewportInput(const ViewportRect& rect) {
                 core_.click(ps);
             pressTookPoint_ = leftDown_ = dragging_ = false;
         } else {
+            // SELCYC switches cycling on and off; SELECTIONCYCLING 0 also turns it off.
+            const bool cyclingOn = flag("ui.selectionCycling", false) &&
+                                   core_.setting("selection.cycling").value_or("2") != "0";
             if (dragging_ && !lassoPath_.empty()) {
                 core_.lassoSelect(lassoPath_, ps);
             } else if (dragging_) {
                 core_.dragSelect(pressPos_, mouse, ps);
-            } else if (io.KeyAlt || (flag("ui.selectionCycling", false) && !doubleClick_)) {
+            } else if (!io.KeyAlt && cyclingOn && !doubleClick_ &&
+                       core_.setting("selection.cycling").value_or("2") == "2") {
+                // SELECTIONCYCLING 2: where objects overlap, a list to pick one from.
+                auto under = core_.objectsAt(ps);
+                if (under.size() > 1) {
+                    cycleList_ = std::move(under);
+                    cycleListAt_ = ps;
+                    openCycleList_ = true;
+                } else {
+                    core_.click(ps);
+                }
+            } else if (io.KeyAlt || (cyclingOn && !doubleClick_)) {
                 core_.cycleClick(ps);
             } else if (doubleClick_)
                 core_.doubleClick(ps);
@@ -3389,6 +3403,7 @@ void Gui::viewportInput(const ViewportRect& rect) {
                     dpiScale_ * static_cast<float>(core_.settings().getNumber("ui.scale", 1.0)),
                     theme_);
     viewportMenu();
+    cycleListPopup();
 
     if (hovered || leftDown_ || panning_)
         core_.pointerMoved(ps);
@@ -3471,6 +3486,44 @@ void Gui::snapOverrideItems() {
         core_.setSetting(drafting::keys::osnapOnce, "none");
     if (!current.empty() && ImGui::MenuItem("Cancel override"))
         core_.setSetting(drafting::keys::osnapOnce, "");
+}
+
+void Gui::cycleListPopup() {
+    if (openCycleList_) {
+        ImGui::OpenPopup("Selection##cycle");
+        openCycleList_ = false;
+    }
+    if (!ImGui::BeginPopup("Selection##cycle")) {
+        if (!cycleList_.empty()) {
+            cycleList_.clear();
+            core_.highlightCandidate({});
+        }
+        return;
+    }
+    anyActivity_ = true;
+    ImGui::TextDisabled("Selection");
+    ImGui::Separator();
+    EntityId hovered{};
+    for (EntityId id : cycleList_) {
+        // "Line, Walls": the type and the layer from the rollover description.
+        const std::string d = core_.describeEntity(id);
+        std::string label = d.substr(0, d.find('\n'));
+        if (const auto at = d.find("\nLayer: "); at != std::string::npos)
+            label += ", " + d.substr(at + 8, d.find('\n', at + 8) - (at + 8));
+        label += "##" + std::to_string(id.value);
+        if (ImGui::Selectable(label.c_str())) {
+            core_.pickFromList(id, cycleListAt_);
+            cycleList_.clear();
+            core_.highlightCandidate({});
+            ImGui::CloseCurrentPopup();
+            break;
+        }
+        if (ImGui::IsItemHovered())
+            hovered = id;
+    }
+    if (!cycleList_.empty())
+        core_.highlightCandidate(hovered);
+    ImGui::EndPopup();
 }
 
 void Gui::viewportMenu() {

@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include "tbcad/core/groups.h"
 #include "tbcad/ui/app_core.h"
 #include "test_support.h"
 
@@ -241,4 +242,61 @@ TEST_CASE("perf: a crossing window at a Select objects prompt on 393k lines") {
 #ifdef NDEBUG
     CHECK(crossing < 500);
 #endif
+}
+
+TEST_CASE("Group, BOX, SIngle and ? at Select objects") {
+    SelFixture f("selgroup");
+    {
+        // The lines at 0 and 20 (the first two added).
+        std::vector<EntityId> ids;
+        f.core->document().forEachEntity([&](const Entity& e) {
+            if (ids.size() < 2)
+                ids.push_back(e.common.id);
+        });
+        Transaction tx = f.core->document().begin("group");
+        REQUIRE(writeGroups(tx, {Group{.name = "Pair", .members = ids}}).ok());
+        tx.commit();
+    }
+
+    f.core->submitText("TESTERASE");
+    f.core->submitText("G");
+    f.core->submitText("nosuch");
+    CHECK(f.lastLineHas("There is no group named"));
+    f.core->submitText("G");
+    f.core->submitText("pair");  // names are not case sensitive
+    CHECK(f.core->runner().collected().size() == 2);
+    f.core->submitText("?");
+    CHECK(f.lastLineHas("Window/Last/Crossing/BOX"));
+    f.core->submitText("");
+    CHECK(f.count() == 2);
+
+    // BOX from right to left is a crossing: the half-covered line at 40 is taken.
+    f.core->submitText("TESTERASE");
+    f.core->submitText("BOX");
+    f.core->submitText("5,45");
+    f.core->submitText("-5,35");
+    CHECK(f.core->runner().collected().size() == 1);
+    f.core->pressEscape();
+
+    // SIngle: the first pick ends the prompt.
+    f.core->submitText("TESTERASE");
+    f.core->submitText("SI");
+    f.core->click(f.at({5, 40}));
+    CHECK_FALSE(f.core->runner().active());
+    CHECK(f.count() == 1);
+}
+
+TEST_CASE("the selection cycling list: the objects under the cursor, and picking one of them") {
+    SelFixture f("selcyclist");
+    addLine(f.core->document(), {0, 0}, {10, 0.2});  // crosses the line at y = 0
+    const auto under = f.core->objectsAt(f.at({5, 0.05}));
+    REQUIRE(under.size() == 2);
+    f.core->pickFromList(under[1], f.at({5, 0.05}));
+    REQUIRE(f.core->selection().size() == 1);
+    CHECK(f.core->selection()[0] == under[1]);
+    // While a command waits for a point the list is empty: a click is a point there.
+    f.core->submitText("TESTLINE");
+    REQUIRE(f.core->runner().active());
+    CHECK(f.core->objectsAt(f.at({5, 0.05})).empty());
+    f.core->pressEscape();
 }

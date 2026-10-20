@@ -2,13 +2,27 @@
 
 #include "common.h"
 
-namespace tbcad::select::detail {
+namespace tbcad::select {
+
+unsigned similarMatch(const std::optional<std::string>& setting) {
+    if (setting) {
+        try {
+            return static_cast<unsigned>(std::stoul(*setting)) & 511u;
+        } catch (...) {
+        }
+    }
+    return static_cast<unsigned>(Match::Type) | static_cast<unsigned>(Match::Layer);
+}
+
+std::string objectTypeName(const Entity& e) {
+    return detail::kindName(e);
+}
+
+namespace detail {
 
 namespace {
 
-constexpr const char* kMatchKey = "selectsimilar.match";
-constexpr unsigned kDefaultMatch =
-    static_cast<unsigned>(Match::Type) | static_cast<unsigned>(Match::Layer);
+constexpr const char* kMatchKey = kSimilarMatchKey;
 
 struct MatchName {
     const char* name;
@@ -25,13 +39,7 @@ const MatchName kNames[] = {{"Type", Match::Type},
                             {"Size", Match::Size}};
 
 unsigned loadMatch(cmd::CommandContext& ctx) {
-    if (auto s = ctx.host().setting(kMatchKey)) {
-        try {
-            return static_cast<unsigned>(std::stoul(*s)) & 511u;
-        } catch (...) {
-        }
-    }
-    return kDefaultMatch;
+    return similarMatch(ctx.host().setting(kMatchKey));
 }
 
 std::string describe(unsigned m) {
@@ -82,6 +90,9 @@ public:
 
 private:
     static cmd::Task settings(cmd::CommandContext& ctx) {
+        // The application shows the Select Similar Settings dialog as well; its boxes and these
+        // keywords change the same setting.
+        ctx.host().openPanel("selectsimilar");
         for (;;) {
             unsigned match = loadMatch(ctx);
             cmd::KeywordOptions ko;
@@ -109,4 +120,5 @@ std::unique_ptr<cmd::Command> makeSelectSimilar() {
     return std::make_unique<SelectSimilar>();
 }
 
-}  // namespace tbcad::select::detail
+}  // namespace detail
+}  // namespace tbcad::select

@@ -277,6 +277,13 @@ public:
     // Click that cycles through the overlapping objects under the cursor (Alt+click): each click
     // at the same spot picks the next one down.
     void cycleClick(const PointerState& p);
+    // The selection cycling list (SELECTIONCYCLING 2): the objects a click here could pick,
+    // nearest first; empty when a click would not pick (a non-pick prompt is waiting).
+    std::vector<EntityId> objectsAt(const PointerState& p);
+    // Picks one object of that list, as a click on it alone would.
+    void pickFromList(EntityId id, const PointerState& p);
+    // Outlines an object of the list while the pointer is over its row.
+    void highlightCandidate(EntityId id);
 
     // ---- selection ---------------------------------------------------------------------------
     const std::vector<EntityId>& selection() const override { return selection_; }

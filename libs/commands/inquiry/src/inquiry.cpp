@@ -90,26 +90,73 @@ public:
         auto first = co_await ctx.getPoint("Specify first point");
         if (!first.ok())
             co_return;
-        cmd::PointOptions next;
-        next.base = first.point;
-        next.allowNone = false;
-        next.preview = [from = first.point](Vec2 cursor, DisplayList& out) {
+        cmd::PointOptions second0;
+        second0.base = first.point;
+        second0.keywords = {"Multiple"};
+        second0.preview = [from = first.point](Vec2 cursor, DisplayList& out) {
             DisplayPolyline pl;
             pl.pts = {from, cursor};
             out.items.emplace_back(std::move(pl));
         };
-        auto second = co_await ctx.getPoint("Specify second point", std::move(next));
+        auto second =
+            co_await ctx.getPoint("Specify second point or [Multiple points]", std::move(second0));
+        if (second.status == cmd::Status::Keyword) {
+            co_await multiple(ctx, first.point);
+            co_return;
+        }
         if (!second.ok())
             co_return;
-
         const Precision p = precisionOf(ctx);
         const Vec2 d = second.point - first.point;
         const double angle = length(d) < tol::kLinear ? 0 : normalizeAngle(std::atan2(d.y, d.x));
+        // TBCAD drawings are flat: the angle from the XY plane and Delta Z are always 0, shown
+        // as AutoCAD shows them so scripts reading the line find every field.
         report(ctx,
                "Distance = " + formatLengthIn(ctx.doc(), length(d), p) +
                    ", Angle in XY plane = " + ang(ctx.doc(), angle, anglePrecisionOf(ctx), true) +
+                   ", Angle from XY plane = " + ang(ctx.doc(), 0, anglePrecisionOf(ctx)) +
                    ", Delta X = " + formatLengthIn(ctx.doc(), d.x, p) +
-                   ", Delta Y = " + formatLengthIn(ctx.doc(), d.y, p));
+                   ", Delta Y = " + formatLengthIn(ctx.doc(), d.y, p) +
+                   ", Delta Z = " + formatLengthIn(ctx.doc(), 0, p));
+    }
+
+private:
+    // Multiple points: a running total along the points picked, until Enter.
+    static cmd::Task multiple(cmd::CommandContext& ctx, Vec2 start) {
+        const Precision p = precisionOf(ctx);
+        std::vector<Vec2> pts{start};
+        double total = 0;
+        for (;;) {
+            cmd::PointOptions o;
+            o.base = pts.back();
+            o.allowNone = true;
+            o.keywords = {"Undo", "Total"};
+            o.preview = [pts](Vec2 cursor, DisplayList& out) {
+                DisplayPolyline pl;
+                pl.pts = pts;
+                pl.pts.push_back(cursor);
+                out.items.emplace_back(std::move(pl));
+            };
+            auto next =
+                co_await ctx.getPoint("Specify next point or [Undo/Total] <Total>", std::move(o));
+            if (next.status == cmd::Status::Keyword && next.keyword == "Undo") {
+                if (pts.size() > 1) {
+                    total -= distance(pts[pts.size() - 2], pts.back());
+                    pts.pop_back();
+                }
+                ctx.message("Distance = " + formatLengthIn(ctx.doc(), total, p));
+                continue;
+            }
+            if (next.status == cmd::Status::Cancel)
+                co_return;
+            if (!next.ok())
+                break;
+            total += distance(pts.back(), next.point);
+            pts.push_back(next.point);
+            ctx.message("Distance = " + formatLengthIn(ctx.doc(), total, p));
+        }
+        report(ctx, "Distance = " + formatLengthIn(ctx.doc(), total, p) + " along " +
+                        std::to_string(pts.size()) + " points");
     }
 };
 
@@ -126,7 +173,8 @@ public:
             co_return;
         const Precision p = precisionOf(ctx);
         report(ctx, "X = " + formatLengthIn(ctx.doc(), pt.point.x, p) +
-                        ", Y = " + formatLengthIn(ctx.doc(), pt.point.y, p));
+                        ", Y = " + formatLengthIn(ctx.doc(), pt.point.y, p) +
+                        ", Z = " + formatLengthIn(ctx.doc(), 0, p));
     }
 };
 
@@ -415,14 +463,30 @@ public:
         return "Measure a distance, radius, angle or area";
     }
 
+    // As in AutoCAD the command stays open after a measurement and asks for the next one
+    // (eXit or Enter ends it).
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::KeywordOptions ko;
         ko.keywords = {"Distance", "Radius", "Angle", "Area", "Volume", "Quick"};
         ko.defaultKeyword = "Distance";
         auto k = co_await ctx.getKeyword(
             "Measure [Distance/Radius/Angle/Area/Volume/Quick] <Distance>", ko);
-        if (!k.ok())
-            co_return;
+        while (k.ok() && k.keyword != "eXit") {
+            co_await measure(ctx, k.keyword);
+            if (ctx.cancelled())
+                co_return;
+            cmd::KeywordOptions again;
+            again.keywords = {"Distance", "Radius", "Angle", "Area", "Volume", "Quick", "eXit"};
+            again.defaultKeyword = "eXit";
+            k = co_await ctx.getKeyword(
+                "Enter an option [Distance/Radius/Angle/Area/Volume/Quick/eXit] <eXit>", again);
+        }
+    }
+
+private:
+    static cmd::Task measure(cmd::CommandContext& ctx, std::string keyword) {
+        cmd::KeywordResult k;
+        k.keyword = std::move(keyword);
         if (k.keyword == "Quick") {
             co_await makeQuickMeasure()->run(ctx);
             co_return;

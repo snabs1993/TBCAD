@@ -399,9 +399,9 @@ TEST_CASE("MEASUREGEOM measures a distance or a radius and DBLIST lists everythi
     f.add(line({0, 0}, {3, 4}));
     cmd::ScriptHost host(f.doc, f.reg);
     host.setSetting("inquiry.precision", "2");
-    host.run("MEA", {"Distance", "0,0", "3,4"});
+    host.run("MEA", {"Distance", "0,0", "3,4", ""});
     CHECK(host.logContains("Distance = 5.00"));
-    host.run("MEASUREGEOM", {"Radius", cmd::ScriptItem::pick(c, {6, 2})});
+    host.run("MEASUREGEOM", {"Radius", cmd::ScriptItem::pick(c, {6, 2}), ""});
     CHECK(host.logContains("Radius = 5.00 mm, Diameter = 10.00 mm"));
     host.run("DBLIST", {});
     CHECK(host.logContains("2 objects listed."));
@@ -553,10 +553,10 @@ TEST_CASE("MEASUREGEOM Volume multiplies the base area by the height") {
     cmd::ScriptHost host(f.doc, f.reg);
     host.setSetting("inquiry.precision", "2");
     using cmd::ScriptItem;
-    host.run("MEASUREGEOM", {"Volume", "O", ScriptItem::pick(r), "5"});
+    host.run("MEASUREGEOM", {"Volume", "O", ScriptItem::pick(r), "5", ""});
     CHECK(host.logContains("Volume = 1000.00"));
     host.clearLog();
-    host.run("MEASUREGEOM", {"Volume", "0,0", "4,0", "4,3", "", "2"});
+    host.run("MEASUREGEOM", {"Volume", "0,0", "4,0", "4,3", "", "2", ""});
     CHECK(host.logContains("Volume = 12.00"));
     CHECK_FALSE(host.undoStack().canUndo());
 }
@@ -578,7 +578,7 @@ TEST_CASE("units follow the document unit in DIST, AREA, LIST and MEASUREGEOM") 
         host.run("DIST", {"0,0", "1000,0"});
         std::snprintf(want, sizeof want, "Distance = 1000.000 %s", name);
         CHECK_MESSAGE(host.logContains(want), name);
-        host.run("MEASUREGEOM", {"Radius", cmd::ScriptItem::pick(c, {1000, 0})});
+        host.run("MEASUREGEOM", {"Radius", cmd::ScriptItem::pick(c, {1000, 0}), ""});
         std::snprintf(want, sizeof want, "Radius = %.3f %s", 1000 * scale, name);
         CHECK_MESSAGE(host.logContains(want), name);
         host.run("AREA", {"O", cmd::ScriptItem::pick(c)});
@@ -693,4 +693,30 @@ TEST_CASE("LIST names every kind of object, the newer ones too") {
     Entity ml;
     ml.data = Indirect<MLeaderData>(MLeaderData{});
     CHECK(first(ml).rfind("MULTILEADER", 0) == 0);
+}
+
+TEST_CASE("DIST Multiple points keeps a running total - ID and DIST show Z as AutoCAD does") {
+    Fixture f;
+    cmd::ScriptHost host(f.doc, f.reg);
+    host.setSetting("inquiry.precision", "2");
+    host.run("DIST", {"0,0", "3,4"});
+    CHECK(host.logContains("Angle from XY plane = 0"));
+    CHECK(host.logContains("Delta Z = 0.00"));
+    auto r = host.run("DIST", {"0,0", "M", "3,4", "3,10", "U", "3,14", ""});
+    CHECK(r.finished);
+    CHECK(host.logContains("Distance = 11.00"));
+    CHECK(host.logContains("Distance = 15.00 mm along 3 points"));
+    host.run("ID", {"1,2"});
+    CHECK(host.logContains("Z = 0.00"));
+}
+
+TEST_CASE("MEASUREGEOM stays open for the next measurement until eXit") {
+    Fixture f;
+    cmd::ScriptHost host(f.doc, f.reg);
+    host.setSetting("inquiry.precision", "2");
+    auto r = host.run("MEASUREGEOM", {"Distance", "0,0", "3,4"});
+    CHECK_FALSE(r.finished);
+    r = host.feed({"Distance", "0,0", "6,8", "X"});
+    CHECK(r.finished);
+    CHECK(host.logContains("Distance = 10.00"));
 }

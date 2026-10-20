@@ -2475,3 +2475,33 @@ TEST_CASE("Purge dialog removes an unused layer, the units, properties and recov
     h.frame(3);
     CHECK(h.windowOpen("Drawing Recovery"));
 }
+
+TEST_CASE("Quick Select and Object Selection Filters dialogs select from the drawing") {
+    Harness h(1920, 1080);
+    h.core().submitText("LINE");
+    h.core().submitText("0,0");
+    h.core().submitText("100,0");
+    h.core().submitText("");
+    h.core().submitText("CIRCLE");
+    h.core().submitText("50,50");
+    h.core().submitText("10");
+    h.core().clearSelection();
+    h.core().submitText("QSELECT");
+    h.frame(3);
+    REQUIRE(h.windowOpen("Quick Select"));
+    // Layer = "" with Exclude: every object, since none is on a layer with no name.
+    REQUIRE(h.click("Exclude from new selection set", "Quick Select"));
+    REQUIRE(h.click("Select Matching", "Quick Select"));
+    h.frame(2);
+    CHECK(h.core().selection().size() == 2);
+
+    h.core().submitText("FILTER");
+    h.frame(3);
+    CHECK(h.windowOpen("Object Selection Filters"));
+    h.core().clearSelection();
+    h.core().submitText("SELECTSIMILAR");
+    h.core().submitText("Settings");
+    h.frame(3);
+    CHECK(h.windowOpen("Select Similar Settings"));
+    h.core().pressEscape();
+}

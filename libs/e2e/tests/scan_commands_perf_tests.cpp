@@ -307,10 +307,10 @@ struct Case {
 TEST_CASE("perf: commands that scan the whole drawing stay fast on 392k objects") {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     const std::vector<Case> cases = {
-        {"QSELECT-type", {"QSELECT", "Type", "LINE", "Equals", "Replace"}},
-        {"QSELECT-not", {"QSELECT", "Layer", "Topo", "Not", "Replace"}},
-        {"QSELECT-append", {"QSELECT", "Layer", "Topo", "Equals", "Append"}},
-        {"QSELECT-radius", {"QSELECT", "Radius", "1.5", "Greater", "Replace"}},
+        {"QSELECT-type", {"-QSELECT", "Type", "LINE", "Equals", "Replace"}},
+        {"QSELECT-not", {"-QSELECT", "Layer", "Topo", "Not", "Replace"}},
+        {"QSELECT-append", {"-QSELECT", "Layer", "Topo", "Equals", "Append"}},
+        {"QSELECT-radius", {"-QSELECT", "Radius", "1.5", "Greater", "Replace"}},
         {"SELECTSIMILAR", {"SELECTSIMILAR"}},
         {"LIST", {"LIST"}},
         {"CHANGE", {"CHANGE", "0,0"}},
@@ -398,7 +398,7 @@ TEST_CASE("perf: table commands with thousands of layers and blocks stay fast") 
         {"PURGE", {"-PURGE", "", "Yes"}},
         {"BLOCKCOUNT", {"BLOCKCOUNT"}},
         {"EXPLODE", {"EXPLODE"}},
-        {"QSELECT-layer", {"QSELECT", "Layer", "LAYER7", "Equals", "Replace"}},
+        {"QSELECT-layer", {"-QSELECT", "Layer", "LAYER7", "Equals", "Replace"}},
         {"SELECTSIMILAR", {"SELECTSIMILAR"}},
         {"AUDIT", {"AUDIT"}},
     };

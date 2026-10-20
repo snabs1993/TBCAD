@@ -2803,6 +2803,34 @@ void AppCore::cycleClick(const PointerState& p) {
         setSelection({*id});  // cycling replaces the previous pick
 }
 
+std::vector<EntityId> AppCore::objectsAt(const PointerState& p) {
+    const bool pickPrompt = prompt_ && (prompt_->kind == cmd::PromptInfo::Kind::Entity ||
+                                        prompt_->kind == cmd::PromptInfo::Kind::Selection);
+    if (runner().active() && !pickPrompt)
+        return {};
+    return pickAllAt(session_->doc, spatialIndex(), makeRaw(p).worldCursor, apertureMm());
+}
+
+void AppCore::pickFromList(EntityId id, const PointerState& p) {
+    if (!session_->doc.find(id))
+        return;
+    cmd::CommandRunner& run = runner();
+    if (run.active())
+        run.submit(cmd::Input::pick(id, makeRaw(p).worldCursor, p.shift));
+    else
+        applyPick({id}, p.shift);
+}
+
+void AppCore::highlightCandidate(EntityId id) {
+    hoverId_ = id;
+    if (inPaperSpace())
+        return;
+    std::vector<EntityId> all = flashIds_;
+    if (id)
+        all.push_back(id);
+    scene_.setHighlighted(all);
+}
+
 // ---- selection ---------------------------------------------------------------------------------
 
 void AppCore::setSelection(std::vector<EntityId> ids) {

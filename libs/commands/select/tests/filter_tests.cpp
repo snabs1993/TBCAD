@@ -27,13 +27,13 @@ TEST_CASE("FILTER builds a list, applies it, saves it and uses it again") {
     auto l1 = f.addEntity(LineData{{0, 0}, {1, 0}}, a);
     f.addEntity(LineData{{0, 0}, {2, 0}});
     f.addEntity(CircleData{{0, 0}, 1}, a);
-    f.host.run("FI", {"Add", "Type", "LINE", "Equals", "Add", "Layer", "A", "Equals", "Save",
-                      "mine", "Apply"});
+    f.host.run("-FILTER", {"Add", "Type", "LINE", "Equals", "Add", "Layer", "A", "Equals", "Save",
+                           "mine", "Apply"});
     REQUIRE(f.host.selection().size() == 1);
     CHECK(f.host.selection()[0] == l1);
     CHECK(select::savedFilters(f.doc) == std::vector<std::string>{"MINE"});
     f.host.setSelection({});
-    f.host.run("FILTER", {"Use", "mine", "Apply"});
+    f.host.run("-FILTER", {"Use", "mine", "Apply"});
     REQUIRE(f.host.selection().size() == 1);
     CHECK(f.host.selection()[0] == l1);
 }
@@ -47,7 +47,7 @@ TEST_CASE("encode and decode of a filter round-trip - bad values are refused") {
     CHECK(back[0].negate);
     CHECK(back[1].property == select::Property::Color);
     Fixture f;
-    f.host.run("FI", {"Add", "Color", "banana", "Equals", "Apply"});
+    f.host.run("-FILTER", {"Add", "Color", "banana", "Equals", "Apply"});
     CHECK(f.host.logContains("not a valid"));
 }
 
@@ -59,8 +59,8 @@ TEST_CASE("FILTER Or joins groups of conditions, SElect looks only in the chosen
     auto c1 = f.addEntity(CircleData{{0, 0}, 1}, a);
     auto c2 = f.addEntity(CircleData{{5, 0}, 1});
     // (LINE AND layer A) OR CIRCLE
-    f.host.run("FI", {"Add", "Type", "LINE", "Equals", "Add", "Layer", "A", "Equals", "Or",
-                      "Type", "CIRCLE", "Equals", "Save", "mixed", "Apply"});
+    f.host.run("-FILTER", {"Add", "Type", "LINE", "Equals", "Add", "Layer", "A", "Equals", "Or",
+                           "Type", "CIRCLE", "Equals", "Save", "mixed", "Apply"});
     CHECK(f.host.selection().size() == 3);
     CHECK(has(f.host.selection(), l1));
     CHECK(has(f.host.selection(), c1));
@@ -73,7 +73,7 @@ TEST_CASE("FILTER Or joins groups of conditions, SElect looks only in the chosen
     CHECK(back[2].orPrevious);
     // SElect: only among the objects picked now
     f.host.setSelection({});
-    f.host.run("FILTER", {"Use", "mixed", "SElect", cmd::ScriptItem::select({l1, l2, c2}), ""});
+    f.host.run("-FILTER", {"Use", "mixed", "SElect", cmd::ScriptItem::select({l1, l2, c2}), ""});
     CHECK(f.host.selection().size() == 2);
     CHECK(has(f.host.selection(), l1));
     CHECK(has(f.host.selection(), c2));
@@ -85,8 +85,34 @@ TEST_CASE("QSELECT Within searches only the current selection") {
     auto l2 = f.addEntity(LineData{{0, 0}, {2, 0}});
     auto c1 = f.addEntity(CircleData{{0, 0}, 1});
     f.host.setSelection({l1, c1});
-    f.host.run("QSELECT", {"Type", "LINE", "Equals", "Within"});
+    f.host.run("-QSELECT", {"Type", "LINE", "Equals", "Within"});
     REQUIRE(f.host.selection().size() == 1);
     CHECK(f.host.selection()[0] == l1);
     (void)l2;
+}
+
+TEST_CASE("_FILTERSAVE saves and deletes a named filter as one undo step - dialogs open") {
+    Fixture f;
+    const std::vector<select::Query> q{{select::Property::Type, "LINE", false}};
+    f.host.setSetting("tmp.filter.save", "lines\n" + select::encodeFilter(q));
+    f.host.run("_FILTERSAVE", {});
+    CHECK(select::savedFilters(f.doc) == std::vector<std::string>{"LINES"});
+    f.host.setSetting("tmp.filter.save", "Lines\n");
+    f.host.run("_FILTERSAVE", {});
+    CHECK(select::savedFilters(f.doc).empty());
+    REQUIRE(f.host.undo());
+    CHECK(select::savedFilters(f.doc).size() == 1);
+
+    for (const char* c : {"QSELECT", "QSEL", "FILTER", "FI"})
+        CHECK(f.host.run(c, {}).finished);
+}
+
+TEST_CASE("objectTypeName and the Select Similar setting") {
+    Fixture f;
+    auto l = f.addEntity(LineData{{0, 0}, {1, 0}});
+    CHECK(select::objectTypeName(*f.doc.find(l)) == "LINE");
+    CHECK(select::similarMatch(std::nullopt) == (static_cast<unsigned>(select::Match::Type) |
+                                                 static_cast<unsigned>(select::Match::Layer)));
+    CHECK(select::similarMatch(std::string("4")) == static_cast<unsigned>(select::Match::Color));
+    CHECK(select::similarMatch(std::string("junk")) == 3u);
 }
