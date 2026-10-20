@@ -27,6 +27,12 @@ you wrote the change or have the right to submit it under the MIT licence.
 - Warnings are errors in CI (`/W4 /permissive-` on MSVC, `-Wall -Wextra -Wpedantic` elsewhere).
 - Format with `clang-format` (config in `.clang-format`). CI checks it: `clang-format --dry-run --Werror <files>`.
 - Libraries under `libs/` must build and pass tests on Linux and MSVC.
+- Without a Windows machine, `tools/wincheck.sh` checks the files you changed with clang and the
+  warnings MSVC turns into errors (a declaration hiding another, 64-to-32-bit conversions, unused
+  locals). `tools/wincheck.sh push` runs the real MSVC build and tests on GitHub's Windows runner
+  (workflow "Windows check", branch `wincheck/<your branch>`); the end of its build log lists every
+  MSVC error at once. Keep `psapi.h` and other Windows headers after `windows.h` (clang-format sorts
+  includes, so separate them with a comment line).
 
 ## Module layout and ownership
 
