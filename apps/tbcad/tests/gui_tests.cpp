@@ -2667,3 +2667,87 @@ TEST_CASE("Customize page: Quick Access buttons and own right-click menu command
         zoomed = zoomed || line.find("ZOOM") != std::string::npos;
     CHECK(zoomed);
 }
+
+TEST_CASE("open drawings: SAVEALL, QVDRAWING, close other drawings and CLOSEALL with the save question") {
+    Harness h(1600, 900);
+    const fs::path dir = scratchDir("drawings");
+    h.core().submitText("LINE");
+    h.core().submitText("0,0");
+    h.core().submitText("100,0");
+    h.core().pressEscape();
+    REQUIRE(h.core().saveAs(dir / "one.tbcad").ok());
+    h.core().submitText("CIRCLE");
+    h.core().submitText("0,0");
+    h.core().submitText("5");
+    h.frame(2);
+    h.core().newDocument();
+    h.core().submitText("LINE");
+    h.core().submitText("0,0");
+    h.core().submitText("0,100");
+    h.core().pressEscape();
+    REQUIRE(h.core().saveAs(dir / "two.tbcad").ok());
+    h.core().newDocument();
+    h.frame(2);
+    REQUIRE(h.core().documentCount() == 3);
+    CHECK(h.core().documentModified(0));
+
+    h.core().submitText("SAVEALL");
+    h.frame(3);
+    CHECK_FALSE(h.core().anyDocumentModified());
+
+    // Quick view: a card per drawing, and a click on a layout button switches to it.
+    h.core().submitText("QVD");
+    h.frame(3);
+    REQUIRE(h.windowOpen("Quick View: Drawings"));
+    REQUIRE(h.click("Layout1", "Quick View"));  // the first drawing's
+    h.frame(3);
+    CHECK(h.core().activeDocument() == 0);
+    CHECK(h.core().activeLayout() == "Layout1");
+    CHECK_FALSE(h.windowOpen("Quick View"));
+    h.core().setActiveLayout("");
+    h.frame(2);
+
+    // EXPORT picks the format by the file name.
+    h.core().submitText("FILEDIA");
+    h.core().submitText("0");
+    h.core().submitText("EXPORT");
+    h.core().submitText((dir / "one-out.dxf").string());
+    h.frame(4);
+    CHECK(fs::exists(dir / "one-out.dxf"));
+    for (std::size_t i = h.core().history().size() > 12 ? h.core().history().size() - 12 : 0;
+         i < h.core().history().size(); ++i)
+        MESSAGE(h.core().history()[i]);
+
+    // Close the other drawings: only "one" is left.
+    h.core().submitText("CIRCLE");
+    h.core().submitText("50,50");
+    h.core().submitText("5");
+    h.frame(2);
+    REQUIRE(h.core().activateDocument(1));
+    h.core().submitText("CIRCLE");  // a change in a drawing that will be closed
+    h.core().submitText("50,50");
+    h.core().submitText("5");
+    h.frame(2);
+    REQUIRE(h.core().activateDocument(0));
+    h.frame(2);
+    REQUIRE(h.rightClick("one.tbcad", "##doctabs"));
+    h.frame(2);
+    REQUIRE(h.click("Close Other Drawings"));
+    h.frame(3);
+    MESSAGE(h.core().documentCount() << " " << h.core().activeDocument() << " "
+            << h.core().documentModified(0) << h.core().documentModified(1) << " "
+            << h.windowOpen("Save changes") << h.has("Cancel") << h.has("Save"));
+    REQUIRE(h.has("Don't Save"));  // asked about "two"
+    REQUIRE(h.click("Don't Save"));
+    h.frame(3);
+    CHECK(h.core().documentCount() == 1);
+    CHECK(h.core().file().filename() == "one.tbcad");
+    CHECK(h.core().modified());
+
+    h.core().submitText("CLOSEALL");
+    h.frame(3);
+    REQUIRE(h.click("Don't Save"));
+    h.frame(3);
+    CHECK(h.core().documentCount() == 1);
+    CHECK(h.core().isPristine());
+}

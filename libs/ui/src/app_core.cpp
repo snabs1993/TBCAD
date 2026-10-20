@@ -626,6 +626,43 @@ std::string AppCore::documentTitle(std::size_t index) const {
     return s.readOnlyFormat.empty() ? name : name + " [Read-only]";
 }
 
+std::filesystem::path AppCore::documentFile(std::size_t index) const {
+    return index < slots_.size() ? slots_[index].session->file : std::filesystem::path{};
+}
+
+std::vector<std::string> AppCore::documentLayouts(std::size_t index) const {
+    std::vector<std::string> out;
+    if (index >= slots_.size())
+        return out;
+    for (const layout::Layout& l : layout::layouts(slots_[index].session->doc))
+        out.push_back(l.name);
+    return out;
+}
+
+AppCore::SaveAllReport AppCore::saveAll() {
+    SaveAllReport report;
+    const std::size_t back = active_;
+    for (std::size_t i = 0; i < slots_.size(); ++i) {
+        if (!documentModified(i))
+            continue;
+        const Session& s = *slots_[i].session;
+        if (s.file.empty() || !s.readOnlyFormat.empty()) {
+            report.needSaveAs.push_back(i);
+            continue;
+        }
+        if (!activateDocument(i)) {
+            report.failed.push_back(documentTitle(i) + ": a command is running");
+            continue;
+        }
+        if (auto r = save(); r)
+            ++report.saved;
+        else
+            report.failed.push_back(documentTitle(i) + ": " + r.error().message);
+    }
+    (void)activateDocument(back);
+    return report;
+}
+
 bool AppCore::documentModified(std::size_t index) const {
     if (index >= slots_.size())
         return false;
