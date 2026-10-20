@@ -69,6 +69,8 @@ db, mode, files = sys.argv[1], sys.argv[2], sys.argv[3].split()
 # Clang warnings that match MSVC /W4 warnings the tree trips (MSVC number in the comment).
 flags = [
     "-Wshadow",  # C4456 C4457 C4458 C4459: a declaration hides another
+    "-Wshorten-64-to-32",  # C4267 C4244: size_t or a 64-bit integer into a 32-bit one
+    "-Wunused-variable",  # C4189: a local that is set but never used
 ]
 root = os.getcwd()
 entries = json.load(open(db))
