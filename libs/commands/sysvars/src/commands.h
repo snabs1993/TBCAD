@@ -4,9 +4,15 @@
 
 #include "tbcad/cmd/cmd.h"
 
+namespace tbcad::ui {
+class UiRegistry;
+}
+
 namespace tbcad::sysvars {
 
 void registerCommands(cmd::Registry& registry);
+// The View Manager panel (application builds) and the View menu items.
+void registerUi(ui::UiRegistry& ui);
 std::unique_ptr<cmd::Command> makeRenameCommand();
 std::unique_ptr<cmd::Command> makeSetvarCommand();
 // A command named like a drawing variable that asks for its value (see SETVAR).
@@ -19,6 +25,9 @@ std::unique_ptr<cmd::Command> makeRolloverTipsCommand();
 // other name.
 std::unique_ptr<cmd::Command> makeOptionVarCommand(std::string_view name);
 std::unique_ptr<cmd::Command> makeViewCommand();
+std::unique_ptr<cmd::Command> makeViewManagerCommand();
+std::unique_ptr<cmd::Command> makeVportsCommand();
+std::unique_ptr<cmd::Command> makeVportsDialogCommand();
 std::unique_ptr<cmd::Command> makeAddSelectedCommand();
 std::unique_ptr<cmd::Command> makeHyperlinkCommand();
 std::unique_ptr<cmd::Command> makeSpaceTransCommand();

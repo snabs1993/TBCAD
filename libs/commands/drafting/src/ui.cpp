@@ -14,7 +14,14 @@ void forgetUi() {
     st.otrack = nullptr;
 }
 
+#ifdef TBCAD_DRAFTINGCMDS_WITH_IMGUI
+void registerUcsPanel(ui::UiRegistry& ui);  // ui/ucs_panel.cpp
+#endif
+
 void registerUi(ui::UiRegistry& ui) {
+#ifdef TBCAD_DRAFTINGCMDS_WITH_IMGUI
+    registerUcsPanel(ui);
+#endif
     ModuleState& st = moduleState();
 
     // Which drawing the filters look at.

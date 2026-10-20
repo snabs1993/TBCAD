@@ -2,6 +2,8 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <optional>
 
 #include "module_state.h"
 #include "tbcad/draftingcmds/drafting_cmds.h"
@@ -13,6 +15,8 @@ namespace {
 using cmd::KeywordOptions;
 
 constexpr const char* kPreviousKey = "drafting.ucs.previous";
+// UCSFOLLOW: 1 = a change of UCS also shows its plan view (the view centred on its origin).
+constexpr const char* kFollowKey = "drafting.ucsfollow";
 
 std::string lower(std::string s) {
     for (char& c : s)
@@ -81,8 +85,8 @@ public:
     cmd::Task run(cmd::CommandContext& ctx) override {
         const drafting::Ucs cur = drafting::currentUcs(&ctx.doc(), &ctx.host());
         KeywordOptions menu;
-        menu.keywords = {"World",  "Previous", "View", "Origin",  "Rotate", "Object",
-                         "3point", "Points",   "Save", "Restore", "Delete", "List"};
+        menu.keywords = {"World",  "Previous", "View", "Origin",  "Rotate", "Z",     "Object",
+                         "3point", "Points",   "Save", "Restore", "Delete", "NAmed", "List"};
         menu.defaultKeyword = "List";
         auto choice = co_await ctx.getKeyword("UCS: " +
                                                   (cur.isWorld()      ? std::string("World")
@@ -92,7 +96,24 @@ public:
                                               menu);
         if (!choice.ok())
             co_return;
-        const std::string& kw = choice.keyword;
+        std::string kw = choice.keyword;
+        if (kw == "NAmed") {  // AutoCAD's sub-menu for the saved systems
+            KeywordOptions named;
+            named.keywords = {"Restore", "Save", "Delete", "Rename", "List"};
+            named.defaultKeyword = "Restore";
+            auto n = co_await ctx.getKeyword("Named UCS [Restore/Save/Delete/Rename/List]", named);
+            if (!n.ok())
+                co_return;
+            kw = n.keyword;
+        }
+        auto follow = [&](const drafting::Ucs& u) {
+            if (ctx.host().setting(kFollowKey).value_or("0") != "1")
+                return;
+            cmd::ViewState v = ctx.host().view();
+            cmd::pushViewHistory(ctx.host(), v);
+            v.center = u.origin;
+            ctx.host().setView(v);
+        };
         auto apply = [&](drafting::Ucs u) {
             // (remember the system we leave for UCS Previous)
             ctx.host().setSetting(kPreviousKey,
@@ -103,6 +124,7 @@ public:
                 ctx.host().setSetting(drafting::kUcsSettingKey,
                                       u.name.empty() ? drafting::unnamedUcsSetting(u) : u.name);
             ctx.message("UCS: " + (u.isWorld() ? std::string("World") : describe(u)));
+            follow(u);
         };
 
         if (kw == "World") {
@@ -113,6 +135,7 @@ public:
             ctx.host().setSetting(drafting::kUcsSettingKey, prev.empty() ? "World" : prev);
             ctx.host().setSetting(kPreviousKey, now);
             ctx.message("UCS: " + describe(drafting::currentUcs(&ctx.doc(), &ctx.host())));
+            follow(drafting::currentUcs(&ctx.doc(), &ctx.host()));
         } else if (kw == "View") {
             // The view of a 2D drawing is never turned: the axes line up with the screen.
             drafting::Ucs u = cur;
@@ -127,7 +150,7 @@ public:
             u.name.clear();
             u.origin = p.point;
             apply(u);
-        } else if (kw == "Rotate") {
+        } else if (kw == "Rotate" || kw == "Z") {
             cmd::AngleOptions ao;
             auto a = co_await ctx.getAngle("Rotation angle about the origin", ao);
             if (!a.ok())
@@ -206,6 +229,46 @@ public:
                 }
             }
             ctx.message("No UCS named \"" + n.text + "\".");
+        } else if (kw == "Rename") {
+            cmd::StringOptions so;
+            auto from = co_await ctx.getString("Name of the UCS to rename", so);
+            if (!from.ok())
+                co_return;
+            auto to = co_await ctx.getString("New name", so);
+            if (!to.ok())
+                co_return;
+            std::optional<drafting::Ucs> found;
+            for (const auto& u : drafting::ucsList(ctx.doc()))
+                if (lower(u.name) == lower(from.text))
+                    found = u;
+            if (!found) {
+                ctx.message("No UCS named \"" + from.text + "\".");
+                co_return;
+            }
+            const std::string newName(cmd::trim(to.text));
+            if (auto ok = drafting::validateUcsName(newName); !ok) {
+                ctx.message(ok.error().message);
+                co_return;
+            }
+            for (const auto& u : drafting::ucsList(ctx.doc()))
+                if (lower(u.name) == lower(newName) && lower(u.name) != lower(found->name)) {
+                    ctx.message("A UCS named \"" + u.name + "\" exists.");
+                    co_return;
+                }
+            drafting::Ucs renamed = *found;
+            renamed.name = newName;
+            if (auto r = drafting::deleteUcs(ctx.tx(), found->name); !r) {
+                ctx.message(r.error().message);
+                co_return;
+            }
+            if (auto r = drafting::saveUcs(ctx.tx(), renamed); !r) {
+                ctx.message(r.error().message);
+                co_return;
+            }
+            if (lower(ctx.host().setting(drafting::kUcsSettingKey).value_or("")) ==
+                lower(found->name))
+                ctx.host().setSetting(drafting::kUcsSettingKey, newName);
+            ctx.message("UCS \"" + found->name + "\" is now \"" + newName + "\".");
         } else if (kw == "Delete") {
             cmd::StringOptions so;
             auto n = co_await ctx.getString("Name of the UCS to delete", so);
@@ -248,13 +311,52 @@ public:
         const bool on = ctx.host().setting("drafting.ucsicon").value_or("1") != "0";
         const bool atOrigin = ctx.host().setting("drafting.ucsicon.origin").value_or("1") != "0";
         KeywordOptions menu;
-        menu.keywords = {"ON", "OFF", "ORigin", "Noorigin"};
+        menu.keywords = {"ON", "OFF", "ORigin", "Noorigin", "Properties"};
         menu.defaultKeyword = on ? "OFF" : "ON";
         auto k = co_await ctx.getKeyword(std::string("UCSICON is ") + (on ? "on" : "off") +
                                              (atOrigin ? ", at the UCS origin" : ", in the corner"),
                                          menu);
         if (!k.ok())
             co_return;
+        if (k.keyword == "Properties") {
+            // The size of the icon (5-95, AutoCAD's scale, 50 by default) and its colour.
+            cmd::IntOptions io;
+            io.min = 5;
+            io.max = 95;
+            io.defaultValue =
+                std::atoi(ctx.host().setting(drafting::keys::ucsIconSize).value_or("50").c_str());
+            if (io.defaultValue < 5 || io.defaultValue > 95)
+                io.defaultValue = 50;
+            auto size = co_await ctx.getInteger(
+                "UCS icon size <" + std::to_string(*io.defaultValue) + ">", io);
+            if (!size.ok() && size.status != cmd::Status::None)
+                co_return;
+            if (size.ok())
+                ctx.host().setSetting(drafting::keys::ucsIconSize, std::to_string(size.value));
+            cmd::StringOptions so;
+            so.allowEmpty = true;
+            const std::string col =
+                ctx.host().setting(drafting::keys::ucsIconColor).value_or("Default");
+            auto c = co_await ctx.getString(
+                "UCS icon colour: Default (red X, green Y) or a colour number 1-255 <" + col + ">",
+                so);
+            if (!c.ok())
+                co_return;
+            const std::string t = lower(std::string(cmd::trim(c.text)));
+            if (t.empty())
+                co_return;
+            if (t == "default" || t == "d") {
+                ctx.host().setSetting(drafting::keys::ucsIconColor, "Default");
+            } else {
+                char* end = nullptr;
+                const long n = std::strtol(t.c_str(), &end, 10);
+                if (*end || n < 1 || n > 255)
+                    ctx.message("Give Default or a colour number from 1 to 255.");
+                else
+                    ctx.host().setSetting(drafting::keys::ucsIconColor, std::to_string(n));
+            }
+            co_return;
+        }
         if (k.keyword == "ON" || k.keyword == "OFF")
             ctx.host().setSetting("drafting.ucsicon", k.keyword == "ON" ? "1" : "0");
         else
@@ -301,8 +403,43 @@ public:
             }
         }
         cmd::ViewState v = ctx.host().view();
+        cmd::pushViewHistory(ctx.host(), v);
         v.center = u.origin;
         ctx.host().setView(v);
+    }
+};
+
+// UCSFOLLOW: 1 shows the plan view of a UCS whenever the UCS changes.
+class UcsFollowCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "UCSFOLLOW"; }
+    std::string_view description() const override {
+        return "Show the plan view of the UCS each time it changes (0 or 1)";
+    }
+    bool isTransparent() const override { return true; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        cmd::IntOptions io;
+        io.min = 0;
+        io.max = 1;
+        io.defaultValue = ctx.host().setting(kFollowKey).value_or("0") == "1" ? 1 : 0;
+        auto v = co_await ctx.getInteger(
+            "Enter new value for UCSFOLLOW <" + std::to_string(*io.defaultValue) + ">", io);
+        if (v.ok())
+            ctx.host().setSetting(kFollowKey, v.value ? "1" : "0");
+    }
+};
+
+// UCSMAN [UC]: the UCS dialog (named systems, icon and follow settings).
+class UcsManCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "UCSMAN"; }
+    std::vector<std::string> defaultAliases() const override { return {"UC", "DDUCS"}; }
+    std::string_view description() const override {
+        return "Open the UCS dialog: named coordinate systems and the UCS icon";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().openPanel("ucsman");
+        co_return;
     }
 };
 
@@ -310,6 +447,8 @@ public:
 
 void registerUcsCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<UcsCommand>());
+    (void)registry.add(std::make_unique<UcsFollowCommand>());
+    (void)registry.add(std::make_unique<UcsManCommand>());
     (void)registry.add(std::make_unique<UcsIconCommand>());
     (void)registry.add(std::make_unique<PlanCommand>());
 }

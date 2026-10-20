@@ -100,7 +100,11 @@ std::vector<std::string> namesWithPrefix(const Document& doc, std::string_view p
 // ---- layer states ----------------------------------------------------------------------
 
 std::vector<std::string> layerStateNames(const Document& doc) {
-    return namesWithPrefix(doc, kStatePrefix);
+    // States starting with '*' belong to something else (the layer snapshot of a named view) and
+    // are not listed.
+    std::vector<std::string> out = namesWithPrefix(doc, kStatePrefix);
+    std::erase_if(out, [](const std::string& n) { return !n.empty() && n.front() == '*'; });
+    return out;
 }
 
 Result<void> saveLayerState(const Document& doc, Transaction& tx, std::string_view name) {

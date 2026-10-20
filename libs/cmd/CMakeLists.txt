@@ -9,6 +9,7 @@ tbcad_add_library(cmd
     src/runner.cpp
     src/script_host.cpp
     src/undo.cpp
+    src/view_history.cpp
   DEPENDS tbcad::core)
 
 # Generates the command registration (register_all.cpp) from libs/commands/*/module.cmake.

@@ -125,4 +125,13 @@ public:
     virtual void feedbackChanged(const FilterFeedback& /*feedback*/) {}
 };
 
+// ZOOM Previous: the views left by ZOOM, PAN, VIEW, PLAN and the mouse (newest last, at most
+// kViewHistoryMax), kept in the host setting "tmp.view.history" as "x y pixelSize" lines.
+inline constexpr std::size_t kViewHistoryMax = 10;
+void pushViewHistory(IHost& host, const ViewState& view);
+// The newest saved view, removed from the history; sizePx is taken from `like`.
+std::optional<ViewState> popViewHistory(IHost& host, const ViewState& like);
+// How many views ZOOM Previous can go back.
+std::size_t viewHistorySize(const IHost& host);
+
 }  // namespace tbcad::cmd

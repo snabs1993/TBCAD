@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
 #include <fstream>
 #include <future>
@@ -453,6 +454,9 @@ void AppCore::clearTransientState() {
 
 void AppCore::enterSlot(std::size_t index, bool fitView) {
     leavePaper();
+    // Tiled viewports belong to the drawing on screen; another drawing starts with one.
+    if (tiles_.size() > 1)
+        setTileLayout("1");
     clearTransientState();
     if (session_ && session_ != slots_[index].session.get())
         session_->ucsSetting = settings_.getString(drafting::kUcsSettingKey, "World");
@@ -1843,12 +1847,22 @@ void AppCore::setCamera(const render::Camera2D& cam) {
     fitPending_ = 0;
 }
 
+void AppCore::rememberGestureStart() {
+    // A burst of wheel notches or one drag is one step of ZOOM Previous.
+    const auto now = std::chrono::steady_clock::now();
+    if (now - lastGesture_ > std::chrono::milliseconds(1000))
+        cmd::pushViewHistory(*this, view());
+    lastGesture_ = now;
+}
+
 void AppCore::zoomAtScreen(Vec2 screen, double notches) {
+    rememberGestureStart();
     fitPending_ = 0;
     camera_.zoomAt(screen, std::pow(kZoomStep, notches));
 }
 
 void AppCore::panPixels(double dx, double dy) {
+    rememberGestureStart();
     fitPending_ = 0;
     camera_.panPixels(dx, dy);
 }
@@ -2249,7 +2263,191 @@ void AppCore::applyPendingSpace() {
         enterViewport(std::string(activeLayout_), *pick);
 }
 
+// ---- tiled model viewports ---------------------------------------------------------------------
+
+namespace {
+struct TileRect {
+    double x0, y0, x1, y1;
+};
+// The tiles of a VPORTS layout code and which one becomes active; empty for an unknown code.
+std::vector<TileRect> tileRectsFor(std::string_view code, std::size_t& active) {
+    active = 0;
+    if (code == "1")
+        return {{0, 0, 1, 1}};
+    if (code == "2V")
+        return {{0, 0, .5, 1}, {.5, 0, 1, 1}};
+    if (code == "2H")
+        return {{0, 0, 1, .5}, {0, .5, 1, 1}};
+    if (code == "3R") {
+        active = 2;
+        return {{0, 0, .5, .5}, {0, .5, .5, 1}, {.5, 0, 1, 1}};
+    }
+    if (code == "3L")
+        return {{0, 0, .5, 1}, {.5, 0, 1, .5}, {.5, .5, 1, 1}};
+    if (code == "3A")
+        return {{0, 0, 1, .5}, {0, .5, .5, 1}, {.5, .5, 1, 1}};
+    if (code == "3B") {
+        active = 2;
+        return {{0, 0, .5, .5}, {.5, 0, 1, .5}, {0, .5, 1, 1}};
+    }
+    if (code == "3V")
+        return {{0, 0, 1.0 / 3, 1}, {1.0 / 3, 0, 2.0 / 3, 1}, {2.0 / 3, 0, 1, 1}};
+    if (code == "3H")
+        return {{0, 0, 1, 1.0 / 3}, {0, 1.0 / 3, 1, 2.0 / 3}, {0, 2.0 / 3, 1, 1}};
+    if (code == "4")
+        return {{0, 0, .5, .5}, {.5, 0, 1, .5}, {0, .5, .5, 1}, {.5, .5, 1, 1}};
+    return {};
+}
+constexpr const char* kVportsPrefix = "tbcad.vports.";
+}  // namespace
+
+bool AppCore::setTileLayout(std::string_view code) {
+    std::size_t active = 0;
+    const std::vector<TileRect> rects = tileRectsFor(code, active);
+    if (rects.empty())
+        return false;
+    // The whole drawing area, worked out from the active tile.
+    const ViewTile& was = tiles_[activeTile_];
+    const double fullW = camera_.viewportW / std::max(was.x1 - was.x0, 1e-6);
+    const double fullH = camera_.viewportH / std::max(was.y1 - was.y0, 1e-6);
+    const Vec2 fullOrigin{viewportOrigin_.x - was.x0 * fullW, viewportOrigin_.y - was.y0 * fullH};
+    tiles_.clear();
+    for (const TileRect& r : rects)
+        tiles_.push_back(ViewTile{r.x0, r.y0, r.x1, r.y1, camera_.center, camera_.pixelsPerMm});
+    activeTile_ = active;
+    tileLayout_ = std::string(code);
+    const ViewTile& now = tiles_[activeTile_];
+    // The active tile keeps the view's centre and zoom; set its size here so the window's next
+    // size report does not move the view.
+    camera_.viewportW = std::max(1, static_cast<int>(std::lround(fullW * (now.x1 - now.x0))));
+    camera_.viewportH = std::max(1, static_cast<int>(std::lround(fullH * (now.y1 - now.y0))));
+    viewportOrigin_ = {fullOrigin.x + now.x0 * fullW, fullOrigin.y + now.y0 * fullH};
+    return true;
+}
+
+void AppCore::activateTile(std::size_t i, double x, double y, int w, int h) {
+    if (i >= tiles_.size() || i == activeTile_)
+        return;
+    tiles_[activeTile_].center = camera_.center;
+    tiles_[activeTile_].pixelsPerMm = camera_.pixelsPerMm;
+    activeTile_ = i;
+    camera_.center = tiles_[i].center;
+    camera_.pixelsPerMm = tiles_[i].pixelsPerMm;
+    camera_.viewportW = std::max(w, 1);
+    camera_.viewportH = std::max(h, 1);
+    viewportOrigin_ = {x, y};
+    haveOrigin_ = true;
+    fitPending_ = 0;
+}
+
+render::Camera2D AppCore::tileCamera(std::size_t i, int w, int h) const {
+    render::Camera2D cam = camera_;
+    if (i < tiles_.size() && i != activeTile_) {
+        cam.center = tiles_[i].center;
+        cam.pixelsPerMm = tiles_[i].pixelsPerMm;
+    }
+    cam.viewportW = std::max(w, 1);
+    cam.viewportH = std::max(h, 1);
+    return cam;
+}
+
+// -VPORTS: a layout code, or save:/restore:/delete:<name>, or list.
+void AppCore::applyPendingVports() {
+    if (pendingVports_.empty() || runner().active() || !session_)
+        return;
+    const std::vector<std::string> todo = std::exchange(pendingVports_, {});
+    for (const std::string& what : todo) {
+        if (inPaperSpace() || !editingLayout_.empty()) {
+            print("Tiled viewports are for model space; on a layout use MVIEW.");
+            continue;
+        }
+        auto lowerName = [](std::string n) {
+            for (char& c : n)
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            return n;
+        };
+        auto keyOf = [&](const std::string& name) -> std::string {
+            for (const auto& [k, v] : session_->doc.header().custom)
+                if (k.rfind(kVportsPrefix, 0) == 0 &&
+                    lowerName(k.substr(std::strlen(kVportsPrefix))) == lowerName(name))
+                    return k;
+            return {};
+        };
+        if (what == "list") {
+            std::size_t n = 0;
+            for (const auto& [k, v] : session_->doc.header().custom)
+                if (k.rfind(kVportsPrefix, 0) == 0) {
+                    print("  " + k.substr(std::strlen(kVportsPrefix)) + "  (" +
+                          v.substr(0, v.find('\n')) + ")");
+                    ++n;
+                }
+            print("Current configuration: " + tileLayout_ + (n ? "" : "; no saved ones."));
+        } else if (what.rfind("save:", 0) == 0) {
+            const std::string name = what.substr(5);
+            tiles_[activeTile_].center = camera_.center;
+            tiles_[activeTile_].pixelsPerMm = camera_.pixelsPerMm;
+            std::string text = tileLayout_ + "\n" + std::to_string(activeTile_) + "\n";
+            for (const ViewTile& t : tiles_) {
+                char buf[96];
+                std::snprintf(buf, sizeof buf, "%.12g %.12g %.12g\n", t.center.x, t.center.y,
+                              t.pixelsPerMm);
+                text += buf;
+            }
+            const std::string old = keyOf(name);
+            auto tx = session_->doc.begin("VPORTS Save");
+            (void)tx.modifyHeader([&](Header& h) {
+                if (!old.empty())
+                    h.custom.erase(old);
+                h.custom[kVportsPrefix + name] = text;
+            });
+            ChangeSet cs = tx.commit();
+            if (!cs.empty())
+                undoStack().push("VPORTS Save", {std::move(cs)});
+            print("Viewport configuration \"" + name + "\" saved.");
+        } else if (what.rfind("delete:", 0) == 0) {
+            const std::string key = keyOf(what.substr(7));
+            if (key.empty()) {
+                print("No viewport configuration named \"" + what.substr(7) + "\".");
+                continue;
+            }
+            auto tx = session_->doc.begin("VPORTS Delete");
+            (void)tx.modifyHeader([&](Header& h) { h.custom.erase(key); });
+            ChangeSet cs = tx.commit();
+            if (!cs.empty())
+                undoStack().push("VPORTS Delete", {std::move(cs)});
+        } else if (what.rfind("restore:", 0) == 0) {
+            const std::string key = keyOf(what.substr(8));
+            if (key.empty()) {
+                print("No viewport configuration named \"" + what.substr(8) + "\".");
+                continue;
+            }
+            std::istringstream in(session_->doc.header().custom.at(key));
+            std::string code;
+            std::size_t active = 0;
+            if (!std::getline(in, code) || !(in >> active) || !setTileLayout(code)) {
+                print("The viewport configuration is damaged.");
+                continue;
+            }
+            for (ViewTile& t : tiles_) {
+                double x = 0, y = 0, p = 0;
+                if (in >> x >> y >> p && p > 0) {
+                    t.center = {x, y};
+                    t.pixelsPerMm = p;
+                }
+            }
+            if (active < tiles_.size()) {
+                activeTile_ = active;
+            }
+            camera_.center = tiles_[activeTile_].center;
+            camera_.pixelsPerMm = tiles_[activeTile_].pixelsPerMm;
+        } else if (!setTileLayout(what)) {
+            print("Unknown viewport layout \"" + what + "\".");
+        }
+    }
+}
+
 void AppCore::applyPendingLayout() {
+    applyPendingVports();
     applyPendingSpace();
     if (pendingLayout_.empty() || runner().active())
         return;
@@ -3256,6 +3454,8 @@ std::optional<std::string> AppCore::setting(std::string_view key) const {
         if (!editingLayout_.empty())
             return editingLayout_;
     }
+    if (key == "tmp.vports.layout")  // the tiled viewport layout of model space (VPORTS dialog)
+        return tileLayout_;
     if (key == "tmp.layout.editing")  // "Layout:id" while a viewport is edited from model space
         return editingLayout_.empty()
                    ? std::nullopt

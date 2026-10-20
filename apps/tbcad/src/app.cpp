@@ -1453,6 +1453,27 @@ void App::drawScene() {
         gPhase[5] += pt.lap();
 }
 
+// The inactive model tiles show the drawing only (no grid, grips or rubber bands), each with its
+// own view, like AutoCAD's other viewports.
+void App::drawTiles() {
+    const float sc = ImGui::GetIO().DisplayFramebufferScale.x;
+    for (const auto& [i, r] : gui_->inactiveTiles()) {
+        if (i >= tileTargets_.size() || !tileTargets_[i])
+            continue;
+        const int w = std::max(1, static_cast<int>(std::lround(r.w * sc)));
+        const int h = std::max(1, static_cast<int>(std::lround(r.h * sc)));
+        tileTargets_[i]->resize(w, h);
+        tileTargets_[i]->bind();
+        renderer_.setCamera(core_->tileCamera(i, w, h));
+        renderer_.beginFrame();
+        renderer_.draw(core_->underlayImages());
+        renderer_.draw(core_->renderScene());
+        renderer_.endFrame();
+    }
+    if (gui_->inactiveTiles().empty() && !tileTargets_.empty())
+        tileTargets_.clear();
+}
+
 void App::renderDrawingOnce(bool finish) {
     const render::Camera2D& cam = core_->camera();
     target_.resize(cam.viewportW, cam.viewportH);
@@ -1489,11 +1510,19 @@ void App::frame() {
     const ui::AppCore& c = *core_;
     target_.resize(c.camera().viewportW, c.camera().viewportH);
     gui_->showViewport(target_.texture(), rect);
+    for (const auto& [i, r] : gui_->inactiveTiles()) {
+        if (tileTargets_.size() <= i)
+            tileTargets_.resize(i + 1);
+        if (!tileTargets_[i])
+            tileTargets_[i] = std::make_unique<ViewportTarget>();
+        gui_->showTile(tileTargets_[i]->texture(), r);
+    }
     ImGui::Render();
     if (PhaseTimer::enabled())
         gPhase[1] += pt.lap();
 
     drawScene();
+    drawTiles();
     if (PhaseTimer::enabled())
         pt.lap();
 

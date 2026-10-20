@@ -59,7 +59,8 @@ Owns the `Document`, `UndoStack`, `SpatialIndex` (kept current by `DocumentIndex
   selection.
 - **Viewport**: `Camera2D` in framebuffer pixels. `zoomAtScreen(point, notches)` (1.2 per notch
   about the cursor), `panPixels`, `zoomExtents`, `zoomToBox`. Built-in transparent commands `ZOOM`
-  (Extents/Window/In/Out or two corners) and `PAN`.
+  (all AutoCAD options, see docs/sysvars.md), `PAN` (real time) and `-PAN` (two points). Model tiled
+  viewports: `setTileLayout`, `tiles()`, `activateTile`, `tileCamera` (the window draws the inactive tiles).
 - **Pointer events**: `pointerMoved`, `click`, `dragSelect`. Idle: a click adds the nearest
   entity to the selection, Shift removes, a click on nothing clears; a drag to the right selects
   what lies completely inside (window), to the left what it touches (crossing). During a command

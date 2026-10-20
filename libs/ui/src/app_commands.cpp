@@ -52,35 +52,12 @@ BBox2 boxOfEntities(const Document& doc) {
     return box;
 }
 
-// Views before each ZOOM change, newest last, for ZOOM Previous ("x y pixelSize" per line).
-constexpr const char* kViewHistoryKey = "tmp.view.history";
-constexpr std::size_t kViewHistoryMax = 10;
-
 void pushView(cmd::IHost& host, const cmd::ViewState& v) {
-    std::string h = host.setting(kViewHistoryKey).value_or("");
-    char line[128];
-    std::snprintf(line, sizeof line, "%.12g %.12g %.12g\n", v.center.x, v.center.y, v.scale);
-    h += line;
-    // Keep the newest entries only.
-    std::size_t lines = static_cast<std::size_t>(std::count(h.begin(), h.end(), '\n'));
-    while (lines-- > kViewHistoryMax)
-        h.erase(0, h.find('\n') + 1);
-    host.setSetting(kViewHistoryKey, h);
+    cmd::pushViewHistory(host, v);
 }
 
 std::optional<cmd::ViewState> popView(cmd::IHost& host, const cmd::ViewState& like) {
-    std::string h = host.setting(kViewHistoryKey).value_or("");
-    if (h.empty())
-        return std::nullopt;
-    const std::size_t end = h.size() - 1;  // the final '\n'
-    const std::size_t start = h.rfind('\n', end - 1);
-    const std::string last = h.substr(start == std::string::npos ? 0 : start + 1);
-    h.erase(start == std::string::npos ? 0 : start + 1);
-    host.setSetting(kViewHistoryKey, h);
-    cmd::ViewState v = like;
-    if (std::sscanf(last.c_str(), "%lf %lf %lf", &v.center.x, &v.center.y, &v.scale) != 3)
-        return std::nullopt;
-    return v;
+    return cmd::popViewHistory(host, like);
 }
 
 // "2X", "0.5x" (times the current view) and "0.01XP", "1/100XP" (times paper space).
@@ -142,18 +119,27 @@ private:
 public:
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::PointOptions opts;
-        opts.keywords = {"Extents", "All",    "Window", "Previous", "Center",
-                         "Scale",   "Object", "Double", "Half"};
-        opts.freeText = true;  // 0.5X, 1/100XP
+        opts.keywords = {"All",    "Center", "Dynamic", "Extents", "Previous", "Scale",
+                         "Window", "Object", "Double",  "Half",    "Realtime"};
+        opts.freeText = true;   // 0.5X, 1/100XP
+        opts.allowNone = true;  // Enter: real time
         cmd::PointResult first;
         if (*preset_) {
             first.status = cmd::Status::Keyword;
             first.keyword = preset_;
         } else {
             first = co_await ctx.getPoint(
-                "Specify first corner of the window or "
-                "[Extents/All/Window/Previous/Center/Scale/Object/Double/Half]",
+                "Specify corner of window, enter a scale factor (nX or nXP), or "
+                "[All/Center/Dynamic/Extents/Previous/Scale/Window/Object] <real time>",
                 opts);
+        }
+        if (first.status == cmd::Status::None ||
+            (first.status == cmd::Status::Keyword && first.keyword == "Realtime")) {
+            // Drag up to zoom in, down to zoom out; Esc or Enter ends it (the window does it).
+            pushView(ctx.host(), ctx.host().view());
+            ctx.host().requestUi("realtime:zoom");
+            ctx.message("Press Esc or Enter to exit, or right-click to end real-time zoom.");
+            co_return;
         }
         if (first.status == cmd::Status::Keyword) {
             const cmd::ViewState v = ctx.host().view();
@@ -179,7 +165,72 @@ public:
                 if (auto prev = popView(ctx.host(), v))
                     ctx.host().setView(*prev);
                 else
-                    ctx.message("No previous view.");
+                    ctx.message("No previous view saved.");
+                co_return;
+            }
+            if (first.keyword == "Dynamic") {
+                // The whole drawing is shown with a box the size of the current view; place the
+                // box, then size it (Enter keeps its size), and the view zooms to it.
+                const BBox2 was = cam.visibleWorld();
+                BBox2 all = ctx.host().viewExtents();
+                if (all.empty())
+                    all = boxOfEntities(ctx.doc());
+                all.merge(was);
+                pushView(ctx.host(), v);
+                render::Camera2D wide = cam;
+                wide.fit(all);
+                ctx.host().setView(viewOf(wide, v));
+                const double w = was.max.x - was.min.x, h = was.max.y - was.min.y;
+                auto box = [](Vec2 c, double bw, double bh, DisplayList& out) {
+                    DisplayPolyline pl;
+                    pl.closed = true;
+                    pl.style.color = Rgba{90, 170, 255, 255};
+                    pl.pts = {{c.x - bw / 2, c.y - bh / 2},
+                              {c.x + bw / 2, c.y - bh / 2},
+                              {c.x + bw / 2, c.y + bh / 2},
+                              {c.x - bw / 2, c.y + bh / 2}};
+                    out.items.emplace_back(std::move(pl));
+                };
+                cmd::PointOptions po;
+                po.allowNone = false;
+                po.preview = [box, w, h](Vec2 cur, DisplayList& out) { box(cur, w, h, out); };
+                auto c = co_await ctx.getPoint("Place the view box", po);
+                if (!c.ok()) {
+                    ctx.host().setView(v);
+                    co_return;
+                }
+                const Vec2 centre = c.point;
+                cmd::PointOptions so;
+                so.allowNone = true;
+                so.base = centre;
+                const double aspect = h > 0 ? w / h : 1;
+                auto sized = [aspect](Vec2 ctr, Vec2 cur) {
+                    double bw = std::abs(cur.x - ctr.x) * 2, bh = std::abs(cur.y - ctr.y) * 2;
+                    bw = std::max(bw, bh * aspect);
+                    return std::pair<double, double>{bw, bw / aspect};
+                };
+                so.preview = [box, sized, centre](Vec2 cur, DisplayList& out) {
+                    const auto [bw, bh] = sized(centre, cur);
+                    box(centre, bw, bh, out);
+                };
+                auto corner = co_await ctx.getPoint("Size the view box <keep its size>", so);
+                if (corner.status == cmd::Status::Cancel) {
+                    ctx.host().setView(v);
+                    co_return;
+                }
+                double bw = w, bh = h;
+                if (corner.ok()) {
+                    const auto sz = sized(centre, corner.point);
+                    if (sz.first > 0) {
+                        bw = sz.first;
+                        bh = sz.second;
+                    }
+                }
+                BBox2 target;
+                target.expand({centre.x - bw / 2, centre.y - bh / 2});
+                target.expand({centre.x + bw / 2, centre.y + bh / 2});
+                cam.fit(target, 0.0);
+                ctx.host().setView(viewOf(cam, v));
                 co_return;
             }
             pushView(ctx.host(), v);
@@ -276,11 +327,49 @@ public:
     }
 };
 
-class PanCommand final : public cmd::Command {
+// NAVBAR: the navigation bar at the right edge of the drawing (pan, zoom extents, window,
+// previous, in and out). Setting "ui.navbar".
+class NavBarCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "NAVBAR"; }
+    std::string_view description() const override {
+        return "Show or hide the navigation bar (pan and zoom buttons)";
+    }
+    bool isTransparent() const override { return true; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        const bool on = ctx.host().setting("ui.navbar").value_or("1") != "0";
+        cmd::KeywordOptions ko;
+        ko.keywords = {"ON", "OFF"};
+        ko.defaultKeyword = on ? "OFF" : "ON";
+        auto k = co_await ctx.getKeyword(std::string("Navigation bar is ") + (on ? "on" : "off") +
+                                             " [ON/OFF] <" + (on ? "OFF" : "ON") + ">",
+                                         ko);
+        if (k.ok())
+            ctx.host().setSetting("ui.navbar", k.keyword == "ON" ? "1" : "0");
+    }
+};
+
+// PAN [P]: real-time pan, the drawing follows the pointer while the left button is held; Esc or
+// Enter ends it. -PAN moves the view by two points.
+class RealtimePanCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "PAN"; }
     std::vector<std::string> defaultAliases() const override { return {"P"}; }
-    std::string_view description() const override { return "Move the view"; }
+    std::string_view description() const override { return "Move the view with the mouse"; }
+    bool isTransparent() const override { return true; }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        pushView(ctx.host(), ctx.host().view());
+        ctx.host().requestUi("realtime:pan");
+        ctx.message("Press Esc or Enter to exit, or right-click to end real-time pan.");
+        co_return;
+    }
+};
+
+class PanCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "-PAN"; }
+    std::string_view description() const override { return "Move the view by two points"; }
     bool isTransparent() const override { return true; }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
@@ -293,6 +382,7 @@ public:
         if (!b.ok())
             co_return;
         cmd::ViewState v = ctx.host().view();
+        pushView(ctx.host(), v);
         v.center = v.center + (a.point - b.point);
         ctx.host().setView(v);
     }
@@ -879,6 +969,8 @@ void registerAppCommands(cmd::Registry& registry) {
         "PSPACE", "PS", "paper", "Go back to the layout sheet from model space"));
     (void)registry.add(std::make_unique<ZoomCommand>("ZE", "Extents"));
     (void)registry.add(std::make_unique<PanCommand>());
+    (void)registry.add(std::make_unique<RealtimePanCommand>());
+    (void)registry.add(std::make_unique<NavBarCommand>());
     (void)registry.add(std::make_unique<DevGenCommand>());
     (void)registry.add(std::make_unique<SettingsCommand>());
     (void)registry.add(std::make_unique<TextScrCommand>());

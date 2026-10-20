@@ -239,6 +239,28 @@ public:
     const std::vector<std::pair<std::string, double>>& openTimings() const { return openTimings_; }
     void zoomToBox(const BBox2& box);
     void zoomToEntities(const std::vector<EntityId>& ids);
+
+    // ---- tiled model viewports (VPORTS) ------------------------------------------------------
+    // The drawing area of model space can be split into tiles, each with its own view; commands
+    // and the pointer work in the active one (camera()). Rectangles are fractions of the drawing
+    // area, y downwards.
+    struct ViewTile {
+        double x0 = 0, y0 = 0, x1 = 1, y1 = 1;
+        Vec2 center{};
+        double pixelsPerMm = 1;
+    };
+    // The tiles while model space is shown (one = not tiled); inactive tiles keep their view here.
+    const std::vector<ViewTile>& tiles() const { return tiles_; }
+    std::size_t activeTile() const { return activeTile_; }
+    bool tiled() const { return tiles_.size() > 1 && !inPaperSpace() && editingLayout_.empty(); }
+    // "1", "2V", "2H", "3R", "3L", "3A", "3B", "3V", "3H" or "4"; every tile starts with the
+    // current view. False for an unknown code.
+    bool setTileLayout(std::string_view code);
+    const std::string& tileLayout() const { return tileLayout_; }
+    // Makes tile `i` the active one; (x, y, w, h) is where it is on the window, in pixels.
+    void activateTile(std::size_t i, double x, double y, int w, int h);
+    // The camera of tile `i` shown at w x h pixels.
+    render::Camera2D tileCamera(std::size_t i, int w, int h) const;
     // Tessellate for the current zoom when it changed enough; call once per frame.
     void updateFrame(std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
     // True while the geometry of a big edit is still being built (frames should keep coming).
@@ -380,6 +402,8 @@ public:
             pendingSpace_ = what.substr(6);  // MSPACE / PSPACE, applied when the command ends
         else if (what.rfind("zoomxp:", 0) == 0)
             pendingZoomXp_ = std::atof(std::string(what.substr(7)).c_str());
+        else if (what.rfind("vports:", 0) == 0)
+            pendingVports_.emplace_back(what.substr(7));  // applied when the command ends
         else
             uiRequests_.emplace_back(what);
     }
@@ -479,6 +503,14 @@ private:
     void openStep(const char* name);
 
     render::Camera2D camera_{};
+    std::vector<ViewTile> tiles_{ViewTile{}};
+    std::size_t activeTile_ = 0;
+    std::string tileLayout_ = "1";
+    std::vector<std::string> pendingVports_{};
+    void applyPendingVports();
+    // The view the mouse wheel or a drag started from goes into ZOOM Previous once per gesture.
+    void rememberGestureStart();
+    std::chrono::steady_clock::time_point lastGesture_{};
     std::string activeLayout_{};
     PaperView paper_{};
     // The objects drawn on the sheet, for picking and snapping while a layout is on screen.
