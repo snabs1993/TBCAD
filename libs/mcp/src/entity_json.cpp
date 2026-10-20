@@ -682,8 +682,9 @@ GradientData gradientFromJson(const Json& j) {
     GradientData g;
     const auto kind = hatch::gradientKindFromName(strOr(j, "type", "linear"));
     if (!kind)
-        fail("gradient type must be linear, cylinder, invcylinder, spherical, invspherical, "
-             "hemispherical, invhemispherical, curved or invcurved");
+        fail(
+            "gradient type must be linear, cylinder, invcylinder, spherical, invspherical, "
+            "hemispherical, invhemispherical, curved or invcurved");
     g.kind = *kind;
     if (const Json* c = j.find("color1"))
         g.color1 = orFail(colorFromJson(*c, false));

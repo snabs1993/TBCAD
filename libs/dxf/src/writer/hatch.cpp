@@ -1,9 +1,10 @@
 // DXF export: HATCH, including embedded pattern definitions.
+#include "tbcad/hatch/hatch.h"
+
 #include <algorithm>
 #include <cmath>
 #include <map>
 
-#include "tbcad/hatch/hatch.h"
 #include "tbcad/hatch/pattern.h"
 #include "writer_impl.h"
 

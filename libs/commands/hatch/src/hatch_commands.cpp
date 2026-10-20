@@ -296,16 +296,15 @@ public:
         for (;;) {
             cmd::PointOptions opt;
             opt.keywords =
-                gradient_ ? std::vector<std::string>{"Objects",   "Kind",       "First",
-                                                     "Second",    "One",        "Centered",
-                                                     "Angle",     "Gap",        "Island",
-                                                     "Link",      "SEparate",   "DRaworder",
-                                                     "Transparency", "Undo"}
-                          : std::vector<std::string>{"Objects",    "Pattern",   "Scale",
-                                                     "Angle",      "Base",      "Gap",
-                                                     "Island",     "Link",      "SEparate",
-                                                     "DRaworder",  "ANnotative", "DOuble",
-                                                     "Transparency", "Undo"};
+                gradient_
+                    ? std::vector<std::string>{"Objects",      "Kind",     "First",    "Second",
+                                               "One",          "Centered", "Angle",    "Gap",
+                                               "Island",       "Link",     "SEparate", "DRaworder",
+                                               "Transparency", "Undo"}
+                    : std::vector<std::string>{"Objects",      "Pattern",   "Scale",      "Angle",
+                                               "Base",         "Gap",       "Island",     "Link",
+                                               "SEparate",     "DRaworder", "ANnotative", "DOuble",
+                                               "Transparency", "Undo"};
             opt.preview = [&](Vec2 cursor, DisplayList& out) { hover.draw(ctx, p, cursor, out); };
             opt.snap = false;  // a snapped pick would sit on the boundary
             std::string what = gradient_ ? gradientSummary(p) : summary(p);
@@ -351,10 +350,9 @@ public:
                     cmd::KeywordOptions ko;
                     ko.keywords = {"Yes", "No"};
                     ko.defaultKeyword = p.gradient.oneColor ? "Yes" : "No";
-                    auto k = co_await ctx.getKeyword(
-                        std::string("One colour gradient [Yes/No] <") +
-                            (p.gradient.oneColor ? "Yes" : "No") + ">",
-                        ko);
+                    auto k = co_await ctx.getKeyword(std::string("One colour gradient [Yes/No] <") +
+                                                         (p.gradient.oneColor ? "Yes" : "No") + ">",
+                                                     ko);
                     if (k.ok())
                         p.gradient.oneColor = k.keyword == "Yes";
                     if (p.gradient.oneColor) {
@@ -390,9 +388,9 @@ public:
                             std::string(orderKeyword(p.order)) + ">",
                         ko);
                     if (k.ok())
-                        p.order = k.keyword == "None"    ? Params::Order::None
-                                  : k.keyword == "Back"  ? Params::Order::Back
-                                  : k.keyword == "Front" ? Params::Order::Front
+                        p.order = k.keyword == "None"      ? Params::Order::None
+                                  : k.keyword == "Back"    ? Params::Order::Back
+                                  : k.keyword == "Front"   ? Params::Order::Front
                                   : k.keyword == "InFront" ? Params::Order::InFront
                                                            : Params::Order::Behind;
                 } else if (r.keyword == "ANnotative") {
@@ -546,7 +544,6 @@ public:
     }
 
 private:
-
     static void setPattern(cmd::CommandContext& ctx, Params& p, const std::string& text) {
         std::string name = cmd::trim(text);
         if (name == "?") {
@@ -734,9 +731,9 @@ public:
             if (changed > 0)
                 ctx.checkpoint();
             cmd::KeywordOptions ko;
-            ko.keywords = {"Pattern",   "Scale",        "Angle",     "Base",
-                           "Gradient",  "DIsassociate", "SEparate",  "DRaworder",
-                           "ANnotative", "DOuble",      "Transparency", "Done"};
+            ko.keywords = {"Pattern",    "Scale",        "Angle",        "Base",
+                           "Gradient",   "DIsassociate", "SEparate",     "DRaworder",
+                           "ANnotative", "DOuble",       "Transparency", "Done"};
             ko.defaultKeyword = "Done";
             auto k = co_await ctx.getKeyword(
                 "Hatch option [Pattern/Scale/Angle/Base/Gradient/DIsassociate/SEparate/"
@@ -752,7 +749,8 @@ public:
                 gk.defaultKeyword = gradientKeyword(g.kind);
                 auto kk = co_await ctx.getKeyword(
                     "Gradient kind, or Off for a solid fill [Linear/Cylinder/INVCylinder/"
-                    "Spherical/INVSpherical/Hemispherical/INVHemispherical/CUrved/INVCUrved/Off] <" +
+                    "Spherical/INVSpherical/Hemispherical/INVHemispherical/CUrved/INVCUrved/Off] "
+                    "<" +
                         std::string(gradientKeyword(g.kind)) + ">",
                     gk);
                 if (!kk.ok())
@@ -764,7 +762,8 @@ public:
                 g.kind = gradientFromKeyword(kk.keyword);
                 cmd::StringOptions c1;
                 c1.defaultValue = colorText(g.color1);
-                auto s1 = co_await ctx.getString("First colour (index 1-255, r,g,b or #rrggbb)", c1);
+                auto s1 =
+                    co_await ctx.getString("First colour (index 1-255, r,g,b or #rrggbb)", c1);
                 if (!s1.ok())
                     continue;
                 if (auto c = parseColor(s1.text))
@@ -814,8 +813,8 @@ public:
                 if (!d.ok())
                     continue;
                 Params order;
-                order.order = d.keyword == "Back"    ? Params::Order::Back
-                              : d.keyword == "Front" ? Params::Order::Front
+                order.order = d.keyword == "Back"      ? Params::Order::Back
+                              : d.keyword == "Front"   ? Params::Order::Front
                               : d.keyword == "InFront" ? Params::Order::InFront
                                                        : Params::Order::Behind;
                 for (EntityId id : ids)
@@ -826,7 +825,8 @@ public:
                 cmd::KeywordOptions yn;
                 yn.keywords = {"Yes", "No"};
                 const Entity* e0 = ctx.doc().find(ids.front());
-                const bool now = annot ? e0 && e0->common.annotative : first(ctx, ids.front()).doubled;
+                const bool now =
+                    annot ? e0 && e0->common.annotative : first(ctx, ids.front()).doubled;
                 yn.defaultKeyword = now ? "Yes" : "No";
                 auto a = co_await ctx.getKeyword(std::string(annot ? "Annotative" : "Double") +
                                                      " [Yes/No] <" + (now ? "Yes" : "No") + ">",
@@ -847,8 +847,8 @@ public:
             } else if (k.keyword == "Transparency") {
                 cmd::StringOptions ts;
                 const Entity* e0 = ctx.doc().find(ids.front());
-                ts.defaultValue = transparencyText(e0 ? e0->common.transparency
-                                                      : kTransparencyByLayer);
+                ts.defaultValue =
+                    transparencyText(e0 ? e0->common.transparency : kTransparencyByLayer);
                 auto t = co_await ctx.getString("Transparency (ByLayer, ByBlock or 0-90)", ts);
                 if (!t.ok())
                     continue;

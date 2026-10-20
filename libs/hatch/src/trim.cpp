@@ -86,14 +86,12 @@ Result<HatchData> trimHatch(const HatchData& hatch, Vec2 pick,
     one.loops = piece.value().loops;
     geom::Region cut;
     cut.rings = loopRings(one, chord);
-    const double eps = std::max(1e-9, size * 1e-9);
-    geom::Region rest = geom::boolean(area, geom::normalized(std::move(cut)), geom::BoolOp::Subtract,
-                                      std::max(1e-7, size * 1e-9));
+    geom::Region rest = geom::boolean(area, geom::normalized(std::move(cut)),
+                                      geom::BoolOp::Subtract, std::max(1e-7, size * 1e-9));
+    // Nothing left, or nothing taken: no edge cuts the hatch at the pick.
     const double before = geom::area(area);
-    const double after = geom::area(rest);
-    if (rest.empty() || after <= eps * before)
-        return Error{ErrorCode::NotFound, "No cutting edge crosses the hatch here."};
-    if (after >= before * (1 - 1e-7))
+    const double after = rest.empty() ? 0 : geom::area(rest);
+    if (after <= before * 1e-9 || after >= before * (1 - 1e-7))
         return Error{ErrorCode::NotFound, "No cutting edge crosses the hatch here."};
 
     HatchData out = hatch;

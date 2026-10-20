@@ -3,8 +3,10 @@
 // saving or deleting a named filter changes the drawing and goes through _FILTERSAVE (one undo
 // step).
 #include <algorithm>
+#include <optional>
 #include <set>
 #include <string>
+#include <tuple>
 #include <unordered_set>
 #include <vector>
 
@@ -167,6 +169,10 @@ struct QuickState {
     bool exclude = false;
     bool append = false;
     std::string result{};
+    // Cache of the object types offered, and what it was worked out for.
+    std::set<std::string> types{};
+    std::optional<std::tuple<const Document*, std::uint64_t, bool, std::size_t, EntityId, EntityId>>
+        typesKey{};
 };
 
 void drawQuickSelect(ui::PanelContext& pc) {
@@ -188,12 +194,23 @@ void drawQuickSelect(ui::PanelContext& pc) {
     if (now.empty())
         st.withinSelection = false;
 
-    // The object types found where the search runs.
-    std::set<std::string> types;
-    const std::vector<EntityId> pool = st.withinSelection ? now : everything(doc);
-    for (EntityId id : pool)
-        if (const Entity* e = doc.find(id))
-            types.insert(select::objectTypeName(*e));
+    // The object types found where the search runs: worked out again only when the drawing, the
+    // selection or the scope changed, as a walk over a big drawing takes far longer than a frame.
+    const std::tuple key{&doc,
+                         doc.revision(),
+                         st.withinSelection,
+                         now.size(),
+                         now.empty() ? EntityId{} : now.front(),
+                         now.empty() ? EntityId{} : now.back()};
+    if (!st.typesKey || *st.typesKey != key) {
+        st.types.clear();
+        const std::vector<EntityId> pool = st.withinSelection ? now : everything(doc);
+        for (EntityId id : pool)
+            if (const Entity* e = doc.find(id))
+                st.types.insert(select::objectTypeName(*e));
+        st.typesKey = key;
+    }
+    const std::set<std::string>& types = st.types;
     ImGui::SetNextItemWidth(220);
     if (ImGui::BeginCombo("Object type", st.type.c_str())) {
         if (ImGui::Selectable("Multiple", st.type == "Multiple"))
@@ -245,6 +262,7 @@ void drawQuickSelect(ui::PanelContext& pc) {
             std::vector<EntityId> out = st.append ? now : std::vector<EntityId>{};
             std::unordered_set<EntityId> have(out.begin(), out.end());
             std::size_t found = 0;
+            const std::vector<EntityId> pool = st.withinSelection ? now : everything(doc);
             for (EntityId id : pool) {
                 if (st.type != "Multiple" && !ofType.count(id))
                     continue;

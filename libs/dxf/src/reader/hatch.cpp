@@ -2,12 +2,13 @@
 //
 // Group codes inside a HATCH depend on their position (10/20 are polyline vertices, edge points
 // or seed points depending on where they appear), so the groups are walked with a cursor.
+#include "tbcad/hatch/hatch.h"
+
 #include <algorithm>
 #include <cmath>
 #include <optional>
 
 #include "importer.h"
-#include "tbcad/hatch/hatch.h"
 
 namespace tbcad::dxf::detail {
 
@@ -109,16 +110,16 @@ bool Importer::convHatch(const Record& r, const Frame& f, std::vector<Entity>& o
             gd.color1 = stopColor(0);
             gd.oneColor = r.integer(452) == 1 || stops.size() < 2;
             gd.tint = r.has(462) ? std::clamp(r.num(462), 0.0, 1.0) : 1.0;
-            gd.shift = r.has(461) && std::isfinite(r.num(461)) ? std::clamp(r.num(461), 0.0, 1.0)
-                                                                : 0.0;
+            gd.shift =
+                r.has(461) && std::isfinite(r.num(461)) ? std::clamp(r.num(461), 0.0, 1.0) : 0.0;
             if (stops.size() >= 2 && !gd.oneColor) {
                 gd.color2 = stopColor(1);
             } else {
                 // One colour: the second is the first at the tint's lightness (GFCLRLUM).
                 gd.color2 = hatch::tintedColor(gd.color1, gd.tint);
             }
-            gd.kind = hatch::gradientKindFromName(std::string(r.raw(470)))
-                          .value_or(GradientKind::Linear);
+            gd.kind =
+                hatch::gradientKindFromName(std::string(r.raw(470))).value_or(GradientKind::Linear);
             gd.angle = f.angle(r.num(460));
             gradient = gd;
         }

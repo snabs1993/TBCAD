@@ -192,8 +192,7 @@ TEST_CASE("TRIM cuts a hatch back to a cutting edge and keeps its pattern") {
     hd.loops.push_back(std::move(loop));
     EntityId h = f.add(std::move(hd));
     f.add(LineData{{60, -10}, {60, 60}});
-    f.host.run("TRIM",
-               {ScriptItem::enter(), ScriptItem::pick(h, {80, 25}), ScriptItem::enter()});
+    f.host.run("TRIM", {ScriptItem::enter(), ScriptItem::pick(h, {80, 25}), ScriptItem::enter()});
     const auto* t = entityAs<HatchData>(f.get(h));
     REQUIRE(t);
     CHECK(t->pattern == "ANSI31");
