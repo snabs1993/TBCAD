@@ -802,10 +802,57 @@ DimStyle scaledStyle(const DimStyle& base, double annoScale) {
 }
 }  // namespace
 
-// Cuts the gaps of DIMBREAK out of the straight dimension and extension lines. A gap applies to a
-// line when both its ends lie on it.
+// Cuts the gaps of DIMBREAK out of the dimension and extension lines and the dimension arcs. A gap
+// applies to a line or arc when both its ends lie on it.
 static void applyBreaks(Layout& L, const std::vector<DimBreak>& breaks) {
     constexpr double kOnLine = 0.02;  // mm
+    std::vector<Layout::Arc> arcs;
+    for (Layout::Arc& arc : L.arcs) {
+        double sweep = normalizeAngle(arc.endAngle - arc.startAngle);
+        if (sweep < 1e-12)
+            sweep = kTwoPi;
+        if (arc.role == Role::Text || !(arc.radius > 1e-9)) {
+            arcs.push_back(arc);
+            continue;
+        }
+        auto param = [&](Vec2 p, double& u) {
+            if (std::abs(distance(p, arc.center) - arc.radius) > kOnLine)
+                return false;
+            u = normalizeAngle(angleOf(p - arc.center) - arc.startAngle);
+            if (u > sweep + kOnLine / arc.radius)  // past the end: the nearer end
+                u = (kTwoPi - u < u - sweep) ? 0 : sweep;
+            u = std::min(u, sweep);
+            return true;
+        };
+        std::vector<std::pair<double, double>> gaps;
+        for (const DimBreak& b : breaks) {
+            double u0, u1;
+            if (!param(b.a, u0) || !param(b.b, u1))
+                continue;
+            if (u0 > u1)
+                std::swap(u0, u1);
+            if (u1 - u0 > 1e-9)
+                gaps.emplace_back(u0, u1);
+        }
+        if (gaps.empty()) {
+            arcs.push_back(arc);
+            continue;
+        }
+        std::sort(gaps.begin(), gaps.end());
+        double from = 0;
+        auto piece = [&](double u0, double u1) {
+            arcs.push_back({arc.center, arc.radius, normalizeAngle(arc.startAngle + u0),
+                            normalizeAngle(arc.startAngle + u1), arc.role});
+        };
+        for (const auto& [g0, g1] : gaps) {
+            if (g0 > from + 1e-9)
+                piece(from, g0);
+            from = std::max(from, g1);
+        }
+        if (from < sweep - 1e-9)
+            piece(from, sweep);
+    }
+    L.arcs = std::move(arcs);
     std::vector<Layout::Line> out;
     for (Layout::Line& line : L.lines) {
         if (line.pts.size() != 2 || line.role == Role::Text) {
