@@ -38,7 +38,16 @@ public:
         for (;;) {
             cmd::EntityOptions eo;
             eo.filter = isDimensionable;
+            eo.keywords = {"Baseline", "Continue"};
             auto o = co_await ctx.getEntity("Select object to dimension <exit>", eo);
+            // Baseline / Continue: DIMBASELINE or DIMCONTINUE, then back to this prompt.
+            if (o.status == Status::Keyword &&
+                (o.keyword == "Baseline" || o.keyword == "Continue")) {
+                auto chain =
+                    o.keyword == "Baseline" ? makeBaselineCommand() : makeContinueCommand();
+                co_await chain->run(ctx);
+                continue;
+            }
             if (!o.ok())
                 co_return;
             const Entity* e = ctx.doc().find(o.id);
