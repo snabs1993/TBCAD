@@ -587,6 +587,48 @@ TEST_CASE("DIMJOGLINE puts a Z-shaped jog in the dimension line and Remove takes
     CHECK(entityAs<DimensionData>(t.value())->jogs[0].x == doctest::Approx(25));
 }
 
+// As AutoCAD: one jog per dimension (a new one replaces the old), Remove at the first prompt
+// takes the jog of the dimension picked next, and the jog stays on the dimension line when the
+// line is moved.
+TEST_CASE("DIMJOGLINE: one jog per dimension, Remove first, the jog follows the dimension line") {
+    Chain f;
+    REQUIRE(f.host->run("DIMLINEAR", {"0,0", "100,0", "50,-30"}).finished);
+    REQUIRE(f.host->run("DIMLINEAR", {"0,0", "100,0", "50,-60"}).finished);
+    std::vector<EntityId> ids;
+    f.doc.forEachEntity([&](const Entity& e) { ids.push_back(e.common.id); });
+    std::sort(ids.begin(), ids.end(), [](EntityId a, EntityId b) { return a.value < b.value; });
+    REQUIRE(ids.size() == 2);
+    auto zigzags = [&](EntityId id) {
+        const dim::Layout L =
+            dim::layoutDimension(f.doc, *entityAs<DimensionData>(*f.doc.find(id)));
+        std::size_t n = 0;
+        for (const auto& l : L.lines)
+            if (l.role == dim::Role::DimLine && l.pts.size() == 4)
+                ++n;
+        return n;
+    };
+    REQUIRE(f.host->run("DIMJOGLINE", {ScriptItem::pick(ids[0], {10, -30}), "20,-30"}).finished);
+    REQUIRE(f.host->run("DIMJOGLINE", {ScriptItem::pick(ids[0], {10, -30}), "80,-30"}).finished);
+    const auto* d = entityAs<DimensionData>(*f.doc.find(ids[0]));
+    REQUIRE(d->jogs.size() == 1);
+    CHECK(d->jogs[0].x == doctest::Approx(80));
+    CHECK(zigzags(ids[0]) == 1);
+
+    // Moving the dimension line (DIMSPACE here) keeps the jog on it.
+    REQUIRE(f.host
+                ->run("DIMSPACE", {ScriptItem::pick(ids[1], {50, -60}),
+                                   ScriptItem::select({ids[0]}), ScriptItem::enter(), "10"})
+                .finished);
+    CHECK(entityAs<DimensionData>(*f.doc.find(ids[0]))->defPts[2].y == doctest::Approx(-50));
+    CHECK(zigzags(ids[0]) == 1);
+
+    REQUIRE(f.host->run("DIMJOGLINE", {ScriptItem::pick(ids[1], {10, -60}), "30,-60"}).finished);
+    REQUIRE(f.host->run("DIMJOGLINE", {"Remove", ScriptItem::pick(ids[0], {10, -50})}).finished);
+    CHECK(entityAs<DimensionData>(*f.doc.find(ids[0]))->jogs.empty());
+    CHECK(entityAs<DimensionData>(*f.doc.find(ids[1]))->jogs.size() == 1);
+    CHECK(zigzags(ids[0]) == 0);
+}
+
 TEST_CASE("an associative dimension follows its line, a dimension moved alone loses the link") {
     Chain f;
     EntityId line;
