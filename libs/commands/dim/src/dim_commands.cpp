@@ -574,6 +574,7 @@ void registerCommands(cmd::Registry& registry) {
         if (auto* d = entityAs<DimensionData>(e))
             dim::refresh(doc, *d);
     });
+    setDimBreakRefresh(refreshAutoBreaks);
     for (EntityKind k : {EntityKind::Dimension, EntityKind::Leader, EntityKind::MLeader}) {
         blocks::ExplodeRegistry::set(
             k, [](const Document& doc, const Entity& e) -> Result<blocks::ExplodeResult> {

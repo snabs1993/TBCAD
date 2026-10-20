@@ -931,9 +931,13 @@ void breakShapes(const Document& doc, const Entity& e, std::vector<BreakShape>& 
 
 // Where the shapes cross `curve` (a line or arc of dimension `self`), as spans of its parameter:
 // one point where a line crosses, from where the curve goes into a text box to where it comes out.
-std::vector<std::pair<double, double>> breakHits(const Entity& curve, EntityId self,
-                                                 const std::vector<BreakShape>& shapes) {
-    std::vector<std::pair<double, double>> spans;
+struct BreakHit {
+    double t0 = 0, t1 = 0;
+    EntityId source{};
+};
+std::vector<BreakHit> breakHits(const Entity& curve, EntityId self,
+                                const std::vector<BreakShape>& shapes) {
+    std::vector<BreakHit> spans;
     const BBox2 box = geom::bounds(curve);
     std::vector<geom::EntityIntersection> hits;
     for (const BreakShape& s : shapes) {
@@ -945,17 +949,115 @@ std::vector<std::pair<double, double>> breakHits(const Entity& curve, EntityId s
         if (s.area && hits.size() >= 2) {
             auto [lo, hi] = std::minmax_element(
                 hits.begin(), hits.end(), [](const auto& a, const auto& b) { return a.tA < b.tA; });
-            spans.emplace_back(lo->tA, hi->tA);
+            spans.push_back({lo->tA, hi->tA, s.source});
             continue;
         }
         for (const geom::EntityIntersection& h : hits) {
             if (s.ends && (h.tB < 1e-6 || h.tB > static_cast<double>(s.ends) - 1e-6))
                 continue;
-            spans.emplace_back(h.tA, h.tA);
+            spans.push_back({h.tA, h.tA, s.source});
         }
     }
     return spans;
 }
+
+// The automatic DIMBREAK gaps of dimension `self` where the shapes cross its lines and arcs, each
+// 1.5 arrow sizes wide; `hitBy` gets the objects that made one.
+std::vector<DimBreak> autoGaps(const Document& doc, EntityId self, const DimensionData& d0,
+                               const std::vector<BreakShape>& shapes,
+                               std::vector<EntityId>& hitBy) {
+    std::vector<DimBreak> found;
+    if (shapes.empty())
+        return found;
+    DimensionData bare = d0;
+    bare.breaks.clear();
+    bare.jogs.clear();
+    const dim::Layout L = dim::layoutDimension(doc, bare);
+    const DimStyle& st = dim::styleOf(doc, d0.style);
+    const double gap = 1.5 * st.arrowSize * (st.overallScale > 0 ? st.overallScale : 1);
+    auto add = [&](const DimBreak& b, EntityId source) {
+        if (std::find(found.begin(), found.end(), b) == found.end())
+            found.push_back(b);
+        if (std::find(hitBy.begin(), hitBy.end(), source) == hitBy.end())
+            hitBy.push_back(source);
+    };
+    for (const dim::Layout::Line& line : L.lines) {
+        if (line.pts.size() != 2 || line.role == dim::Role::Text)
+            continue;
+        const Vec2 a = line.pts[0], dir = line.pts[1] - a;
+        const double len = std::hypot(dir.x, dir.y);
+        if (!(len > 1e-9))
+            continue;
+        Entity seg;
+        seg.data = LineData{line.pts[0], line.pts[1]};
+        for (const BreakHit& h : breakHits(seg, self, shapes)) {
+            if (h.t1 < 1e-6 || h.t0 > 1 - 1e-6)
+                continue;
+            const double half = gap / 2 / len;
+            add({a + dir * std::max(0.0, h.t0 - half), a + dir * std::min(1.0, h.t1 + half)},
+                h.source);
+        }
+    }
+    // The arcs of angular and arc length dimensions break the same way.
+    for (const dim::Layout::Arc& arc : L.arcs) {
+        if (arc.role == dim::Role::Text || !(arc.radius > 1e-9))
+            continue;
+        double sweep = normalizeAngle(arc.endAngle - arc.startAngle);
+        if (sweep < 1e-12)
+            sweep = kTwoPi;
+        Entity curve;
+        curve.data = ArcData{arc.center, arc.radius, normalizeAngle(arc.startAngle),
+                             normalizeAngle(arc.endAngle)};
+        if (sweep >= kTwoPi)
+            curve.data = CircleData{arc.center, arc.radius};
+        for (const BreakHit& h : breakHits(curve, self, shapes)) {
+            double u0 = normalizeAngle(h.t0 - arc.startAngle);
+            double u1 = normalizeAngle(h.t1 - arc.startAngle);
+            if (u0 > u1)
+                std::swap(u0, u1);
+            if (u1 < 1e-6 || u0 > sweep - 1e-6)
+                continue;
+            const double half = gap / 2 / arc.radius;
+            add({arc.center + unitAt(arc.startAngle + std::max(0.0, u0 - half)) * arc.radius,
+                 arc.center + unitAt(arc.startAngle + std::min(sweep, u1 + half)) * arc.radius},
+                h.source);
+        }
+    }
+    return found;
+}
+
+// The gaps placed by hand (DIMBREAK Manual): those after the automatic ones.
+std::vector<DimBreak> manualGaps(const DimensionData& d) {
+    const std::size_t from = std::min<std::size_t>(d.autoBreaks, d.breaks.size());
+    return {d.breaks.begin() + static_cast<std::ptrdiff_t>(from), d.breaks.end()};
+}
+
+}  // namespace
+
+// Works the automatic DIMBREAK gaps of a dimension out again from the objects that break it (after
+// it or one of them changed); an object that is gone no longer breaks it.
+void refreshAutoBreaks(const Document& doc, Entity& e) {
+    auto* d = entityAs<DimensionData>(e);
+    if (!d || d->breakWith.empty())
+        return;
+    std::vector<BreakShape> shapes;
+    std::vector<EntityId> alive;
+    for (EntityId id : d->breakWith) {
+        if (const Entity* c = doc.find(id)) {
+            alive.push_back(id);
+            breakShapes(doc, *c, shapes);
+        }
+    }
+    std::vector<EntityId> hitBy;
+    std::vector<DimBreak> gaps = autoGaps(doc, e.common.id, *d, shapes, hitBy);
+    const std::vector<DimBreak> manual = manualGaps(*d);
+    d->autoBreaks = static_cast<std::uint32_t>(gaps.size());
+    gaps.insert(gaps.end(), manual.begin(), manual.end());
+    d->breaks = std::move(gaps);
+    d->breakWith = std::move(alive);
+}
+
+namespace {
 
 // DIMBREAK [DBR]: opens gaps in the dimension and extension lines where other objects cross them,
 // or closes the gaps again. The gaps are stored with the dimension (DimensionData::breaks).
@@ -1076,69 +1178,25 @@ public:
             if (!d0)
                 continue;
             std::vector<DimBreak> found;
-            if (mode.keyword == "Auto") {
-                DimensionData bare = *d0;
-                bare.breaks.clear();
-                bare.jogs.clear();
-                const dim::Layout L = dim::layoutDimension(ctx.doc(), bare);
-                const DimStyle& st = dim::styleOf(ctx.doc(), d0->style);
-                const double gap = 1.5 * st.arrowSize * (st.overallScale > 0 ? st.overallScale : 1);
-                auto add = [&](const DimBreak& b) {
-                    if (std::find(found.begin(), found.end(), b) == found.end())
-                        found.push_back(b);
-                };
-                for (const dim::Layout::Line& line : L.lines) {
-                    if (line.pts.size() != 2 || line.role == dim::Role::Text)
-                        continue;
-                    const Vec2 a = line.pts[0], dir = line.pts[1] - a;
-                    const double len = std::hypot(dir.x, dir.y);
-                    if (!(len > 1e-9))
-                        continue;
-                    Entity seg;
-                    seg.data = LineData{line.pts[0], line.pts[1]};
-                    for (auto [t0, t1] : breakHits(seg, id, shapes)) {
-                        if (t1 < 1e-6 || t0 > 1 - 1e-6)
-                            continue;
-                        const double half = gap / 2 / len;
-                        add({a + dir * std::max(0.0, t0 - half),
-                             a + dir * std::min(1.0, t1 + half)});
-                    }
-                }
-                // The arcs of angular and arc length dimensions break the same way.
-                for (const dim::Layout::Arc& arc : L.arcs) {
-                    if (arc.role == dim::Role::Text || !(arc.radius > 1e-9))
-                        continue;
-                    double sweep = normalizeAngle(arc.endAngle - arc.startAngle);
-                    if (sweep < 1e-12)
-                        sweep = kTwoPi;
-                    Entity curve;
-                    curve.data = ArcData{arc.center, arc.radius, normalizeAngle(arc.startAngle),
-                                         normalizeAngle(arc.endAngle)};
-                    if (sweep >= kTwoPi)
-                        curve.data = CircleData{arc.center, arc.radius};
-                    for (auto [t0, t1] : breakHits(curve, id, shapes)) {
-                        double u0 = normalizeAngle(t0 - arc.startAngle);
-                        double u1 = normalizeAngle(t1 - arc.startAngle);
-                        if (u0 > u1)
-                            std::swap(u0, u1);
-                        if (u1 < 1e-6 || u0 > sweep - 1e-6)
-                            continue;
-                        const double half = gap / 2 / arc.radius;
-                        add({arc.center +
-                                 unitAt(arc.startAngle + std::max(0.0, u0 - half)) * arc.radius,
-                             arc.center +
-                                 unitAt(arc.startAngle + std::min(sweep, u1 + half)) * arc.radius});
-                    }
-                }
-            }
+            std::vector<EntityId> hitBy;
+            if (mode.keyword == "Auto")
+                found = autoGaps(ctx.doc(), id, *d0, shapes, hitBy);
             auto r = ctx.tx().modify(id, [&](Entity& ent) {
                 auto* d = entityAs<DimensionData>(ent);
                 if (!d)
                     return;
-                if (mode.keyword == "Remove")
+                if (mode.keyword == "Remove") {
                     d->breaks.clear();
-                else
-                    d->breaks = found;
+                    d->breakWith.clear();
+                    d->autoBreaks = 0;
+                    return;
+                }
+                // The new automatic gaps replace the old ones; gaps placed by hand stay.
+                const std::vector<DimBreak> manual = manualGaps(*d);
+                d->breaks = found;
+                d->breaks.insert(d->breaks.end(), manual.begin(), manual.end());
+                d->autoBreaks = static_cast<std::uint32_t>(found.size());
+                d->breakWith = hitBy;
             });
             if (!r) {
                 ctx.message(r.error().message);

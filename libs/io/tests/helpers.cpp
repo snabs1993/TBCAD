@@ -205,6 +205,8 @@ std::unique_ptr<Document> makeRichDocument() {
         dim.style = arch;
         dim.measurement = 10;
         dim.breaks = {DimBreak{{1, 0}, {2, 0}}, DimBreak{{6, 0}, {7, 0}}};
+        dim.autoBreaks = 1;
+        dim.breakWith = {EntityId{1}};
         dim.oblique = 0.4;
         dim.textRotated = true;
         dim.textRotation = 0.25;
