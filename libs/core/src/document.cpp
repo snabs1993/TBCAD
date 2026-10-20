@@ -392,7 +392,9 @@ struct Checker {
         const double len = std::hypot(d.dir.x, d.dir.y);
         if (!(len > 1e-12))
             bad("ray direction must not be zero");
-        else
+        // A unit direction is left as it is: dividing it again can move it by an ulp, and a
+        // saved drawing would not load the same.
+        else if (std::abs(len - 1) > 1e-12)
             d.dir = {d.dir.x / len, d.dir.y / len};
     }
     void operator()(MlineData& d) {
