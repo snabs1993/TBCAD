@@ -439,8 +439,8 @@ namespace {
 std::shared_ptr<const std::vector<unsigned char>> readFontFile(const char* name) {
     std::ifstream in(std::filesystem::path(TBCAD_TEST_FONT_DIR) / name, std::ios::binary);
     REQUIRE(in);
-    return std::make_shared<const std::vector<unsigned char>>(
-        (std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    return std::make_shared<const std::vector<unsigned char>>((std::istreambuf_iterator<char>(in)),
+                                                              std::istreambuf_iterator<char>());
 }
 }  // namespace
 
@@ -470,7 +470,7 @@ TEST_CASE("glyphs are written as text with an embedded subset and a ToUnicode ma
     p.setFillRGB(1, 0, 0);
     p.showGlyph(f, 36, U"A", 10, 0, 0, 10, 20, 30);
     p.showGlyph(f, 37, U"ส", 10, 0, 0, 10, 26, 30);  // Thai so sua
-    p.moveTo(0, 0);  // ends the text object
+    p.moveTo(0, 0);                                  // ends the text object
     p.lineTo(10, 0);
     p.stroke();
     const std::string c = p.content();
@@ -490,7 +490,8 @@ TEST_CASE("glyphs are written as text with an embedded subset and a ToUnicode ma
         const auto dir = std::filesystem::temp_directory_path();
         const auto pdf = dir / "tbcad_text_test.pdf", txt = dir / "tbcad_text_test.txt";
         REQUIRE(doc.writeFile(pdf.string()).ok());
-        REQUIRE(std::system(("pdftotext \"" + pdf.string() + "\" \"" + txt.string() + "\"").c_str()) == 0);
+        REQUIRE(std::system(
+                    ("pdftotext \"" + pdf.string() + "\" \"" + txt.string() + "\"").c_str()) == 0);
         std::ifstream in(txt, std::ios::binary);
         std::string out((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
         CHECK(out.find("A") != std::string::npos);

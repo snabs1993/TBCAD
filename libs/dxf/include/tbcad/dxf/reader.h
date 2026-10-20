@@ -71,17 +71,17 @@ struct PlotSetupRecord {
 struct DimComparison {
     std::uint64_t handle = 0;
     int line = 0;
-    std::string kind{};           // "linear", "aligned", "radius", ...
-    std::string style{};          // the dimension style's name
-    std::string storedText{};     // without formatting codes
+    std::string kind{};        // "linear", "aligned", "radius", ...
+    std::string style{};       // the dimension style's name
+    std::string storedText{};  // without formatting codes
     std::string generatedText{};
     bool textMatch = true;
-    double textOffset = 0;        // between the text centres
-    double heightRatio = 1;       // generated / stored text height (1 when either has no text)
-    double strayStored = 0;       // share of the stored lines' length TBCAD does not draw
-    double strayGenerated = 0;    // share of TBCAD's lines the stored block does not have
-    int arrowsStored = 0;         // arrowheads (solids, arrow blocks) in the stored block
-    int arrowsUnmatched = 0;      // of those, how many have no arrowhead of TBCAD's nearby
+    double textOffset = 0;      // between the text centres
+    double heightRatio = 1;     // generated / stored text height (1 when either has no text)
+    double strayStored = 0;     // share of the stored lines' length TBCAD does not draw
+    double strayGenerated = 0;  // share of TBCAD's lines the stored block does not have
+    int arrowsStored = 0;       // arrowheads (solids, arrow blocks) in the stored block
+    int arrowsUnmatched = 0;    // of those, how many have no arrowhead of TBCAD's nearby
     int arrowsGenerated = 0;
     // The stored block shows another number than the dimension measures (a block made before
     // the dimension changed); TBCAD's drawing is the one to trust, so it is not a fault.

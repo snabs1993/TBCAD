@@ -188,6 +188,10 @@ struct DimStyle {
     int angularZeros = -1;
     int tolZeros = -1;
     int altZeros = -1;
+    // DIMALTRND: rounds the alternate value (in alternate units; 0 = none). DIMTOLJ: where the
+    // measurement sits against a stacked tolerance (0 bottom, 1 middle, 2 top).
+    double altRoundOff = 0;
+    int tolJustify = 1;
     // DIMDLI: distance between baseline dimension lines (0 = 2.5 times the text height).
     // DIMCEN: size of the centre mark of radius and diameter dimensions (0 none, negative also
     // draws centre lines).

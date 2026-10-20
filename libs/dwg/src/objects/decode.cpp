@@ -1788,8 +1788,7 @@ private:
         while (rest.size() > n + 1ull && rest.back() == 0)
             rest.pop_back();
         const bool okLayout = !r.failed() && n <= 2000000 && sortHandles.size() == n &&
-                              (!fmt_.r2007 || r.bitPos() == mainEnd_) &&
-                              rest.size() == n + 1ull;
+                              (!fmt_.r2007 || r.bitPos() == mainEnd_) && rest.size() == n + 1ull;
         if (!okLayout) {
             note("sort table " + hex(self) + " has an unexpected layout (" + std::to_string(n) +
                  " entries, " + std::to_string(rest.size()) + " handles)" +

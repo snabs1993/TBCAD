@@ -37,7 +37,8 @@ struct App {
     std::unique_ptr<ui::AppCore> core;
 
     App() {
-        dir = fs::temp_directory_path() / ("tbcad_drafting_" + std::to_string(std::random_device{}()));
+        dir = fs::temp_directory_path() /
+              ("tbcad_drafting_" + std::to_string(std::random_device{}()));
         fs::create_directories(dir);
         cmd::registerBuiltinCommands(reg);
         draftingcmds::registerCommands(reg);

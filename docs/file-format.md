@@ -275,7 +275,8 @@ heights); tag 2 (since 1.19) the arrow of leaders (DIMLDRBLK, the `ArrowType` nu
 (since 1.20) DIMLWD and DIMLWE (lineweight in hundredths of a mm, -1 ByLayer, -2 ByBlock, -3
 Default); tags 5, 6 and 7 (since 1.21) DIMLTYPE, DIMLTEX1 and DIMLTEX2 (the linetype name, as its
 index in the string table); tags 8, 9 and 10 (since 1.22) DIMAZIN, DIMTZIN and DIMALTZ (bit 1
-leading zeros, bit 2 trailing; absent: as the length setting). A reader skips tags it does not know, so later variables need no new
+leading zeros, bit 2 trailing; absent: as the length setting); tags 11 and 12 (since 1.23)
+DIMALTRND and DIMTOLJ. A reader skips tags it does not know, so later variables need no new
 chunk.
 
 ## Reading safely

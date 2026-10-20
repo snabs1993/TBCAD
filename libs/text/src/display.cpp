@@ -131,8 +131,11 @@ void buildTextDisplay(const Document& doc, const Entity& e, const geom::DisplayC
             lastFont = g.font;
         }
         if (file.bytes)
-            fill.glyphRef = GlyphRef{file.bytes->data(), file.bytes->size(),
-                                     static_cast<std::uint32_t>(file.faceIndex), g.glyphId, g.text,
+            fill.glyphRef = GlyphRef{file.bytes->data(),
+                                     file.bytes->size(),
+                                     static_cast<std::uint32_t>(file.faceIndex),
+                                     g.glyphId,
+                                     g.text,
                                      layout.toWorld * em};
         out.items.emplace_back(std::move(fill));
     }

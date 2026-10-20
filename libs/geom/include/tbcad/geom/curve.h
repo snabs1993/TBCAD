@@ -73,8 +73,8 @@ public:
     double lengthBetween(double ta, double tb) const;
     // Parameter at arc length s from the start (clamped to [0, length()]).
     double paramAtLength(double s) const;
-    // The n + 1 points at arc lengths length() * i / n, i = 0..n, found in one sweep along the curve
-    // (the same points as pointAt(paramAtLength(...)) for each i, without a pass per point).
+    // The n + 1 points at arc lengths length() * i / n, i = 0..n, found in one sweep along the
+    // curve (the same points as pointAt(paramAtLength(...)) for each i, without a pass per point).
     std::vector<Vec2> pointsAtEqualLength(int n) const;
     BBox2 bounds() const;
 

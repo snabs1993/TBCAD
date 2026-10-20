@@ -695,7 +695,6 @@ std::vector<std::uint8_t> Importer::proxyGraphicsOf(const Record& r) const {
     return out;
 }
 
-
 // A MESH (subdivision mesh) carries its control cage in plain groups: vertices (92 then 10/20/30),
 // faces (93 then a list of 90: count followed by vertex indices) and edges (94 then pairs of 90).
 // The cage edges are drawn as seen from above; the smoothing of higher subdivision levels is not.

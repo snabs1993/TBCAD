@@ -8,9 +8,9 @@
 #include <string>
 
 #include "reader_helpers.h"
-#include "tbcad/dxf/writer.h"
 #include "tbcad/blocks/display.h"
 #include "tbcad/dim/dim.h"
+#include "tbcad/dxf/writer.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/hatch/hatch.h"
 #include "tbcad/mline/mline.h"
@@ -223,8 +223,8 @@ TEST_CASE("hostile numbers in coordinates and sizes: the drawing reads, draws an
     // Real-valued groups (points, sizes, angles, XDATA reals) get NaN, infinities, huge,
     // tiny and denormal values; whatever the reader keeps must draw and save as DXF without a
     // crash, and the saved file must read again.
-    const char* kHostile[] = {"nan", "-nan", "inf", "-inf", "1e308", "-1e308", "1e-320",
-                              "4.9e-324", "1e300", "-0", "1e18", "NaN", "Infinity"};
+    const char* kHostile[] = {"nan",      "-nan",  "inf", "-inf", "1e308", "-1e308",  "1e-320",
+                              "4.9e-324", "1e300", "-0",  "1e18", "NaN",   "Infinity"};
     std::vector<std::vector<std::byte>> seeds;
     for (const auto& e : std::filesystem::directory_iterator(testing::corpusPath("reader")))
         if (e.path().extension() == ".dxf" && std::filesystem::file_size(e.path()) < 60000)

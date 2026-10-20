@@ -134,10 +134,10 @@ public:
                     po.base = pts.back();
                 if (!pts.empty())
                     po.keywords = {"Undo"};
-                auto a = co_await ctx.getPoint(pts.size() >= 3
-                                                   ? "Specify next point or [Undo] <close>"
-                                                   : "Specify next point or [Undo]",
-                                               po);
+                auto a =
+                    co_await ctx.getPoint(pts.size() >= 3 ? "Specify next point or [Undo] <close>"
+                                                          : "Specify next point or [Undo]",
+                                          po);
                 if (a.status == cmd::Status::Keyword) {
                     pts.pop_back();
                     if (pts.empty())

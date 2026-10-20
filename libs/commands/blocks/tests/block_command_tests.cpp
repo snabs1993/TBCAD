@@ -155,7 +155,8 @@ TEST_CASE("BASE stores the insertion base point of the drawing, undo restores it
     CHECK(f.host->logContains("stays"));
 }
 
-TEST_CASE("redefining a block updates every insert, nested ones too, and undo brings the old one back") {
+TEST_CASE(
+    "redefining a block updates every insert, nested ones too, and undo brings the old one back") {
     Fixture f;
     EntityId a = f.addLine(0, 0, 1, 0);
     f.host->setSelection({a});

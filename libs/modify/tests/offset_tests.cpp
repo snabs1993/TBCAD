@@ -352,7 +352,9 @@ TEST_CASE("property: offsets of random polylines with arcs keep the distance") {
 // found by comparing every segment with every other.
 TEST_CASE("polyline offset with the grid equals the offset comparing every pair") {
     std::mt19937 rng(11);
-    auto rnd = [&](double lo, double hi) { return std::uniform_real_distribution<double>(lo, hi)(rng); };
+    auto rnd = [&](double lo, double hi) {
+        return std::uniform_real_distribution<double>(lo, hi)(rng);
+    };
     int pieces = 0;
     for (int round = 0; round < 40; ++round) {
         PolylineData pl;
@@ -403,7 +405,8 @@ TEST_CASE("offset keeps the widths of a wide polyline, interpolated where a corn
     const auto& v = as<PolylineData>(r.value()[0]).v;
     REQUIRE(v.size() >= 3);
     CHECK(near(v[0].startWidth, 2.0, 1e-6));
-    CHECK(near(v[0].endWidth, 3.8, 1e-6));  // the corner is cut back to x = 9, 90% along the segment
+    CHECK(
+        near(v[0].endWidth, 3.8, 1e-6));  // the corner is cut back to x = 9, 90% along the segment
     CHECK(near(v[1].startWidth, 3.7, 1e-6));
     CHECK(near(v[1].endWidth, 1.3, 1e-6));
     // A polyline without widths stays without.

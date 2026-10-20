@@ -114,8 +114,8 @@ Result<PlotStyleTable> importCtb(std::span<const std::uint8_t> bytes) {
             if (depth == 1) {
                 section = key == "lineweight_table" || key == "custom_lineweight_table"
                               ? Section::Weights
-                          : key == "plot_style"     ? Section::Styles
-                                                    : Section::None;
+                          : key == "plot_style" ? Section::Styles
+                                                : Section::None;
                 if (section == Section::Styles)
                     sawStyles = true;
             } else if (depth == 2 && section == Section::Styles) {

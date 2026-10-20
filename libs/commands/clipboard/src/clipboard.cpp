@@ -1,11 +1,11 @@
 #include "tbcad/clipboard/clipboard.h"
-#include "tbcad/xref/xref.h"
 
 #include <functional>
 #include <mutex>
 #include <type_traits>
 
 #include "tbcad/geom/geom.h"
+#include "tbcad/xref/xref.h"
 
 namespace tbcad::clipboard {
 

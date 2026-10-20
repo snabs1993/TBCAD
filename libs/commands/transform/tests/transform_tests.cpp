@@ -132,7 +132,8 @@ TEST_CASE("ROTATE by reference with points") {
     CHECK(f.host.undo());
     f.host.setSelection({a});  // the command used up the selection
     f.host.run("ROTATE", {"0,0", "Reference", "5,5", "9,9", "-20,0"});
-    CHECK(near(get<LineData>(f.doc, a).b, {20 * std::cos(kPi * 3 / 4), 20 * std::sin(kPi * 3 / 4)}));
+    CHECK(
+        near(get<LineData>(f.doc, a).b, {20 * std::cos(kPi * 3 / 4), 20 * std::sin(kPi * 3 / 4)}));
 }
 
 TEST_CASE("SCALE by factor, Copy, and Reference") {

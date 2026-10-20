@@ -64,8 +64,12 @@ public:
 
 private:
     std::array<long, 4> range(const BBox2& b) const {
-        auto cx = [&](double v) { return std::clamp(static_cast<long>(std::floor((v - origin_.x) / cell_)), 0L, nx_ - 1); };
-        auto cy = [&](double v) { return std::clamp(static_cast<long>(std::floor((v - origin_.y) / cell_)), 0L, ny_ - 1); };
+        auto cx = [&](double v) {
+            return std::clamp(static_cast<long>(std::floor((v - origin_.x) / cell_)), 0L, nx_ - 1);
+        };
+        auto cy = [&](double v) {
+            return std::clamp(static_cast<long>(std::floor((v - origin_.y) / cell_)), 0L, ny_ - 1);
+        };
         return {cx(b.min.x), cy(b.min.y), cx(b.max.x), cy(b.max.y)};
     }
 
@@ -78,6 +82,5 @@ private:
     std::vector<std::vector<std::size_t>> cells_{};
     std::vector<std::size_t> large_{};
 };
-
 
 }  // namespace tbcad::geom

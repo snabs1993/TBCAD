@@ -273,8 +273,9 @@ void curveSnapPoints(const geom::CurveRef& curve, const SnapRequest& rq,
 // An ellipse or spline can run for kilometres through a drawing and be flattened into a thousand
 // pieces to intersect it, while only the stretch inside the aperture matters. The parts of the
 // curve that come within the aperture box, as sub-curves (a coarse flattening finds them).
-static void clipToAperture(const geom::CurveRef& c, const BBox2& ap, std::deque<geom::CurveRef>& out,
-                    std::vector<const geom::CurveRef*>& clipped) {
+static void clipToAperture(const geom::CurveRef& c, const BBox2& ap,
+                           std::deque<geom::CurveRef>& out,
+                           std::vector<const geom::CurveRef*>& clipped) {
     using Kind = geom::CurveRef::Kind;
     if (c.kind() != Kind::Ellipse && c.kind() != Kind::Spline) {
         clipped.push_back(&c);

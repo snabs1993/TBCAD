@@ -441,7 +441,8 @@ TEST_CASE("wrapped MTEXT has a width grip on its free side") {
     CHECK_FALSE(moveGrip(e, 1, {5, 10}).ok());
     m.attach = Attachment::TopCenter;
     CHECK(distance(gripPoints(make(m))[1], Vec2{20, 10}) < 1e-12);
-    CHECK(entityAs<MTextData>(moveGrip(make(m), 1, {25, 10}).value())->width == doctest::Approx(30));
+    CHECK(entityAs<MTextData>(moveGrip(make(m), 1, {25, 10}).value())->width ==
+          doctest::Approx(30));
     m.attach = Attachment::TopRight;
     CHECK(distance(gripPoints(make(m))[1], Vec2{-10, 10}) < 1e-12);
     m.rotation = kPi / 2;

@@ -886,7 +886,8 @@ Result<Analysis> analyze(const Document& doc, const ConstraintSet& set) {
             for (std::size_t k = 0; k < dependent.size(); ++k)
                 for (std::size_t c = 0; c < cnt; ++c)
                     W[k * cnt + c] = depNorm[k] * el.L[dependent[k] * rows + first[i] + c];
-            st.redundant = static_cast<std::size_t>(rankOf(std::move(W), dependent.size(), cnt, depScale, kDerivedTol)) == cnt;
+            st.redundant = static_cast<std::size_t>(rankOf(std::move(W), dependent.size(), cnt,
+                                                           depScale, kDerivedTol)) == cnt;
         }
         a.constraints.push_back(st);
     }
@@ -929,9 +930,11 @@ Result<Analysis> analyze(const Document& doc, const ConstraintSet& set) {
     for (const Slot& s : m.slots) {
         EntityStatus es;
         es.entity = s.id;
-        std::vector<double> block(N.begin() + static_cast<std::ptrdiff_t>(s.offset * d),
-                                  N.begin() + static_cast<std::ptrdiff_t>((s.offset + s.count) * d));
-        es.degreesOfFreedom = d == 0 ? 0 : rankOf(std::move(block), s.count, d, nullScale, kDerivedTol);
+        std::vector<double> block(
+            N.begin() + static_cast<std::ptrdiff_t>(s.offset * d),
+            N.begin() + static_cast<std::ptrdiff_t>((s.offset + s.count) * d));
+        es.degreesOfFreedom =
+            d == 0 ? 0 : rankOf(std::move(block), s.count, d, nullScale, kDerivedTol);
         es.degreesOfFreedom = std::clamp(es.degreesOfFreedom, 0, static_cast<int>(s.count));
         for (const Constraint& c : m.constraints)
             es.constraints += (c.a.entity == s.id || c.b.entity == s.id) ? 1 : 0;

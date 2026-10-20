@@ -297,6 +297,10 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
                 if (v >= 0)
                     ds.fixedExtLength = v * k_;
                 break;
+            case 148:  // DIMALTRND
+                if (v >= 0)
+                    ds.altRoundOff = v;
+                break;
             case 146:  // DIMTFAC
                 if (v > 0)
                     ds.tolHeightFactor = std::min(v, 10.0);
@@ -360,6 +364,9 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
                 break;
             case 280:
                 ds.textJustify = whole == 1 || whole == 2 ? static_cast<int>(whole) : 0;
+                break;
+            case 283:  // DIMTOLJ
+                ds.tolJustify = whole >= 0 && whole <= 2 ? static_cast<int>(whole) : 1;
                 break;
             case 79:  // DIMAZIN
                 ds.angularZeros = static_cast<int>(whole & 3);

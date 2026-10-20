@@ -1,5 +1,6 @@
 // Reading with a second thread that splits the text into records gives the same drawing and the
-// same diagnostics, in the same order, as reading on one thread: on the corpus and on damaged copies.
+// same diagnostics, in the same order, as reading on one thread: on the corpus and on damaged
+// copies.
 #include <algorithm>
 #include <cstdint>
 #include <filesystem>
@@ -40,8 +41,8 @@ void expectSame(const std::vector<std::byte>& bytes) {
         CHECK(a.error().message == b.error().message);
         return;
     }
-    const std::string diff = testing::SemanticDump::diff(testing::SemanticDump(*a.value().document),
-                                                         testing::SemanticDump(*b.value().document));
+    const std::string diff = testing::SemanticDump::diff(
+        testing::SemanticDump(*a.value().document), testing::SemanticDump(*b.value().document));
     CHECK_MESSAGE(diff.empty(), diff);
 }
 

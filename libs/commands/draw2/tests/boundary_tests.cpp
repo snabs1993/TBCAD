@@ -275,7 +275,8 @@ TEST_CASE("BOUNDARY closes a room through the lines inside a block reference") {
     // The leaf: a 5 long line scaled 4 inside a DOOR block, which is inserted at (0, 20) rotated
     // a quarter turn, so it runs from (0, 20) to (0, 40).
     const BlockId leaf = addBlock(f.doc, "LEAF", {LineData{{0, 0}, {5, 0}}});
-    const BlockId door = addBlock(f.doc, "DOOR", {Indirect<InsertData>(InsertData{leaf, {0, 0}, {4, 4}, 0})});
+    const BlockId door =
+        addBlock(f.doc, "DOOR", {Indirect<InsertData>(InsertData{leaf, {0, 0}, {4, 4}, 0})});
     f.addEntity(Indirect<InsertData>(InsertData{door, {0, 20}, {1, 1}, kPi / 2}));
     const std::size_t before = f.entities().size();  // block contents count too
     CHECK(f.host.run("BO", {"50,30", ""}).finished);

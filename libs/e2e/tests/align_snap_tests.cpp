@@ -115,7 +115,8 @@ TEST_CASE("SCALE by reference takes the new length from a snapped point") {
     r.near({10, 0});
     r.near({30, 0});
     CHECK(close(r.mover().a, {0, 0}));
-    INFO("b = " << r.mover().b.x << "," << r.mover().b.y << " a = " << r.mover().a.x << "," << r.mover().a.y);
+    INFO("b = " << r.mover().b.x << "," << r.mover().b.y << " a = " << r.mover().a.x << ","
+                << r.mover().a.y);
     CHECK(close(r.mover().b, {30, 0}));
 }
 

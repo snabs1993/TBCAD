@@ -15,7 +15,8 @@ Entity wavyPoly(int n) {
     std::vector<PolyVertex> v;
     for (int i = 0; i < n; ++i) {
         const double a = 6.283185307 * i / n;
-        v.push_back(PolyVertex{{200 * std::cos(a) * (1 + 0.1 * std::sin(a * 20)), 200 * std::sin(a)}, 0, 0, 0});
+        v.push_back(PolyVertex{
+            {200 * std::cos(a) * (1 + 0.1 * std::sin(a * 20)), 200 * std::sin(a)}, 0, 0, 0});
     }
     return poly(v, false);
 }

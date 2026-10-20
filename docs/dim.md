@@ -97,6 +97,10 @@ DIMAZIN, DIMTZIN and DIMALTZ (`angularZeros`, `tolZeros`, `altZeros`, DIMSTYLE k
 tolerances and alternate units drop, apart from DIMZIN for lengths. A style made in TBCAD starts
 with Same (follow DIMZIN); a DXF style takes AutoCAD's values, where an absent group means none.
 
+DIMALTRND (`altRoundOff`, DIMSTYLE key `AltRoundOff`) rounds the alternate value to a multiple of
+itself, in the alternate unit. DIMTOLJ (`tolJustify`, key `TolJustify`: Bottom, Middle or Top)
+says where the measurement sits against a stacked tolerance (the MTEXT `\A` code).
+
 Tick marks (`ArrowType::ArchTick`, DXF `_ARCHTICK` or `_OBLIQUE`, or a DIMTSZ above 0, which
 sets the arrow size to DIMTSZ) are drawn as AutoCAD's block: a stroke at 45 degrees from
 (-a/2,-a/2) to (a/2,a/2) round the tip, so `a·√2` long.

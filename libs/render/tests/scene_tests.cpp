@@ -531,7 +531,8 @@ TEST_CASE("removeMany and removeAllOf drop many objects at once and the scene st
 TEST_CASE("removeMany with far more ids than drawn objects drops only the drawn ones") {
     Scene s;
     for (std::uint64_t i = 1; i <= 20; ++i)
-        s.upsert(EntityId{i}, lineList({static_cast<double>(i), 0}, {static_cast<double>(i) + 1, 1}),
+        s.upsert(EntityId{i},
+                 lineList({static_cast<double>(i), 0}, {static_cast<double>(i) + 1, 1}),
                  static_cast<unsigned>(i), 0);
     // Ten drawn ids among two thousand that are not in the scene (objects still waiting).
     std::vector<EntityId> ids;

@@ -317,9 +317,9 @@ std::vector<std::uint8_t> spatialFilterObj(std::uint64_t h, int type, std::uint6
 
 // SORTENTSTABLE: the count and the sort handles in the main data, then the owner, the block and
 // the entity handles in the handle stream.
-std::vector<std::uint8_t> sortEntsObj(std::uint64_t h, int type, std::uint64_t owner,
-                                      std::uint64_t block,
-                                      const std::vector<std::pair<std::uint64_t, std::uint64_t>>& pairs) {
+std::vector<std::uint8_t> sortEntsObj(
+    std::uint64_t h, int type, std::uint64_t owner, std::uint64_t block,
+    const std::vector<std::pair<std::uint64_t, std::uint64_t>>& pairs) {
     ObjectWriter o(type, h);
     o.objectCommon();
     o.main.bl(static_cast<int>(pairs.size()));

@@ -18,8 +18,8 @@ struct TrueTypeInfo {
     int capHeight = 0;                           // OS/2 (version 2+), else the ascent
     double italicAngle = 0;                      // post
     bool fixedPitch = false;
-    std::vector<std::uint16_t> advances{};       // hmtx, one per glyph
-    std::string postscriptName{};                // name ID 6; empty when the font has none
+    std::vector<std::uint16_t> advances{};  // hmtx, one per glyph
+    std::string postscriptName{};           // name ID 6; empty when the font has none
 };
 
 // Reads the face `faceIndex` of a .ttf / .ttc file. Empty when it is not a TrueType font with

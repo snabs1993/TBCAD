@@ -1651,6 +1651,10 @@ void Importer::readDimStyle(const Record& r) {
         ds.linearFactor = g->number();  // DIMLFAC
     if (const Group* g = r.find(146); g && std::isfinite(g->number()) && g->number() > 0)
         ds.tolHeightFactor = std::min(g->number(), 10.0);  // DIMTFAC
+    if (const Group* g = r.find(148); g && std::isfinite(g->number()) && g->number() >= 0)
+        ds.altRoundOff = g->number();  // DIMALTRND
+    if (const Group* g = r.find(283); g && g->integer() >= 0 && g->integer() <= 2)
+        ds.tolJustify = static_cast<int>(g->integer());  // DIMTOLJ
     if (const Group* g = r.find(145); g && std::isfinite(g->number()))
         ds.textVertPos = std::clamp(g->number(), -100.0, 100.0);  // DIMTVP
     if (const Group* g = r.find(279)) {                           // DIMTMOVE

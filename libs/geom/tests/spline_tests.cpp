@@ -197,7 +197,8 @@ TEST_CASE("paramAtLength inverts lengthBetween on a many-span spline and an elli
     }
 }
 
-TEST_CASE("interpolation through random points, degrees and end conditions always passes through them") {
+TEST_CASE(
+    "interpolation through random points, degrees and end conditions always passes through them") {
     std::mt19937 rng(7);
     std::uniform_real_distribution<double> u(-1, 1);
     int failures = 0;
@@ -238,7 +239,8 @@ TEST_CASE("interpolation through random points, degrees and end conditions alway
             CHECK_MESSAGE(distance(cv.value().pointAt(t), fit[i]) <= 1e-6 * std::max(1.0, scale),
                           "n=", n, " deg=", o.degree, " closed=", o.closed, " nat=", o.natural,
                           " tan=", o.startTangent.has_value(), " scale=", scale,
-                          " clustered=", clustered, " err=", distance(cv.value().pointAt(t), fit[i]));
+                          " clustered=", clustered,
+                          " err=", distance(cv.value().pointAt(t), fit[i]));
         }
     }
     CHECK(failures == 0);

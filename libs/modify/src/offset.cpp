@@ -37,13 +37,15 @@ Seg offsetSeg(const Seg& s, double d, bool& ok) {
     return {g->center + u0 * r, g->center + u1 * r, s.bulge};
 }
 
-
 // Hash of a point on a grid of `kJoinTol * 8`, so points within kJoinTol of each other are in the
 // same or an adjacent cell.
 struct PointIndex {
-    static long long cell(double v) { return static_cast<long long>(std::floor(v / (kJoinTol * 8))); }
+    static long long cell(double v) {
+        return static_cast<long long>(std::floor(v / (kJoinTol * 8)));
+    }
     static std::uint64_t key(long long x, long long y) {
-        return static_cast<std::uint64_t>(x) * 0x9E3779B97F4A7C15ull ^ static_cast<std::uint64_t>(y) * 0xC2B2AE3D27D4EB4Full;
+        return static_cast<std::uint64_t>(x) * 0x9E3779B97F4A7C15ull ^
+               static_cast<std::uint64_t>(y) * 0xC2B2AE3D27D4EB4Full;
     }
     std::unordered_multimap<std::uint64_t, std::size_t> map;
     void add(Vec2 p, std::size_t i) { map.emplace(key(cell(p.x), cell(p.y)), i); }
@@ -251,7 +253,8 @@ Result<std::vector<Entity>> offsetPolyline(const Entity& src, const PolylineData
     // A raw line that stays |d| away from every nearby source segment cannot enter the zone: it
     // needs neither zone cuts nor a distance test per piece (most of a smooth contour).
     std::vector<char> clear(cn, 0);
-    if (useGrid && !segs.empty() && std::none_of(segs.begin(), segs.end(), [](const Seg& q) { return q.isArc(); })) {
+    if (useGrid && !segs.empty() &&
+        std::none_of(segs.begin(), segs.end(), [](const Seg& q) { return q.isArc(); })) {
         const double need = std::abs(d) - 1e-6 * std::max(1.0, std::abs(d));
         const auto lineGap = [](Vec2 a0, Vec2 a1, Vec2 b0, Vec2 b1) {
             const auto toSeg = [](Vec2 p, Vec2 q0, Vec2 q1) {
@@ -262,9 +265,11 @@ Result<std::vector<Entity>> offsetPolyline(const Entity& src, const PolylineData
             };
             const double o1 = cross(a1 - a0, b0 - a0), o2 = cross(a1 - a0, b1 - a0);
             const double o3 = cross(b1 - b0, a0 - b0), o4 = cross(b1 - b0, a1 - b0);
-            if (((o1 > 0) != (o2 > 0) || o1 == 0 || o2 == 0) && ((o3 > 0) != (o4 > 0) || o3 == 0 || o4 == 0))
+            if (((o1 > 0) != (o2 > 0) || o1 == 0 || o2 == 0) &&
+                ((o3 > 0) != (o4 > 0) || o3 == 0 || o4 == 0))
                 return 0.0;
-            return std::min({toSeg(a0, b0, b1), toSeg(a1, b0, b1), toSeg(b0, a0, a1), toSeg(b1, a0, a1)});
+            return std::min(
+                {toSeg(a0, b0, b1), toSeg(a1, b0, b1), toSeg(b0, a0, a1), toSeg(b1, a0, a1)});
         };
         for (std::size_t i = 0; i < cn; ++i) {
             if (chain[i].isArc())
@@ -296,8 +301,8 @@ Result<std::vector<Entity>> offsetPolyline(const Entity& src, const PolylineData
     std::vector<std::vector<double>> extras(cn);
     std::vector<geom::Intersection> xs;  // reused by the passes below
     if (useGrid) {
-        // Only the raw segments that may enter the zone look at the zone edges, and only at those of
-        // the source segments close enough to matter (built on demand).
+        // Only the raw segments that may enter the zone look at the zone edges, and only at those
+        // of the source segments close enough to matter (built on demand).
         struct ZoneOf {
             std::vector<Seg> edges;
             std::vector<CurveRef> curves;
@@ -313,7 +318,8 @@ Result<std::vector<Entity>> offsetPolyline(const Entity& src, const PolylineData
                 if (!z.built) {
                     z.built = true;
                     zoneEdgesOf(segs[k], z.edges);
-                    for (const Seg& e : z.edges) {  // `edges` no longer grows: the curves stay valid
+                    for (const Seg& e :
+                         z.edges) {  // `edges` no longer grows: the curves stay valid
                         z.curves.push_back(segCurve(e));
                         z.boxes.push_back(z.curves.back().bounds().inflated(1e-7));
                     }
@@ -366,11 +372,12 @@ Result<std::vector<Entity>> offsetPolyline(const Entity& src, const PolylineData
         bool duplicate = false;
         const auto same = [&](std::size_t k) {
             const Seg& v = valid[k];
-            duplicate = duplicate ||
-                        (samePoint(v.p0, piece.p0, kJoinTol) && samePoint(v.p1, piece.p1, kJoinTol) &&
-                         std::abs(v.bulge - piece.bulge) < 1e-7) ||
-                        (samePoint(v.p0, piece.p1, kJoinTol) && samePoint(v.p1, piece.p0, kJoinTol) &&
-                         std::abs(v.bulge + piece.bulge) < 1e-7);
+            duplicate =
+                duplicate ||
+                (samePoint(v.p0, piece.p0, kJoinTol) && samePoint(v.p1, piece.p1, kJoinTol) &&
+                 std::abs(v.bulge - piece.bulge) < 1e-7) ||
+                (samePoint(v.p0, piece.p1, kJoinTol) && samePoint(v.p1, piece.p0, kJoinTol) &&
+                 std::abs(v.bulge + piece.bulge) < 1e-7);
         };
         validStart.near(piece.p0, same);
         validStart.near(piece.p1, same);

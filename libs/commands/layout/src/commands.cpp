@@ -411,12 +411,12 @@ cmd::Task pickOutline(cmd::CommandContext& ctx, std::vector<Vec2>& outline) {
                 out.items.emplace_back(std::move(pl));
         };
         po.allowNone = outline.size() >= 3;
-        const std::string prompt =
-            outline.size() < 3
-                ? "Specify point " + std::to_string(outline.size() + 1) +
-                      " of the outline on the sheet (mm)"
-                : "Specify point " + std::to_string(outline.size() + 1) + " or [Close] <accept " +
-                      std::to_string(outline.size()) + " points>";
+        const std::string prompt = outline.size() < 3
+                                       ? "Specify point " + std::to_string(outline.size() + 1) +
+                                             " of the outline on the sheet (mm)"
+                                       : "Specify point " + std::to_string(outline.size() + 1) +
+                                             " or [Close] <accept " +
+                                             std::to_string(outline.size()) + " points>";
         auto p = co_await ctx.getPoint(prompt, po);
         if (p.status == Status::Keyword || p.status == Status::None)
             co_return;
@@ -574,8 +574,8 @@ public:
         if (id && !outline.empty())
             if (auto r = layout::setViewportClip(ctx.tx(), target, id.value(), outline); !r)
                 ctx.message(r.error().message);
-        ctx.message(id ? "Viewport " + std::to_string(id.value()) + " added to \"" + target +
-                             "\"" + (fit ? " at 1:" + formatScale(n) : std::string()) + "."
+        ctx.message(id ? "Viewport " + std::to_string(id.value()) + " added to \"" + target + "\"" +
+                             (fit ? " at 1:" + formatScale(n) : std::string()) + "."
                        : id.error().message);
     }
 

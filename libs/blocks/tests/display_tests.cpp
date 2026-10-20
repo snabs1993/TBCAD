@@ -78,8 +78,7 @@ TEST_CASE("perf: a big array inside a block builds in linear time") {
     EntityId i = addEntity(doc, insertOf(outer, {0, 0}));
     const auto t0 = std::chrono::steady_clock::now();
     DisplayList l = displayOf(doc, i);
-    const double s =
-        std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    const double s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     CHECK(l.items.size() == 60u * 60u * 20u);
     CHECK(s < 2.0);  // was 16 s: every array item moved the whole list
 }

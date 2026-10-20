@@ -247,7 +247,8 @@ std::vector<Entity> explodePolyline(const Entity& e) {
 
 // ---- explode ------------------------------------------------------------------------------------
 
-Result<ExplodeResult> explode(const Document& doc, const Entity& entity, bool attributesAsDefinitions) {
+Result<ExplodeResult> explode(const Document& doc, const Entity& entity,
+                              bool attributesAsDefinitions) {
     switch (kind(entity)) {
         case EntityKind::Insert: {
             const auto* ins = entityAs<InsertData>(entity);
