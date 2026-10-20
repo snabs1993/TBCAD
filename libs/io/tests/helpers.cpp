@@ -52,6 +52,7 @@ std::unique_ptr<Document> makeRichDocument() {
         arch.name = "Arch";
         arch.textStyle = thai;
         arch.arrowType = ArrowType::ArchTick;
+        arch.leaderArrow = ArrowType::Dot;
         arch.units = LengthUnit::Meter;
         arch.precision = 3;
         arch.prefix = "<";

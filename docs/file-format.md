@@ -271,7 +271,7 @@ with a warning; before 1.16 this order was lost on saving.
 
 Since 1.17. More dimension style variables, for the styles that set one: `varint count`, then per
 style `varint dimStyleId`, `varint n`, `n` × (`varint tag`, `f64 value`). Tag 1 is DIMTVP (text
-heights). A reader skips tags it does not know, so later variables need no new chunk.
+heights); tag 2 (since 1.19) the arrow of leaders (DIMLDRBLK, the `ArrowType` number). A reader skips tags it does not know, so later variables need no new chunk.
 
 ## Reading safely
 

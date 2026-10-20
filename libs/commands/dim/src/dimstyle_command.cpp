@@ -80,18 +80,18 @@ std::string spaced(std::string_view v) {
 }
 
 const std::vector<std::string> kProps = {
-    "TextHeight",    "TextGap",         "TextStyle",     "ArrowType",   "ArrowSize",
-    "ExtOffset",     "ExtExtension",    "LineExtension", "Placement",   "Alignment",
-    "Units",         "Precision",       "Prefix",        "Suffix",      "RoundOff",
-    "Scale",         "LeadingZeros",    "TrailingZeros", "LineColor",   "ExtColor",
-    "TextColor",     "AltUnits",        "AltScale",      "AltUnit",     "AltPrecision",
-    "AltPrefix",     "AltSuffix",       "Tolerance",     "TolUpper",    "TolLower",
-    "TolPrecision",  "LinearFactor",    "Fit",           "TextMove",    "AlignmentOutside",
-    "TextInside",    "ArrowsOutside",   "LineInside",    "ExtLine1",    "ExtLine2",
-    "DimLine1",      "DimLine2",        "Justify",       "AngleFormat", "AngularPrecision",
-    "DecimalMark",   "BaselineSpacing", "CenterMark",    "TextFill",    "TextFillColor",
-    "TextFrame",     "LengthFormat",    "TolHeight",     "TextVertPos", "FixedExt",
-    "FixedExtLength"};
+    "TextHeight",     "TextGap",         "TextStyle",     "ArrowType",   "ArrowSize",
+    "ExtOffset",      "ExtExtension",    "LineExtension", "Placement",   "Alignment",
+    "Units",          "Precision",       "Prefix",        "Suffix",      "RoundOff",
+    "Scale",          "LeadingZeros",    "TrailingZeros", "LineColor",   "ExtColor",
+    "TextColor",      "AltUnits",        "AltScale",      "AltUnit",     "AltPrecision",
+    "AltPrefix",      "AltSuffix",       "Tolerance",     "TolUpper",    "TolLower",
+    "TolPrecision",   "LinearFactor",    "Fit",           "TextMove",    "AlignmentOutside",
+    "TextInside",     "ArrowsOutside",   "LineInside",    "ExtLine1",    "ExtLine2",
+    "DimLine1",       "DimLine2",        "Justify",       "AngleFormat", "AngularPrecision",
+    "DecimalMark",    "BaselineSpacing", "CenterMark",    "TextFill",    "TextFillColor",
+    "TextFrame",      "LengthFormat",    "TolHeight",     "TextVertPos", "FixedExt",
+    "FixedExtLength", "LeaderArrow"};
 
 std::string num(double v) {
     char buf[40];
@@ -187,6 +187,7 @@ std::vector<std::pair<std::string, std::string>> describe(const Document& doc, c
         {"TextVertPos", num(s.textVertPos)},
         {"FixedExt", s.fixedExtLines ? "On" : "Off"},
         {"FixedExtLength", num(s.fixedExtLength)},
+        {"LeaderArrow", arrow[static_cast<int>(s.leaderArrow)]},
     };
 }
 
@@ -254,17 +255,19 @@ std::string applyProperty(const Document& doc, DimStyle& s, std::string_view key
         s.textStyle = t->id;
         return {};
     }
-    if (same(key, "ArrowType")) {
+    // ArrowType: the dimension arrows; LeaderArrow: the arrow of leaders (DIMLDRBLK).
+    if (same(key, "ArrowType") || same(key, "LeaderArrow")) {
+        ArrowType& a = same(key, "ArrowType") ? s.arrowType : s.leaderArrow;
         if (same(value, "Filled") || same(value, "Closed"))
-            s.arrowType = ArrowType::ClosedFilled;
+            a = ArrowType::ClosedFilled;
         else if (same(value, "Open"))
-            s.arrowType = ArrowType::Open30;
+            a = ArrowType::Open30;
         else if (same(value, "Tick") || same(value, "Architectural"))
-            s.arrowType = ArrowType::ArchTick;
+            a = ArrowType::ArchTick;
         else if (same(value, "Dot"))
-            s.arrowType = ArrowType::Dot;
+            a = ArrowType::Dot;
         else if (same(value, "None"))
-            s.arrowType = ArrowType::None;
+            a = ArrowType::None;
         else
             return "Arrow type is Filled, Open, Tick, Dot or None.";
         return {};

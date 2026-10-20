@@ -523,6 +523,7 @@ private:
             const DimStyleId id{id32(r)};
             const std::size_t values = r.count(9);
             double tvp = 0;
+            ArrowType leader = ArrowType::ClosedFilled;
             for (std::size_t k = 0; k < values; ++k) {
                 const std::uint64_t tag = r.varint();
                 const double v = r.f64();
@@ -530,10 +531,19 @@ private:
                     bad("invalid dimension style variable");
                 if (tag == 1)
                     tvp = v;
+                else if (tag == 2) {
+                    if (v < 0 || v > static_cast<double>(ArrowType::None) || v != std::floor(v))
+                        bad("invalid leader arrow");
+                    leader = static_cast<ArrowType>(static_cast<int>(v));
+                }
             }
             if (!doc_->dimStyle(id))
                 continue;
-            check(tx.modifyDimStyle(id, [&](DimStyle& d) { d.textVertPos = tvp; }),
+            check(tx.modifyDimStyle(id,
+                                    [&](DimStyle& d) {
+                                        d.textVertPos = tvp;
+                                        d.leaderArrow = leader;
+                                    }),
                   "dimension style");
         }
         if (!r.atEnd())

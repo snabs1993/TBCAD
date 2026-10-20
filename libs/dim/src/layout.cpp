@@ -1058,7 +1058,11 @@ Layout layoutLeader(const Document& doc, const LeaderData& d, double tolerance, 
     Layout L;
     if (d.vertices.size() < 2)
         return L;
-    const DimStyle st = scaledStyle(leaderStyleOf(doc, d.style), annoScale);
+    const DimStyle& own = leaderStyleOf(doc, d.style);
+    DimStyle st = scaledStyle(own, annoScale);
+    // The leader arrow (DIMLDRBLK); a style's own leader child ("$7") sets it as its arrow.
+    if (own.id == styleOf(doc, d.style).id)
+        st.arrowType = st.leaderArrow;
     Ctx c(doc, st, tolerance > 0 ? tolerance : 0.01);
     Layout::Line line;
     line.pts = d.vertices;

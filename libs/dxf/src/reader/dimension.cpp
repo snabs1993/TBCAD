@@ -99,8 +99,9 @@ double leadingHeightFactor(std::string_view t) {
 DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
     std::optional<double> txt, asz, scale, gap, exo, exe, dle, tp, tm;
     std::optional<std::int64_t> tolOn, limOn, altOn;
-    std::map<int, double> extra;         // the other overridable variables, by variable number
-    std::map<int, std::string> handles;  // DIMBLK, DIMBLK1, DIMBLK2: block record handles
+    std::map<int, double> extra;  // the other overridable variables, by variable number
+    // DIMLDRBLK, DIMBLK, DIMBLK1, DIMBLK2: block record handles
+    std::map<int, std::string> handles;
     bool inDstyle = false, inAcad = false;
     int var = -1;
     for (const Group& g : r.g) {
@@ -127,7 +128,7 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
             std::string h(g.str());
             for (char& c : h)
                 c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-            if ((var == 342 || var == 343 || var == 344) &&
+            if ((var == 341 || var == 342 || var == 343 || var == 344) &&
                 (h == "0" || blockNameByHandle_.count(h)))
                 handles[var] = h;
             var = -1;
@@ -220,6 +221,11 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
     // Arrow blocks named by handle (DIMBLK, DIMBLK1, DIMBLK2), with DIMSAH as overridden or as
     // the style has it. DIMTSZ, below, still turns the arrows into ticks.
     std::string extraKey;
+    if (const auto h = handles.find(341); h != handles.end()) {
+        ds.leaderArrow = arrowKindOf(h->second, ArrowType::ClosedFilled);
+        extraKey += "|ldr=" + std::to_string(static_cast<int>(ds.leaderArrow));
+        handles.erase(h);
+    }
     if (!handles.empty()) {
         const auto a = dimArrows_.find(ds.name);
         ArrowType blk = a != dimArrows_.end() ? a->second.first : ArrowType::ClosedFilled;
