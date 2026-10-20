@@ -113,3 +113,20 @@ DXF has no external reference with a snapshot, so the export writes the xref as 
 TBCAD restores the xref from it. A clipping boundary is written as XDATA on the `INSERT` (`clip=1|0`
 and one `1010` point per corner); other programs show the whole block and the export report says so.
 An `xref` block from another program (flag 4) is still imported as an empty block with a warning.
+
+## Sending a drawing (ETRANSMIT)
+
+`ETRANSMIT` (aliases `ARCHIVE`, `-ETRANSMIT`) packs the saved drawing with what it needs into a
+folder, or into a `.zip` file when the answer ends in `.zip` (the default is
+`<drawing>-transmittal.zip` next to the drawing):
+
+- xrefs, pictures and PDF underlays, and the xrefs inside those xrefs, keeping their paths relative
+  to the drawing that refers to them. A file stored outside the drawing's folder tree goes to
+  `refs/` and the report says its path must be set again;
+- the font files the text styles name (`.shx`, big fonts, font files) in `fonts/`. A style that uses
+  an installed font family is listed as a note, the font is not copied;
+- the plot style tables of the current plot settings and of the page setups in `plotstyles/`
+  (built-in tables need no file).
+
+`transmittal.txt` lists every file with what uses it, the total size, everything that was not found
+and the notes. The zip writer is `tbcad/io/zip.h` (deflate, UTF-8 names).

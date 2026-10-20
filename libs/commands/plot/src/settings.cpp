@@ -126,7 +126,9 @@ void addCommonStyleFolders(std::vector<std::filesystem::path>& out) {
 
 std::vector<std::filesystem::path> styleSearchFolders(const cmd::IHost& host) {
     std::vector<std::filesystem::path> out;
-    const std::string doc = host.documentFile();
+    std::string doc = host.documentFile();
+    if (doc.empty())  // hosts without a file of their own (scripts) say it in a setting
+        doc = host.setting("document.file").value_or("");
     if (!doc.empty()) {
         const auto dir = platform::pathFromUtf8(doc).parent_path();
         if (!dir.empty()) {
@@ -286,6 +288,12 @@ Result<std::shared_ptr<const plotstyle::PlotStyleTable>> resolveUncached(
 }
 
 }  // namespace
+
+std::filesystem::path styleTableFile(const cmd::IHost& host, const std::string& name) {
+    std::filesystem::path found;
+    (void)resolveUncached(host, name, found);
+    return found;
+}
 
 bool styleTableMissing(const cmd::IHost& host) {
     const std::string name = plotStyleName(host);

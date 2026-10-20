@@ -60,7 +60,8 @@ TEST_CASE("commands are registered with their aliases") {
     CHECK(f.reg.find("PLOT") != nullptr);
     CHECK(f.reg.find("PRINT") == f.reg.find("PLOT"));
     CHECK(f.reg.find("-PLOT") == f.reg.find("PLOT"));
-    CHECK(f.reg.find("-PUBLISH") == f.reg.find("PUBLISH"));
+    CHECK(f.reg.find("-PUBLISH") == f.reg.find("PLOTSET"));
+    CHECK(f.reg.find("PUBLISH") != f.reg.find("PLOTSET"));
     CHECK(f.reg.find("EXPORTPDF") != nullptr);
     CHECK(f.reg.find("EXPORTSVG") != nullptr);
 }
@@ -446,22 +447,61 @@ TEST_CASE("PAGESETUP Import reads the named page setups of a DXF file") {
     CHECK(sheet->settings.landscape);
 }
 
-TEST_CASE("PLOTSET / PUBLISH plot a sheet list to a PDF, or say printing is unavailable") {
+TEST_CASE("PLOTSET / -PUBLISH plot a sheet list to a PDF, or say printing is unavailable") {
     Fixture f;
     REQUIRE(io::writeTbcad(f.doc, f.dir / "d.tbcad").ok());
     {
         std::ofstream list(f.dir / "list.txt");
         list << "d.tbcad\nd.tbcad\n";
     }
-    CHECK(f.reg.find("PUBLISH") == f.reg.find("PLOTSET"));
+    CHECK(f.reg.find("-PUBLISH") == f.reg.find("PLOTSET"));
     const auto out = f.path("set.pdf");
-    CHECK(f.host->run("PUBLISH", {f.path("list.txt"), out}).finished);
+    CHECK(f.host->run("-PUBLISH", {f.path("list.txt"), out}).finished);
     CHECK(f.host->logContains("Plotted 2 sheets"));
     CHECK(std::filesystem::exists(out));
     if (!print::available()) {  // never send a test job to a real printer
         CHECK(f.host->run("PLOTSET", {f.path("list.txt"), "Printer"}).finished);
         CHECK(f.host->logContains("Printing is only available"));
     }
+}
+
+TEST_CASE("PUBLISH opens the dialog - PLOTSTAMP sets the stamp - PDF layers can be left out") {
+    Fixture f;
+    DocHost h(f.doc, f.reg);
+    CHECK(h.run("PUBLISH", {}).finished);
+    REQUIRE(h.panels.size() == 1);
+    CHECK(h.panels[0] == "publish");
+
+    CHECK(f.host->run("PLOTSTAMP", {"Text", "%file% %layout%", "On"}).finished);
+    CHECK(plot::plotStampOn(*f.host));
+    CHECK(plot::plotStampText(*f.host) == "%file% %layout%");
+    CHECK(f.host->run("PLOTSTAMP", {"Off"}).finished);
+    CHECK_FALSE(plot::plotStampOn(*f.host));
+
+    // The sheet knows the line's layer; dropLayers forgets it everywhere.
+    auto sheet = plot::buildPlotSheet(f.doc, *f.host, plot::loadSettings(*f.host));
+    REQUIRE(sheet.ok());
+    CHECK_FALSE(sheet.value().layerNames.empty());
+    exportlib::dropLayers(sheet.value());
+    CHECK(sheet.value().layerNames.empty());
+    for (const auto& prim : sheet.value().prims)
+        if (const auto* path = std::get_if<exportlib::PlotPath>(&prim))
+            CHECK(path->style.layer == 0);
+
+    // EXPORTPDF and -PUBLISH write the layer list unless "include layer information" is off.
+    CHECK(plot::pdfLayersOn(*f.host));
+    CHECK(f.host->run("EXPORTPDF", {"", f.path("with.pdf")}).finished);
+    CHECK(slurp(f.path("with.pdf")).find("/OCProperties") != std::string::npos);
+    CHECK(f.host->run("EXPORTPDF", {"PdfLayers", "No", "", f.path("flat.pdf")}).finished);
+    CHECK_FALSE(plot::pdfLayersOn(*f.host));
+    CHECK(slurp(f.path("flat.pdf")).find("/OCProperties") == std::string::npos);
+    REQUIRE(io::writeTbcad(f.doc, f.dir / "d.tbcad").ok());
+    std::ofstream(f.dir / "list.tbdsd") << "d.tbcad\n";
+    CHECK(f.host->run("-PUBLISH", {f.path("list.tbdsd"), f.path("set.pdf")}).finished);
+    CHECK(slurp(f.path("set.pdf")).find("/OCProperties") == std::string::npos);
+    plot::setPdfLayers(*f.host, true);
+    CHECK(f.host->run("-PUBLISH", {f.path("list.tbdsd"), f.path("set2.pdf")}).finished);
+    CHECK(slurp(f.path("set2.pdf")).find("/OCProperties") != std::string::npos);
 }
 
 TEST_CASE("the plot stamp adds text to the sheet and expands its tokens") {

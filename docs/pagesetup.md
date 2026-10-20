@@ -34,4 +34,13 @@ options as a new setup.
 `Stamp` in `PLOT` / `EXPORT*` / `PRINTER` (and the Plot panel checkbox) adds one line of text in the
 lower-left corner of the printable area: the settings `plot.stamp` and `plot.stampText`. Tokens:
 `%file%` `%layout%` `%date%` `%time%` `%scale%` `%paper%`. The stamp uses the same fonts as drawing
-text, so Thai works, and it is not counted among the plotted objects.
+text, so Thai works, and it is not counted among the plotted objects. `PLOTSTAMP` switches it
+(`On` / `Off`) and sets its text (`Text`). In a sheet list every sheet is stamped with its own file
+and layout name.
+
+## Layer information in PDFs
+
+A PDF lists the plotted layers (optional content groups) so a PDF viewer can switch them, as
+AutoCAD's "include layer information" does. The setting `plot.pdfLayers` (default on) turns it off
+for a flat PDF: `PdfLayers` in `PLOT` / `EXPORTPDF`, the Plot panel checkbox **Include layer
+information (PDF)** and the Publish dialog's **Layer information**.

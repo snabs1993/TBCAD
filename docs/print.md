@@ -12,7 +12,8 @@ Design: `libs/print` draws a `PlotSheet` onto a device `Canvas` (tested on every
 
 ## Sheet lists on a printer (PUBLISH)
 
-`PLOTSET` / `BATCHPLOT` / `PUBLISH` write a multi-page PDF from a sheet list. Answer the output file
+`-PUBLISH` / `PLOTSET` / `BATCHPLOT` (and the Publish dialog, see [layouts](layout.md)) write a
+multi-page PDF from a sheet list. Answer the output file
 prompt with `Printer` to send every sheet to the printer set with `PRINTER` (direct), or `Dialog` to
 choose in the system print dialog. Each layout (and model space) with a [page setup](pagesetup.md)
 is plotted with its own setup, so one job can mix colour and monochrome sheets and different style

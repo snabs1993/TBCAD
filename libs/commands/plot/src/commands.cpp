@@ -15,6 +15,27 @@
 namespace tbcad::plot {
 
 std::unique_ptr<cmd::Command> makePrinterCommand();
+std::unique_ptr<cmd::Command> makeETransmitCommand();
+
+Result<std::unique_ptr<Document>> readDrawingFile(const std::filesystem::path& file) {
+    std::string ext = file.extension().string();
+    for (char& c : ext)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (ext != ".dxf") {
+        io::IoReport report;
+        return io::readTbcad(file, report);
+    }
+    std::ifstream in(file, std::ios::binary);
+    if (!in)
+        return Error{ErrorCode::Io, "cannot read " + platform::pathToUtf8(file)};
+    std::vector<char> raw((std::istreambuf_iterator<char>(in)), {});
+    dxf::Report report;
+    auto r =
+        dxf::importDxf({reinterpret_cast<const std::byte*>(raw.data()), raw.size()}, {}, report);
+    if (!r)
+        return r.error();
+    return std::move(r.value().document);
+}
 
 namespace {
 
@@ -81,7 +102,7 @@ public:
             menu.keywords = {"Paper",   "Orientation", "Area",        "Scale",        "Center",
                              "Offset",  "Margin",      "LineWeights", "Transparency", "Color",
                              "Style",   "Format",      "Resolution",  "Layout",       "Stamp",
-                             "LWScale", "Screening",   "Export"};
+                             "LWScale", "Screening",   "PdfLayers",   "Export"};
             menu.defaultKeyword = "Export";
             std::string prompt;
             timePhase("menu summary",
@@ -339,6 +360,13 @@ public:
                     if (t.ok() && !t.text.empty())
                         setPlotStampText(ctx.host(), t.text);
                 }
+            } else if (kw == "PdfLayers") {
+                KeywordOptions ko;
+                ko.keywords = {"Yes", "No"};
+                ko.defaultKeyword = pdfLayersOn(ctx.host()) ? "Yes" : "No";
+                auto r = co_await ctx.getKeyword("Include layer information in the PDF", ko);
+                if (r.ok())
+                    setPdfLayers(ctx.host(), r.keyword == "Yes");
             } else if (kw == "Resolution") {
                 cmd::RealOptions ro;
                 ro.min = 10;
@@ -397,13 +425,33 @@ public:
     }
 };
 
+// The open drawing stands in for its file (unsaved changes plot), its page setups serve as
+// overrides for sheets of other drawings, .dxf drawings are read too, and each sheet gets the plot
+// stamp (with its own file and layout) and loses its layer list when PDF layers are off.
+sheets::BuildOptions publishOptions(const Document& doc, const cmd::IHost& host) {
+    sheets::BuildOptions o;
+    o.current = &doc;
+    std::string file = host.documentFile();
+    if (file.empty())
+        file = host.setting("document.file").value_or("");
+    o.currentFile = platform::pathFromUtf8(file);
+    o.setupSource = &doc;
+    o.load = readDrawingFile;
+    const bool layers = pdfLayersOn(host);
+    o.decorate = [&host, layers](exportlib::PlotSheet& sheet, const sheets::SheetEntry& entry,
+                                 const PlotSettings& settings) {
+        addPlotStamp(sheet, host, settings, platform::pathToUtf8(entry.file), entry.layout);
+        if (!layers)
+            exportlib::dropLayers(sheet);
+    };
+    return o;
+}
+
 // PLOTSET: plots every sheet of a sheet list (see tbcad/sheets/sheets.h) into one PDF.
 class PlotSetCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "PLOTSET"; }
-    std::vector<std::string> defaultAliases() const override {
-        return {"BATCHPLOT", "PUBLISH", "-PUBLISH"};
-    }
+    std::vector<std::string> defaultAliases() const override { return {"BATCHPLOT", "-PUBLISH"}; }
     std::string_view description() const override {
         return "Plot a list of layouts from several drawings into one PDF or onto a printer";
     }
@@ -435,7 +483,8 @@ public:
                 co_return;
             }
             auto set = sheets::buildSheetList(entries.value(), loadSettings(ctx.host()),
-                                              styleResolver(ctx.host()));
+                                              styleResolver(ctx.host()),
+                                              publishOptions(ctx.doc(), ctx.host()));
             if (!set) {
                 ctx.message(set.error().message);
                 co_return;
@@ -450,8 +499,9 @@ public:
             co_return;
         }
         auto out = withExtension(file.text, Format::Pdf);
-        auto r = sheets::plotSheetList(entries.value(), loadSettings(ctx.host()), out,
-                                       styleResolver(ctx.host()));
+        auto r =
+            sheets::plotSheetList(entries.value(), loadSettings(ctx.host()), out,
+                                  styleResolver(ctx.host()), publishOptions(ctx.doc(), ctx.host()));
         if (!r) {
             ctx.message(r.error().message);
             co_return;
@@ -459,6 +509,55 @@ public:
         for (const auto& w : r.value().warnings)
             ctx.message("Warning: " + w);
         ctx.message("Plotted " + std::to_string(r.value().pages) + " sheets to " + out);
+    }
+};
+
+// PUBLISH: the sheet list dialog (drawings, layouts, page setup per sheet, one multi-page PDF).
+// -PUBLISH / BATCHPLOT is the command-line form (PLOTSET).
+class PublishCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "PUBLISH"; }
+    std::vector<std::string> defaultAliases() const override { return {"SHEETLIST"}; }
+    std::string_view description() const override {
+        return "Make a list of sheets from several drawings and publish them to one PDF";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().openPanel("publish");
+        co_return;
+    }
+};
+
+// PLOTSTAMP: switches the plot stamp and sets its text.
+class PlotStampCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "PLOTSTAMP"; }
+    std::string_view description() const override {
+        return "Print the file name, layout, date and scale on every plot";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        for (;;) {
+            KeywordOptions ko;
+            ko.keywords = {"On", "Off", "Text"};
+            ko.defaultKeyword = plotStampOn(ctx.host()) ? "Off" : "On";
+            const std::string state = plotStampOn(ctx.host()) ? "on" : "off";
+            const std::string prompt =
+                "Plot stamp is " + state + ": \"" + plotStampText(ctx.host()) + "\"";
+            auto r = co_await ctx.getKeyword(prompt, ko);
+            if (!r.ok())
+                co_return;
+            if (r.keyword == "Text") {
+                cmd::StringOptions so;
+                so.defaultValue = plotStampText(ctx.host());
+                auto t = co_await ctx.getString(
+                    "Stamp text (%file% %layout% %date% %time% %scale% %paper%)", so);
+                if (t.ok() && !t.text.empty())
+                    setPlotStampText(ctx.host(), t.text);
+                continue;
+            }
+            setPlotStamp(ctx.host(), r.keyword == "On");
+            ctx.message(std::string("Plot stamp ") + (r.keyword == "On" ? "on." : "off."));
+            co_return;
+        }
     }
 };
 
@@ -951,6 +1050,9 @@ void registerCommands(cmd::Registry& registry) {
                                       "Export the drawing to a JPEG image", Format::Jpeg));
     (void)registry.add(std::make_unique<PlotPanelCommand>());
     (void)registry.add(std::make_unique<PlotSetCommand>());
+    (void)registry.add(std::make_unique<PublishCommand>());
+    (void)registry.add(std::make_unique<PlotStampCommand>());
+    (void)registry.add(makeETransmitCommand());
     (void)registry.add(std::make_unique<PlotStyleCommand>());
     (void)registry.add(std::make_unique<PageSetupCommand>());
     (void)registry.add(std::make_unique<PageSetupPanelCommand>());

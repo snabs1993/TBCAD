@@ -1,10 +1,14 @@
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <random>
+#include <set>
 
 #include "support.h"
 #include "tbcad/drafting/snap_geometry.h"
 #include "tbcad/io/tbcad.h"
+#include "tbcad/io/zip.h"
+#include "tbcad/plotstyle/plotstyle.h"
 #include "tbcad/underlay/image.h"
 #include "tbcad/xref/xref.h"
 
@@ -534,6 +538,66 @@ TEST_CASE("ETRANSMIT copies the drawing and its references, keeping relative pat
     CHECK(fs::exists(to / "refs" / "outside.tbcad"));
     CHECK(fs::exists(to / "transmittal.txt"));
     CHECK(f.host->logContains("moved to refs"));
+}
+
+TEST_CASE("ETRANSMIT packs nested xrefs, fonts and plot styles into a zip with a report") {
+    Dir dir;
+    fs::create_directories(dir.path / "sub" / "deeper");
+    writeSource(dir.path / "sub" / "deeper", "deep.tbcad", 1);
+    // inside.tbcad has an xref of its own, stored relative to itself
+    fs::path inside = writeSource(dir.path / "sub", "inside.tbcad", 2);
+    {
+        Fixture g;
+        g.host->setSetting("document.file", inside.string());
+        g.host->run("XATTACH", {"deeper/deep.tbcad", "", "", "", "0,0"});
+        REQUIRE(g.doc.blockByName("deep"));
+        REQUIRE(io::writeTbcad(g.doc, inside, io::WriteOptions{.keepBackup = false}).ok());
+    }
+    fs::path main = writeSource(dir.path, "main.tbcad", 1);
+    std::ofstream(dir.path / "mytext.shx", std::ios::binary) << "AutoCAD-86 shapes 1.0";
+    std::ofstream(dir.path / "office.tbstyle", std::ios::binary)
+        << plotstyle::toText(*plotstyle::builtinTable("monochrome.ctb"));
+    Fixture f;
+    f.host->setSetting("document.file", main.string());
+    f.host->setSetting("plot.style", "office.tbstyle");
+    f.host->run("XATTACH", {"sub/inside.tbcad", "", "", "", "0,0"});
+    {
+        Transaction tx = f.doc.begin("style");
+        TextStyle st;
+        st.name = "Notes";
+        st.shxFile = "mytext.shx";
+        REQUIRE(tx.addTextStyle(st).ok());
+        st.name = "Gone";
+        st.shxFile = "nosuchfont.shx";
+        REQUIRE(tx.addTextStyle(st).ok());
+        tx.commit();
+    }
+    Dir pack;
+    const fs::path zip = pack.path / "send.zip";
+    f.host->clearLog();
+    f.host->run("ETRANSMIT", {zip.string()});
+    REQUIRE(fs::exists(zip));
+    std::ifstream in(zip, std::ios::binary);
+    std::vector<std::uint8_t> raw((std::istreambuf_iterator<char>(in)), {});
+    auto entries = io::readZip(raw);
+    REQUIRE(entries.ok());
+    std::set<std::string> names;
+    std::string report;
+    for (const auto& e : entries.value()) {
+        names.insert(e.name);
+        if (e.name == "transmittal.txt")
+            report.assign(e.data.begin(), e.data.end());
+    }
+    CHECK(names.count("main.tbcad"));
+    CHECK(names.count("sub/inside.tbcad"));
+    CHECK(names.count("sub/deeper/deep.tbcad"));
+    CHECK(names.count("fonts/mytext.shx"));
+    CHECK(names.count("plotstyles/office.tbstyle"));
+    CHECK(report.find("text style Notes") != std::string::npos);
+    CHECK(report.find("MISSING  font nosuchfont.shx") != std::string::npos);
+    CHECK(report.find("the current plot settings") != std::string::npos);
+    CHECK(f.host->logContains("5 file(s) packed"));
+    CHECK(f.host->logContains("1 not found"));
 }
 
 TEST_CASE("ETRANSMIT needs a saved drawing") {

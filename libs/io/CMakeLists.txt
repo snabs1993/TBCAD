@@ -9,6 +9,7 @@ tbcad_add_library(io
     src/read.cpp
     src/save.cpp
     src/write.cpp
+    src/zip.cpp
   DEPENDS tbcad::core tbcad::platform)
 find_package(Threads REQUIRED)
 target_link_libraries(tbcad_io PRIVATE miniz Threads::Threads)
@@ -38,6 +39,7 @@ tbcad_add_tests(io
     tests/save_tests.cpp
     tests/delta_tests.cpp
     tests/performance_tests.cpp
+    tests/zip_tests.cpp
   DEPENDS miniz)
 if(TBCAD_BUILD_TESTS)
   add_dependencies(tbcad_io_tests tbcad-dump)
