@@ -362,9 +362,20 @@ public:
     void registerBuiltinUi(UiRegistry& ui);
     // The seconds-based autosave check; the window calls it every frame.
     void tickAutosave(std::chrono::steady_clock::time_point now);
-    // Once every couple of seconds: when an external reference changed on disk and no command is
-    // running, reloads it (XRELOAD). The window calls it every frame.
+    // Once every couple of seconds: looks for external references whose file changed on disk.
+    // XREFNOTIFY ("xref.notify") says what follows: 0 nothing, 1 a marker in the status bar,
+    // 2 (default) the marker and a balloon naming the new changes, 3 reload them by itself
+    // (XRELOAD) once no command is running. The window calls it every frame.
     void tickXrefs(std::chrono::steady_clock::time_point now);
+    // Names of the external references of the active drawing whose file changed, as of the last
+    // check; empty with XREFNOTIFY 0.
+    std::vector<std::string> changedXrefs() const;
+    // Names for the balloon (XREFNOTIFY 2): references that changed since the balloon was last
+    // dismissed. Each change of a file is announced once.
+    std::vector<std::string> xrefChangeNotice() const;
+    void dismissXrefChangeNotice();
+    // Reloads the named references (all changed ones when `names` is empty) and clears the balloon.
+    void reloadXrefs(const std::vector<std::string>& names);
     // The picture underlays (IMAGEATTACH) that are visible, to draw before the scene. Pictures are
     // read from disk once and kept while the drawing shows them.
     std::vector<render::ImageDraw> underlayImages();

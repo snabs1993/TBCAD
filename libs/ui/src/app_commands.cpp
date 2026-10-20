@@ -980,6 +980,10 @@ void registerAppCommands(cmd::Registry& registry) {
         "1 = a double click edits the object (the action is set per type in Settings > "
         "Customize), 0 = it only selects"));
     (void)registry.add(std::make_unique<PickVarCommand>(
+        "XREFNOTIFY", "xref.notify", 3, 2,
+        "When the file of an external reference changes: 0 = say nothing, 1 = a marker in the "
+        "status bar, 2 = the marker and a balloon to reload it, 3 = reload it by itself"));
+    (void)registry.add(std::make_unique<PickVarCommand>(
         "PICKFIRST", "selection.pickfirst", 1, 1,
         "1 = commands use the objects selected before them, 0 = they always ask"));
     (void)registry.add(std::make_unique<SpaceCommand>(

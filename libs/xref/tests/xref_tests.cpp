@@ -803,3 +803,32 @@ TEST_CASE("open: the host's settings for the xref's layers (site|walls) go to th
     CHECK(depNothing);
     fs::remove_all(dir);
 }
+
+TEST_CASE("children lists the xrefs a reference inserts and pathTypeOf reads the stored form") {
+    Document host;
+    BlockId site, grid;
+    {
+        Transaction tx = host.begin("attach");
+        Source a = sourceOf(makeSource());
+        Source b = sourceOf(makeSource());
+        site = attach(tx, host, "site", "plans/site.tbcad", a).value();
+        grid = attach(tx, host, "grid", "grid.tbcad", b).value();
+        // grid nested twice inside site: listed once.
+        for (double x : {0.0, 50.0}) {
+            Entity in;
+            in.data = Indirect<InsertData>(InsertData{grid, {x, 0}, {1, 1}, 0});
+            (void)tx.add(in, site);
+        }
+        tx.commit();
+    }
+    CHECK(children(host, site) == std::vector<BlockId>{grid});
+    CHECK(children(host, grid).empty());
+
+    CHECK(pathTypeOf("plans/site.tbcad") == PathType::Relative);
+    CHECK(pathTypeOf("..\\plans\\site.dwg") == PathType::Relative);
+    CHECK(pathTypeOf("site.tbcad") == PathType::None);
+    CHECK(pathTypeOf("plan.pdf#page=2") == PathType::None);
+    CHECK(pathTypeOf("C:\\work\\site.dwg") == PathType::Absolute);
+    CHECK(pathTypeOf("/home/a/site.dxf") == PathType::Absolute);
+    CHECK(pathTypeOf("\\\\server\\share\\a.dwg") == PathType::Absolute);
+}

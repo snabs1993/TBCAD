@@ -656,6 +656,32 @@ void Gui::toast(const std::string& text) {
     anyActivity_ = true;
 }
 
+void Gui::drawXrefBalloon(const ViewportRect& rect) {
+    const std::vector<std::string> names = core_.xrefChangeNotice();
+    if (names.empty())
+        return;
+    ImGui::SetNextWindowPos(ImVec2(rect.x + rect.w - 16, rect.y + rect.h - 16), ImGuiCond_Always,
+                            ImVec2(1, 1));
+    if (ImGui::Begin("External reference changed", nullptr,
+                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize |
+                         ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove |
+                         ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoFocusOnAppearing)) {
+        ImGui::TextUnformatted(names.size() == 1 ? "This external reference changed on disk:"
+                                                 : "These external references changed on disk:");
+        for (const std::string& n : names)
+            ImGui::BulletText("%s", n.c_str());
+        if (ImGui::Button(names.size() == 1 ? ("Reload " + names[0]).c_str() : "Reload them"))
+            core_.reloadXrefs(names);
+        ImGui::SameLine();
+        if (ImGui::Button("External References..."))
+            openPanel("xrefs");
+        ImGui::SameLine();
+        if (ImGui::Button("Dismiss"))
+            core_.dismissXrefChangeNotice();
+    }
+    ImGui::End();
+}
+
 bool Gui::lineweights() const {
     return flag("view.lineweights", true);
 }
@@ -1711,6 +1737,25 @@ void Gui::statusBar() {
                     ImGui::SetTooltip("Object snap. Right-click to choose the snap modes.");
                 snapModesPopup();
             }
+        }
+        // A referenced file changed (XREFNOTIFY 1 or 2): a marker until it is reloaded.
+        if (const std::vector<std::string> changed = core_.changedXrefs(); !changed.empty()) {
+            place(textW("Xref changed") + sty.FramePadding.x * 2);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.75f, 0.25f, 1));
+            if (ImGui::SmallButton("Xref changed"))
+                openPanel("xrefs");
+            ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered()) {
+                std::string names;
+                for (const std::string& n : changed)
+                    names += (names.empty() ? "" : ", ") + n;
+                ImGui::SetTooltip(
+                    "The file of %s changed. Click for External References; "
+                    "right-click to reload.",
+                    names.c_str());
+            }
+            if (ImGui::IsItemClicked(ImGuiMouseButton_Right))
+                core_.reloadXrefs({});
         }
         const Layer* layer = doc.layer(doc.header().currentLayer);
         const float layerW = ImGui::CalcTextSize("A-WALL~interior").x + 30.0f;
@@ -3983,6 +4028,7 @@ ViewportRect Gui::frame() {
     quickProperties(rect);
     textEditor(rect);
     drawToasts(rect);
+    drawXrefBalloon(rect);
 
     // Non-blocking notice when a command put geometry outside the working area.
     if (core_.outOfAreaNotice()) {

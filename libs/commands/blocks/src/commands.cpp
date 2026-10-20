@@ -84,6 +84,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeXrefPaletteCommand());
     (void)registry.add(makeXPathCommand());
     (void)registry.add(makeXRelinkCommand());
+    (void)registry.add(makeXrefTypeCommand());
+    (void)registry.add(makeXOpenCommand());
     (void)registry.add(makeBlockCountCommand());
     (void)registry.add(makeBlockReplaceCommand());
 }

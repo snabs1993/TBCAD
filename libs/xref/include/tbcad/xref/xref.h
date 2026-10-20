@@ -194,5 +194,11 @@ State state(const Document& doc, BlockId block, const std::filesystem::path& hos
 std::vector<BlockId> xrefs(const Document& doc);
 // How many inserts reference the block (model space and inside other blocks).
 std::size_t useCount(const Document& doc, BlockId block);
+// The xref blocks that the entities of `block` insert directly (nested references), sorted by
+// name, each once.
+std::vector<BlockId> children(const Document& doc, BlockId block);
+// How a stored path is written: Absolute (from a drive or root), None (a bare file name) or
+// Relative. An options part ("#page=2") is ignored.
+PathType pathTypeOf(std::string_view stored);
 
 }  // namespace tbcad::xref

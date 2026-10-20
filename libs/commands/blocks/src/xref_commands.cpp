@@ -529,6 +529,83 @@ public:
     }
 };
 
+// XREFTYPE: switches an xref between attachment and overlay (an overlay is left out when this
+// drawing is itself used as an xref).
+class XrefTypeCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "XREFTYPE"; }
+    std::string_view description() const override {
+        return "Make an external reference an attachment or an overlay";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        Document& doc = ctx.doc();
+        if (xref::xrefs(doc).empty()) {
+            ctx.message("There are no external references in this drawing.");
+            co_return;
+        }
+        BlockId id{};
+        co_await askXrefName(ctx, "Enter xref name or [?]", id);
+        if (!id)
+            co_return;
+        if (xref::isUnderlay(doc, id) || underlay::isImagePath(doc.block(id)->xrefPath)) {
+            ctx.message("A picture or PDF underlay has no attach or overlay type.");
+            co_return;
+        }
+        const bool was = doc.block(id)->xrefOverlay;
+        auto t = co_await ctx.getKeyword(
+            std::string("Reference type [Attach/Overlay] <") + (was ? "Overlay" : "Attach") + ">",
+            cmd::KeywordOptions{.keywords = {"Attach", "Overlay"},
+                                .defaultKeyword = was ? "Overlay" : "Attach"});
+        if (!t.ok())
+            co_return;
+        const bool overlay = t.keyword == "Overlay";
+        const std::string name = doc.block(id)->name;
+        if (overlay == was) {
+            ctx.message("\"" + name + "\" is already " + (was ? "an overlay" : "an attachment"));
+            co_return;
+        }
+        if (auto r = ctx.tx().modifyBlock(id, [&](BlockDef& d) { d.xrefOverlay = overlay; }); !r) {
+            ctx.message(r.error().message);
+            co_return;
+        }
+        ctx.setUndoLabel("Reference type of " + name);
+        ctx.message("\"" + name + "\" is now " + (overlay ? "an overlay" : "an attachment"));
+    }
+};
+
+// XOPEN: opens the file of an external reference in its own tab.
+class XOpenCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "XOPEN"; }
+    std::string_view description() const override {
+        return "Open the drawing of an external reference in its own tab";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        Document& doc = ctx.doc();
+        if (xref::xrefs(doc).empty()) {
+            ctx.message("There are no external references in this drawing.");
+            co_return;
+        }
+        BlockId id{};
+        co_await askXrefName(ctx, "Enter xref name or [?]", id);
+        if (!id)
+            co_return;
+        const BlockDef* def = doc.block(id);
+        if (underlay::isImagePath(def->xrefPath) || underlay::isPdfPath(def->xrefPath)) {
+            ctx.message("\"" + def->name + "\" is a picture or PDF, not a drawing.");
+            co_return;
+        }
+        const std::filesystem::path file = xref::resolvePath(def->xrefPath, hostFileOf(ctx));
+        std::error_code ec;
+        if (!std::filesystem::is_regular_file(file, ec)) {
+            ctx.message("The file of \"" + def->name + "\" was not found: " + def->xrefPath);
+            co_return;
+        }
+        const std::u8string u8 = file.u8string();
+        ctx.host().requestUi("openpath:" + std::string(u8.begin(), u8.end()));
+    }
+};
+
 class XListCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "XLIST"; }
@@ -1050,6 +1127,12 @@ std::unique_ptr<cmd::Command> makeXRelinkCommand() {
 }
 std::unique_ptr<cmd::Command> makeXrefPaletteCommand() {
     return std::make_unique<XrefPaletteCommand>();
+}
+std::unique_ptr<cmd::Command> makeXrefTypeCommand() {
+    return std::make_unique<XrefTypeCommand>();
+}
+std::unique_ptr<cmd::Command> makeXOpenCommand() {
+    return std::make_unique<XOpenCommand>();
 }
 std::unique_ptr<cmd::Command> makeXListCommand() {
     return std::make_unique<XListCommand>();

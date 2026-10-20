@@ -1343,10 +1343,11 @@ public:
 
 }  // namespace
 
-TEST_CASE("an xref that changed on disk is reloaded once, not in a loop") {
+TEST_CASE("an xref that changed on disk is reloaded once, not in a loop (XREFNOTIFY 3)") {
     Fixture f("xrefwatch");
     (void)f.registry->add(std::make_unique<FakeXReload>());
     gFakeXReloadRuns = 0;
+    f.core->setSetting("xref.notify", "3");
 
     fs::path source = f.dir / "src.tbcad";
     {
@@ -1378,6 +1379,53 @@ TEST_CASE("an xref that changed on disk is reloaded once, not in a loop") {
     CHECK_FALSE(f.core->xrefReloading());
     f.core->tickXrefs(now + std::chrono::seconds(6));  // the fake did not reload; no second try
     CHECK(gFakeXReloadRuns == 1);
+}
+
+TEST_CASE("XREFNOTIFY 2 names a changed xref once in a balloon - the marker stays until reload") {
+    Fixture f("xrefnotify");
+    (void)f.registry->add(std::make_unique<FakeXReload>());
+    gFakeXReloadRuns = 0;
+    fs::path source = f.dir / "src.tbcad";
+    {
+        Document d;
+        auto tx = d.begin("s");
+        (void)tx.add(Entity{{}, LineData{{0, 0}, {1, 1}}});
+        tx.commit();
+        REQUIRE(io::writeTbcad(d, source, io::WriteOptions{.keepBackup = false}).ok());
+    }
+    {
+        auto loaded = xref::loadSource(source);
+        REQUIRE(loaded.ok());
+        auto tx = f.core->document().begin("attach");
+        REQUIRE(xref::attach(tx, f.core->document(), "src", source.string(), loaded.value()).ok());
+        tx.commit();
+    }
+    auto now = std::chrono::steady_clock::now();
+    f.core->tickXrefs(now);
+    CHECK(f.core->changedXrefs().empty());
+    CHECK(f.core->xrefChangeNotice().empty());
+
+    fs::last_write_time(source, fs::last_write_time(source) + std::chrono::seconds(10));
+    f.core->tickXrefs(now + std::chrono::seconds(3));
+    CHECK_FALSE(f.core->xrefReloading());  // nothing reloads by itself
+    CHECK(f.core->changedXrefs() == std::vector<std::string>{"src"});
+    CHECK(f.core->xrefChangeNotice() == std::vector<std::string>{"src"});
+    f.core->dismissXrefChangeNotice();
+    f.core->tickXrefs(now + std::chrono::seconds(6));
+    CHECK(f.core->xrefChangeNotice().empty());  // the same change is not announced again
+    CHECK(f.core->changedXrefs() == std::vector<std::string>{"src"});
+
+    fs::last_write_time(source, fs::last_write_time(source) + std::chrono::seconds(10));
+    f.core->tickXrefs(now + std::chrono::seconds(9));
+    CHECK(f.core->xrefChangeNotice() == std::vector<std::string>{"src"});  // a newer change is
+    f.core->reloadXrefs({});
+    CHECK(gFakeXReloadRuns == 1);
+    CHECK(f.core->xrefChangeNotice().empty());
+    CHECK(f.core->changedXrefs().empty());
+
+    f.core->setSetting("xref.notify", "0");
+    f.core->tickXrefs(now + std::chrono::seconds(12));
+    CHECK(f.core->changedXrefs().empty());
 }
 
 namespace {
