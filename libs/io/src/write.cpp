@@ -232,8 +232,9 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
             // bit 2: the text and line rules follow
             // bit 3: the number format follows (angle format, angular decimals, decimal comma)
             dstx.u8((r.altUnits ? 1 : 0) | (extras ? 2 : 0) | (rules ? 4 : 0) |
-                    (r.hasNumberFormat() ? 8 : 0) | (r.hasTextBox() ? 16 : 0) | (r.hasLinearFormat() ? 32 : 0) |
-                    (r.tolHeightFactor != 1 ? 64 : 0) | (r.hasFixedExt() ? 128 : 0));
+                    (r.hasNumberFormat() ? 8 : 0) | (r.hasTextBox() ? 16 : 0) |
+                    (r.hasLinearFormat() ? 32 : 0) | (r.tolHeightFactor != 1 ? 64 : 0) |
+                    (r.hasFixedExt() ? 128 : 0));
             dstx.f64(r.altScale);
             dstx.u8(static_cast<std::uint8_t>(r.altUnit));
             dstx.i32(r.altPrecision);
@@ -471,9 +472,15 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
                 FileItem it;
                 it.kind = FileItem::Kind::Prepared;
                 it.type = kEnts;
-                it.prepared = std::async(
-                    std::launch::async,
-                    [raw = std::move(c.bytes()), compress] { return prepareChunk(raw, compress); });
+                it.prepared = std::async(std::launch::async,
+                                         [raw = std::move(c.bytes()), compress]() mutable {
+                                             PreparedChunk chunk = prepareChunk(raw, compress);
+                                             // The task keeps its captures until the future is
+                                             // read: let go of the raw bytes now, not when the
+                                             // whole file is laid out.
+                                             std::vector<std::uint8_t>().swap(raw);
+                                             return chunk;
+                                         });
                 entItems.push_back(std::move(it));
             };
             for (const Entity* e : ents) {
@@ -610,42 +617,81 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
     }
 }
 
-// Waits for the chunks being deflated and lays the file out in order. The chunks are all
-// finished first so the file buffer is allocated once at its size, not regrown while it fills.
-Result<std::vector<std::uint8_t>> assembleFile(EncodedFile&& file) {
+// The finished file as pieces in order: the header, and per chunk its head, stored bytes and
+// CRC. Saving writes them one after the other, so the chunks are never joined in memory.
+struct FileParts {
+    std::vector<std::vector<std::uint8_t>> pieces{};
+    std::size_t size = 0;
+
+    std::vector<std::span<const std::uint8_t>> spans() const {
+        return {pieces.begin(), pieces.end()};
+    }
+};
+
+// Waits for the chunks being deflated and lays the file out in order.
+Result<FileParts> assembleParts(EncodedFile&& file) {
     try {
-        std::vector<PreparedChunk> chunks(file.items.size());
-        std::size_t total = sizeof kMagic + 12 + 20;  // header and END
-        for (std::size_t i = 0; i < file.items.size(); ++i) {
-            FileItem& it = file.items[i];
+        FileParts parts;
+        parts.pieces.reserve(file.items.size() * 3 + 3);
+        auto add = [&parts](std::vector<std::uint8_t> bytes) {
+            parts.size += bytes.size();
+            parts.pieces.push_back(std::move(bytes));
+        };
+        auto addChunk = [&](std::uint32_t type, PreparedChunk&& chunk) {
+            ByteWriter head;
+            head.u32(type);
+            head.u32(chunk.flags);
+            head.u64(chunk.stored.size());
+            add(std::move(head.bytes()));
+            const std::uint32_t crc = chunk.crc;
+            if (!chunk.stored.empty())
+                add(std::move(chunk.stored));
+            ByteWriter tail;
+            tail.u32(crc);
+            add(std::move(tail.bytes()));
+        };
+        ByteWriter header;
+        appendFileHeader(header);
+        add(std::move(header.bytes()));
+        for (FileItem& it : file.items) {
+            PreparedChunk chunk;
             switch (it.kind) {
                 case FileItem::Kind::Raw:
-                    chunks[i] = prepareChunk(it.bytes, file.compress);
+                    chunk = prepareChunk(it.bytes, file.compress);
                     break;
                 case FileItem::Kind::Prepared:
-                    chunks[i] = it.prepared.get();
+                    chunk = it.prepared.get();
                     break;
                 case FileItem::Kind::Stored:
-                    chunks[i].flags = it.flags;
-                    chunks[i].crc = tbcadCrc32(it.bytes);
-                    chunks[i].stored = std::move(it.bytes);
+                    chunk.flags = it.flags;
+                    chunk.crc = tbcadCrc32(it.bytes);
+                    chunk.stored = std::move(it.bytes);
                     break;
             }
             std::vector<std::uint8_t>().swap(it.bytes);
-            total += 20 + chunks[i].stored.size();
+            addChunk(it.type, std::move(chunk));
         }
-        ByteWriter out;
-        out.reserve(total);
-        appendFileHeader(out);
-        for (std::size_t i = 0; i < chunks.size(); ++i) {
-            appendPrepared(out, file.items[i].type, chunks[i]);
-            std::vector<std::uint8_t>().swap(chunks[i].stored);
-        }
-        appendStoredChunk(out, kEnd, 0, {});
-        return std::move(out.bytes());
+        PreparedChunk end;
+        end.crc = tbcadCrc32({});
+        addChunk(kEnd, std::move(end));
+        return parts;
     } catch (const std::exception& ex) {
         return makeError(ErrorCode::Generic, std::string("cannot write .tbcad: ") + ex.what());
     }
+}
+
+// The file in one buffer, allocated once at its size; each piece is freed once copied.
+Result<std::vector<std::uint8_t>> assembleFile(EncodedFile&& file) {
+    Result<FileParts> parts = assembleParts(std::move(file));
+    if (!parts)
+        return parts.error();
+    std::vector<std::uint8_t> out;
+    out.reserve(parts.value().size);
+    for (std::vector<std::uint8_t>& p : parts.value().pieces) {
+        out.insert(out.end(), p.begin(), p.end());
+        std::vector<std::uint8_t>().swap(p);
+    }
+    return out;
 }
 
 }  // namespace
@@ -656,6 +702,17 @@ Result<std::vector<std::uint8_t>> writeTbcadToMemory(const Document& doc,
     if (!file)
         return file.error();
     return assembleFile(std::move(file.value()));
+}
+
+Result<void> writeTbcad(const Document& doc, const std::filesystem::path& path,
+                        const WriteOptions& options) {
+    Result<EncodedFile> file = encodeDocument(doc, options);
+    if (!file)
+        return file.error();
+    Result<FileParts> parts = assembleParts(std::move(file.value()));
+    if (!parts)
+        return parts.error();
+    return saveTbcadParts(parts.value().spans(), path, options);
 }
 
 std::future<Result<void>> writeTbcadAsync(const Document& doc, const std::filesystem::path& path,
@@ -670,10 +727,10 @@ std::future<Result<void>> writeTbcadAsync(const Document& doc, const std::filesy
     return std::async(std::launch::async,
                       [f = std::make_shared<EncodedFile>(std::move(file.value())), path,
                        options]() mutable -> Result<void> {
-                          Result<std::vector<std::uint8_t>> bytes = assembleFile(std::move(*f));
-                          if (!bytes)
-                              return bytes.error();
-                          return saveTbcadBytes(bytes.value(), path, options);
+                          Result<FileParts> parts = assembleParts(std::move(*f));
+                          if (!parts)
+                              return parts.error();
+                          return saveTbcadParts(parts.value().spans(), path, options);
                       });
 }
 
