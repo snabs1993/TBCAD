@@ -1,5 +1,5 @@
-// DIMCONTINUE, DIMBASELINE, DIMSPACE and QDIM on a thousand objects: the numbers are right, the
-// work is one undo step, and it does not take quadratic time.
+// DIMCONTINUE, DIMBASELINE, DIMSPACE, QDIM and DIMBREAK on a thousand objects: the numbers are
+// right, the work is one undo step, and it does not take quadratic time.
 #include <doctest/doctest.h>
 
 #include <chrono>
@@ -148,4 +148,43 @@ TEST_CASE("QDIM dimensions the key points of a thousand objects in one chain") {
     REQUIRE(made > 0);
     REQUIRE(r.host.undo());
     CHECK(r.count() == 0);
+}
+
+TEST_CASE("DIMBREAK All breaks a thousand dimensions among fifty thousand lines") {
+    Rig r;
+    REQUIRE(r.host.run("DIMLINEAR", {"0,0", "100,0", "50,8"}).finished);
+    std::vector<ScriptItem> items;
+    for (int i = 2; i <= kN; ++i)
+        items.emplace_back(pt(100.0 * i, 0));
+    items.push_back(ScriptItem::enter());
+    REQUIRE(r.host.run("DIMCONTINUE", std::move(items)).finished);
+    std::vector<EntityId> dimIds = r.doc.modelSpace();
+    {
+        // One line across the middle of each dimension line, and many far away.
+        auto tx = r.doc.begin("lines");
+        for (int k = 0; k < kN; ++k) {
+            Entity e;
+            e.data = LineData{{100.0 * k + 30, -5}, {100.0 * k + 30, 20}};
+            REQUIRE(tx.add(std::move(e)));
+        }
+        for (int k = 0; k < 50 * kN; ++k) {
+            Entity e;
+            const double x = (k % 1000) * 100.0, y = 1000 + (k / 1000) * 10.0;
+            e.data = LineData{{x, y}, {x + 7, y + 3}};
+            REQUIRE(tx.add(std::move(e)));
+        }
+        tx.commit();
+    }
+    const auto t0 = std::chrono::steady_clock::now();
+    REQUIRE(r.host
+                .run("DIMBREAK",
+                     {ScriptItem::select(dimIds), ScriptItem::enter(), "Auto", ScriptItem::enter()})
+                .finished);
+    const double sec = since(t0);
+    INFO("DIMBREAK All on 1000 dimensions took " << sec << " s");
+    std::size_t gaps = 0;
+    for (const DimensionData* d : r.dims())
+        gaps += d->breaks.size();
+    CHECK(gaps == static_cast<std::size_t>(kN));
+    CHECK(sec < 30);
 }

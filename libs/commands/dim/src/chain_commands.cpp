@@ -7,6 +7,7 @@
 #include "dim_internal.h"
 #include "tbcad/core/dim_assoc.h"
 #include "tbcad/dim/dim.h"
+#include "tbcad/geom/box_grid.h"
 
 namespace tbcad::dimcmd {
 
@@ -929,19 +930,49 @@ void breakShapes(const Document& doc, const Entity& e, std::vector<BreakShape>& 
     }
 }
 
+// The shapes that may break dimensions, with a grid to find those near a line quickly (a whole
+// drawing can be the break objects). Index it once every shape is in; it must not move after.
+struct BreakSet {
+    std::vector<BreakShape> shapes;
+    std::vector<BBox2> boxes;            // per shape; empty for rays and xlines
+    std::vector<std::size_t> unbounded;  // rays and xlines: always tried
+    std::optional<geom::BoxGrid> grid;
+    void index() {
+        boxes.clear();
+        unbounded.clear();
+        for (std::size_t i = 0; i < shapes.size(); ++i) {
+            boxes.push_back(shapes[i].box);
+            if (shapes[i].box.empty())
+                unbounded.push_back(i);
+        }
+        if (shapes.size() >= 64)  // a few are quicker to try one by one
+            grid.emplace(boxes);
+    }
+};
+
 // Where the shapes cross `curve` (a line or arc of dimension `self`), as spans of its parameter:
 // one point where a line crosses, from where the curve goes into a text box to where it comes out.
 struct BreakHit {
     double t0 = 0, t1 = 0;
     EntityId source{};
 };
-std::vector<BreakHit> breakHits(const Entity& curve, EntityId self,
-                                const std::vector<BreakShape>& shapes) {
+std::vector<BreakHit> breakHits(const Entity& curve, EntityId self, const BreakSet& set) {
     std::vector<BreakHit> spans;
     const BBox2 box = geom::bounds(curve);
+    std::vector<std::size_t> near;
+    if (set.grid) {
+        near = set.unbounded;
+        set.grid->query(box, [&](std::size_t i) { near.push_back(i); });
+    } else {
+        for (std::size_t i = 0; i < set.shapes.size(); ++i)
+            if (set.boxes[i].empty() || set.boxes[i].intersects(box))
+                near.push_back(i);
+    }
+    std::sort(near.begin(), near.end());
     std::vector<geom::EntityIntersection> hits;
-    for (const BreakShape& s : shapes) {
-        if (s.source == self || (!s.box.empty() && !s.box.intersects(box)))
+    for (std::size_t i : near) {
+        const BreakShape& s = set.shapes[i];
+        if (s.source == self)
             continue;
         hits.clear();
         if (!geom::intersectEntities(curve, s.shape, hits))
@@ -964,10 +995,9 @@ std::vector<BreakHit> breakHits(const Entity& curve, EntityId self,
 // The automatic DIMBREAK gaps of dimension `self` where the shapes cross its lines and arcs, each
 // 1.5 arrow sizes wide; `hitBy` gets the objects that made one.
 std::vector<DimBreak> autoGaps(const Document& doc, EntityId self, const DimensionData& d0,
-                               const std::vector<BreakShape>& shapes,
-                               std::vector<EntityId>& hitBy) {
+                               const BreakSet& shapes, std::vector<EntityId>& hitBy) {
     std::vector<DimBreak> found;
-    if (shapes.empty())
+    if (shapes.shapes.empty())
         return found;
     DimensionData bare = d0;
     bare.breaks.clear();
@@ -1040,14 +1070,15 @@ void refreshAutoBreaks(const Document& doc, Entity& e) {
     auto* d = entityAs<DimensionData>(e);
     if (!d || d->breakWith.empty())
         return;
-    std::vector<BreakShape> shapes;
+    BreakSet shapes;
     std::vector<EntityId> alive;
     for (EntityId id : d->breakWith) {
         if (const Entity* c = doc.find(id)) {
             alive.push_back(id);
-            breakShapes(doc, *c, shapes);
+            breakShapes(doc, *c, shapes.shapes);
         }
     }
+    shapes.index();
     std::vector<EntityId> hitBy;
     std::vector<DimBreak> gaps = autoGaps(doc, e.common.id, *d, shapes, hitBy);
     const std::vector<DimBreak> manual = manualGaps(*d);
@@ -1150,7 +1181,7 @@ public:
             co_return;
         }
 
-        std::vector<BreakShape> shapes;
+        BreakSet shapes;
         if (mode.keyword == "Auto") {
             cmd::SelectionOptions co;
             co.allowPreselection = false;
@@ -1165,9 +1196,46 @@ public:
             else
                 cutters =
                     ctx.doc().modelSpace();  // by value: begin() and end() of two calls differ
-            for (EntityId cid : cutters)
-                if (const Entity* c = ctx.doc().find(cid))
-                    breakShapes(ctx.doc(), *c, shapes);
+            // Only objects near the lines of the dimensions can break them.
+            BBox2 near;
+            for (EntityId id : dims.ids) {
+                const Entity* e = ctx.doc().find(id);
+                const auto* d = e ? entityAs<DimensionData>(*e) : nullptr;
+                if (!d)
+                    continue;
+                const dim::Layout L = dim::layoutDimension(ctx.doc(), *d);
+                for (const dim::Layout::Line& line : L.lines)
+                    for (Vec2 p : line.pts)
+                        near.expand(p);
+                for (const dim::Layout::Arc& arc : L.arcs) {
+                    near.expand(arc.center - Vec2{arc.radius, arc.radius});
+                    near.expand(arc.center + Vec2{arc.radius, arc.radius});
+                }
+            }
+            auto curveKind = [](EntityKind k) {
+                return k == EntityKind::Line || k == EntityKind::Circle || k == EntityKind::Arc ||
+                       k == EntityKind::Polyline || k == EntityKind::Ellipse ||
+                       k == EntityKind::Spline;
+            };
+            for (EntityId cid : cutters) {
+                const Entity* c = ctx.doc().find(cid);
+                if (!c)
+                    continue;
+                if (curveKind(kind(*c)) && !near.empty() && !geom::bounds(*c).intersects(near))
+                    continue;
+                const std::size_t from = shapes.shapes.size();
+                breakShapes(ctx.doc(), *c, shapes.shapes);
+                if (near.empty())
+                    continue;
+                // What another object draws far away is dropped before the search.
+                auto& v = shapes.shapes;
+                v.erase(std::remove_if(v.begin() + static_cast<std::ptrdiff_t>(from), v.end(),
+                                       [&](const BreakShape& sh) {
+                                           return !sh.box.empty() && !sh.box.intersects(near);
+                                       }),
+                        v.end());
+            }
+            shapes.index();
         }
 
         ctx.setUndoLabel("DIMBREAK");
