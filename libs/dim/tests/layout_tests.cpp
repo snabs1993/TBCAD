@@ -208,6 +208,26 @@ TEST_CASE("angular dimension: arrows go outside when the text takes the room on 
     CHECK(sweepOf(layoutDimension(doc, d)) == doctest::Approx(kPi / 2));
 }
 
+// AutoCAD: a text style with a fixed height sets the dimension text's height; DIMTXT and DIMSCALE
+// do not apply to it (the arrows still scale).
+TEST_CASE("a fixed-height text style sets the dimension text height") {
+    Document doc;
+    Transaction tx = doc.begin("styles");
+    TextStyle fixed;
+    fixed.name = "Fixed";
+    fixed.height = 7;
+    auto ts = tx.addTextStyle(fixed);
+    REQUIRE(ts);
+    REQUIRE(tx.modifyDimStyle(kDimStyleStandard, [&](DimStyle& s) {
+        s.textStyle = ts.value();
+        s.overallScale = 2;
+    }));
+    tx.commit();
+    Layout L = layoutDimension(doc, linear({0, 0}, {100, 0}, {50, 10}));
+    CHECK(L.text.height == doctest::Approx(7));
+    CHECK(arrowBox(L.arrows[0]).width() == doctest::Approx(5));
+}
+
 TEST_CASE("DIMSCALE scales text and arrows but not the measurement") {
     Document doc;
     DimensionData d = linear({0, 0}, {10000, 0}, {5000, 1000});
