@@ -1377,8 +1377,8 @@ bool Writer::writeImage(const Props& p, const InsertData& d, std::uint64_t owner
     if (ip.clip.size() >= 3) {
         o.i(71, 2);
         o.i(91, static_cast<long long>(ip.clip.size()) + 1);
-        for (const Vec2& c : ip.clip)
-            o.pt2(14, px(c.x, c.y));
+        for (const Vec2& cp : ip.clip)
+            o.pt2(14, px(cp.x, cp.y));
         o.pt2(14, px(ip.clip.front().x, ip.clip.front().y));
     } else {
         o.i(71, 1);

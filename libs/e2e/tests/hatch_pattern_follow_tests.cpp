@@ -112,7 +112,7 @@ TEST_CASE("hatch pattern lines follow MOVE, ROTATE, SCALE and MIRROR of the whol
                 REQUIRE_FALSE(after.empty());
                 if (std::string(pat) == "ANSI31") {
                     for (const std::string& d : after) {
-                        double x1, y1, x2, y2;
+                        double x1 = 0, y1 = 0, x2 = 0, y2 = 0;
                         REQUIRE(std::sscanf(d.c_str(), "%lf,%lf-%lf,%lf", &x1, &y1, &x2, &y2) == 4);
                         CHECK((x2 - x1) * (y2 - y1) > 0);
                     }

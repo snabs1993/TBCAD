@@ -1119,14 +1119,14 @@ int App::runCapture() {
                 // Another viewport lies over the middle of this one: the checks follow the one
                 // the double click entered.
                 const auto l = layout::findLayout(core_->document(), core_->editingLayout());
-                const layout::Viewport* in =
+                const layout::Viewport* vp =
                     l ? l->findViewport(core_->editingViewport()) : nullptr;
                 std::printf("enter-viewport: the double click entered viewport %d of \"%s\"%s\n",
                             core_->editingViewport(), core_->editingLayout().c_str(),
-                            in && in->locked ? " (locked)" : "");
+                            vp && vp->locked ? " (locked)" : "");
                 vars["layout"] = core_->editingLayout();
                 vars["vpid"] = std::to_string(core_->editingViewport());
-                vpScaleBefore = in ? in->scaleN : 0;
+                vpScaleBefore = vp ? vp->scaleN : 0;
             }
             std::fflush(stdout);
         } else if (op == "select-kind") {
@@ -1192,9 +1192,9 @@ int App::runCapture() {
                                (it.box.min.y + it.box.max.y) / 2};
                 bool inside = false;
                 for (std::size_t i = 0, j = pl->v.size() - 1; i < pl->v.size(); j = i++) {
-                    const Vec2 a = pl->v[i].p, b = pl->v[j].p;
-                    if ((a.y > mid.y) != (b.y > mid.y) &&
-                        mid.x < (b.x - a.x) * (mid.y - a.y) / (b.y - a.y) + a.x)
+                    const Vec2 pa = pl->v[i].p, pb = pl->v[j].p;
+                    if ((pa.y > mid.y) != (pb.y > mid.y) &&
+                        mid.x < (pb.x - pa.x) * (mid.y - pa.y) / (pb.y - pa.y) + pa.x)
                         inside = !inside;
                 }
                 if (!inside)
@@ -1253,9 +1253,9 @@ int App::runCapture() {
                 if (const auto* l = entityAs<LineData>(*e))
                     std::printf("dump: line %.6g,%.6g to %.6g,%.6g\n", l->a.x, l->a.y, l->b.x,
                                 l->b.y);
-                else if (const auto* c = entityAs<CircleData>(*e))
-                    std::printf("dump: circle %.6g,%.6g r %.6g\n", c->center.x, c->center.y,
-                                c->radius);
+                else if (const auto* ci = entityAs<CircleData>(*e))
+                    std::printf("dump: circle %.6g,%.6g r %.6g\n", ci->center.x, ci->center.y,
+                                ci->radius);
                 else
                     std::printf("dump: %s\n", kKindNames[static_cast<std::size_t>(kind(*e))]);
             }

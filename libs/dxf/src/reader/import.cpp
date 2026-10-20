@@ -1322,17 +1322,17 @@ void Importer::readLinetype(const Record& r) {
                 break;
             }
             case 74: {
-                const std::int64_t f = g.integer();
-                if (f & 6) {
+                const std::int64_t flags = g.integer();
+                if (flags & 6) {
                     haveMark = true;
                     // An element of its own has no length: its 49 was a zero that is no dot.
                     if (lastZero && !lt.pattern.empty())
                         lt.pattern.pop_back();
                     lastZero = false;
-                    mark.kind = (f & 4) ? LinetypeMark::Kind::Shape : LinetypeMark::Kind::Text;
-                    mark.rotationKind = (f & 8)   ? LinetypeMark::Rotation::Upright
-                                        : (f & 1) ? LinetypeMark::Rotation::Absolute
-                                                  : LinetypeMark::Rotation::Relative;
+                    mark.kind = (flags & 4) ? LinetypeMark::Kind::Shape : LinetypeMark::Kind::Text;
+                    mark.rotationKind = (flags & 8)   ? LinetypeMark::Rotation::Upright
+                                        : (flags & 1) ? LinetypeMark::Rotation::Absolute
+                                                      : LinetypeMark::Rotation::Relative;
                 }
                 break;
             }

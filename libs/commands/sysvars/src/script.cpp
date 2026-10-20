@@ -70,7 +70,7 @@ public:
             auto n = co_await ctx.getInteger("Number of times to run the script <100>", io);
             if (!n.ok())
                 co_return;
-            repeat = n.value;
+            repeat = static_cast<int>(n.value);
         }
         std::vector<std::string> lines;
         if (!readScript(ctx, file.text, lines))

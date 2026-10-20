@@ -22,8 +22,9 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
-#include <psapi.h>
 #include <windows.h>
+// (after windows.h)
+#include <psapi.h>
 #ifdef _MSC_VER
 #pragma comment(lib, "psapi.lib")
 #endif

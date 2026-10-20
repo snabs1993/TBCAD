@@ -523,8 +523,8 @@ Result<std::unique_ptr<Document>> importPdf(std::span<const std::byte> bytes,
                         fn(e.refNum);
         };
         if (const Obj* cfg = file.find(*ocp, "D")) {
-            const Obj* base = file.find(*cfg, "BaseState");
-            if (base && base->isName("OFF")) {
+            const Obj* baseState = file.find(*cfg, "BaseState");
+            if (baseState && baseState->isName("OFF")) {
                 refsOf(ocp->get("OCGs"), [&](int n) { in.offRefs.insert(n); });
                 refsOf(cfg->get("ON"), [&](int n) { in.offRefs.erase(n); });
             }

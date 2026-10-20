@@ -434,37 +434,37 @@ TEST_CASE("DXF round trip keeps the kind and the defining numbers of every drawi
                 CHECK(distance(x->origin, y->origin) < 1e-6);
                 CHECK(distance(x->dir, y->dir) < 1e-9);
                 CHECK(x->infinite == y->infinite);
-            } else if (const auto* x = entityAs<SplineData>(*a)) {
+            } else if (const auto* sp = entityAs<SplineData>(*a)) {
                 const auto* y = entityAs<SplineData>(*b);
                 REQUIRE(y);
-                CHECK(x->degree == y->degree);
-                CHECK(x->closed == y->closed);
-                CHECK(x->control.size() == y->control.size());
-            } else if (const auto* x = entityAs<EllipseData>(*a)) {
+                CHECK(sp->degree == y->degree);
+                CHECK(sp->closed == y->closed);
+                CHECK(sp->control.size() == y->control.size());
+            } else if (const auto* el = entityAs<EllipseData>(*a)) {
                 const auto* y = entityAs<EllipseData>(*b);
                 REQUIRE(y);
-                CHECK(distance(x->center, y->center) < 1e-6);
-                CHECK(std::abs(x->ratio - y->ratio) < 1e-9);
-                CHECK(std::abs(normalizeAngle(x->startParam) - normalizeAngle(y->startParam)) <
+                CHECK(distance(el->center, y->center) < 1e-6);
+                CHECK(std::abs(el->ratio - y->ratio) < 1e-9);
+                CHECK(std::abs(normalizeAngle(el->startParam) - normalizeAngle(y->startParam)) <
                       1e-9);
-                CHECK(std::abs(normalizeAngle(x->endParam) - normalizeAngle(y->endParam)) < 1e-9);
-            } else if (const auto* x = entityAs<MlineData>(*a)) {
+                CHECK(std::abs(normalizeAngle(el->endParam) - normalizeAngle(y->endParam)) < 1e-9);
+            } else if (const auto* ml = entityAs<MlineData>(*a)) {
                 const auto* y = entityAs<MlineData>(*b);
                 REQUIRE(y);
-                CHECK(x->v.size() == y->v.size());
-                CHECK(x->style == y->style);
-                CHECK(x->justification == y->justification);
-                CHECK(std::abs(x->scale - y->scale) < 1e-9);
-            } else if (const auto* x = entityAs<PolylineData>(*a)) {
+                CHECK(ml->v.size() == y->v.size());
+                CHECK(ml->style == y->style);
+                CHECK(ml->justification == y->justification);
+                CHECK(std::abs(ml->scale - y->scale) < 1e-9);
+            } else if (const auto* pl = entityAs<PolylineData>(*a)) {
                 const auto* y = entityAs<PolylineData>(*b);
                 REQUIRE(y);
-                CHECK(x->v.size() == y->v.size());
-                CHECK(x->closed == y->closed);
+                CHECK(pl->v.size() == y->v.size());
+                CHECK(pl->closed == y->closed);
                 CHECK(a->common.wipeout == b->common.wipeout);
                 if (std::string(mk.name) == "wipeout")
                     CHECK(a->common.wipeout);
-                for (std::size_t i = 0; i < std::min(x->v.size(), y->v.size()); ++i)
-                    CHECK(std::abs(x->v[i].bulge - y->v[i].bulge) < 1e-9);
+                for (std::size_t i = 0; i < std::min(pl->v.size(), y->v.size()); ++i)
+                    CHECK(std::abs(pl->v[i].bulge - y->v[i].bulge) < 1e-9);
             }
         }
 }

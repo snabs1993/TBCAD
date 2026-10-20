@@ -227,8 +227,8 @@ struct Rig {
         const EntityId dl = add(LineData{{0, 0}, {20, 0}}, dyn);
         add(CircleData{{20, 0}, 3}, dyn);
         {
-            auto tx = doc.begin("dyn");
-            REQUIRE(tx.modifyBlock(dyn, [&](BlockDef& d) {
+            auto txn = doc.begin("dyn");
+            REQUIRE(txn.modifyBlock(dyn, [&](BlockDef& d) {
                 DynParam p;
                 p.kind = DynParam::Kind::Linear;
                 p.name = "Length";
@@ -244,7 +244,7 @@ struct Rig {
                 a.frameMax = {30, 5};
                 d.dynamic = DynamicDef{{p}, {a}};
             }));
-            tx.commit();
+            txn.commit();
         }
         for (const auto& [pos, sc, rot, len] : std::vector<std::tuple<Vec2, Vec2, double, double>>{
                  {{200, 0}, {1, 1}, 0, 35}, {{200, 20}, {-1, 2}, 0.9, 12}}) {

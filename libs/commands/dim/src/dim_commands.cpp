@@ -288,8 +288,8 @@ public:
             auto where = co_await ctx.getPoint("Specify arc length dimension location", lo);
             if (where.status == Status::Keyword) {
                 if (where.keyword == "Angle") {
-                    if (auto a = co_await askTextAngle(ctx); a.ok())
-                        textAngle = a.value;
+                    if (auto ang = co_await askTextAngle(ctx); ang.ok())
+                        textAngle = ang.value;
                     continue;
                 }
                 cmd::StringOptions so;

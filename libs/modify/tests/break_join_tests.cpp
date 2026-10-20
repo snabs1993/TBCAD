@@ -241,7 +241,6 @@ TEST_CASE("a spline absorbs lines at its ends, fit-only splines included") {
 TEST_CASE("joining collinear lines whose directions fall either side of a direction bucket edge") {
     // 140 direction buckets of the half circle: pairs on one line at angles just below and just
     // above each edge, with a gap between the two pieces (bridged), plus short pieces on the way.
-    constexpr double kPi = 3.14159265358979323846;
     std::vector<Entity> v;
     for (int k = 1; k < 140; ++k) {
         const double a = k * kPi / 140 + ((k % 2) ? -1e-9 : 1e-9);
@@ -255,4 +254,3 @@ TEST_CASE("joining collinear lines whose directions fall either side of a direct
     CHECK(r.created.size() == 139);
     CHECK(r.consumed.size() == v.size());
 }
-

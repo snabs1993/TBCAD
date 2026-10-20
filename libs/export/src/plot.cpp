@@ -484,7 +484,7 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
 
     // Pictures go first so they lie under the drawing; the frame polyline of a picture is never
     // plotted.
-    std::unordered_set<std::uint32_t> pictures;
+    std::unordered_set<decltype(EntityId{}.value)> pictures;
     {
         underlay::ImageCache cache;
         underlay::ImageParamTable params;

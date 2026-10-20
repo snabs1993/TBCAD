@@ -730,18 +730,18 @@ std::unique_ptr<detail::ObjectRefs> scanObjectRefs(const Document& d) {
         r->linetypes.insert(e.common.linetype.value);
         if (const auto* t = entityAs<TextData>(e))
             r->textStyles.insert(t->style.value);
-        else if (const auto* t = entityAs<MTextData>(e))
-            r->textStyles.insert(t->style.value);
-        else if (const auto* t = entityAs<DimensionData>(e))
-            r->dimStyles.insert(t->style.value);
-        else if (const auto* t = entityAs<LeaderData>(e))
-            r->dimStyles.insert(t->style.value);
-        else if (const auto* t = entityAs<MLeaderData>(e))
-            r->dimStyles.insert(t->style.value);
-        else if (const auto* t = entityAs<InsertData>(e)) {
-            ++r->blockUses[t->block.value];
-            if (t->array)
-                for (const ArrayItemSwap& sw : t->array->swaps)
+        else if (const auto* mt = entityAs<MTextData>(e))
+            r->textStyles.insert(mt->style.value);
+        else if (const auto* dim = entityAs<DimensionData>(e))
+            r->dimStyles.insert(dim->style.value);
+        else if (const auto* ld = entityAs<LeaderData>(e))
+            r->dimStyles.insert(ld->style.value);
+        else if (const auto* ml = entityAs<MLeaderData>(e))
+            r->dimStyles.insert(ml->style.value);
+        else if (const auto* ins = entityAs<InsertData>(e)) {
+            ++r->blockUses[ins->block.value];
+            if (ins->array)
+                for (const ArrayItemSwap& sw : ins->array->swaps)
                     ++r->blockUses[sw.block.value];
         }
     });

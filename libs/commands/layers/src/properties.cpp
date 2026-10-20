@@ -295,11 +295,11 @@ std::vector<GeometryField> geometryFields(const Entity& e, int vertex) {
     } else if (const auto* ld = entityAs<LeaderData>(e)) {
         out.push_back({"vertices", "Vertices", FieldType::Count, false,
                        static_cast<double>(ld->vertices.size())});
-    } else if (const auto* ml = entityAs<MlineData>(e)) {
+    } else if (const auto* mln = entityAs<MlineData>(e)) {
         out.push_back(
-            {"vertices", "Vertices", FieldType::Count, false, static_cast<double>(ml->v.size())});
-        out.push_back({"closed", "Closed", FieldType::Flag, true, ml->closed ? 1.0 : 0.0});
-        num("scale", "Scale", ml->scale);
+            {"vertices", "Vertices", FieldType::Count, false, static_cast<double>(mln->v.size())});
+        out.push_back({"closed", "Closed", FieldType::Flag, true, mln->closed ? 1.0 : 0.0});
+        num("scale", "Scale", mln->scale);
     }
     return out;
 }

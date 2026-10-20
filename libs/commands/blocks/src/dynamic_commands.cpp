@@ -223,15 +223,15 @@ public:
                 const std::string target = cmd::trim(n.text);
                 if (target.empty())
                     break;
-                const int at = blocks::dynFind(*def->dynamic, target);
+                const int idx = blocks::dynFind(*def->dynamic, target);
                 const DynParam* tp =
-                    at >= 0 ? &def->dynamic->params[static_cast<std::size_t>(at)] : nullptr;
+                    idx >= 0 ? &def->dynamic->params[static_cast<std::size_t>(idx)] : nullptr;
                 if (!tp || tp->kind == DynParam::Kind::Lookup) {
                     ctx.message("There is no parameter called \"" + target +
                                 "\" that a table can drive");
                     continue;
                 }
-                p.lookupParams.push_back(at);
+                p.lookupParams.push_back(idx);
             }
             for (;;) {
                 auto st = co_await ctx.getString(
@@ -244,8 +244,8 @@ public:
                 if (rowName.empty())
                     break;
                 std::vector<double> vals;
-                for (int at : p.lookupParams) {
-                    const DynParam& tp = def->dynamic->params[static_cast<std::size_t>(at)];
+                for (int idx : p.lookupParams) {
+                    const DynParam& tp = def->dynamic->params[static_cast<std::size_t>(idx)];
                     auto v =
                         co_await ctx.getReal("Value of " + tp.name + " in \"" + rowName + "\"");
                     if (!v.ok())

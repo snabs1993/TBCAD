@@ -368,10 +368,10 @@ struct FontLibrary::Impl {
     }
 
     Result<FontId> addStroke(std::string_view text, const std::string& key, bool shx = false,
-                             bool thai = false) {
+                             bool isThai = false) {
         auto font = std::make_unique<StrokeFont>();
         std::string err = shx ? font->loadShx(reinterpret_cast<const std::uint8_t*>(text.data()),
-                                              text.size(), thai)
+                                              text.size(), isThai)
                               : font->parse(text);
         if (!err.empty())
             return Error{(shx ? "SHX font: " : "stroke font: ") + err};
@@ -403,8 +403,8 @@ struct FontLibrary::Impl {
             return Error{"cannot read stroke font: " + path.generic_string()};
         if (text.compare(0, 10, "AutoCAD-86") == 0) {
             std::string stem = lower(path.stem().string());
-            const bool thai = stem.find("thai") != std::string::npos || stem.rfind("th", 0) == 0;
-            return addStroke(text, key, true, thai);
+            const bool isThai = stem.find("thai") != std::string::npos || stem.rfind("th", 0) == 0;
+            return addStroke(text, key, true, isThai);
         }
         return addStroke(text, key);
     }

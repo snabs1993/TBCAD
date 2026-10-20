@@ -189,9 +189,9 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                 // Every layer with such entities, not only the first few: the value says which.
                 for (const auto& [name, values] : perLayer) {
                     t += " " + name + "{";
-                    for (const auto& [v, n] : values) {
+                    for (const auto& [val, n] : values) {
                         char hx[16];
-                        std::snprintf(hx, sizeof hx, "%llX", static_cast<unsigned long long>(v));
+                        std::snprintf(hx, sizeof hx, "%llX", static_cast<unsigned long long>(val));
                         t += std::string(hx) + "x" + std::to_string(n) + " ";
                     }
                     t += "}";
@@ -871,7 +871,7 @@ std::string searchCuts(const std::vector<std::span<const std::byte>>& files) {
             }
             if (cur.size() >= 7)
                 return;
-            for (std::uint8_t part : {8, 4, 1})
+            for (const std::uint8_t part : {std::uint8_t{8}, std::uint8_t{4}, std::uint8_t{1}})
                 if (part <= left) {
                     cur.push_back(part);
                     self(self, left - part);

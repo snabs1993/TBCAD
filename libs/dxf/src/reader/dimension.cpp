@@ -277,9 +277,9 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
         extraKey += "|arrow=" + std::to_string(static_cast<int>(ds.arrowType));
     }
     // The other variables an override can carry (number format, text rules, colours, spacing).
-    for (const auto& [var, v] : extra) {
+    for (const auto& [varCode, v] : extra) {
         const auto whole = static_cast<std::int64_t>(v);
-        switch (var) {
+        switch (varCode) {
             case 271:  // DIMDEC
                 ds.precision = static_cast<int>(std::clamp<std::int64_t>(whole, 0, 16));
                 break;

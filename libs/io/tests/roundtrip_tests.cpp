@@ -1026,10 +1026,10 @@ Entity fuzzEntity(std::mt19937_64& rng) {
             DataItem b;
             b.code = 90;
             b.integer = static_cast<std::int64_t>(rng() % 1000);
-            DataItem c;
-            c.code = 40;
-            c.real = fuzzNumber(rng);
-            rec.items = {a, b, c};
+            DataItem r;
+            r.code = 40;
+            r.real = fuzzNumber(rng);
+            rec.items = {a, b, r};
             x.dict.push_back(std::move(rec));
         }
         e.common.ext = ExtDataPtr(std::move(x));

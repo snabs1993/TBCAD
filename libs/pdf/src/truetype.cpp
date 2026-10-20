@@ -142,8 +142,8 @@ std::optional<TrueTypeInfo> readTrueType(const Bytes& file, int faceIndex) {
     const std::uint32_t numMetrics = r.u16(hhea + 34);
     info.numGlyphs = static_cast<int>(r.u16(t->at("maxp").offset + 4));
     info.capHeight = info.ascent;
-    if (auto os2 = t->find("OS/2"); os2 != t->end() && os2->second.length >= 90 &&
-                                     r.u16(os2->second.offset) >= 2)
+    if (auto os2 = t->find("OS/2");
+        os2 != t->end() && os2->second.length >= 90 && r.u16(os2->second.offset) >= 2)
         info.capHeight = r.s16(os2->second.offset + 88);
     if (auto post = t->find("post"); post != t->end() && post->second.length >= 16) {
         info.italicAngle = static_cast<std::int32_t>(r.u32(post->second.offset + 4)) / 65536.0;
@@ -165,7 +165,8 @@ std::optional<TrueTypeInfo> readTrueType(const Bytes& file, int faceIndex) {
     if (auto name = t->find("name"); name != t->end() && name->second.length >= 6) {
         // PostScript name (ID 6): Windows Unicode (UTF-16BE, ASCII only by spec) or Mac Roman.
         const std::size_t base = name->second.offset, end = base + name->second.length;
-        const std::uint32_t count = r.u16(base + 2), strings = base + r.u16(base + 4);
+        const std::uint32_t count = r.u16(base + 2);
+        const std::size_t strings = base + r.u16(base + 4);
         for (std::uint32_t i = 0; i < count && info.postscriptName.empty(); ++i) {
             const std::size_t rec = base + 6 + 12 * static_cast<std::size_t>(i);
             if (rec + 12 > end)
@@ -177,8 +178,8 @@ std::optional<TrueTypeInfo> readTrueType(const Bytes& file, int faceIndex) {
             const std::size_t step = platform == 3 ? 2 : 1;
             for (std::size_t k = step - 1; k < len; k += step) {
                 const unsigned char c = file[at + k];
-                if (c > 32 && c < 127 && c != '[' && c != ']' && c != '(' && c != ')' &&
-                    c != '{' && c != '}' && c != '<' && c != '>' && c != '/' && c != '%')
+                if (c > 32 && c < 127 && c != '[' && c != ']' && c != '(' && c != ')' && c != '{' &&
+                    c != '}' && c != '<' && c != '>' && c != '/' && c != '%')
                     info.postscriptName += static_cast<char>(c);
             }
         }
@@ -291,7 +292,8 @@ std::string subsetTrueType(const Bytes& file, int faceIndex, const std::set<std:
     font += body;
     const std::uint32_t adjust = 0xB1B0AFBAu - checksum(font);
     for (int k = 0; k < 4; ++k)
-        font[headAt + 8 + static_cast<std::size_t>(k)] = static_cast<char>((adjust >> (24 - 8 * k)) & 0xFF);
+        font[headAt + 8 + static_cast<std::size_t>(k)] =
+            static_cast<char>((adjust >> (24 - 8 * k)) & 0xFF);
     return font;
 }
 

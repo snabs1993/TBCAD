@@ -2439,10 +2439,10 @@ void Gui::updateSuggestions() {
     std::vector<std::string> recent;  // command names typed lately, latest first
     for (auto it = inputHistory_.lines().rbegin();
          it != inputHistory_.lines().rend() && recent.size() < 30; ++it) {
-        std::string word = it->substr(0, it->find(' '));
-        for (char& ch : word)
+        std::string name = it->substr(0, it->find(' '));
+        for (char& ch : name)
             ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
-        if (const cmd::Command* c = core_.registry().find(word))
+        if (const cmd::Command* c = core_.registry().find(name))
             if (std::find(recent.begin(), recent.end(), std::string(c->name())) == recent.end())
                 recent.emplace_back(c->name());
     }
@@ -4084,8 +4084,8 @@ void Gui::ucsIcon(const ViewportRect& rect) {
     const int colourIndex =
         std::atoi(core_.setting(drafting::keys::ucsIconColor).value_or("Default").c_str());
     if (colourIndex >= 1 && colourIndex <= 255) {
-        const Rgba c = paletteColor(static_cast<std::uint8_t>(colourIndex));
-        xCol = yCol = IM_COL32(c.r, c.g, c.b, 235);
+        const Rgba rgb = paletteColor(static_cast<std::uint8_t>(colourIndex));
+        xCol = yCol = IM_COL32(rgb.r, rgb.g, rgb.b, 235);
     }
     ImDrawList* dl = ImGui::GetBackgroundDrawList(ImGui::GetMainViewport());
     dl->PushClipRect(ImVec2(rect.x, rect.y), ImVec2(rect.x + rect.w, rect.y + rect.h));
