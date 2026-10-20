@@ -399,16 +399,16 @@ EntityId makeDynamicInsert(Fixture& f, bool padIds) {
         st.objects = {bar};
         dd.actions.push_back(st);
         REQUIRE(tx.modifyBlock(blk, [&](BlockDef& d) {
-                    d.dynamic = std::move(dd);
-                    AssemblyDef as;
-                    AsmBinding bind;
-                    bind.kind = AsmBinding::Kind::Nested;
-                    bind.entity = nested;
-                    bind.target = "X";
-                    bind.formula = "1";
-                    as.bindings.push_back(bind);
-                    d.assembly = std::move(as);
-                }).ok());
+                      d.dynamic = std::move(dd);
+                      AssemblyDef as;
+                      AsmBinding bind;
+                      bind.kind = AsmBinding::Kind::Nested;
+                      bind.entity = nested;
+                      bind.target = "X";
+                      bind.formula = "1";
+                      as.bindings.push_back(bind);
+                      d.assembly = std::move(as);
+                  }).ok());
         tx.commit();
     }
     return f.add(InsertData{blk, {50, 50}, {1, 1}, 0});
@@ -457,10 +457,10 @@ TEST_CASE("a dimension and a multileader pasted elsewhere carry no stale links")
     {
         Transaction tx = src.doc.begin("assoc");
         REQUIRE(tx.modify(dim, [&](Entity& e) {
-                    auto* d = entityAs<DimensionData>(e);
-                    d->assoc[0] = DimAssoc{DimAssoc::Kind::Vertex, line, 0};
-                    d->assoc[1] = DimAssoc{DimAssoc::Kind::Vertex, line, 1};
-                }).ok());
+                      auto* d = entityAs<DimensionData>(e);
+                      d->assoc[0] = DimAssoc{DimAssoc::Kind::Vertex, line, 0};
+                      d->assoc[1] = DimAssoc{DimAssoc::Kind::Vertex, line, 1};
+                  }).ok());
         tx.commit();
     }
     BlockId marker;

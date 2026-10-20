@@ -116,8 +116,8 @@ TEST_CASE("ARRAYEDIT REPlace Source objects replaces every item still showing th
     ArrayFixture f;
     f.host->run("ARRAYREMOVE", {"5,0", ""});
     EntityId bar = f.addLine(100, -1, 100, 1);
-    f.host->run("ARRAYEDIT",
-                {cmd::ScriptItem::pick(f.arr), "REP", cmd::ScriptItem::pick(bar), "", "", "S", "X"});
+    f.host->run("ARRAYEDIT", {cmd::ScriptItem::pick(f.arr), "REP", cmd::ScriptItem::pick(bar), "",
+                              "", "S", "X"});
     REQUIRE(f.info());
     CHECK(f.info()->swaps.size() == 5);
     CHECK(f.info()->removed == std::vector<int>{1});  // a removed item stays removed

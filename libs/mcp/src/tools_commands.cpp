@@ -254,10 +254,10 @@ ToolResult exportPlot(ToolContext& ctx, const Json& a, const std::string& comman
     const auto start = std::chrono::steady_clock::now();
     ToolResult r = runWith(ctx, cmdName, inputs, false);
     if (std::getenv("TBCAD_PLOT_TIMING"))
-        std::fprintf(stderr, "plot timing: %s tool total %.1f ms\n", cmdName.c_str(),
-                     std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() -
-                                                               start)
-                         .count());
+        std::fprintf(
+            stderr, "plot timing: %s tool total %.1f ms\n", cmdName.c_str(),
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
+                .count());
     return r;
 }
 

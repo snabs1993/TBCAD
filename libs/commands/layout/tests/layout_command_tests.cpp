@@ -568,7 +568,8 @@ TEST_CASE("VPMOVE and VPRESIZE keep a clipped viewport's scale and view centre, 
     f.host->run("LAYOUT", {"New", "Plan", "A3", ""});
     f.host->run("MVIEW", {"10,10", "110,110", "1:50", "2500,1000"});
     auto vp = [&] { return *layout::findLayout(f.doc, "Plan")->findViewport(1); };
-    f.host->run("VPCLIP", {"1", "Polygonal", "20,20", "100,20", "60,100", cmd::ScriptItem::enter()});
+    f.host->run("VPCLIP",
+                {"1", "Polygonal", "20,20", "100,20", "60,100", cmd::ScriptItem::enter()});
     REQUIRE(vp().clip.size() == 3);
     const auto before = vp();
 
@@ -583,14 +584,14 @@ TEST_CASE("VPMOVE and VPRESIZE keep a clipped viewport's scale and view centre, 
 
     // Doubling the rectangle stretches the outline with it; scale and centre stay.
     const BBox2 r = vp().paper;
-    f.host->run("VPRESIZE",
-                {"1", std::to_string(r.min.x) + "," + std::to_string(r.min.y),
-                 std::to_string(r.min.x + 2 * r.width()) + "," +
-                     std::to_string(r.min.y + 2 * r.height())});
+    f.host->run("VPRESIZE", {"1", std::to_string(r.min.x) + "," + std::to_string(r.min.y),
+                             std::to_string(r.min.x + 2 * r.width()) + "," +
+                                 std::to_string(r.min.y + 2 * r.height())});
     CHECK(vp().scaleN == doctest::Approx(before.scaleN));
     CHECK(vp().center.x == doctest::Approx(before.center.x));
     CHECK(vp().paper.width() == doctest::Approx(2 * before.paper.width()));
-    CHECK(vp().clip[1].x == doctest::Approx(r.min.x + 2 * (100 - before.paper.min.x)).epsilon(1e-6));
+    CHECK(vp().clip[1].x ==
+          doctest::Approx(r.min.x + 2 * (100 - before.paper.min.x)).epsilon(1e-6));
     for (const Vec2& p : vp().clip) {
         CHECK(p.x >= vp().paper.min.x - 1e-9);
         CHECK(p.x <= vp().paper.max.x + 1e-9);
@@ -627,8 +628,7 @@ TEST_CASE("MVIEW Fit fills the sheet inside the margins and Fit scale shows the 
 TEST_CASE("MVIEW Polygonal and Object make clipped viewports - ON, OFF and Lock switch them") {
     Fixture f;
     f.host->run("LAYOUT", {"New", "Plan", "A3", ""});
-    CHECK(f.host->run("MVIEW", {"Polygonal", "10,10", "200,10", "100,150", "Close", "1:50",
-                                "0,0"})
+    CHECK(f.host->run("MVIEW", {"Polygonal", "10,10", "200,10", "100,150", "Close", "1:50", "0,0"})
               .finished);
     auto vp = [&](int id) { return *layout::findLayout(f.doc, "Plan")->findViewport(id); };
     CHECK(vp(1).clip.size() == 3);

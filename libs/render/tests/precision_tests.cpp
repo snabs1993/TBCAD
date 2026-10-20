@@ -82,7 +82,8 @@ TEST_CASE("vertices tens of thousands of kilometres out are placed exactly") {
     double worst = 0;
     for (const Vec2 d : {Vec2{0, 0}, Vec2{12.345678, -98.7654321}, Vec2{-80.5, 40.25}}) {
         const Vec2 p = cam.center + d;
-        const Vec2 origin{std::floor(p.x / tileSize) * tileSize, std::floor(p.y / tileSize) * tileSize};
+        const Vec2 origin{std::floor(p.x / tileSize) * tileSize,
+                          std::floor(p.y / tileSize) * tileSize};
         const Vec2f rel = cameraRelative(packVertex(p, origin), tileOffset(origin, cam.center));
         worst = std::max({worst, std::abs((static_cast<double>(rel.x) - d.x) * cam.pixelsPerMm),
                           std::abs((static_cast<double>(rel.y) - d.y) * cam.pixelsPerMm)});

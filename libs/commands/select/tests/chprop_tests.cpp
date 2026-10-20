@@ -169,5 +169,6 @@ TEST_CASE("CHANGE moves ends and sets radii but not on locked layers") {
     REQUIRE(la);
     CHECK(distance(la->b, {12, 3}) < 1e-9);
     CHECK(distance(entityAs<LineData>(*f.doc.find(b))->b, {10, 1}) < 1e-9);
-    CHECK(entityAs<CircleData>(*f.doc.find(c))->radius == doctest::Approx(distance({0, 5}, {12, 3})));
+    CHECK(entityAs<CircleData>(*f.doc.find(c))->radius ==
+          doctest::Approx(distance({0, 5}, {12, 3})));
 }

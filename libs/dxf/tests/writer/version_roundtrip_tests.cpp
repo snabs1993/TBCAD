@@ -7,8 +7,8 @@
 #include "../lexer/doctest_include.h"
 #include "../lexer/test_util.h"
 #include "semantic_dump.h"
-#include "tbcad/dxf/reader.h"
 #include "tbcad/dim/dim.h"
+#include "tbcad/dxf/reader.h"
 #include "tbcad/dxf/writer.h"
 #include "tbcad/io/tbcad.h"
 
@@ -66,7 +66,8 @@ TEST_CASE("every drawing survives saving as DXF R2000, R2007 and R12 and opening
             owned = std::move(doc.value());
         } else {
             Report report;
-            Result<ImportResult> first = importDxf(testing::readFile(path), ImportOptions{}, report);
+            Result<ImportResult> first =
+                importDxf(testing::readFile(path), ImportOptions{}, report);
             if (!first)
                 continue;  // the broken_* files are meant to fail
             owned = std::move(first.value().document);
@@ -88,21 +89,21 @@ TEST_CASE("every drawing survives saving as DXF R2000, R2007 and R12 and opening
             CHECK(doc2.layers().size() == doc1.layers().size());
             if (v != DxfVersion::R12) {
                 CHECK_MESSAGE(k1 == k2, kindsText(k1) << "-> " << kindsText(k2));
-                const std::string diff = testing::SemanticDump::diff(
-                    testing::SemanticDump(doc1), testing::SemanticDump(doc2));
+                const std::string diff = testing::SemanticDump::diff(testing::SemanticDump(doc1),
+                                                                     testing::SemanticDump(doc2));
                 CHECK_MESSAGE(diff.empty(), diff);
                 continue;
             }
             // R12 writes hatches, ellipses, splines, leaders and notes as the simple objects it
             // has (see docs/dxf-export.md): those kinds may only grow, none may be lost.
-            for (EntityKind k : {EntityKind::Line, EntityKind::Circle, EntityKind::Arc,
-                                 EntityKind::Polyline, EntityKind::Point, EntityKind::Text,
-                                 EntityKind::Insert, EntityKind::Dimension}) {
+            for (EntityKind k :
+                 {EntityKind::Line, EntityKind::Circle, EntityKind::Arc, EntityKind::Polyline,
+                  EntityKind::Point, EntityKind::Text, EntityKind::Insert, EntityKind::Dimension}) {
                 const int i = static_cast<int>(k);
                 const std::size_t before = k1.contains(i) ? k1.at(i) : 0;
                 const std::size_t after = k2.contains(i) ? k2.at(i) : 0;
-                CHECK_MESSAGE(after >= before, "kind " << i << ": " << kindsText(k1) << "-> "
-                                                       << kindsText(k2));
+                CHECK_MESSAGE(after >= before,
+                              "kind " << i << ": " << kindsText(k1) << "-> " << kindsText(k2));
             }
         }
         ++checked;

@@ -402,8 +402,8 @@ public:
             cmd::KeywordOptions ko;
             ko.keywords = {"Edit", "Remove", "Up", "Down", "List", "Done"};
             ko.defaultKeyword = "Done";
-            auto k = co_await ctx.getKeyword("Attributes [Edit/Remove/Up/Down/List/Done] <Done>",
-                                             ko);
+            auto k =
+                co_await ctx.getKeyword("Attributes [Edit/Remove/Up/Down/List/Done] <Done>", ko);
             if (!k.ok() || k.keyword == "Done")
                 break;
             if (k.keyword == "List") {
@@ -411,9 +411,10 @@ public:
                     list(ctx, *d);
                 continue;
             }
-            auto tag = co_await ctx.getString(
-                std::string("Tag of the attribute to ") +
-                (k.keyword == "Edit" ? "edit" : k.keyword == "Remove" ? "remove" : "move"));
+            auto tag = co_await ctx.getString(std::string("Tag of the attribute to ") +
+                                              (k.keyword == "Edit"     ? "edit"
+                                               : k.keyword == "Remove" ? "remove"
+                                                                       : "move"));
             if (!tag.ok())
                 co_return;
             const EntityId id = find(doc, block, cmd::toUpperAscii(cmd::trim(tag.text)));
@@ -493,9 +494,9 @@ private:
         for (const TextData* t : attDefs(ctx.doc(), d.id)) {
             const AttDefInfo& a = *t->attdef;
             std::string modes;
-            for (auto [on, name] : {std::pair{a.invisible, "invisible"},
-                                    std::pair{a.constant, "constant"},
-                                    std::pair{a.verify, "verify"}, std::pair{a.preset, "preset"}})
+            for (auto [on, name] :
+                 {std::pair{a.invisible, "invisible"}, std::pair{a.constant, "constant"},
+                  std::pair{a.verify, "verify"}, std::pair{a.preset, "preset"}})
                 if (on)
                     modes += std::string("  ") + name;
             ctx.message(a.tag + "  prompt \"" + a.prompt + "\"  default \"" + a.defaultValue +
@@ -515,8 +516,8 @@ private:
         if (!k.ok())
             co_return;
         const std::string which = k.keyword;
-        const bool isMode = which == "Invisible" || which == "Constant" || which == "Verify" ||
-                            which == "Preset";
+        const bool isMode =
+            which == "Invisible" || which == "Constant" || which == "Verify" || which == "Preset";
         std::string text;
         bool flag = false;
         if (isMode) {

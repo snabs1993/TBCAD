@@ -33,8 +33,7 @@ public:
         io.defaultValue = 1;
         io.min = 1;
         auto r = co_await ctx.getInteger(
-            "Enter the number of operations to undo or [Auto/Control/BEgin/End/Mark/Back] <1>",
-            io);
+            "Enter the number of operations to undo or [Auto/Control/BEgin/End/Mark/Back] <1>", io);
         if (r.status == Status::Ok) {
             long long done = 0;
             std::string last;
@@ -44,8 +43,7 @@ public:
                     break;
             }
             if (done == 0)
-                ctx.message(st.blockedReason().empty() ? "Nothing to undo."
-                                                       : st.blockedReason());
+                ctx.message(st.blockedReason().empty() ? "Nothing to undo." : st.blockedReason());
             else if (done == 1)
                 ctx.message("Undo " + last);
             else

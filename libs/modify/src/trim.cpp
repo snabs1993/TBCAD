@@ -29,7 +29,8 @@ std::vector<CurveRef> edgeCurves(const std::vector<const Entity*>& edges) {
 // answers without testing them all; an extending edge has no useful box, so then all are returned.
 class EdgeNear {
 public:
-    EdgeNear(const std::vector<CurveRef>& edges, bool extend) : edges_(edges), all_(extend || edges.size() <= 64) {
+    EdgeNear(const std::vector<CurveRef>& edges, bool extend)
+        : edges_(edges), all_(extend || edges.size() <= 64) {
         if (all_)
             return;
         boxes_.reserve(edges.size());

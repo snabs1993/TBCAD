@@ -143,7 +143,8 @@ void applyTheme(const ui::Theme& t, float scale) {
     style.GrabRounding = 4.0f;
     style.ScrollbarRounding = 4.0f;
     style.TabRounding = 4.0f;
-    style.FrameBorderSize = 1.0f;  // an empty check box or field must still read as one on a dark panel
+    style.FrameBorderSize =
+        1.0f;  // an empty check box or field must still read as one on a dark panel
     style.WindowBorderSize = 1.0f;
     style.PopupBorderSize = 1.0f;
     style.WindowPadding = ImVec2(8, 8);

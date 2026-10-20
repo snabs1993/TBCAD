@@ -101,13 +101,15 @@ void hatchProvider(const Document& doc, const Entity& e, SnapGeometry& out) {
                     edge(Entity{{}, LineData{l->a, l->b}});
             } else if (const auto* a = std::get_if<HatchArcEdge>(&ed)) {
                 // A clockwise edge is the counter-clockwise arc from its end to its start.
-                edge(Entity{{}, a->ccw ? ArcData{a->center, a->radius, a->startAngle, a->endAngle}
-                                       : ArcData{a->center, a->radius, a->endAngle, a->startAngle}});
+                edge(Entity{{},
+                            a->ccw ? ArcData{a->center, a->radius, a->startAngle, a->endAngle}
+                                   : ArcData{a->center, a->radius, a->endAngle, a->startAngle}});
             } else if (const auto* el = std::get_if<HatchEllipseEdge>(&ed)) {
-                edge(Entity{{}, el->ccw ? EllipseData{el->center, el->majorAxis, el->ratio,
-                                                      el->startParam, el->endParam}
-                                        : EllipseData{el->center, el->majorAxis, el->ratio,
-                                                      el->endParam, el->startParam}});
+                edge(Entity{{},
+                            el->ccw ? EllipseData{el->center, el->majorAxis, el->ratio,
+                                                  el->startParam, el->endParam}
+                                    : EllipseData{el->center, el->majorAxis, el->ratio,
+                                                  el->endParam, el->startParam}});
             } else if (const auto* sp = std::get_if<HatchSplineEdge>(&ed)) {
                 edge(Entity{{}, sp->spline});
             } else if (const auto* pl = std::get_if<HatchPolylineEdge>(&ed)) {

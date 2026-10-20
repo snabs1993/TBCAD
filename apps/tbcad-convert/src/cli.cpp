@@ -14,7 +14,6 @@
 #include <sstream>
 
 #include "export/export.h"
-#include "timing.h"
 #include "tbcad/core/document.h"
 #include "tbcad/dwg/dwg.h"
 #include "tbcad/dxf/encoding.h"
@@ -22,6 +21,7 @@
 #include "tbcad/io/tbcad.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/xref/xref.h"
+#include "timing.h"
 
 namespace tbcad::convert {
 
@@ -107,8 +107,7 @@ std::string jsonString(const std::string& s);
 
 // The report without the "external reference ... is not loaded" warnings of the xrefs that were
 // loaded after all (an info line says so instead).
-dxf::Report withoutLoadedXrefWarnings(dxf::Report report,
-                                      const std::vector<std::string>& loaded) {
+dxf::Report withoutLoadedXrefWarnings(dxf::Report report, const std::vector<std::string>& loaded) {
     dxf::Report out;
     for (dxf::Diagnostic& d : report.takeItems()) {
         bool drop = false;
@@ -134,9 +133,8 @@ std::string withXrefs(std::string json, const xref::OpenLoad& load, std::size_t 
         return o + "]";
     };
     json.pop_back();
-    json += ",\"xrefs\":{\"loaded\":" + list(load.loaded) + ",\"missing\":" +
-            list(load.missing) + ",\"failed\":" + list(load.failed) +
-            ",\"entities\":" + std::to_string(entities) + "}}";
+    json += ",\"xrefs\":{\"loaded\":" + list(load.loaded) + ",\"missing\":" + list(load.missing) +
+            ",\"failed\":" + list(load.failed) + ",\"entities\":" + std::to_string(entities) + "}}";
     return json;
 }
 
@@ -442,8 +440,8 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
     for (const std::string& name : xrefLoad.loaded)
         if (const BlockDef* def = imported.document->blockByName(name))
             xrefEntities += def->entities.size();
-    if (!reportPath.empty() &&
-        !writeText(reportPath, withXrefs(imported.summary.toJson(report), xrefLoad, xrefEntities))) {
+    if (!reportPath.empty() && !writeText(reportPath, withXrefs(imported.summary.toJson(report),
+                                                                xrefLoad, xrefEntities))) {
         return fail("cannot write " + reportPath, report);
     }
 

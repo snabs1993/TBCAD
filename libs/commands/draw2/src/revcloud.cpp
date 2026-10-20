@@ -439,8 +439,7 @@ private:
             ctx.message("The two corners must differ in both directions.");
             co_return;
         }
-        const std::vector<Vec2> ring{
-            corner, {b.point.x, corner.y}, b.point, {corner.x, b.point.y}};
+        const std::vector<Vec2> ring{corner, {b.point.x, corner.y}, b.point, {corner.x, b.point.y}};
         if (const std::string m = tooManyArcs(ring, true, len); !m.empty()) {
             ctx.message(m);
             co_return;
@@ -554,8 +553,8 @@ private:
                 p.push_back(cursor);
                 previewEntity(*c, makeEntity(openCloud(p, len, false, false)), out);
             };
-            auto r = co_await ctx.getPoint(
-                promptWith("Specify next point", o.keywords), std::move(o));
+            auto r =
+                co_await ctx.getPoint(promptWith("Specify next point", o.keywords), std::move(o));
             if (r.status == cmd::Status::Keyword) {
                 pts.pop_back();
                 continue;
@@ -584,7 +583,7 @@ private:
         }
         pts.push_back(end);
 
-        const std::vector<PolyVertex> forward = piece(old, from, *to);  // start .. end
+        const std::vector<PolyVertex> forward = piece(old, from, *to);   // start .. end
         const std::vector<PolyVertex> backward = piece(old, *to, from);  // end .. start
         auto side = co_await ctx.getPoint("Pick a side to erase");
         if (!side.ok())
@@ -599,8 +598,9 @@ private:
             co_return;
 
         // The kept part runs from one end of the new part to the other; the new part closes it.
-        std::vector<PolyVertex> kept = eraseForward ? backward : forward;  // end..start / start..end
-        std::vector<Vec2> fresh = pts;                                      // start .. end
+        std::vector<PolyVertex> kept =
+            eraseForward ? backward : forward;  // end..start / start..end
+        std::vector<Vec2> fresh = pts;          // start .. end
         if (!eraseForward)
             std::reverse(fresh.begin(), fresh.end());  // end .. start
         kept.pop_back();  // its last vertex is where the new part starts
@@ -667,8 +667,7 @@ private:
             co_return;
         // Like AutoCAD the object is converted: the cloud takes its place and its properties
         // (layer, colour, linetype, ...) and the object is erased.
-        Entity cloudEntity{ent->common, cloud(ring->pts, ring->corners, len,
-                                              rev.keyword == "Yes",
+        Entity cloudEntity{ent->common, cloud(ring->pts, ring->corners, len, rev.keyword == "Yes",
                                               settingNumber(ctx, kCalligraphy, 0) > 0)};
         cloudEntity.common.id = {};
         auto id = ctx.tx().add(std::move(cloudEntity));

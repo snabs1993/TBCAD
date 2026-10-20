@@ -124,7 +124,8 @@ TEST_CASE("XPLODE explodes and gives the parts the chosen colour") {
     CHECK(found);
 }
 
-TEST_CASE("BURST breaks an insert and keeps its attribute values as text and leaves polylines alone") {
+TEST_CASE(
+    "BURST breaks an insert and keeps its attribute values as text and leaves polylines alone") {
     Fixture f;
     BlockId b{};
     {

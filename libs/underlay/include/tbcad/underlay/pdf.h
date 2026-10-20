@@ -49,8 +49,9 @@ Result<std::unique_ptr<Document>> importPdfFile(const std::filesystem::path& fil
 // Number of pages (0 on error).
 Result<int> pdfPageCount(const std::filesystem::path& file);
 
-// "file.pdf#page=2,fade=60,contrast=70,mono=1": the options part of a stored underlay path. `file` is what comes
-// before the '#'. Unknown keys are ignored; a stored path without a valid spec is returned whole.
+// "file.pdf#page=2,fade=60,contrast=70,mono=1": the options part of a stored underlay path. `file`
+// is what comes before the '#'. Unknown keys are ignored; a stored path without a valid spec is
+// returned whole.
 struct Spec {
     std::string file{};
     PdfOptions pdf{};

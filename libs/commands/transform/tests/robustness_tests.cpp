@@ -361,7 +361,8 @@ TEST_CASE("every grip menu action on every grip stays finite and undoes exactly"
     CHECK(tried > 10);
 }
 
-TEST_CASE("a random run of transforms and copies undoes step by step and redoes to the same drawing") {
+TEST_CASE(
+    "a random run of transforms and copies undoes step by step and redoes to the same drawing") {
     std::uint32_t seed = 12345;
     auto rnd = [&] {
         seed = seed * 1664525u + 1013904223u;

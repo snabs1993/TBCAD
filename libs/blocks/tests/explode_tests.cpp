@@ -262,7 +262,8 @@ TEST_CASE("attributes of nested inserts take the value of their own insert") {
     def.data = Indirect<TextData>(std::move(td));
     BlockId inner = addBlock(doc, "Inner", {line(0, 0, 1, 0), def});
     BlockId outer = addBlock(doc, "Outer", {insertOf(inner, {5, 0}), insertOf(inner, {0, 5})});
-    // The inner inserts inside the block keep their own values when the outer one is exploded twice.
+    // The inner inserts inside the block keep their own values when the outer one is exploded
+    // twice.
     EntityId o = addEntity(doc, insertOf(outer, {100, 0}, {-1, 1}));
     auto one = explode(doc, *doc.find(o));
     REQUIRE(one.ok());

@@ -25,9 +25,11 @@ const Layer* findLayer(const Document& doc, const std::string& path) {
 cmd::Task changeProperties(cmd::CommandContext& ctx, std::vector<EntityId> ids) {
     for (;;) {
         cmd::KeywordOptions ko;
-        ko.keywords = {"Layer", "Color", "Linetype", "Lineweight", "Scale", "Transparency", "Plotstyle"};
+        ko.keywords = {"Layer", "Color",        "Linetype", "Lineweight",
+                       "Scale", "Transparency", "Plotstyle"};
         auto k = co_await ctx.getKeyword(
-            "Property to change [Layer/Color/Linetype/Lineweight/Scale/Transparency/Plotstyle]", std::move(ko));
+            "Property to change [Layer/Color/Linetype/Lineweight/Scale/Transparency/Plotstyle]",
+            std::move(ko));
         if (!k.ok())
             co_return;
         auto v = co_await ctx.getString("New " + k.keyword + " value");
@@ -98,7 +100,8 @@ cmd::Task changeProperties(cmd::CommandContext& ctx, std::vector<EntityId> ids) 
             const std::string name = cmd::trim(v.text);
             int n = 0;
             for (EntityId id : ids)
-                if (const Entity* e = ctx.doc().find(id); e && !ctx.doc().effective(e->common).locked)
+                if (const Entity* e = ctx.doc().find(id);
+                    e && !ctx.doc().effective(e->common).locked)
                     ++n;
             (void)ctx.tx().modifyHeader([&](Header& h) {
                 for (EntityId id : ids)

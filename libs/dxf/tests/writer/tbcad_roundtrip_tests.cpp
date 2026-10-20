@@ -11,8 +11,8 @@
 #include "../lexer/doctest_include.h"
 #include "../lexer/test_util.h"
 #include "semantic_dump.h"
-#include "tbcad/dxf/reader.h"
 #include "tbcad/blocks/display.h"
+#include "tbcad/dxf/reader.h"
 #include "tbcad/dxf/writer.h"
 #include "tbcad/geom/geom.h"
 #include "tbcad/io/tbcad.h"
@@ -523,7 +523,8 @@ TEST_CASE("an object beyond the coordinate limit and a one-vertex polyline are s
     const std::string text(out.value().bytes.begin(), out.value().bytes.end());
     // The text of a record, up to the type of the one written after it.
     auto record = [&](const char* type, const char* next) {
-        const std::size_t at = text.find(std::string("\r\n") + type + "\r\n", text.find("ENTITIES"));
+        const std::size_t at =
+            text.find(std::string("\r\n") + type + "\r\n", text.find("ENTITIES"));
         REQUIRE(at != std::string::npos);
         return text.substr(at, text.find(std::string("\r\n") + next + "\r\n", at) - at);
     };

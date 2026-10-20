@@ -49,7 +49,7 @@ TEST_CASE("typed letters limit Up and Down to the lines that start with them") {
     CHECK(h.older("circle 9") == "CIRCLE 5");
     CHECK(h.older("CIRCLE 5") == "CIRCLE 5");  // nothing older matches
     CHECK(h.newer("CIRCLE 5") == "circle 9");
-    CHECK(h.newer("circle 9") == "ci");        // back to what was typed
-    CHECK(h.older("zz") == "zz");              // no match: the box is left alone
+    CHECK(h.newer("circle 9") == "ci");  // back to what was typed
+    CHECK(h.older("zz") == "zz");        // no match: the box is left alone
     CHECK_FALSE(h.browsing());
 }

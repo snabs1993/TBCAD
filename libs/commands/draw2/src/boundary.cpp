@@ -56,8 +56,8 @@ std::vector<hatch::Candidate> candidatesIn(cmd::CommandContext& ctx, const BBox2
         return out;
     }
     doc.forEachEntity([&](const Entity& e) {
-        const BBox2 box = kind(e) == EntityKind::Insert ? blocks::insertBounds(doc, e)
-                                                        : geom::bounds(e);
+        const BBox2 box =
+            kind(e) == EntityKind::Insert ? blocks::insertBounds(doc, e) : geom::bounds(e);
         if (window.intersects(box))
             consider(e);
     });
@@ -163,7 +163,9 @@ hatch::IslandStyle islandStyleOf(double v) {
 class BoundaryCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "BOUNDARY"; }
-    std::vector<std::string> defaultAliases() const override { return {"BO", "BPOLY", "-BOUNDARY"}; }
+    std::vector<std::string> defaultAliases() const override {
+        return {"BO", "BPOLY", "-BOUNDARY"};
+    }
     std::string_view description() const override {
         return "Create a closed polyline from the region around a point";
     }
@@ -199,10 +201,10 @@ public:
             hatch::BoundaryOptions bo;
             bo.gapTolerance = std::max(0.0, settingNumber(ctx, "hatch.gap", 0));
             std::deque<Entity> store;
-            auto found = hatch::findBoundaryNear(
-                             [&](const BBox2& w) { return candidatesIn(ctx, w, store); },
-                             searchWindow(ctx), p.point, bo)
-                             .result;
+            auto found =
+                hatch::findBoundaryNear([&](const BBox2& w) { return candidatesIn(ctx, w, store); },
+                                        searchWindow(ctx), p.point, bo)
+                    .result;
             if (!found) {
                 ctx.message(found.error().message);
                 continue;

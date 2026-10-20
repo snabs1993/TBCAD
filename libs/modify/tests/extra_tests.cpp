@@ -800,7 +800,8 @@ TEST_CASE("overkill on a grid of lines and circles finds duplicates and row over
         store.push_back(store[static_cast<std::size_t>(k) * 3 + 1]);  // vertical line copies
     }
     for (int r = 0; r < 30; ++r)
-        store.push_back(line({2.0, r * 10.0}, {4.0, r * 10.0}));  // inside the first piece of the row
+        store.push_back(
+            line({2.0, r * 10.0}, {4.0, r * 10.0}));  // inside the first piece of the row
     std::vector<const Entity*> in;
     for (const Entity& e : store)
         in.push_back(&e);
@@ -860,7 +861,8 @@ TEST_CASE("overkill removes exactly the repeats among random lines, circles and 
 TEST_CASE("refitSpline on a long wavy curve is fast and within the tolerance") {
     std::vector<PolyVertex> v;
     for (int i = 0; i <= 200; ++i)
-        v.push_back(PolyVertex{{i * 0.5, 3 * std::sin(i * 0.5 * 0.4) + 0.4 * std::sin(i * 1.3)}, 0, 0, 0});
+        v.push_back(
+            PolyVertex{{i * 0.5, 3 * std::sin(i * 0.5 * 0.4) + 0.4 * std::sin(i * 1.3)}, 0, 0, 0});
     auto sp = polylineToSpline(poly(v, false));
     REQUIRE(sp.ok());
     // Processor time, not wall time: ctest runs many test processes at once, and a busy machine

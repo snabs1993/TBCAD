@@ -22,7 +22,7 @@ public:
         return xplode_ || burst_ ? std::vector<std::string>{} : std::vector<std::string>{"X"};
     }
     std::string_view description() const override {
-        return burst_ ? "Break blocks into parts; attributes become text with their values"
+        return burst_    ? "Break blocks into parts; attributes become text with their values"
                : xplode_ ? "Break blocks and polylines into parts and set their layer and colour"
                          : "Break blocks and polylines into parts";
     }
@@ -31,7 +31,8 @@ public:
         Document& doc = ctx.doc();
         auto base = detail::editableFilter(doc);
         auto sel = co_await ctx.getSelection(
-            "Select objects to explode", cmd::SelectionOptions{.filter = [base, burst = burst_](const Entity& e) {
+            "Select objects to explode",
+            cmd::SelectionOptions{.filter = [base, burst = burst_](const Entity& e) {
                 return base(e) && blocks::canExplode(kind(e)) &&
                        (!burst || kind(e) == EntityKind::Insert);
             }});

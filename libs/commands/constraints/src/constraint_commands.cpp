@@ -494,7 +494,8 @@ public:
                 continue;
             }
             const Parameter* old = params.find(n);
-            // (the prompt is built first: GCC mishandles temporaries of a conditional inside co_await)
+            // (the prompt is built first: GCC mishandles temporaries of a conditional inside
+            // co_await)
             std::string formulaPrompt = "Formula for " + n;
             if (old)
                 formulaPrompt += " <" + old->expr + ">";

@@ -24,6 +24,10 @@ function(tbcad_set_warnings target)
     # the Windows build with /WX. (GCC's -Wshadow also flags constructor parameters; not used.)
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
       target_compile_options(${target} PRIVATE -Wshadow)
+    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+      # GCC's optimiser reports std::optional members inside std::variant as "may be used
+      # uninitialized" when a variant is built from another alternative (release builds only).
+      target_compile_options(${target} PRIVATE -Wno-maybe-uninitialized)
     endif()
     if(TBCAD_WARNINGS_AS_ERRORS)
       target_compile_options(${target} PRIVATE -Werror)

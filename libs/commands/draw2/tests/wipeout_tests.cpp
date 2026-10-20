@@ -88,9 +88,8 @@ TEST_CASE("WIPEOUTFRAME shows, hides or screen-only shows the outline, and is un
 
 TEST_CASE("WIPEOUT points: Undo drops a point, repeated points count once, no area makes nothing") {
     Fixture f;
-    REQUIRE(f.host.run("WO", {"0,0", "10,0", "10,0", "50,50", "Undo", "10,10", "0,0",
-                              ""})
-                .finished);
+    REQUIRE(
+        f.host.run("WO", {"0,0", "10,0", "10,0", "50,50", "Undo", "10,10", "0,0", ""}).finished);
     auto es = f.entities();
     REQUIRE(es.size() == 1);
     const auto& pl = as<PolylineData>(es[0]);

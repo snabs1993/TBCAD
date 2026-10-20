@@ -202,7 +202,8 @@ TEST_CASE("trimming or extending a boundary edge keeps the hatch coherent and un
     const EntityId cutter = r.add(LineData{{80, 30}, {120, 30}});
     EntityId right{};
     for (EntityId id : h->sourceBoundary)
-        if (const auto* l = entityAs<LineData>(*r.doc.find(id)); l && l->a.x == 100 && l->b.x == 100)
+        if (const auto* l = entityAs<LineData>(*r.doc.find(id));
+            l && l->a.x == 100 && l->b.x == 100)
             right = id;
     REQUIRE(static_cast<bool>(right));
     r.host.run("TRIM", {ScriptItem::select({cutter}), ScriptItem::enter(),
@@ -222,8 +223,8 @@ TEST_CASE("trimming or extending a boundary edge keeps the hatch coherent and un
     int whole = 0;
     r.doc.forEachEntity([&](const Entity& e) {
         if (const auto* l = entityAs<LineData>(e); l && std::abs(l->a.x - 100) < 1e-9 &&
-                                                  std::abs(l->b.x - 100) < 1e-9 &&
-                                                  std::abs(l->a.y - l->b.y) > 59)
+                                                   std::abs(l->b.x - 100) < 1e-9 &&
+                                                   std::abs(l->a.y - l->b.y) > 59)
             ++whole;
     });
     CHECK(whole == 1);

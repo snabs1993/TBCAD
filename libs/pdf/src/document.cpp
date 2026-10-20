@@ -1,6 +1,6 @@
+#include <algorithm>
 #include <cctype>
 #include <cmath>
-#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
@@ -273,7 +273,8 @@ Result<void> PdfDocument::write(std::ostream& out) const {
             }
     std::map<int, size_t> fontObj;
     for (const auto& [f, used] : glyphs) {
-        if (f < 0 || static_cast<size_t>(f) >= fonts_.size() || !fonts_[static_cast<size_t>(f)].file)
+        if (f < 0 || static_cast<size_t>(f) >= fonts_.size() ||
+            !fonts_[static_cast<size_t>(f)].file)
             return makeError(ErrorCode::InvalidArgument, "page uses an unknown font");
         fontObj[f] = nextObj;
         nextObj += 5;
@@ -342,9 +343,8 @@ Result<void> PdfDocument::write(std::ostream& out) const {
         // Whole points, as AutoCAD writes them (A1 is 2384 x 1684 pt, 841.0 x 594.1 mm).
         buf += "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " +
                formatNumber(std::max(1.0, std::round(p.widthMm() * kPtPerMm))) + " " +
-               formatNumber(std::max(1.0, std::round(p.heightMm() * kPtPerMm))) +
-               "] /Resources " + resources(p) + " /Contents " + std::to_string(pageNum + 1) +
-               " 0 R >>\n";
+               formatNumber(std::max(1.0, std::round(p.heightMm() * kPtPerMm))) + "] /Resources " +
+               resources(p) + " /Contents " + std::to_string(pageNum + 1) + " 0 R >>\n";
         end();
 
         // Content: one page-level cm so all drawing is in mm.
@@ -467,18 +467,18 @@ Result<void> PdfDocument::write(std::ostream& out) const {
         begin(o + 1);
         buf += "<< /Type /Font /Subtype /CIDFontType2 /BaseFont /" + name +
                " /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >>"
-               " /FontDescriptor " + std::to_string(o + 2) +
-               " 0 R /CIDToGIDMap /Identity /DW 1000 /W [" + widths + "] >>\n";
+               " /FontDescriptor " +
+               std::to_string(o + 2) + " 0 R /CIDToGIDMap /Identity /DW 1000 /W [" + widths +
+               "] >>\n";
         end();
 
         begin(o + 2);
         const int flags = (info->fixedPitch ? 1 : 0) | 4 | (info->italicAngle != 0 ? 64 : 0);
-        buf += "<< /Type /FontDescriptor /FontName /" + name + " /Flags " +
-               std::to_string(flags) + " /FontBBox [" + u(info->xMin) + " " + u(info->yMin) +
-               " " + u(info->xMax) + " " + u(info->yMax) + "] /ItalicAngle " +
-               formatNumber(info->italicAngle) + " /Ascent " + u(info->ascent) + " /Descent " +
-               u(info->descent) + " /CapHeight " + u(info->capHeight) +
-               " /StemV 80 /FontFile2 " + std::to_string(o + 3) + " 0 R >>\n";
+        buf += "<< /Type /FontDescriptor /FontName /" + name + " /Flags " + std::to_string(flags) +
+               " /FontBBox [" + u(info->xMin) + " " + u(info->yMin) + " " + u(info->xMax) + " " +
+               u(info->yMax) + "] /ItalicAngle " + formatNumber(info->italicAngle) + " /Ascent " +
+               u(info->ascent) + " /Descent " + u(info->descent) + " /CapHeight " +
+               u(info->capHeight) + " /StemV 80 /FontFile2 " + std::to_string(o + 3) + " 0 R >>\n";
         end();
 
         const std::string zf = deflate(subset);
@@ -509,8 +509,8 @@ Result<void> PdfDocument::write(std::ostream& out) const {
         }
         cmap += "endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend\n";
         begin(o + 4);
-        buf += "<< /Length " + std::to_string(cmap.size()) + " >>\nstream\n" + cmap +
-               "\nendstream\n";
+        buf +=
+            "<< /Length " + std::to_string(cmap.size()) + " >>\nstream\n" + cmap + "\nendstream\n";
         end();
     }
 
