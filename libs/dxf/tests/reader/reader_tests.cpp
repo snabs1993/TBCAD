@@ -1224,6 +1224,44 @@ TEST_CASE("dimension style: a built-in arrow block name picks the arrow kind") {
     CHECK(ds->arrowType == ArrowType::ArchTick);
 }
 
+TEST_CASE("dimension style: arrow blocks named by block record handle, as AutoCAD writes them") {
+    Pairs p;
+    p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE");
+    p.g(0, "DIMSTYLE").g(105, "30").g(2, "Tick").g(342, "1F").g(140, 2.5).g(41, 2.5);
+    p.g(0, "ENDTAB");
+    // The block record table comes after the dimension styles.
+    p.g(0, "TABLE").g(2, "BLOCK_RECORD");
+    p.g(0, "BLOCK_RECORD").g(5, "1F").g(2, "_ArchTick");
+    p.g(0, "BLOCK_RECORD").g(5, "2a").g(2, "_Dot");
+    p.g(0, "ENDTAB").end();
+    p.section("ENTITIES");
+    p.g(0, "DIMENSION").g(8, "0").g(2, "*D1").g(3, "Tick").g(10, 5.0).g(20, 5.0).g(11, 5.0);
+    p.g(21, 8.0).g(70, 1).g(13, 0.0).g(23, 0.0).g(14, 10.0).g(24, 0.0).g(42, 10.0);
+    p.g(0, "DIMENSION").g(8, "0").g(2, "*D2").g(3, "Tick").g(10, 5.0).g(20, 25.0).g(11, 5.0);
+    p.g(21, 28.0).g(70, 1).g(13, 0.0).g(23, 20.0).g(14, 10.0).g(24, 20.0).g(42, 10.0);
+    p.g(1001, "ACAD").g(1000, "DSTYLE").g(1002, "{").g(1070, 342).g(1005, "2A");
+    p.g(1070, 147).g(1040, 0.5).g(1002, "}");
+    p.end().g(0, "EOF");
+    Loaded l = load(p.text);
+    const DimStyle* tick = l.doc().dimStyleByName("Tick");
+    REQUIRE(tick != nullptr);
+    CHECK(tick->arrowType == ArrowType::ArchTick);
+    auto dims = modelEntities<DimensionData>(l.doc());
+    REQUIRE(dims.size() == 2);
+    int dots = 0, ticks = 0;
+    for (const auto* d : dims) {
+        const DimStyle* ds = l.doc().dimStyle(d->style);
+        REQUIRE(ds != nullptr);
+        if (ds->arrowType == ArrowType::Dot) {
+            ++dots;
+            CHECK(near(ds->textGap, 0.5));  // the value after the handle is still read
+        }
+        ticks += ds->arrowType == ArrowType::ArchTick;
+    }
+    CHECK(dots == 1);
+    CHECK(ticks == 1);
+}
+
 TEST_CASE("dimension style: DIMTSZ draws ticks of that size, also as an override") {
     Pairs p;
     p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE");

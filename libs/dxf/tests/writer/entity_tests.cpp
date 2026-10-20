@@ -1931,4 +1931,31 @@ TEST_CASE("a text with fields changed in another program keeps what it shows") {
     CHECK(got.find("%<") == std::string::npos);
 }
 
+TEST_CASE("Active Only does not lock the other layers in the DXF") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("layers");
+        Layer a;
+        a.name = "A";
+        const LayerId aId = tx.addLayer(a).value();
+        Layer b;
+        b.name = "B";
+        b.locked = true;
+        REQUIRE(tx.addLayer(b));
+        REQUIRE(tx.modifyHeader([&](Header& h) {
+            h.currentLayer = aId;
+            h.activeOnly = true;
+        }));
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    CHECK(rt.diff.empty());
+    const Layer* zero = rt.back->layerByName("0");
+    REQUIRE(zero);
+    CHECK_FALSE(zero->locked);
+    const Layer* b = rt.back->layerByName("B");
+    REQUIRE(b);
+    CHECK(b->locked);
+}
+
 }  // namespace tbcad::dxf
