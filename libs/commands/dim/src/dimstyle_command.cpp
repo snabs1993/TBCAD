@@ -91,12 +91,22 @@ const std::vector<std::string> kProps = {
     "DimLine1",       "DimLine2",        "Justify",       "AngleFormat", "AngularPrecision",
     "DecimalMark",    "BaselineSpacing", "CenterMark",    "TextFill",    "TextFillColor",
     "TextFrame",      "LengthFormat",    "TolHeight",     "TextVertPos", "FixedExt",
-    "FixedExtLength", "LeaderArrow"};
+    "FixedExtLength", "LeaderArrow",     "LineWeight",    "ExtWeight"};
 
 std::string num(double v) {
     char buf[40];
     std::snprintf(buf, sizeof buf, "%g", v);
     return buf;
+}
+
+std::string weightText(LineWeight w) {
+    if (w.isByBlock())
+        return "ByBlock";
+    if (w.isByLayer())
+        return "ByLayer";
+    if (w.isDefault())
+        return "Default";
+    return num(w.toMm());
 }
 
 std::string colourText(Color c) {
@@ -188,6 +198,8 @@ std::vector<std::pair<std::string, std::string>> describe(const Document& doc, c
         {"FixedExt", s.fixedExtLines ? "On" : "Off"},
         {"FixedExtLength", num(s.fixedExtLength)},
         {"LeaderArrow", arrow[static_cast<int>(s.leaderArrow)]},
+        {"LineWeight", weightText(s.dimLineWeight)},
+        {"ExtWeight", weightText(s.extLineWeight)},
     };
 }
 
@@ -540,6 +552,22 @@ std::string applyProperty(const Document& doc, DimStyle& s, std::string_view key
         if (!parseBool(value, b))
             return "Answer Suppress or Show.";
         (same(key, "LeadingZeros") ? s.suppressLeadingZeros : s.suppressTrailingZeros) = b;
+        return {};
+    }
+    // DIMLWD / DIMLWE: ByBlock, ByLayer, Default or a weight in mm (0.25).
+    if (same(key, "LineWeight") || same(key, "ExtWeight")) {
+        LineWeight& w = same(key, "LineWeight") ? s.dimLineWeight : s.extLineWeight;
+        double mm = 0;
+        if (same(value, "ByBlock"))
+            w = LineWeight::byBlock();
+        else if (same(value, "ByLayer"))
+            w = LineWeight::byLayer();
+        else if (same(value, "Default"))
+            w = LineWeight::defaultWeight();
+        else if (parseReal(value, mm) && mm >= 0 && mm <= 2.11)
+            w = LineWeight::hundredths(static_cast<std::int16_t>(std::lround(mm * 100)));
+        else
+            return "A lineweight is ByBlock, ByLayer, Default or millimetres from 0 to 2.11.";
         return {};
     }
     if (same(key, "LineColor"))

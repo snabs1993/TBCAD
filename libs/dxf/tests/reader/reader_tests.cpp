@@ -1237,6 +1237,29 @@ TEST_CASE("dimension style: DIMTXSTY names the text style by handle, also as an 
     CHECK(near(ds->textHeight * ds->overallScale, 3.5));
 }
 
+TEST_CASE("dimension style: DIMLWD and DIMLWE, also as an override") {
+    Pairs p;
+    p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE");
+    p.g(0, "DIMSTYLE").g(105, "30").g(2, "Lw").g(371, 25).g(372, -1).g(140, 2.5).g(41, 2.5);
+    p.g(0, "ENDTAB").end();
+    p.section("ENTITIES");
+    p.g(0, "DIMENSION").g(8, "0").g(2, "*D1").g(3, "Lw").g(10, 5.0).g(20, 25.0).g(11, 5.0);
+    p.g(21, 28.0).g(70, 1).g(13, 0.0).g(23, 20.0).g(14, 10.0).g(24, 20.0).g(42, 10.0);
+    p.g(1001, "ACAD").g(1000, "DSTYLE").g(1002, "{").g(1070, 372).g(1070, 50).g(1002, "}");
+    p.end().g(0, "EOF");
+    Loaded l = load(p.text);
+    const DimStyle* lw = l.doc().dimStyleByName("Lw");
+    REQUIRE(lw != nullptr);
+    CHECK(lw->dimLineWeight == LineWeight::hundredths(25));
+    CHECK(lw->extLineWeight == LineWeight::byLayer());
+    auto dims = modelEntities<DimensionData>(l.doc());
+    REQUIRE(dims.size() == 1);
+    const DimStyle* ds = l.doc().dimStyle(dims[0]->style);
+    REQUIRE(ds != nullptr);
+    CHECK(ds->dimLineWeight == LineWeight::hundredths(25));
+    CHECK(ds->extLineWeight == LineWeight::hundredths(50));
+}
+
 TEST_CASE("dimension style: a built-in arrow block name picks the arrow kind") {
     Pairs p;
     p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE");

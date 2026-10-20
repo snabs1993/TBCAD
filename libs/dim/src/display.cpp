@@ -39,6 +39,12 @@ EntityCommon commonFor(const Entity& e, const DimStyle& st, Role role) {
     Color col = roleColor(st, role);
     if (col.kind != ColorKind::ByBlock)
         c.color = col;
+    // DIMLWD / DIMLWE (ByBlock: the dimension's own lineweight).
+    const LineWeight lw = role == Role::DimLine   ? st.dimLineWeight
+                          : role == Role::ExtLine ? st.extLineWeight
+                                                  : LineWeight::byBlock();
+    if (!lw.isByBlock())
+        c.lineweight = lw;
     return c;
 }
 

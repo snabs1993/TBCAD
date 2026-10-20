@@ -627,6 +627,9 @@ Result<void> checkRow(const Document& doc, DimStyle& r, const DimStyle* old) {
         return invalid("fixed extension line length must not be negative");
     if (!std::isfinite(r.textVertPos))
         return invalid("text vertical position must be a number");
+    for (LineWeight w : {r.dimLineWeight, r.extLineWeight})
+        if (w.v < -3 || w.v > 211)
+            return invalid("dimension lineweight out of range");
     if (static_cast<int>(r.leaderArrow) < 0 ||
         static_cast<int>(r.leaderArrow) > static_cast<int>(ArrowType::None))
         return invalid("unknown leader arrow");

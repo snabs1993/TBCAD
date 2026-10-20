@@ -349,6 +349,12 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
                          : whole == 2 ? DimFit::TextFirst
                                       : DimFit::Best;
                 break;
+            case 371:  // DIMLWD
+            case 372:  // DIMLWE
+                if (whole >= -3 && whole <= 211)
+                    (var == 371 ? ds.dimLineWeight : ds.extLineWeight) =
+                        LineWeight{static_cast<std::int16_t>(whole)};
+                break;
             case 176:
             case 177:
             case 178: {
