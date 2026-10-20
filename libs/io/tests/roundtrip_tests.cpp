@@ -111,6 +111,7 @@ TEST_CASE("round trip: the named UCS table and a rotated ordinate dimension surv
         DimensionData d;
         d.kind = DimKind::Ordinate;
         d.oblique = 0.5;
+        d.flipArrow2 = true;  // Flip Arrow
         d.defPts = {Vec2{1, 2}, Vec2{3, 4}, Vec2{0, 0}, Vec2{}};
         Entity e;
         e.data = d;
@@ -124,6 +125,8 @@ TEST_CASE("round trip: the named UCS table and a rotated ordinate dimension surv
         if (const auto* d = entityAs<DimensionData>(e)) {
             seen = true;
             CHECK(d->oblique == 0.5);
+            CHECK_FALSE(d->flipArrow1);
+            CHECK(d->flipArrow2);
         }
     });
     CHECK(seen);

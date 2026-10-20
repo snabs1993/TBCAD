@@ -12,11 +12,11 @@ namespace tbcad::transform {
 
 namespace {
 
-constexpr GripAction kAll[] = {GripAction::Stretch,       GripAction::AddVertex,
-                               GripAction::RemoveVertex,  GripAction::ConvertToArc,
-                               GripAction::ConvertToLine, GripAction::Lengthen,
-                               GripAction::Radius,        GripAction::ResetText,
-                               GripAction::Continue,      GripAction::Baseline};
+constexpr GripAction kAll[] = {
+    GripAction::Stretch,      GripAction::AddVertex,     GripAction::RemoveVertex,
+    GripAction::ConvertToArc, GripAction::ConvertToLine, GripAction::Lengthen,
+    GripAction::Radius,       GripAction::ResetText,     GripAction::Continue,
+    GripAction::Baseline,     GripAction::FlipArrow};
 
 bool iequals(const std::string& a, const char* b) {
     std::size_t n = 0;
@@ -89,6 +89,8 @@ const char* gripActionLabel(GripAction a) {
             return "Continue dimension";
         case GripAction::Baseline:
             return "Baseline dimension";
+        case GripAction::FlipArrow:
+            return "Flip arrow";
     }
     return "";
 }
@@ -115,6 +117,8 @@ const char* gripActionKeyword(GripAction a) {
             return "Continue";
         case GripAction::Baseline:
             return "Baseline";
+        case GripAction::FlipArrow:
+            return "FlipArrow";
     }
     return "";
 }
@@ -135,6 +139,7 @@ bool gripActionNeedsPoint(GripAction a) {
         case GripAction::ResetText:
         case GripAction::Continue:
         case GripAction::Baseline:
+        case GripAction::FlipArrow:
             return false;
         default:
             return true;
@@ -244,6 +249,12 @@ std::vector<GripAction> gripActions(const Document& doc, const Grip& grip) {
                 out.push_back(GripAction::Continue);
                 out.push_back(GripAction::Baseline);
             }
+            // Flip Arrow at a dimension line end (a radius or diameter dimension's curve points).
+            const bool radial = d.kind == DimKind::Radius || d.kind == DimKind::Diameter;
+            if (((d.kind == DimKind::Linear || d.kind == DimKind::Aligned) &&
+                 (grip.index == 2 || grip.index == 3)) ||
+                (radial && grip.index < 2 && (d.kind == DimKind::Diameter || grip.index == 1)))
+                out.push_back(GripAction::FlipArrow);
             break;
         }
         default:
@@ -512,6 +523,15 @@ Result<Entity> applyGripAction(const Entity& e, int index, GripAction action, Ve
         }
         case EntityKind::Dimension: {
             auto& d = *entityAs<DimensionData>(out);
+            if (action == GripAction::FlipArrow) {
+                // Linear: line end 2 is at the first extension line, 3 at the second. Radius:
+                // its one arrowhead; diameter: the point's own.
+                const bool first = d.kind == DimKind::Radius ||
+                                   (d.kind == DimKind::Diameter ? index == 0 : index == 2);
+                bool& flip = first ? d.flipArrow1 : d.flipArrow2;
+                flip = !flip;
+                return out;
+            }
             if (action == GripAction::ResetText && index == geom::dimTextGrip(d)) {
                 d.textPosUser = false;
                 return out;
