@@ -144,6 +144,41 @@ TEST_CASE("round trip: ids keep their gaps and nothing is reused") {
     CHECK(back->modelSpace() == doc->modelSpace());  // draw order, including overrides
 }
 
+TEST_CASE("round trip: the draw order inside a block is kept") {
+    auto doc = makeRichDocument();
+    const BlockDef* door = doc->blockByName("Door2");
+    REQUIRE(door);
+    REQUIRE(door->entities.size() >= 2);
+    const BlockId id = door->id;
+    std::vector<EntityId> order(door->entities.rbegin(), door->entities.rend());
+    {
+        auto tx = doc->begin("order");
+        REQUIRE(tx.setDrawOrder(order, id));
+        tx.commit();
+    }
+    auto back = readOrFail(writeOrFail(*doc));
+    CHECK(back->block(id)->entities == order);
+    CHECK(back->modelSpace() == doc->modelSpace());
+}
+
+TEST_CASE("round trip: broken UTF-8 in a text is saved as U+FFFD and the file still opens") {
+    Document doc;
+    {
+        auto tx = doc.begin("text");
+        Entity e;
+        e.data = Indirect<TextData>(TextData{.utf8 = std::string("A\xFE\xC3(B") + "ห้อง"});
+        REQUIRE(tx.add(std::move(e)));
+        tx.commit();
+    }
+    auto back = readOrFail(writeOrFail(doc));
+    std::string text;
+    back->forEachEntity([&](const Entity& e) {
+        if (const auto* t = entityAs<TextData>(e))
+            text = t->utf8;
+    });
+    CHECK(text == "A\xEF\xBF\xBD\xEF\xBF\xBD(Bห้อง");
+}
+
 TEST_CASE("sub-layers: the tree, ByParent values and inherited state are restored") {
     auto doc = makeRichDocument();
     auto back = readOrFail(writeOrFail(*doc));

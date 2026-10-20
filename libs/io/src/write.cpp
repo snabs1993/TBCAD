@@ -521,6 +521,24 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
             }
         }
 
+        // Draw order inside blocks and layout sheets, only where it differs from id order.
+        ByteWriter bord;
+        {
+            std::vector<std::pair<BlockId, const std::vector<EntityId>*>> moved;
+            for (const auto& [id, def] : doc.blocks())
+                if (!std::is_sorted(def.entities.begin(), def.entities.end()))
+                    moved.emplace_back(id, &def.entities);
+            if (!moved.empty()) {
+                bord.varint(moved.size());
+                for (const auto& [id, list] : moved) {
+                    bord.varint(id.value);
+                    bord.varint(list->size());
+                    for (EntityId e : *list)
+                        bord.varint(e.value);
+                }
+            }
+        }
+
         // Opaque chunks of unknown type carried through from a file we read.
         std::vector<std::pair<std::string, const std::string*>> opaque;
         for (const auto& [k, v] : doc.header().custom) {
@@ -587,6 +605,8 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
             addRaw(kElvl, std::move(elvl.bytes()));
         if (ordr.size() != 0)
             addRaw(kOrdr, std::move(ordr.bytes()));
+        if (bord.size() != 0)
+            addRaw(kBord, std::move(bord.bytes()));
         for (const auto& [key, value] : opaque) {
             ByteReader r(std::span<const std::uint8_t>(
                 reinterpret_cast<const std::uint8_t*>(value->data()), value->size()));

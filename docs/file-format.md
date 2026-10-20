@@ -62,6 +62,7 @@ error, an unknown chunk is kept whatever its flags.
 | `ENTS` | entity records | 0..n (each about 4 MiB of raw data) |
 | `ELVL` | level of each entity not on the first level (since 1.7) | 0..1 |
 | `ORDR` | model-space draw order | 0..1, only when it differs from creation order |
+| `BORD` | draw order of block members and layout sheets (since 1.16) | 0..1, only when one differs from creation order |
 | *anything else* | unknown | kept |
 | `END ` | empty chunk, last | exactly 1 |
 
@@ -257,6 +258,13 @@ Present only when model-space draw order (back to front) differs from id order:
 longest ascending run is left alone, entities before it are sent to the back and entities after
 it are brought to the front, which reproduces the stored order exactly. A list that is not a
 permutation is ignored with a warning.
+
+## BORD
+
+Since 1.16. The draw order (back to front) of every block whose members are not in id order;
+layout sheets are blocks too. `varint count`, then per block `varint blockId`, `varint n`,
+`n` × `varint entityId`. A list that is not a permutation of the block's members is ignored
+with a warning; before 1.16 this order was lost on saving.
 
 ## Reading safely
 

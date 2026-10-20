@@ -11,12 +11,13 @@
 
 #include "bytes.h"
 #include "tbcad/core/document.h"
+#include "tbcad/core/utf8.h"
 
 namespace tbcad::io::detail {
 
 inline constexpr std::uint8_t kMagic[10] = {0x89, 'T', 'B', 'C', 'A', 'D', '\r', '\n', 0x1A, '\n'};
 inline constexpr std::uint32_t kFormatMajor = 1;
-inline constexpr std::uint32_t kFormatMinor = 15;
+inline constexpr std::uint32_t kFormatMinor = 16;
 inline constexpr std::size_t kFileHeaderSize = 22;   // magic 10 + major + minor + flags
 inline constexpr std::size_t kChunkHeaderSize = 16;  // fourcc + flags + length
 inline constexpr std::uint32_t kChunkDeflate = 1;
@@ -46,6 +47,8 @@ inline constexpr std::uint32_t kAsmb = fourcc("ASMB");
 inline constexpr std::uint32_t kEnts = fourcc("ENTS");
 inline constexpr std::uint32_t kElvl = fourcc("ELVL");
 inline constexpr std::uint32_t kOrdr = fourcc("ORDR");
+// Draw order of block members and layout sheets, where it differs from id order (format minor 16).
+inline constexpr std::uint32_t kBord = fourcc("BORD");
 inline constexpr std::uint32_t kXrfo = fourcc("XRFO");
 inline constexpr std::uint32_t kEnd = fourcc("END ");
 
@@ -61,6 +64,10 @@ class StringTable {
 public:
     StringTable() { intern(""); }
     std::uint32_t intern(std::string_view s) {
+        // A reader refuses a file with broken text, so broken bytes (from a script or another
+        // program) are saved as U+FFFD rather than making the drawing unreadable.
+        if (!utf8::isValid(s))
+            return intern(utf8::repaired(s));
         auto it = index_.find(std::string(s));
         if (it != index_.end())
             return it->second;
