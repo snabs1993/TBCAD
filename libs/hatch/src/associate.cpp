@@ -68,7 +68,77 @@ BBox2 loopBox(const HatchLoop& l) {
     return hatchBounds(d);
 }
 
+bool insideRing(const std::vector<Vec2>& ring, Vec2 p) {
+    bool in = false;
+    for (std::size_t i = 0, j = ring.size() - 1; i < ring.size(); j = i++) {
+        const Vec2 a = ring[i], b = ring[j];
+        if ((a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x)
+            in = !in;
+    }
+    return in;
+}
+
+// The boxes of the separate areas of a hatch (HATCH with several picks and Separate off makes
+// one hatch of several areas): outer loops that lie inside no other loop.
+std::vector<std::vector<Vec2>> ringsOf(const HatchData& h) {
+    std::vector<std::vector<Vec2>> rings;
+    for (const HatchLoop& l : h.loops) {
+        HatchData one;
+        one.loops.push_back(l);
+        auto r = loopRings(one, 1e-3);
+        rings.push_back(r.empty() ? std::vector<Vec2>{} : std::move(r.front()));
+    }
+    return rings;
+}
+
+// Indices of the outer loops that lie inside no other loop: one per separate area.
+std::vector<std::size_t> regionLoops(const HatchData& h,
+                                     const std::vector<std::vector<Vec2>>& rings) {
+    std::vector<std::size_t> out;
+    for (std::size_t i = 0; i < h.loops.size(); ++i) {
+        if (!h.loops[i].outer || rings[i].empty())
+            continue;
+        bool nested = false;
+        for (std::size_t j = 0; j < rings.size() && !nested; ++j)
+            nested = j != i && rings[j].size() >= 3 && insideRing(rings[j], rings[i].front());
+        if (!nested)
+            out.push_back(i);
+    }
+    return out;
+}
+
+std::vector<BBox2> regionBoxes(const HatchData& h) {
+    const auto rings = ringsOf(h);
+    std::vector<BBox2> out;
+    for (std::size_t i : regionLoops(h, rings))
+        out.push_back(loopBox(h.loops[i]));
+    return out;
+}
+
 }  // namespace
+
+std::vector<HatchData> separateAreas(const HatchData& h) {
+    const auto rings = ringsOf(h);
+    const std::vector<std::size_t> roots = regionLoops(h, rings);
+    if (roots.size() < 2)
+        return {h};
+    std::vector<HatchData> out(roots.size(), h);
+    for (HatchData& part : out)
+        part.loops.clear();
+    for (std::size_t i = 0; i < h.loops.size(); ++i) {
+        std::size_t owner = 0;
+        for (std::size_t r = 0; r < roots.size(); ++r) {
+            const std::size_t k = roots[r];
+            if (k == i || (!rings[i].empty() && rings[k].size() >= 3 &&
+                           insideRing(rings[k], rings[i].front()))) {
+                owner = r;
+                break;
+            }
+        }
+        out[owner].loops.push_back(h.loops[i]);
+    }
+    return out;
+}
 
 std::size_t updateAssociativeHatches(Document& doc, Transaction& tx,
                                      const BoundaryOptions& options) {
@@ -145,7 +215,39 @@ std::size_t updateAssociativeHatches(Document& doc, Transaction& tx,
             }
             return best;
         };
-        if (!erased) {
+        const std::vector<BBox2> regions = regionBoxes(*h);
+        if (!erased && regions.size() > 1) {
+            // Several areas in one hatch: each old area takes the region that overlaps it most.
+            BoundaryFinder finder(cands, options);
+            auto roots = finder.outermost();
+            if (roots.ok()) {
+                rootsHolder = std::move(roots).value();
+                std::vector<const Boundary*> picked;
+                for (const BBox2& old : regions) {
+                    const Boundary* best = nullptr;
+                    double bestScore = 0;
+                    for (const Boundary& b : rootsHolder) {
+                        const double score = overlapArea(old, loopBox(b.loops.front()));
+                        if (score > bestScore) {
+                            bestScore = score;
+                            best = &b;
+                        }
+                    }
+                    if (best && std::find(picked.begin(), picked.end(), best) == picked.end())
+                        picked.push_back(best);
+                }
+                if (!picked.empty()) {
+                    std::unordered_set<EntityId> seen;
+                    for (const Boundary* b : picked) {
+                        newLoops.insert(newLoops.end(), b->loops.begin(), b->loops.end());
+                        for (EntityId s : b->sources)
+                            if (seen.insert(s).second)
+                                newSources.push_back(s);
+                    }
+                    found = true;
+                }
+            }
+        } else if (!erased) {
             BoundaryFinder finder(cands, options);
             if (const Boundary* best = bestRoot(finder, 0)) {
                 newLoops = best->loops;

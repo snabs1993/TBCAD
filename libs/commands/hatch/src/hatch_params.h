@@ -7,10 +7,12 @@
 #include <cstdio>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "tbcad/cmd/host.h"
 #include "tbcad/core/math.h"
 #include "tbcad/hatch/boundary.h"
+#include "tbcad/hatch/hatch.h"
 #include "tbcad/hatch/pattern.h"
 #include "tbcad/hatchcmd/hatchcmd.h"
 
@@ -26,7 +28,36 @@ struct Params {
     hatch::IslandStyle island = hatch::IslandStyle::Normal;
     bool associative = true;  // the hatch follows its boundary objects
     GradientData gradient{};  // used by GRADIENT
+    bool separate = false;    // one hatch per picked area
+    enum class Order { None, Back, Front, Behind, InFront };
+    Order order = Order::Behind;
+    bool annotative = false;
+    bool doubled = false;
+    std::int8_t transparency = kTransparencyByLayer;
 };
+
+inline const char* orderWord(Params::Order o) {
+    switch (o) {
+        case Params::Order::None:
+            return "none";
+        case Params::Order::Back:
+            return "back";
+        case Params::Order::Front:
+            return "front";
+        case Params::Order::InFront:
+            return "infront";
+        default:
+            return "behind";
+    }
+}
+
+inline Params::Order orderFromWord(const std::string& w) {
+    for (auto o : {Params::Order::None, Params::Order::Back, Params::Order::Front,
+                   Params::Order::Behind, Params::Order::InFront})
+        if (w == orderWord(o))
+            return o;
+    return Params::Order::Behind;
+}
 
 inline std::string number(double v) {
     char buf[40];
@@ -80,6 +111,29 @@ inline std::string colorText(const Color& c) {
     return std::to_string(c.r) + "," + std::to_string(c.g) + "," + std::to_string(c.b);
 }
 
+// The gradient kinds as command keywords, in GradientKind order (1..9).
+inline const std::vector<std::string> kGradientKeywords = {
+    "Linear",        "Cylinder",         "INVCylinder", "Spherical", "INVSpherical",
+    "Hemispherical", "INVHemispherical", "CUrved",      "INVCUrved"};
+
+inline const char* gradientKeyword(GradientKind k) {
+    const auto i = static_cast<std::size_t>(k);
+    return i >= 1 && i <= kGradientKeywords.size() ? kGradientKeywords[i - 1].c_str() : "Linear";
+}
+
+inline GradientKind gradientFromKeyword(const std::string& k) {
+    for (std::size_t i = 0; i < kGradientKeywords.size(); ++i)
+        if (kGradientKeywords[i] == k)
+            return static_cast<GradientKind>(i + 1);
+    return GradientKind::Linear;
+}
+
+inline std::string transparencyText(std::int8_t t) {
+    return t == kTransparencyByLayer   ? "ByLayer"
+           : t == kTransparencyByBlock ? "ByBlock"
+                                       : std::to_string(t);
+}
+
 inline Params loadParams(const cmd::IHost& host) {
     Params p;
     if (auto v = host.setting(kSettingPattern); v && hatch::PatternRegistry::find(*v))
@@ -107,7 +161,27 @@ inline Params loadParams(const cmd::IHost& host) {
     if (auto v = host.setting(kSettingAssociative))
         p.associative = *v != "0";
     if (auto v = host.setting(kSettingGradientKind))
-        p.gradient.kind = *v == "cylinder" ? GradientKind::Cylinder : GradientKind::Linear;
+        p.gradient.kind = hatch::gradientKindFromName(*v).value_or(GradientKind::Linear);
+    if (auto v = host.setting(kSettingGradientShift); v && parseNumber(*v, d) && d >= 0 && d <= 1)
+        p.gradient.shift = d;
+    if (auto v = host.setting(kSettingGradientTint); v && parseNumber(*v, d) && d >= 0 && d <= 1)
+        p.gradient.tint = d;
+    if (auto v = host.setting(kSettingGradientOneColor))
+        p.gradient.oneColor = *v == "1";
+    if (auto v = host.setting(kSettingSeparate))
+        p.separate = *v == "1";
+    if (auto v = host.setting(kSettingDrawOrder))
+        p.order = orderFromWord(*v);
+    if (auto v = host.setting(kSettingAnnotative))
+        p.annotative = *v == "1";
+    if (auto v = host.setting(kSettingDouble))
+        p.doubled = *v == "1";
+    if (auto v = host.setting(kSettingTransparency)) {
+        if (*v == "ByBlock")
+            p.transparency = kTransparencyByBlock;
+        else if (parseNumber(*v, d) && d >= 0 && d <= 90)
+            p.transparency = static_cast<std::int8_t>(d);
+    }
     if (auto v = host.setting(kSettingGradientColor1))
         if (auto c = parseColor(*v))
             p.gradient.color1 = *c;
@@ -128,8 +202,15 @@ inline void saveParams(cmd::IHost& host, const Params& p) {
                                     : p.island == hatch::IslandStyle::Ignore ? "ignore"
                                                                              : "normal");
     host.setSetting(kSettingAssociative, p.associative ? "1" : "0");
-    host.setSetting(kSettingGradientKind,
-                    p.gradient.kind == GradientKind::Cylinder ? "cylinder" : "linear");
+    host.setSetting(kSettingGradientKind, hatch::gradientName(p.gradient.kind));
+    host.setSetting(kSettingGradientShift, number(p.gradient.shift));
+    host.setSetting(kSettingGradientTint, number(p.gradient.tint));
+    host.setSetting(kSettingGradientOneColor, p.gradient.oneColor ? "1" : "0");
+    host.setSetting(kSettingSeparate, p.separate ? "1" : "0");
+    host.setSetting(kSettingDrawOrder, orderWord(p.order));
+    host.setSetting(kSettingAnnotative, p.annotative ? "1" : "0");
+    host.setSetting(kSettingDouble, p.doubled ? "1" : "0");
+    host.setSetting(kSettingTransparency, transparencyText(p.transparency));
     host.setSetting(kSettingGradientColor1, colorText(p.gradient.color1));
     host.setSetting(kSettingGradientColor2, colorText(p.gradient.color2));
 }
@@ -140,7 +221,8 @@ inline std::string summary(const Params& p) {
            (p.island == hatch::IslandStyle::Outer    ? ", islands: outer"
             : p.island == hatch::IslandStyle::Ignore ? ", islands: ignore"
                                                      : "") +
-           (p.associative ? "" : ", not linked");
+           (p.associative ? "" : ", not linked") + (p.separate ? ", separate" : "") +
+           (p.annotative ? ", annotative" : "") + (p.doubled ? ", double" : "");
 }
 
 }  // namespace tbcad::hatchcmd

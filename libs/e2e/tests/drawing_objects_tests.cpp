@@ -423,8 +423,13 @@ TEST_CASE("DXF round trip keeps the kind and the defining numbers of every drawi
             const Entity* a = nullptr;
             const Entity* b = nullptr;
             r.doc.forEachEntity([&](const Entity& e) { a = &e; });
-            d2.forEachEntity([&](const Entity& e) { b = &e; });
             REQUIRE(a);
+            // The import numbers objects in draw order (a hatch goes behind its boundary), so
+            // match by kind.
+            d2.forEachEntity([&](const Entity& e) {
+                if (kind(e) == kind(*a))
+                    b = &e;
+            });
             REQUIRE(b);
             if (kind(*a) != EntityKind::Ray)
                 CHECK(std::abs(geom::length(*a) - geom::length(*b)) <= 1e-5 * geom::length(*a));

@@ -91,7 +91,19 @@ void hatchDisplay(const Document& doc, const Entity& e, const geom::DisplayConte
     const Pattern* pattern = PatternRegistry::find(h->pattern);
     Pattern solidTone;
     solidTone.solid = true;
-    FillResult r = generateFill(*h, pattern ? *pattern : solidTone, opt);
+    // Annotative: the pattern scale is the size on paper; the model shows it at the annotation
+    // scale (1:50 draws the pattern 50 times larger).
+    HatchData annotated;
+    const HatchData* hd = h;
+    if (e.common.annotative && !h->solid) {
+        const double f = annotationFactor(doc.header(), e.common, ctx.annoScale);
+        if (f > 0 && std::isfinite(f) && f != 1) {
+            annotated = *h;
+            annotated.patternScale *= f;
+            hd = &annotated;
+        }
+    }
+    FillResult r = generateFill(*hd, pattern ? *pattern : solidTone, opt);
     // An unknown pattern name reads as a tone, not as an error on every redraw.
     bool tone = r.mode == FillResult::Mode::SolidTone || (!pattern && !h->solid);
     switch (r.mode) {

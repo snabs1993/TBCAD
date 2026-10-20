@@ -3,6 +3,7 @@
 #include <cmath>
 #include <map>
 
+#include "tbcad/hatch/hatch.h"
 #include "tbcad/hatch/pattern.h"
 #include "writer_impl.h"
 
@@ -323,6 +324,23 @@ void Writer::writeHatch(const Props& p, const HatchData& d, std::uint64_t owner)
     }
     o.d(47, 1);
     o.i(98, 0);
+    if (d.gradient) {
+        // Gradient fill (AutoCAD 2004 and later): kind, angle, shift and the two colours.
+        const GradientData& gr = *d.gradient;
+        o.i(450, 1);
+        o.i(451, 0);
+        o.i(452, gr.oneColor ? 1 : 0);
+        o.i(453, 2);
+        o.d(460, gr.angle);
+        o.d(461, gr.shift);
+        o.d(462, gr.tint);
+        for (const Color& c : {gr.color1, gr.color2}) {
+            const Color rgb = c.kind == ColorKind::Rgb ? c : hatch::tintedColor(c, 0.5);
+            o.d(463, &c == &gr.color1 ? 0 : 1);
+            o.i(421, (static_cast<long long>(rgb.r) << 16) | (rgb.g << 8) | rgb.b);
+        }
+        o.str(470, hatch::gradientName(gr.kind));
+    }
     count("HATCH");
 }
 

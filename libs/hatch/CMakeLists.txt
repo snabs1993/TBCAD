@@ -27,6 +27,7 @@ tbcad_add_library(hatch
     src/fill.cpp
     src/gradient.cpp
     src/pattern.cpp
+    src/trim.cpp
     "${_pattern_cpp}"
   DEPENDS tbcad::core tbcad::geom)
 

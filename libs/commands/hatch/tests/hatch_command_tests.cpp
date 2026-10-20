@@ -205,13 +205,24 @@ TEST_CASE("HATCH: several picks in one run, and the Undo option removes only the
     f.rect({40, 0}, {50, 10});
     auto r = f.host->run("HATCH", {"5,5", "25,5", "45,5", "U", ""});
     CHECK(r.finished);
-    CHECK(f.hatches().size() == 2);
+    // Separate is off: the areas of one run make one hatch, less the undone one.
+    REQUIRE(f.hatches().size() == 1);
+    CHECK(f.hatches()[0]->loops.size() == 2);
     CHECK(f.host->logContains("Last hatch removed"));
     // The whole run is one undo step.
     CHECK(f.host->undo());
     CHECK(f.hatches().empty());
     CHECK(f.host->redo());
-    CHECK(f.hatches().size() == 2);
+    CHECK(f.hatches().size() == 1);
+
+    // SEparate on: one hatch per area.
+    Fixture g;
+    g.rect({0, 0}, {10, 10});
+    g.rect({20, 0}, {30, 10});
+    g.rect({40, 0}, {50, 10});
+    g.host->run("HATCH", {"SE", "5,5", "25,5", "45,5", "U", ""});
+    CHECK(g.hatches().size() == 2);
+    CHECK(g.host->setting("hatch.separate").value() == "1");
 }
 
 TEST_CASE("HATCH: islands come along, nested rings alternate") {

@@ -7,6 +7,7 @@
 #include <optional>
 
 #include "importer.h"
+#include "tbcad/hatch/hatch.h"
 
 namespace tbcad::dxf::detail {
 
@@ -82,21 +83,18 @@ bool Importer::convHatch(const Record& r, const Frame& f, std::vector<Entity>& o
         } else {
             GradientData gd;
             gd.color1 = toColor(stops.front());
-            if (stops.size() >= 2) {
+            gd.oneColor = r.integer(452) == 1 || stops.size() < 2;
+            gd.tint = r.has(462) ? std::clamp(r.num(462), 0.0, 1.0) : 1.0;
+            gd.shift = r.has(461) && std::isfinite(r.num(461)) ? std::clamp(r.num(461), 0.0, 1.0)
+                                                                : 0.0;
+            if (stops.size() >= 2 && !gd.oneColor) {
                 gd.color2 = toColor(stops[1]);
             } else {
-                // One colour: it fades towards white by the tint.
-                const double tint = r.has(462) ? std::clamp(r.num(462), 0.0, 1.0) : 1.0;
-                const std::uint32_t v = stops.front();
-                auto mix = [&](int shift) {
-                    const double c = static_cast<double>((v >> shift) & 0xFF);
-                    return static_cast<std::uint8_t>(std::lround(255.0 - (255.0 - c) * tint));
-                };
-                gd.color2 = Color::rgb(mix(16), mix(8), mix(0));
+                // One colour: the second is the first at the tint's lightness (GFCLRLUM).
+                gd.color2 = hatch::tintedColor(gd.color1, gd.tint);
             }
-            const std::string gname = std::string(r.raw(470));
-            gd.kind = gname.find("CYLINDER") != std::string::npos ? GradientKind::Cylinder
-                                                                  : GradientKind::Linear;
+            gd.kind = hatch::gradientKindFromName(std::string(r.raw(470)))
+                          .value_or(GradientKind::Linear);
             gd.angle = f.angle(r.num(460));
             gradient = gd;
         }
