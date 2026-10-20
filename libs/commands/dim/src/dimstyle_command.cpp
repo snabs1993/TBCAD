@@ -92,7 +92,8 @@ const std::vector<std::string> kProps = {
     "DecimalMark",    "BaselineSpacing", "CenterMark",    "TextFill",    "TextFillColor",
     "TextFrame",      "LengthFormat",    "TolHeight",     "TextVertPos", "FixedExt",
     "FixedExtLength", "LeaderArrow",     "LineWeight",    "ExtWeight",   "Linetype",
-    "ExtLinetype1",   "ExtLinetype2",    "AngleZeros",    "TolZeros",    "AltZeros"};
+    "ExtLinetype1",   "ExtLinetype2",    "AngleZeros",    "TolZeros",    "AltZeros",
+    "AltRoundOff",    "TolJustify"};
 
 // DIMAZIN / DIMTZIN / DIMALTZ as text.
 const char* const kZeros[] = {"Show", "Leading", "Trailing", "Both"};
@@ -213,6 +214,10 @@ std::vector<std::pair<std::string, std::string>> describe(const Document& doc, c
         {"AngleZeros", zerosText(s.angularZeros)},
         {"TolZeros", zerosText(s.tolZeros)},
         {"AltZeros", zerosText(s.altZeros)},
+        {"AltRoundOff", num(s.altRoundOff)},
+        {"TolJustify", s.tolJustify == 0   ? "Bottom"
+                       : s.tolJustify == 2 ? "Top"
+                                           : "Middle"},
     };
 }
 
@@ -260,6 +265,19 @@ std::string applyProperty(const Document& doc, DimStyle& s, std::string_view key
         return real(s.dimLineExtension, false);
     if (same(key, "RoundOff"))
         return real(s.roundOff, false);
+    if (same(key, "AltRoundOff"))
+        return real(s.altRoundOff, false);
+    if (same(key, "TolJustify")) {
+        if (same(value, "Bottom"))
+            s.tolJustify = 0;
+        else if (same(value, "Middle"))
+            s.tolJustify = 1;
+        else if (same(value, "Top"))
+            s.tolJustify = 2;
+        else
+            return "Answer Bottom, Middle or Top.";
+        return {};
+    }
     if (same(key, "Scale"))
         return real(s.overallScale, true);
     if (same(key, "Precision")) {

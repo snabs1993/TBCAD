@@ -636,6 +636,9 @@ Result<void> checkRow(const Document& doc, DimStyle& r, const DimStyle* old) {
     r.textVertPos = std::clamp(r.textVertPos, -100.0, 100.0);
     r.textJustify = std::clamp(r.textJustify, 0, 2);
     r.angularPrecision = std::clamp(r.angularPrecision, -1, 8);
+    if (!std::isfinite(r.altRoundOff) || r.altRoundOff < 0)
+        return invalid("alternate round-off must not be negative");
+    r.tolJustify = std::clamp(r.tolJustify, 0, 2);
     for (int* z : {&r.angularZeros, &r.tolZeros, &r.altZeros})
         *z = std::clamp(*z, -1, 3);
     r.textFill = std::clamp(r.textFill, 0, 2);

@@ -527,6 +527,8 @@ private:
             LineWeight lwd = LineWeight::byBlock(), lwe = LineWeight::byBlock();
             std::string lts[3];
             int zeros[3] = {-1, -1, -1};
+            double altRnd = 0;
+            int tolj = 1;
             for (std::size_t k = 0; k < values; ++k) {
                 const std::uint64_t tag = r.varint();
                 const double v = r.f64();
@@ -550,6 +552,14 @@ private:
                     if (v < 0 || v > 3 || v != std::floor(v))
                         bad("invalid dimension zero suppression");
                     zeros[tag - 8] = static_cast<int>(v);
+                } else if (tag == 11) {
+                    if (v < 0)
+                        bad("invalid alternate round-off");
+                    altRnd = v;
+                } else if (tag == 12) {
+                    if (v < 0 || v > 2 || v != std::floor(v))
+                        bad("invalid tolerance justification");
+                    tolj = static_cast<int>(v);
                 }
             }
             if (!doc_->dimStyle(id))
@@ -566,6 +576,8 @@ private:
                                         d.angularZeros = zeros[0];
                                         d.tolZeros = zeros[1];
                                         d.altZeros = zeros[2];
+                                        d.altRoundOff = altRnd;
+                                        d.tolJustify = tolj;
                                     }),
                   "dimension style");
         }
