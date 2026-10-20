@@ -578,6 +578,72 @@ TEST_CASE("DIMBREAK breaks angular arcs, and at other dimensions and text") {
     CHECK(std::max(textGap.a.x, textGap.b.x) > 170);
 }
 
+// As AutoCAD: automatic gaps follow the dimension and the objects that break it; gaps placed by
+// hand stay where they are.
+TEST_CASE("DIMBREAK Auto gaps follow the objects and the dimension, Manual gaps stay") {
+    Chain f;
+    REQUIRE(f.host->run("DIMLINEAR", {"0,0", "100,0", "50,-30"}).finished);
+    EntityId dimId{}, cutter{};
+    f.doc.forEachEntity([&](const Entity& e) { dimId = e.common.id; });
+    {
+        auto tx = f.doc.begin("cutter");
+        Entity cut;
+        cut.data = LineData{{40, -50}, {40, 10}};
+        cutter = tx.add(std::move(cut)).value();
+        tx.commit();
+    }
+    auto dim = [&] { return entityAs<DimensionData>(*f.doc.find(dimId)); };
+    auto gapAt = [&](std::size_t i) {
+        const DimBreak& b = dim()->breaks.at(i);
+        return Vec2{(b.a.x + b.b.x) / 2, (b.a.y + b.b.y) / 2};
+    };
+    auto edit = [&](EntityId id, auto fn) {
+        auto tx = f.doc.begin("edit");
+        REQUIRE(tx.modify(id, fn));
+        tx.commit();
+    };
+    REQUIRE(f.host
+                ->run("DIMBREAK", {ScriptItem::select({dimId}), ScriptItem::enter(), "Auto",
+                                   ScriptItem::enter()})
+                .finished);
+    REQUIRE(dim()->breaks.size() == 1);
+    CHECK(dim()->autoBreaks == 1);
+    REQUIRE(dim()->breakWith.size() == 1);
+    CHECK(dim()->breakWith[0] == cutter);
+
+    // The line moves: its gap goes with it.
+    edit(cutter, [](Entity& e) { e.data = LineData{{60, -50}, {60, 10}}; });
+    REQUIRE(dim()->breaks.size() == 1);
+    CHECK(gapAt(0).x == doctest::Approx(60));
+
+    // A gap by hand, then the line moves again: only the automatic gap follows.
+    REQUIRE(f.host
+                ->run("DIMBREAK", {ScriptItem::select({dimId}), ScriptItem::enter(), "Manual",
+                                   "80,-30", "85,-30"})
+                .finished);
+    edit(cutter, [](Entity& e) { e.data = LineData{{20, -50}, {20, 10}}; });
+    REQUIRE(dim()->breaks.size() == 2);
+    CHECK(gapAt(0).x == doctest::Approx(20));
+    CHECK(gapAt(1).x == doctest::Approx(82.5));
+
+    // The dimension line moves: the automatic gap is found again on it.
+    edit(dimId, [](Entity& e) { entityAs<DimensionData>(e)->defPts[2].y = -40; });
+    CHECK(gapAt(0).y == doctest::Approx(-40));
+    CHECK(gapAt(0).x == doctest::Approx(20));
+    REQUIRE(dim()->breaks.size() == 2);
+    CHECK(gapAt(1).y == doctest::Approx(-30));  // the gap by hand stays where it was put
+
+    // The line is erased: its gap goes; the one by hand stays.
+    {
+        auto tx = f.doc.begin("erase");
+        REQUIRE(tx.erase(cutter));
+        tx.commit();
+    }
+    REQUIRE(dim()->breaks.size() == 1);
+    CHECK(gapAt(0).x == doctest::Approx(82.5));
+    CHECK(dim()->breakWith.empty());
+}
+
 TEST_CASE("DIMBREAK Manual opens a gap between two picked points on one line") {
     Chain f;
     REQUIRE(f.host->run("DIMLINEAR", {"0,0", "100,0", "50,-30"}).finished);

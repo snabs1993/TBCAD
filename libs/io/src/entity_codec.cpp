@@ -376,6 +376,13 @@ struct PayloadWriter {
             w.u8(5);
             w.u8(static_cast<std::uint8_t>((d.flipArrow1 ? 1 : 0) | (d.flipArrow2 ? 2 : 0)));
         }
+        if (!d.breakWith.empty()) {  // tag 6: the objects of automatic DIMBREAK gaps
+            w.u8(6);
+            w.varint(d.autoBreaks);
+            w.varint(d.breakWith.size());
+            for (EntityId id : d.breakWith)
+                w.varint(id.value);
+        }
     }
     void operator()(const LeaderData& d) {
         points(d.vertices);
@@ -883,6 +890,14 @@ struct PayloadReader {
                             d.jogs.push_back(r.vec2());
                         continue;
                     }
+                    if (tag == 6) {
+                        d.autoBreaks = static_cast<std::uint32_t>(r.varint());
+                        const std::size_t n = r.count(1);
+                        d.breakWith.reserve(n);
+                        for (std::size_t i = 0; i < n; ++i)
+                            d.breakWith.push_back(id<EntityId>());
+                        continue;
+                    }
                     if (tag == 5) {
                         const std::uint8_t flips = r.u8();
                         d.flipArrow1 = (flips & 1) != 0;
@@ -914,6 +929,8 @@ struct PayloadReader {
                         d.breaks.push_back(b);
                     }
                 }
+                if (d.autoBreaks > d.breaks.size())
+                    bad("invalid dimension break count");
                 return make(std::move(d));
             }
             case EntityKind::Leader: {
