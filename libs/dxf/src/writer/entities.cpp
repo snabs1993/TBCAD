@@ -330,6 +330,9 @@ void Writer::reserveNamedHandles() {
         } else if (const auto* l = entityAs<LeaderData>(e)) {
             for (EntityId id : l->breakWith)
                 reserve(id);
+        } else if (const auto* h = entityAs<HatchData>(e)) {
+            for (EntityId id : h->sourceBoundary)
+                reserve(id);
         }
     });
 }
@@ -766,6 +769,13 @@ void Writer::writeAnnotativeData(const Entity& e) {
     writeTbcadFlags(e);
     if (const auto* d = entityAs<DimensionData>(e))
         writeDimExtras(d->breaks, d->breakWith, d->autoBreaks, d);
+    else if (const auto* h = entityAs<HatchData>(e); h && hatchNamesSources(*h)) {
+        // The objects the hatch was made from, by handle.
+        L().o->raw(1001, "TBCAD_DIM");
+        for (EntityId id : h->sourceBoundary)
+            if (doc_.find(id))
+                L().o->raw(1000, "src=" + handleRef(id));
+    }
     writeExtXdata(e.common);
 }
 

@@ -3050,12 +3050,12 @@ Result<ImportResult> Importer::run() {
     }
     // A dimension's or leader's TBCAD_DIM note (see Writer::writeDimExtras): DIMBREAK gaps and
     // the objects that make them, jogs, flipped arrows and associative points, the objects named
-    // by their handles in this file.
+    // by their handles in this file. A hatch's note names the objects it was made from.
     {
         const auto isNote = [](const XdataApp& a) { return a.app == "TBCAD_DIM"; };
         std::vector<EntityId> noted;
         doc_->forEachEntity([&](const Entity& e) {
-            if (!entityAs<DimensionData>(e) && !entityAs<LeaderData>(e))
+            if (!entityAs<DimensionData>(e) && !entityAs<LeaderData>(e) && !entityAs<HatchData>(e))
                 return;
             for (const XdataApp& a : e.common.ext.get().xdata)
                 if (isNote(a)) {
@@ -3102,6 +3102,7 @@ Result<ImportResult> Importer::run() {
                     bool flip1 = false, flip2 = false;
                     std::array<DimAssoc, 4> assoc{};
                     std::optional<Vec2> textPos;
+                    std::vector<EntityId> sources;
                     for (const XdataApp& a : x.xdata) {
                         if (!isNote(a))
                             continue;
@@ -3121,6 +3122,9 @@ Result<ImportResult> Importer::run() {
                                 withWhole = withWhole && w;
                                 if (w)
                                     with.push_back(w);
+                            } else if (t.rfind("src=", 0) == 0) {
+                                if (const EntityId on = target(t.substr(4)))
+                                    sources.push_back(on);
                             } else if (t.rfind("tp=", 0) == 0) {
                                 if (auto v = numbers(t.substr(3), 2); !v.empty())
                                     textPos = Vec2{v[0], v[1]} * k_;
@@ -3173,6 +3177,8 @@ Result<ImportResult> Importer::run() {
                         l->autoBreaks = autoBreaks;
                         if (textPos && l->utf8.empty())
                             l->textPos = *textPos;
+                    } else if (auto* h = entityAs<HatchData>(e)) {
+                        h->sourceBoundary = std::move(sources);
                     }
                 });
             }

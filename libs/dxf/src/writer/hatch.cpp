@@ -323,6 +323,29 @@ void Writer::writeHatch(const Props& p, const HatchData& d, std::uint64_t owner)
     }
     o.d(47, 1);
     o.i(98, 0);
+    if (d.gradient) {
+        // Two colours, each as its index (when it has one) and as RGB.
+        const GradientData& gd = *d.gradient;
+        o.i(450, 1);
+        o.i(451, 0);
+        o.i(452, 0);
+        o.i(453, 2);
+        double at = 0;
+        for (const Color& c : {gd.color1, gd.color2}) {
+            Rgba v{c.r, c.g, c.b};
+            o.d(463, at);
+            if (c.kind == ColorKind::Index) {
+                v = paletteColor(c.r);
+                o.i(63, c.r);
+            }
+            o.i(421, (static_cast<long long>(v.r) << 16) | (v.g << 8) | v.b);
+            at = 1;
+        }
+        o.d(460, gd.angle);
+        o.d(461, 0);
+        o.d(462, 1);
+        o.str(470, gd.kind == GradientKind::Cylinder ? "CYLINDER" : "LINEAR");
+    }
     count("HATCH");
 }
 
