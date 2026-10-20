@@ -457,6 +457,21 @@ public:
     }
 };
 
+// CUI: the Customize page of Settings (Quick Access toolbar, right-click menu, double-click
+// actions); command aliases and key bindings have their own pages next to it.
+class CuiCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "CUI"; }
+    std::vector<std::string> defaultAliases() const override { return {"TOOLBAR", "QUICKCUI"}; }
+    std::string_view description() const override {
+        return "Customize the Quick Access toolbar, right-click menu and double-click actions";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().requestUi("settings:Customize");
+        co_return;
+    }
+};
+
 // TEXTSCR: the whole command history in a window (F2, as in AutoCAD).
 class TextScrCommand final : public cmd::Command {
 public:
@@ -961,6 +976,10 @@ void registerAppCommands(cmd::Registry& registry) {
         "With selection cycling on (SELCYC): 0 = off, 1 = click again for the next object under "
         "the cursor, 2 = a list of the overlapping objects to pick from"));
     (void)registry.add(std::make_unique<PickVarCommand>(
+        "DBLCLKEDIT", "selection.dblclkedit", 1, 1,
+        "1 = a double click edits the object (the action is set per type in Settings > "
+        "Customize), 0 = it only selects"));
+    (void)registry.add(std::make_unique<PickVarCommand>(
         "PICKFIRST", "selection.pickfirst", 1, 1,
         "1 = commands use the objects selected before them, 0 = they always ask"));
     (void)registry.add(std::make_unique<SpaceCommand>(
@@ -973,6 +992,7 @@ void registerAppCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<NavBarCommand>());
     (void)registry.add(std::make_unique<DevGenCommand>());
     (void)registry.add(std::make_unique<SettingsCommand>());
+    (void)registry.add(std::make_unique<CuiCommand>());
     (void)registry.add(std::make_unique<TextScrCommand>());
     (void)registry.add(std::make_unique<SettingsPageCommand>());
     (void)registry.add(std::make_unique<DraftingSettingsCommand>());

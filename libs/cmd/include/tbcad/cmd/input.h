@@ -142,6 +142,9 @@ struct SelectionOptions {
 struct EntityOptions {
     std::vector<std::string> keywords{};
     EntityFilterFn filter{};
+    // One object selected beforehand that passes the filter answers the prompt (PICKFIRST), as a
+    // double click on it does for PEDIT or SPLINEDIT. The pick point is then unknown (0,0).
+    bool allowPreselection = false;
 };
 
 // What the host (or ScriptHost) feeds to the CommandRunner.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <map>
 #include <optional>
 #include <string>
 
@@ -47,6 +48,8 @@ private:
     void keybindings(ui::AppCore& core);
     void captureKey(ui::AppCore& core);
     void keyProfile(ui::AppCore& core);
+    void customize(ui::AppCore& core);
+    void commandList(ui::AppCore& core, const char* key);
 
     Hooks hooks_;
     bool wantOpen_ = false;
@@ -60,6 +63,8 @@ private:
     std::string aliasError_{};
     std::string pgpPath_{};
     std::string pgpMessage_{};
+    std::map<std::string, std::string> listDraft_{};  // Customize: the command being added, by list
+    std::string listMessage_{};
     // Keybindings page.
     std::string keyFilter_{};
     std::string capturing_{};  // action being rebound; empty = none
