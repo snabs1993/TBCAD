@@ -21,7 +21,7 @@ using namespace tbcad::guitest;
 namespace {
 
 constexpr double kPanelBudgetMs = 1.0;  // median extra time per frame for one open panel
-constexpr double kShellBudgetMs = 8.0;  // the window without panels: menus, ribbon, tabs, status
+[[maybe_unused]] constexpr double kShellBudgetMs = 8.0;  // the window without panels: menus, ribbon, tabs, status
 
 void bigDrawing(Harness& h) {
     ui::AppCore& core = h.core();
