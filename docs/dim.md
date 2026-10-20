@@ -101,6 +101,10 @@ DIMALTRND (`altRoundOff`, DIMSTYLE key `AltRoundOff`) rounds the alternate value
 itself, in the alternate unit. DIMTOLJ (`tolJustify`, key `TolJustify`: Bottom, Middle or Top)
 says where the measurement sits against a stacked tolerance (the MTEXT `\A` code).
 
+With DIMSAH, DIMBLK1 and DIMBLK2 may differ: `arrowType` is then the first arrow and `arrowType2`
+(DIMSTYLE key `ArrowType2`, Same by default) the one at the second extension line (for angular and
+arc length dimensions the second side, for a diameter the far end of the line).
+
 Tick marks (`ArrowType::ArchTick`, DXF `_ARCHTICK` or `_OBLIQUE`, or a DIMTSZ above 0, which
 sets the arrow size to DIMTSZ) are drawn as AutoCAD's block: a stroke at 45 degrees from
 (-a/2,-a/2) to (a/2,a/2) round the tip, so `a·√2` long.

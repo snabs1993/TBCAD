@@ -74,12 +74,13 @@ void addSeg(Layout& L, Vec2 a, Vec2 b, Role role, double tol, std::uint8_t ext =
         L.lines.push_back({{a, b}, role, ext});
 }
 
-// Arrow whose tip is at `tip`; `body` is the unit vector from the tip towards the tail.
-void addArrow(Layout& L, const Ctx& c, Vec2 tip, Vec2 body) {
+// Arrow whose tip is at `tip`; `body` is the unit vector from the tip towards the tail. `end` 2
+// is the second arrow, which DIMBLK2 may make a different kind.
+void addArrow(Layout& L, const Ctx& c, Vec2 tip, Vec2 body, int end = 1) {
     const double a = c.arrow;
     if (!(a > 0))
         return;
-    switch (c.st.arrowType) {
+    switch (end == 2 && c.st.arrowType2 ? *c.st.arrowType2 : c.st.arrowType) {
         case ArrowType::ClosedFilled: {
             Vec2 tail = tip + body * a;
             Vec2 w = perp(body) * (a / 6);
@@ -373,12 +374,12 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
     const bool flipB = swap ? d.flipArrow1 : d.flipArrow2;
     if (!noArrows) {
         if (!hideA) {
-            addArrow(L, c, A, arrowsIn != flipA ? uu : -uu);
+            addArrow(L, c, A, arrowsIn != flipA ? uu : -uu, swap ? 2 : 1);
             if (arrowsIn && flipA && lineStart > -stub)
                 addSeg(L, A - uu * stub, A + uu * std::min(lineStart, 0.0), Role::DimLine, c.tol);
         }
         if (!hideB) {
-            addArrow(L, c, B, arrowsIn != flipB ? -uu : uu);
+            addArrow(L, c, B, arrowsIn != flipB ? -uu : uu, swap ? 1 : 2);
             if (arrowsIn && flipB && lineEnd < len + stub)
                 addSeg(L, A + uu * std::max(lineEnd, len), B + uu * stub, Role::DimLine, c.tol);
         }
@@ -451,7 +452,7 @@ void layoutRadial(const Ctx& c, const DimensionData& d, const std::string& txt, 
     }
     // Flip Arrow turns an arrowhead the other way.
     const bool flipB = dia ? d.flipArrow2 : d.flipArrow1;
-    addArrow(L, c, B, flipB ? dir : -dir);
+    addArrow(L, c, B, flipB ? dir : -dir, dia ? 2 : 1);
     if (dia)
         addArrow(L, c, A, d.flipArrow1 ? -dir : dir);
     // DIMCEN: a cross at the centre; a negative size also lets the axes run through the circle.
@@ -562,7 +563,7 @@ void layoutAngular(const Ctx& c, const DimensionData& d, const std::string& txt,
     Vec2 t1 = V + unit(a1) * r, t2 = V + unit(a2) * r;
     Vec2 tan1 = perp(unit(a1)), tan2 = -perp(unit(a2));  // pointing into the sector
     addArrow(L, c, t1, arrowsIn ? tan1 : -tan1);
-    addArrow(L, c, t2, arrowsIn ? tan2 : -tan2);
+    addArrow(L, c, t2, arrowsIn ? tan2 : -tan2, 2);
     if (!txt.empty())
         L.text = {txt, center, rotText, c.th, false, false, tw};
 }
@@ -622,7 +623,7 @@ void layoutArcLength(const Ctx& c, const DimensionData& d, const std::string& tx
     Vec2 t1 = V + unit(a1) * r, t2 = V + unit(a2) * r;
     Vec2 tan1 = perp(unit(a1)), tan2 = -perp(unit(a2));  // pointing into the sector
     addArrow(L, c, t1, arrowsIn ? tan1 : -tan1);
-    addArrow(L, c, t2, arrowsIn ? tan2 : -tan2);
+    addArrow(L, c, t2, arrowsIn ? tan2 : -tan2, 2);
     if (!txt.empty())
         L.text = {txt, center, rotText, c.th, false, false, tw};
 }

@@ -1445,6 +1445,34 @@ TEST_CASE("dimension style: DIMSAH takes the separate arrows, also as an overrid
     CHECK(l.doc().dimStyle(dims[1]->style)->arrowType == ArrowType::Dot);
 }
 
+TEST_CASE("dimension style: DIMSAH with a different DIMBLK2 gives the second arrow") {
+    Pairs p;
+    p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE");
+    p.g(0, "DIMSTYLE").g(2, "Two").g(343, "_DOT").g(344, "_ARCHTICK").g(173, 1).g(140, 2.5);
+    p.g(41, 2.5);
+    p.g(0, "DIMSTYLE").g(2, "Same").g(343, "_DOT").g(344, "_DOT").g(173, 1).g(140, 2.5);
+    p.g(41, 2.5);
+    p.g(0, "ENDTAB").end();
+    p.section("ENTITIES");
+    // DIMSAH off by the dimension itself: both arrows are DIMBLK again (absent: DIMBLK1).
+    p.g(0, "DIMENSION").g(8, "0").g(3, "Two").g(10, 5.0).g(20, 5.0).g(70, 1);
+    p.g(13, 0.0).g(23, 0.0).g(14, 10.0).g(24, 0.0);
+    p.g(1001, "ACAD").g(1000, "DSTYLE").g(1002, "{").g(1070, 173).g(1070, 0).g(1002, "}");
+    p.end().g(0, "EOF");
+    Loaded l = load(p.text);
+    const DimStyle* two = l.doc().dimStyleByName("Two");
+    REQUIRE(two != nullptr);
+    CHECK(two->arrowType == ArrowType::Dot);
+    REQUIRE(two->arrowType2.has_value());
+    CHECK(*two->arrowType2 == ArrowType::ArchTick);
+    CHECK_FALSE(l.doc().dimStyleByName("Same")->arrowType2.has_value());
+    auto dims = modelEntities<DimensionData>(l.doc());
+    REQUIRE(dims.size() == 1);
+    const DimStyle* ds = l.doc().dimStyle(dims[0]->style);
+    CHECK(ds->arrowType == ArrowType::Dot);
+    CHECK_FALSE(ds->arrowType2.has_value());
+}
+
 TEST_CASE("dimension style: a text style with a fixed height decides the text height") {
     Pairs p;
     p.section("TABLES").g(0, "TABLE").g(2, "STYLE");

@@ -535,6 +535,8 @@ std::string canonicalDump(const Document& doc) {
             o << " lw" << r.dimLineWeight.v << "/" << r.extLineWeight.v;
         if (r.leaderArrow != ArrowType::ClosedFilled)
             o << " ldrarrow" << static_cast<int>(r.leaderArrow);
+        if (r.arrowType2)
+            o << " arrow2:" << static_cast<int>(*r.arrowType2);
         if (r.altRoundOff != 0 || r.tolJustify != 1)
             o << " altrnd" << r.altRoundOff << " tolj" << r.tolJustify;
         if (r.angularZeros >= 0 || r.tolZeros >= 0 || r.altZeros >= 0)
