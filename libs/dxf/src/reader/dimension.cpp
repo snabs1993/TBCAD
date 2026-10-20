@@ -98,7 +98,8 @@ double leadingHeightFactor(std::string_view t) {
 DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
     std::optional<double> txt, asz, scale, gap, exo, exe, dle, tp, tm;
     std::optional<std::int64_t> tolOn, limOn, altOn;
-    std::map<int, double> extra;  // the other overridable variables, by variable number
+    std::map<int, double> extra;         // the other overridable variables, by variable number
+    std::map<int, std::string> handles;  // DIMBLK, DIMBLK1, DIMBLK2: block record handles
     bool inDstyle = false, inAcad = false;
     int var = -1;
     for (const Group& g : r.g) {
@@ -118,6 +119,12 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
             continue;
         if (g.code == 1070 && var < 0) {
             var = static_cast<int>(g.integer());
+            continue;
+        }
+        if (g.code == 1005 && var >= 0) {
+            if (var == 342 || var == 343 || var == 344)
+                handles[var] = std::string(g.str());
+            var = -1;
             continue;
         }
         if (g.code == 1040 || g.code == 1070 || g.code == 1071) {
@@ -170,7 +177,7 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
     }
     const double factor = leadingHeightFactor(dec(r.raw(1)));
     if (!txt && !asz && !scale && !gap && !exo && !exe && !dle && !tp && !tm && !tolOn && !limOn &&
-        !altOn && extra.empty() && factor == 1)
+        !altOn && extra.empty() && handles.empty() && factor == 1)
         return base;
     const DimStyle* b = base ? doc_->dimStyle(base) : nullptr;
     DimStyle ds = b ? *b : DimStyle{};
@@ -204,8 +211,24 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
         ds.tolerance = DimTolerance::None;
     if (altOn)
         ds.altUnits = *altOn != 0;
-    // The other variables an override can carry (number format, text rules, colours, spacing).
+    // Arrow blocks named by handle (DIMBLK, DIMBLK1, DIMBLK2), with DIMSAH as overridden or as
+    // the style has it. DIMTSZ, below, still turns the arrows into ticks.
     std::string extraKey;
+    if (!handles.empty()) {
+        const auto a = dimArrows_.find(ds.name);
+        ArrowType blk = a != dimArrows_.end() ? a->second.first : ArrowType::ClosedFilled;
+        ArrowType blk1 = a != dimArrows_.end() ? a->second.second : ArrowType::ClosedFilled;
+        const auto sahOv = extra.find(173);
+        const bool sah =
+            sahOv != extra.end() ? sahOv->second != 0 : (ds.arrowType == blk1 && blk1 != blk);
+        if (const auto h = handles.find(342); h != handles.end())
+            blk = arrowKindOf(h->second, ArrowType::ClosedFilled);
+        if (const auto h = handles.find(343); h != handles.end())
+            blk1 = arrowKindOf(h->second, ArrowType::ClosedFilled);
+        ds.arrowType = sah ? blk1 : blk;
+        extraKey += "|arrow=" + std::to_string(static_cast<int>(ds.arrowType));
+    }
+    // The other variables an override can carry (number format, text rules, colours, spacing).
     for (const auto& [var, v] : extra) {
         const auto whole = static_cast<std::int64_t>(v);
         switch (var) {
@@ -273,6 +296,8 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
                 ds.textInsideForced = whole != 0;
                 break;
             case 173:  // DIMSAH: the separate arrows (DIMBLK1) instead of DIMBLK
+                if (!handles.empty())
+                    break;  // decided with the overridden blocks below
                 if (const auto a = dimArrows_.find(ds.name); a != dimArrows_.end())
                     ds.arrowType = whole != 0 ? a->second.second : a->second.first;
                 else if (whole != 0)

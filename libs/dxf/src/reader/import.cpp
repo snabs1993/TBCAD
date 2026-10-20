@@ -1145,12 +1145,17 @@ void Importer::processTables(RecordReader& rr) {
         else if (r.type == "STYLE")
             readStyle(r);
         else if (r.type == "DIMSTYLE")
-            readDimStyle(r);
+            pendingDimStyles_.push_back(r);
+        else if (r.type == "BLOCK_RECORD" && r.has(5) && r.has(2))
+            blockNameByHandle_[upperHandle(r.raw(5))] = dec(r.raw(2));
         else if (r.type == "APPID")
             readAppId(r);
         else if (r.type == "UCS")
             readUcs(r);
     }
+    for (const Record& d : pendingDimStyles_)
+        readDimStyle(d);
+    pendingDimStyles_.clear();
     createLayers();
     createLevels();
     // Text in a linetype names its style by handle; now the styles are known.
@@ -1515,6 +1520,25 @@ void Importer::readStyle(const Record& r) {
         styleRawWidth_[id.value().value] = rawWidth;
 }
 
+ArrowType Importer::arrowKindOf(std::string_view raw, ArrowType none) const {
+    std::string arrow(raw);
+    if (const auto b = blockNameByHandle_.find(upperHandle(raw)); b != blockNameByHandle_.end())
+        arrow = b->second;
+    else if (arrow == "0")  // a null handle: no block
+        arrow.clear();
+    for (char& c : arrow)
+        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    if (arrow == "_ARCHTICK" || arrow == "_OBLIQUE")
+        return ArrowType::ArchTick;
+    if (arrow == "_DOT" || arrow == "_DOTSMALL" || arrow == "_DOTBLANK")
+        return ArrowType::Dot;
+    if (arrow == "_OPEN30" || arrow == "_OPEN")
+        return ArrowType::Open30;
+    if (arrow == "_NONE")
+        return ArrowType::None;
+    return arrow.empty() ? none : ArrowType::ClosedFilled;
+}
+
 void Importer::readDimStyle(const Record& r) {
     std::string name = dec(r.raw(2));
     if (name.empty())
@@ -1664,23 +1688,11 @@ void Importer::readDimStyle(const Record& r) {
         if (fixed != styleHeights_.end() && ds.overallScale > 0)
             ds.textHeight = fixed->second / ds.overallScale;
     }
-    // DIMBLK: the name of a built-in arrow block (a file that stores a handle there matches none);
-    // with DIMSAH the arrows are DIMBLK1 and DIMBLK2 instead (no name: the closed filled arrow).
+    // DIMBLK: a built-in arrow block, by name or (as AutoCAD writes it) by the handle of its block
+    // record; with DIMSAH the arrows are DIMBLK1 and DIMBLK2 instead (none: the closed filled
+    // arrow).
     {
-        auto arrowOf = [&](int code, ArrowType none) {
-            std::string arrow = std::string(r.raw(code));
-            for (char& c : arrow)
-                c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-            if (arrow == "_ARCHTICK" || arrow == "_OBLIQUE")
-                return ArrowType::ArchTick;
-            if (arrow == "_DOT" || arrow == "_DOTSMALL" || arrow == "_DOTBLANK")
-                return ArrowType::Dot;
-            if (arrow == "_OPEN30" || arrow == "_OPEN")
-                return ArrowType::Open30;
-            if (arrow == "_NONE")
-                return ArrowType::None;
-            return arrow.empty() ? none : ArrowType::ClosedFilled;
-        };
+        auto arrowOf = [&](int code, ArrowType none) { return arrowKindOf(r.raw(code), none); };
         const ArrowType blk = arrowOf(342, arrowOf(343, ds.arrowType));
         const ArrowType blk1 = arrowOf(343, ArrowType::ClosedFilled);
         ds.arrowType = r.integer(173) != 0 ? blk1 : blk;
