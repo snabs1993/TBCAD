@@ -187,6 +187,47 @@ TEST_CASE("QDIM dimensions every key point in one chain") {
     CHECK(f.dims().empty());
 }
 
+// QDIM Edit removes key points by picking them and Adds new ones; seTtings Intersection also
+// dimensions where the selected objects cross, as in AutoCAD.
+TEST_CASE("QDIM Edit removes and adds points, seTtings Intersection adds the crossings") {
+    Chain f;
+    auto addLine = [&](Vec2 a, Vec2 b) {
+        Transaction tx = f.doc.begin("setup");
+        Entity e;
+        e.data = LineData{a, b};
+        EntityId id = tx.add(std::move(e)).value();
+        tx.commit();
+        return id;
+    };
+    EntityId l1 = addLine({0, 0}, {40, 0});
+    EntityId l2 = addLine({40, 0}, {100, 0});
+    auto r = f.host->run("QDIM", {ScriptItem::select({l1, l2}), ScriptItem::enter(), "Edit",
+                                  "40.5,0.5", "Add", "70,0", "eXit", "50,-20"});
+    CHECK(r.finished);
+    auto dims = f.dims();
+    REQUIRE(dims.size() == 2);
+    CHECK(dims[0]->measurement == doctest::Approx(70));
+    CHECK(dims[1]->measurement == doctest::Approx(30));
+
+    Chain g;
+    auto addLine2 = [&](Vec2 a, Vec2 b) {
+        Transaction tx = g.doc.begin("setup");
+        Entity e;
+        e.data = LineData{a, b};
+        EntityId id = tx.add(std::move(e)).value();
+        tx.commit();
+        return id;
+    };
+    EntityId a = addLine2({0, 0}, {100, 0});
+    EntityId b = addLine2({30, -10}, {60, 10});
+    r = g.host->run("QDIM", {ScriptItem::select({a, b}), ScriptItem::enter(), "seTtings",
+                             "Intersection", "50,-30"});
+    CHECK(r.finished);
+    dims = g.dims();
+    REQUIRE(dims.size() == 4);  // 0, 30, 45 (the crossing), 60, 100
+    CHECK(dims[1]->measurement == doctest::Approx(15));
+}
+
 TEST_CASE("QDIM Baseline measures from the first point and steps each line outwards") {
     Chain f;
     Transaction tx = f.doc.begin("setup");
