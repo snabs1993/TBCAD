@@ -163,7 +163,13 @@ void UndoStack::setLimitBytes(std::size_t limit) {
 }
 
 bool UndoStack::undo(Document& doc) {
-    if (undo_.empty() || groupDepth_ > 0)
+    // As in AutoCAD, undoing while an UNDO BEgin group is open closes it and undoes it whole
+    // (refusing left Ctrl+Z dead until UNDO End).
+    if (groupDepth_ > 0) {
+        groupDepth_ = 1;
+        (void)endGroup();
+    }
+    if (undo_.empty())
         return false;
     blocked_.clear();
     Entry e = std::move(undo_.back());

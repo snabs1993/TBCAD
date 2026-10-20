@@ -53,7 +53,7 @@ TEST_CASE("undo stack: groups collapse to one step") {
     st.beginGroup("inner");  // nested groups are fine
     st.push("b", {addLine(doc, 1)});
     CHECK(st.endGroup());
-    CHECK_FALSE(st.undo(doc));  // refused while the outer group is open
+    CHECK(st.inGroup());
     CHECK(st.endGroup());
     CHECK_FALSE(st.endGroup());
     CHECK(st.undoCount() == 1);
@@ -62,6 +62,22 @@ TEST_CASE("undo stack: groups collapse to one step") {
     CHECK(doc.entityCount() == 0);
     st.redo(doc);
     CHECK(doc.entityCount() == 2);
+}
+
+TEST_CASE("undo stack: undo while a group is open closes it and undoes it whole") {
+    Document doc;
+    UndoStack st;
+    st.push("before", {addLine(doc, 0)});
+    st.beginGroup("macro");
+    st.push("a", {addLine(doc, 1)});
+    st.beginGroup("inner");
+    st.push("b", {addLine(doc, 2)});
+    CHECK(st.undo(doc));  // (as AutoCAD's U after UNDO BEgin)
+    CHECK_FALSE(st.inGroup());
+    CHECK(doc.entityCount() == 1);
+    CHECK(st.undoLabel() == "before");
+    CHECK(st.redo(doc));
+    CHECK(doc.entityCount() == 3);
 }
 
 TEST_CASE("undo stack: memory bound drops the oldest steps and says so") {
