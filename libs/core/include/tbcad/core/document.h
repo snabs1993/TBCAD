@@ -567,12 +567,18 @@ public:
 
     // Finishes the transaction. Observers are notified once unless nothing changed.
     ChangeSet commit();
+    // Finishes it like commit() without recording the edits, for filling a document nobody
+    // observes yet (reading a file): there the change set is a copy of the whole drawing that is
+    // thrown away at once. The result holds only the name and outOfArea. With observers this is
+    // commit().
+    ChangeSet commitUnrecorded();
     // Undoes everything done so far and ends the transaction.
     void rollback();
 
 private:
     friend class Document;
     Transaction(Document* doc, std::string name);
+    std::vector<EntityId> stillOutOfArea();
 
     template <class Row, class IdT>
     struct Pending {
