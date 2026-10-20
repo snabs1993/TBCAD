@@ -1071,6 +1071,45 @@ Result<void> writeBack(const Document& host, BlockId block, const std::vector<En
     return io::writeTbcad(src, file);
 }
 
+namespace {
+
+// Styles that live in Header::custom under a prefix (see ContentKind).
+struct CustomStyleKind {
+    ContentKind kind;
+    std::string_view prefix;
+};
+constexpr CustomStyleKind kCustomStyles[] = {
+    {ContentKind::MLeaderStyle, "tbcad.mleaderstyle."},
+    {ContentKind::TableStyle, "tbcad.tablestyle.s:"},
+    {ContentKind::MLineStyle, "mlstyle."},
+};
+constexpr std::string_view kMLeaderDimPrefix = "MLEADER-";
+
+const CustomStyleKind* customKind(ContentKind kind) {
+    for (const CustomStyleKind& k : kCustomStyles)
+        if (k.kind == kind)
+            return &k;
+    return nullptr;
+}
+
+// The style name a custom key holds for kind `k`, or "" when the key is not one of its styles.
+std::string customStyleName(const CustomStyleKind& k, const std::string& key) {
+    if (key.size() <= k.prefix.size() || key.compare(0, k.prefix.size(), k.prefix) != 0)
+        return {};
+    return key.substr(k.prefix.size());
+}
+
+// The key of the style named `name` (any case) in `doc`, or "".
+std::string findCustomStyle(const Document& doc, const CustomStyleKind& k,
+                            const std::string& name) {
+    for (const auto& [key, value] : doc.header().custom)
+        if (const std::string n = customStyleName(k, key); !n.empty() && lower(n) == lower(name))
+            return key;
+    return {};
+}
+
+}  // namespace
+
 std::vector<ContentItem> listContent(const Document& src) {
     std::vector<ContentItem> out;
     auto sorted = [&](ContentKind kind, std::vector<std::string> names) {
@@ -1101,9 +1140,16 @@ std::vector<ContentItem> listContent(const Document& src) {
     sorted(ContentKind::TextStyle, std::move(names));
     names.clear();
     for (const auto& [id, ds] : src.dimStyles())
-        if (id != kDimStyleStandard)
+        if (id != kDimStyleStandard && ds.name.rfind(kMLeaderDimPrefix, 0) != 0)
             names.push_back(ds.name);
     sorted(ContentKind::DimStyle, std::move(names));
+    for (const CustomStyleKind& k : kCustomStyles) {
+        names.clear();
+        for (const auto& [key, value] : src.header().custom)
+            if (std::string n = customStyleName(k, key); !n.empty())
+                names.push_back(std::move(n));
+        sorted(k.kind, std::move(names));
+    }
     return out;
 }
 
@@ -1187,6 +1233,43 @@ Result<void> importContent(Transaction& tx, Document& doc, const Source& source,
                     (void)fill.importDimStyle(sds->id);
                     ++report.added;
                 }
+                break;
+            }
+            case ContentKind::MLeaderStyle:
+            case ContentKind::TableStyle:
+            case ContentKind::MLineStyle: {
+                const CustomStyleKind& k = *customKind(item.kind);
+                const std::string key = findCustomStyle(src, k, item.name);
+                if (key.empty()) {
+                    skip("not in the file");
+                    break;
+                }
+                if (!findCustomStyle(doc, k, item.name).empty()) {
+                    skip("already in the drawing");
+                    break;
+                }
+                const std::string value = src.header().custom.at(key);
+                if (item.kind == ContentKind::MLeaderStyle) {
+                    const std::string dim =
+                        std::string(kMLeaderDimPrefix) + customStyleName(k, key);
+                    if (const DimStyle* sds = src.dimStyleByName(dim))
+                        (void)fill.importDimStyle(sds->id);
+                } else if (item.kind == ContentKind::TableStyle) {
+                    // colWidth|rowHeight|textHeight|margin|textStyle[|...]
+                    std::vector<std::string> parts(1);
+                    for (char c : value) {
+                        if (c == '|')
+                            parts.emplace_back();
+                        else
+                            parts.back().push_back(c);
+                    }
+                    if (parts.size() > 4 && !parts[4].empty())
+                        if (const TextStyle* sts = src.textStyleByName(parts[4]))
+                            (void)fill.importTextStyle(sts->id);
+                }
+                if (auto r = tx.modifyHeader([&](Header& h) { h.custom[key] = value; }); !r)
+                    return r;
+                ++report.added;
                 break;
             }
         }

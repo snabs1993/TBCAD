@@ -3,7 +3,7 @@
 Tools > Content Browser (command `CONTENT`, aliases `ADC`, `ADCENTER`, `DC`, `DCENTER`, the
 DesignCenter names; `ADCCLOSE` closes it) opens a panel that looks inside other drawings
 and copies single items into the one you are working on: blocks, layers (with their sub-layers),
-linetypes, text styles and dimension styles.
+linetypes, text styles, dimension styles, multileader styles, table styles and multiline styles.
 
 1. Pick a folder with the path box (type a path and press Enter; double-click a folder to enter it).
    Drawings (`.tbcad`, `.dxf`, `.tbt`) are listed below. A drawing's full path typed in the box
@@ -14,7 +14,9 @@ linetypes, text styles and dimension styles.
    a block and starts `INSERT` with it.
 
 What comes along: a block brings the layers, linetypes and text styles its objects use, and the
-blocks it contains (named `content$<block>`). A dimension style brings its text style. Layers and
+blocks it contains (named `content$<block>`). A dimension style brings its text style, a
+multileader style the dimension style that holds its arrow and text settings, and a table style
+its text style. Layers and
 styles are matched by name; one the drawing already has is left alone and reported as skipped, so
 nothing is overwritten. A block whose name is taken is skipped. Each copy is one undo step.
 
@@ -26,6 +28,7 @@ nothing is overwritten. A block whose name is taken is skipped. Each copy is one
     Block
     door-single|door-double      (names separated by |, or * for all)
 
+The kinds are Block, Layer, Linetype, Textstyle, Dimstyle, Mleaderstyle, TAblestyle and MLStyle.
 Choose `List` instead of a kind to see what the file offers.
 
 ## Drag and drop

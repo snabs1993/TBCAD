@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <string>
+#include <utility>
 
 #include "commands.h"
 #include "tbcad/cmd/cmd.h"
@@ -56,14 +57,18 @@ std::string applyProperty(TextStyle& s, const std::string& key, const std::strin
             s.fontFamily = value;
         return {};
     }
-    if (same("Annotative")) {
+    for (auto [name, field] : {std::pair{"Annotative", &TextStyle::annotative},
+                               std::pair{"Backwards", &TextStyle::backward},
+                               std::pair{"UpsideDown", &TextStyle::upsideDown}}) {
+        if (!same(name))
+            continue;
         const std::string u = cmd::toUpperAscii(value);
         if (u == "1" || u == "YES" || u == "ON")
-            s.annotative = true;
+            s.*field = true;
         else if (u == "0" || u == "NO" || u == "OFF")
-            s.annotative = false;
+            s.*field = false;
         else
-            return "Annotative is Yes or No.";
+            return std::string(name) + " is Yes or No.";
         return {};
     }
     double v = 0;
@@ -87,7 +92,8 @@ std::string applyProperty(TextStyle& s, const std::string& key, const std::strin
         s.height = v;
         return {};
     }
-    return "Unknown property " + key + " (Font, Width, Oblique, Height, Annotative).";
+    return "Unknown property " + key +
+           " (Font, Width, Oblique, Height, Annotative, Backwards, UpsideDown).";
 }
 
 class StyleManagerCommand final : public cmd::Command {
@@ -175,7 +181,8 @@ public:
             } else if (k.keyword == "Edit") {
                 for (;;) {
                     cmd::KeywordOptions po;
-                    po.keywords = {"Font", "Width", "Oblique", "Height", "Done"};
+                    po.keywords = {"Font",       "Width",     "Oblique",    "Height",
+                                   "Annotative", "Backwards", "UpsideDown", "Done"};
                     po.defaultKeyword = "Done";
                     auto p = co_await ctx.getKeyword("Property of \"" + name + "\"", po);
                     if (!p.ok() || p.keyword == "Done")
@@ -206,8 +213,9 @@ public:
 
 class TextStylesPanelCommand final : public cmd::Command {
 public:
-    std::string_view name() const override { return "TEXTSTYLES"; }
-    std::string_view description() const override { return "Open the text style manager"; }
+    std::string_view name() const override { return "STYLE"; }
+    std::vector<std::string> defaultAliases() const override { return {"ST", "TEXTSTYLES"}; }
+    std::string_view description() const override { return "Open the Text Styles dialog"; }
     Task run(CommandContext& ctx) override {
         ctx.host().openPanel("textstyles");
         co_return;

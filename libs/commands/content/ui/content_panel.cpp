@@ -99,6 +99,12 @@ const char* kindName(xref::ContentKind k) {
             return "Textstyle";
         case xref::ContentKind::DimStyle:
             return "Dimstyle";
+        case xref::ContentKind::MLeaderStyle:
+            return "Mleaderstyle";
+        case xref::ContentKind::TableStyle:
+            return "Tablestyle";
+        case xref::ContentKind::MLineStyle:
+            return "MLStyle";
     }
     return "Block";
 }
@@ -254,12 +260,16 @@ void drawItems(ui::PanelContext& pc, State& st) {
     }
     ImGui::TextDisabled("%s", utf8(st.file.filename()).c_str());
     static const xref::ContentKind kinds[] = {
-        xref::ContentKind::Block, xref::ContentKind::Layer, xref::ContentKind::Linetype,
-        xref::ContentKind::TextStyle, xref::ContentKind::DimStyle};
-    static const char* titles[] = {"Blocks", "Layers", "Linetypes", "Text styles", "Dim styles"};
+        xref::ContentKind::Block,      xref::ContentKind::Layer,
+        xref::ContentKind::Linetype,   xref::ContentKind::TextStyle,
+        xref::ContentKind::DimStyle,   xref::ContentKind::MLeaderStyle,
+        xref::ContentKind::TableStyle, xref::ContentKind::MLineStyle};
+    static const char* titles[] = {"Blocks",       "Layers",          "Linetypes",
+                                   "Text styles",  "Dim styles",      "Multileader styles",
+                                   "Table styles", "Multiline styles"};
     if (!ImGui::BeginTabBar("##contentKinds"))
         return;
-    for (int k = 0; k < 5; ++k) {
+    for (int k = 0; k < 8; ++k) {
         if (!ImGui::BeginTabItem(titles[k]))
             continue;
         const xref::ContentKind kind = kinds[k];

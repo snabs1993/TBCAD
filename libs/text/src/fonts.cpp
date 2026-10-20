@@ -10,6 +10,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <tuple>
 #include <vector>
@@ -485,6 +486,28 @@ bool fontAvailable(const std::string& family, const std::string& file) {
     if (isStrokeFamily(family))
         return lib.loadBundledStroke().ok();
     return lib.findSystem(family, false, false).has_value();
+}
+
+bool fontHasThai(const std::string& family, const std::string& file) {
+    font::FontLibrary& lib = fonts();
+    if (endsWithNoCase(file, ".shx") || isStrokeFile(file) ||
+        (file.empty() && isStrokeFamily(family)))
+        return false;
+    std::optional<font::FontId> id;
+    if (!file.empty()) {
+        if (auto r = lib.load(std::filesystem::path(file)); r.ok())
+            id = r.value();
+    } else if (family.empty()) {
+        return true;  // the bundled Sarabun
+    } else {
+        id = lib.findSystem(family, false, false);
+    }
+    // KO KAI and SARA AA: a font that has both is taken as a Thai font.
+    return id && lib.hasGlyph(*id, U'\u0E01') && lib.hasGlyph(*id, U'\u0E32');
+}
+
+std::vector<std::string> installedFontFamilies() {
+    return font::FontLibrary::systemFamilies();
 }
 
 font::FontId fontForStyle(const TextStyle* style, bool bold, bool italic) {

@@ -167,7 +167,7 @@ public:
                 co_return;
             }
             const DimensionData prev = *base;
-            const DimStyle& st = dim::styleOf(ctx.doc(), prev.style);
+            const DimStyle& st = dim::drawStyleOf(ctx.doc(), prev);
             const double k = st.overallScale > 0 ? st.overallScale : 1.0;
             const double spacing =
                 st.baselineSpacing > 0 ? st.baselineSpacing * k : st.textHeight * 2.5 * k;
@@ -313,7 +313,7 @@ public:
             co_return;
         }
 
-        const DimStyle& st = dim::styleOf(ctx.doc(), baseDim.style);
+        const DimStyle& st = dim::drawStyleOf(ctx.doc(), baseDim);
         const double autoGap = 2.0 * st.textHeight * (st.overallScale > 0 ? st.overallScale : 1.0);
         cmd::DistanceOptions dopt;
         dopt.keywords = {"Auto"};
@@ -697,7 +697,7 @@ std::optional<Vec2> justifiedText(const Document& doc, const DimensionData& d,
         return std::nullopt;
     if (where == "Center")
         return lerp(line->a, line->b, 0.5);
-    const DimStyle& st = dim::styleOf(doc, d.style);
+    const DimStyle& st = dim::drawStyleOf(doc, d);
     const double k = st.overallScale > 0 ? st.overallScale : 1.0;
     const double edge =
         2 * st.arrowSize * k + st.textGap * k + dim::layoutDimension(doc, d).text.width / 2;

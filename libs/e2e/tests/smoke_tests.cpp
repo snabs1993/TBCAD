@@ -460,8 +460,8 @@ TEST_CASE("end to end: rays, xlines and multilines survive .tbcad and DXF round 
 
     REQUIRE(host.run("RAY", {"10,10", "50,10", ""}).finished);
     REQUIRE(host.run("XLINE", {"0,0", "100,100", ""}).finished);
-    REQUIRE(host.run("MLSTYLE", {"New", "WALL", "1 0 -1", "Both"}).finished);
-    REQUIRE(host.run("MLSTYLE", {"Current", "WALL"}).finished);
+    REQUIRE(host.run("-MLSTYLE", {"New", "WALL", "1 0 -1", "Both"}).finished);
+    REQUIRE(host.run("-MLSTYLE", {"Current", "WALL"}).finished);
     REQUIRE(host.run("MLINE", {"0,0", "200,0", "200,100", ""}).finished);
     CHECK(countKind(doc, EntityKind::Ray) == 2);
     CHECK(countKind(doc, EntityKind::MLine) == 1);

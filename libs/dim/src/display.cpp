@@ -10,9 +10,9 @@ namespace {
 
 const DimStyle& styleForEntity(const Document& doc, const Entity& e) {
     if (const auto* d = entityAs<DimensionData>(e))
-        return styleOf(doc, d->style);
+        return drawStyleOf(doc, *d);
     if (const auto* l = entityAs<LeaderData>(e))
-        return styleOf(doc, l->style);
+        return leaderStyleOf(doc, l->style);
     if (const auto* m = entityAs<MLeaderData>(e))
         return styleOf(doc, m->style);
     return styleOf(doc, {});

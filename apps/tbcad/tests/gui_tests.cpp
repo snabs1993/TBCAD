@@ -813,10 +813,11 @@ TEST_CASE("every panel survives a click on each of its widgets") {
         const char* id;
         const char* tab;
     };
-    for (const P& p :
-         {P{"textstyles", "Text Styles"}, P{"dimstyles", "Dimension Styles"}, P{"blocks", "Blocks"},
-          P{"hatch", "Hatch"}, P{"palettes", "Tool Palettes"}, P{"plotstyle", "Plot Styles"},
-          P{"laywalk", "Layer Walk"}, P{"text_editor", "Text"}}) {
+    for (const P& p : {P{"textstyles", "Text Styles"}, P{"dimstyles", "Dimension Styles"},
+                       P{"blocks", "Blocks"}, P{"hatch", "Hatch"}, P{"palettes", "Tool Palettes"},
+                       P{"plotstyle", "Plot Styles"}, P{"laywalk", "Layer Walk"},
+                       P{"text_editor", "Text"}, P{"mleaderstyles", "Multileader Style Manager"},
+                       P{"tablestyles", "Table Style"}, P{"mlstyles", "Multiline Style"}}) {
         CAPTURE(p.id);
         Harness h(1920, 1080);
         h.core().submitText("CIRCLE");
@@ -1903,19 +1904,23 @@ TEST_CASE("dimension styles panel: linear factor, fit and dragged text fields") 
     auto style = [&]() -> const DimStyle& {
         return *h.core().document().dimStyleByName("Standard");
     };
-    REQUIRE(h.enterText("##Linear factor", "2", "Dimension Styles"));
+    REQUIRE(h.click("Primary Units", "Dimension Styles"));
+    h.frame(3);
+    REQUIRE(h.enterText("##Scale factor", "2", "Dimension Styles"));
     h.frame(3);
     CHECK(style().linearFactor == doctest::Approx(2.0));
 
-    REQUIRE(h.click("##Fit", "Dimension Styles"));
+    REQUIRE(h.click("Fit", "Dimension Styles"));
+    h.frame(3);
+    REQUIRE(h.click("##If not enough room", "Dimension Styles"));
     h.frame(2);
-    REQUIRE(h.click("Text first", "Combo"));
+    REQUIRE(h.click("Text", "Combo"));
     h.frame(3);
     CHECK(style().fit == DimFit::TextFirst);
 
-    REQUIRE(h.click("##Dragged text", "Dimension Styles"));
+    REQUIRE(h.click("##Text not in default place", "Dimension Styles"));
     h.frame(2);
-    REQUIRE(h.click("Move freely", "Combo"));
+    REQUIRE(h.click("Over the line, without leader", "Combo"));
     h.frame(3);
     CHECK(style().textMove == DimTextMove::Free);
 }
@@ -2214,7 +2219,10 @@ TEST_CASE("panels on a full drawing: every widget clicked, with each kind of obj
                         {"plotstyle", "Plot Styles"},
                         {"laywalk", "Layer Walk"},
                         {"attvalues", "Attribute Values"},
-                        {"content", "Content Browser"}};
+                        {"content", "Content Browser"},
+                        {"mleaderstyles", "Multileader Style Manager"},
+                        {"tablestyles", "Table Style"},
+                        {"mlstyles", "Multiline Style"}};
     for (const P& p : panels) {
         const std::string panelId = p.id;
         CAPTURE(panelId);

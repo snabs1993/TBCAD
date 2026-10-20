@@ -473,8 +473,8 @@ TEST_CASE("a custom MLSTYLE and the multiline drawn with it survive .tbcad and D
     for (Vec2 o : kOrigins) {
         CAPTURE(o.x);
         Rig r;
-        r.host.run("MLSTYLE", {"New", "WALL", "1 0 -1", "Both"});
-        r.host.run("MLSTYLE", {"Current", "WALL"});
+        r.host.run("-MLSTYLE", {"New", "WALL", "1 0 -1", "Both"});
+        r.host.run("-MLSTYLE", {"Current", "WALL"});
         r.host.run("MLINE", {"Scale", "50", P(o, 0, 0), P(o, 1000, 0), P(o, 1000, 500), ""});
         const std::string dump = canonicalDump(r.doc);
         auto bytes = io::writeTbcadToMemory(r.doc);

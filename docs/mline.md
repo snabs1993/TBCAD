@@ -6,7 +6,11 @@ MLINE draws several parallel lines along one path, for walls. At the first promp
 Then pick points; `Close` joins the last point to the first, `Undo` removes the last point, Enter
 finishes. Corners are mitred.
 
-MLSTYLE defines styles: `New`, `Offsets` (distances of the lines from the path, positive to the
+MLSTYLE opens the **Multiline Style** dialog: the styles with a preview, Set current, New (name
+and offsets), Delete, and the description, offsets, colours, linetypes, caps, arcs, joints and fill
+of the selected style. Each change runs `-MLSTYLE`, one undo step.
+
+-MLSTYLE is the typed form: `New`, `Offsets` (distances of the lines from the path, positive to the
 left, e.g. `1 0 -1`), `Caps` (None/Start/End/Both), `Delete`, `Current`, `List`. STANDARD (two lines,
 1 unit apart) always exists. Styles live in the drawing and are saved with it.
 EXPLODE turns a multiline into plain polylines.

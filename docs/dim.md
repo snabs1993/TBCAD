@@ -141,7 +141,17 @@ copy the current one and become current. Every command is one undo step.
 
 New dimensions take the current dimension style (`Header::currentDimStyle`) and the current
 layer. The Dimension Styles panel (application builds) lists the styles with a live preview and
-edits through the same command line; it is listed under the panels menu.
+edits through the same command line; it is listed under the panels menu. Its settings are on
+AutoCAD's tabs: Lines, Symbols and Arrows, Text, Fit, Primary Units, Alternate Units and
+Tolerances. **Compare** lists the properties in which two styles differ.
+
+**Child styles.** As in AutoCAD, a style named `<parent>$<n>` changes the parent for one kind of
+dimension only: `$0` linear and aligned, `$2` angular and arc length, `$3` diameter, `$4` radius and
+jogged, `$6` ordinate, `$7` leaders. A dimension of style Arch that is a radius draws with
+`Arch$4` when the drawing has it, else with Arch. In the panel pick the kind in **Use for** and
+press **New ... child**; on the command line `DIMSTYLE New Arch$4 Done` adds it and Arch stays
+current. Dimension overrides (DIMOVERRIDE) are named `<style>$10` and up, so they never look like
+children. `FixedExt` (On/Off) and `FixedExtLength` give extension lines a fixed length.
 
 ## DIM and MLEADER (Q43)
 
@@ -225,3 +235,11 @@ one whose arrowhead is nearest to a pick (**Remove**); one leader line always st
 `DIMREGEN` brings every associative dimension up to the current position of the points it follows and refreshes its measurement and text. `DIMINSPECT` marks selected dimensions as inspection dimensions: the text becomes `<measurement> [label rate%]` (Add, with an optional label and a rate of 0 to 100), and Remove takes the mark off.
 
 `DIMUPDATE` gives the selected dimensions the current dimension style. `QLEADER` is another name for `LEADER`.
+
+## Multileader styles
+
+`MLEADERSTYLE` (alias MLS, Format > Multileader Style) opens the **Multileader Style Manager**:
+the styles, Set current, New (from the current one), Rename, Delete, and the content type, text
+style, text height, arrowhead, arrow size and landing gap of the selected style. Each change runs
+`-MLEADERSTYLE` (`Current`, `New`, `Rename`, `Delete`, `Edit`, `List`; Edit takes Content,
+TextStyle, TextHeight, Arrow, ArrowSize, Gap), one undo step.

@@ -132,7 +132,7 @@ void drawPreview(ui::PanelContext& pc, const DimStyle& style) {
 std::string leftLabel(const char* label) {
     const float labelW = std::clamp(ImGui::GetContentRegionAvail().x * 0.42f, 90.0f, 150.0f);
     ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(label);
+    ImGui::TextUnformatted(label, std::strstr(label, "##"));  // without a "##id" part
     ImGui::SameLine(labelW);
     ImGui::SetNextItemWidth(-1);
     return std::string("##") + label;
@@ -188,101 +188,260 @@ void colorField(ui::PanelContext& pc, const DimStyle& s, const char* label, cons
         pc.runCommand(editLine(s.name, key, buf));
 }
 
+void flagField(ui::PanelContext& pc, const DimStyle& s, const char* label, const char* key,
+               bool value, const char* on, const char* off) {
+    bool v = value;
+    if (ImGui::Checkbox(label, &v))
+        pc.runCommand(editLine(s.name, key, v ? on : off));
+}
+
+void precisionField(ui::PanelContext& pc, const DimStyle& s, const char* label, const char* key,
+                    int value) {
+    int v = value;
+    ImGui::InputInt(leftLabel(label).c_str(), &v, 1, 1, kNumber);
+    if (ImGui::IsItemDeactivatedAfterEdit() && v != value)
+        pc.runCommand(editLine(s.name, key, std::to_string(std::clamp(v, 0, 8))));
+}
+
+void textStyleCombo(ui::PanelContext& pc, const DimStyle& s) {
+    const TextStyle* ts = s.textStyle.value ? pc.doc->textStyle(s.textStyle) : nullptr;
+    if (ImGui::BeginCombo(leftLabel("Text style").c_str(), ts ? ts->name.c_str() : "(current)")) {
+        if (ImGui::Selectable("(current)", ts == nullptr))
+            pc.runCommand(editLine(s.name, "TextStyle", "Current"));
+        for (const auto& [id, t] : pc.doc->textStyles())
+            if (!hasSpace(t.name) && ImGui::Selectable(t.name.c_str(), ts && ts->id == id))
+                pc.runCommand(editLine(s.name, "TextStyle", t.name));
+        ImGui::EndCombo();
+    }
+}
+
+// The properties in AutoCAD's tabs: Lines, Symbols and Arrows, Text, Fit, Primary Units,
+// Alternate Units, Tolerances.
 void drawEditor(ui::PanelContext& pc, const DimStyle s) {  // by value: fields run DIMSTYLE
     drawPreview(pc, s);
     if (hasSpace(s.name)) {
         ImGui::TextWrapped("Names with spaces cannot be edited here; use the DIMSTYLE command.");
         return;
     }
-    ImGui::SeparatorText("Text");
-    realField(pc, s, "Text height", "TextHeight", s.textHeight);
-    realField(pc, s, "Gap to line", "TextGap", s.textGap);
-    enumCombo(pc, s, "Placement", "Placement", static_cast<int>(s.textPlacement),
-              {{"Above the line", "Above"}, {"Centered on the line", "Centered"}});
-    enumCombo(pc, s, "Alignment", "Alignment", static_cast<int>(s.textAlign),
-              {{"With the line", "WithLine"}, {"Horizontal", "Horizontal"}});
-    colorField(pc, s, "Text colour", "TextColor", s.textColor);
-    enumCombo(pc, s, "Fit", "Fit", static_cast<int>(s.fit),
-              {{"Best fit", "Best"},
-               {"Arrows first", "ArrowsFirst"},
-               {"Text first", "TextFirst"},
-               {"Both outside", "BothOutside"}},
-              "DIMATFIT: what moves outside the extension lines when the text and arrows do not "
-              "both fit.\nBest fit and Arrows first move the arrows out, then the text.\n"
-              "Text first moves the text out first.\nBoth outside moves both as soon as they do "
-              "not fit together.");
-    enumCombo(pc, s, "Dragged text", "TextMove", static_cast<int>(s.textMove),
-              {{"Keep with line", "WithLine"}, {"Add a leader", "Leader"}, {"Move freely", "Free"}},
-              "DIMTMOVE: where the text goes when you drag it away from the dimension line.\n"
-              "Outside the extension lines it keeps a leader (Keep with line, Add a leader) or "
-              "none (Move freely).");
+    if (!ImGui::BeginTabBar("##dimstyletabs"))
+        return;
+    if (ImGui::BeginTabItem("Lines")) {
+        ImGui::SeparatorText("Dimension lines");
+        colorField(pc, s, "Colour", "LineColor", s.dimLineColor);
+        realField(pc, s, "Extend beyond ticks", "LineExtension", s.dimLineExtension);
+        double base = s.baselineSpacing;
+        ImGui::InputDouble(leftLabel("Baseline spacing").c_str(), &base, 0, 0, "%.6g", kNumber);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("DIMDLI: 0 = twice the text height");
+        if (ImGui::IsItemDeactivatedAfterEdit() && base != s.baselineSpacing)
+            pc.runCommand(editLine(s.name, "BaselineSpacing", base > 0 ? number(base) : "Auto"));
+        flagField(pc, s, "Suppress dim line 1", "DimLine1", s.suppressDim1, "Hide", "Show");
+        ImGui::SameLine();
+        flagField(pc, s, "Suppress dim line 2", "DimLine2", s.suppressDim2, "Hide", "Show");
+        ImGui::SeparatorText("Extension lines");
+        colorField(pc, s, "Colour##ext", "ExtColor", s.extLineColor);
+        realField(pc, s, "Extend beyond dim lines", "ExtExtension", s.extLineExtension);
+        realField(pc, s, "Offset from origin", "ExtOffset", s.extLineOffset);
+        flagField(pc, s, "Suppress ext line 1", "ExtLine1", s.suppressExt1, "Hide", "Show");
+        ImGui::SameLine();
+        flagField(pc, s, "Suppress ext line 2", "ExtLine2", s.suppressExt2, "Hide", "Show");
+        flagField(pc, s, "Fixed length extension lines", "FixedExt", s.fixedExtLines, "On", "Off");
+        ImGui::BeginDisabled(!s.fixedExtLines);
+        realField(pc, s, "Length", "FixedExtLength", s.fixedExtLength);
+        ImGui::EndDisabled();
+        ImGui::EndTabItem();
+    }
+    if (ImGui::BeginTabItem("Symbols and Arrows")) {
+        enumCombo(pc, s, "Arrowheads", "ArrowType", static_cast<int>(s.arrowType),
+                  {{"Closed filled", "Filled"},
+                   {"Open", "Open"},
+                   {"Architectural tick", "Tick"},
+                   {"Dot", "Dot"},
+                   {"None", "None"}});
+        realField(pc, s, "Arrow size", "ArrowSize", s.arrowSize);
+        realField(pc, s, "Center mark", "CenterMark", s.centerMark,
+                  "DIMCEN: size of the centre mark of radius and diameter dimensions; negative "
+                  "draws centre lines, 0 none.");
+        ImGui::EndTabItem();
+    }
+    if (ImGui::BeginTabItem("Text")) {
+        ImGui::SeparatorText("Text appearance");
+        textStyleCombo(pc, s);
+        colorField(pc, s, "Text colour", "TextColor", s.textColor);
+        enumCombo(pc, s, "Fill", "TextFill", s.textFill,
+                  {{"None", "None"}, {"Background", "Background"}, {"Colour", "Color"}});
+        ImGui::BeginDisabled(s.textFill != 2);
+        int fillColor = s.textFillColor;
+        ImGui::InputInt(leftLabel("Fill colour").c_str(), &fillColor, 1, 1, kNumber);
+        if (ImGui::IsItemDeactivatedAfterEdit() && fillColor != s.textFillColor)
+            pc.runCommand(
+                editLine(s.name, "TextFillColor", std::to_string(std::clamp(fillColor, 0, 256))));
+        ImGui::EndDisabled();
+        realField(pc, s, "Text height", "TextHeight", s.textHeight);
+        realField(pc, s, "Fraction height scale", "TolHeight", s.tolHeightFactor);
+        flagField(pc, s, "Draw frame around text", "TextFrame", s.textFrame, "Yes", "No");
+        ImGui::SeparatorText("Text placement");
+        enumCombo(pc, s, "Vertical", "Placement", static_cast<int>(s.textPlacement),
+                  {{"Above", "Above"}, {"Centered", "Centered"}, {"Below", "Below"}});
+        realField(
+            pc, s, "Vertical position", "TextVertPos", s.textVertPos,
+            "DIMTVP: with Centered text, moves it this many text heights up (negative down).");
+        enumCombo(pc, s, "Horizontal", "Justify", s.textJustify,
+                  {{"Centered", "Centered"},
+                   {"At extension line 1", "Ext1"},
+                   {"At extension line 2", "Ext2"}});
+        realField(pc, s, "Offset from dim line", "TextGap", s.textGap);
+        ImGui::SeparatorText("Text alignment");
+        enumCombo(pc, s, "Inside", "Alignment", static_cast<int>(s.textAlign),
+                  {{"Aligned with dimension line", "WithLine"}, {"Horizontal", "Horizontal"}});
+        enumCombo(pc, s, "Outside", "AlignmentOutside", static_cast<int>(s.textAlignOutside),
+                  {{"Aligned with dimension line", "WithLine"}, {"Horizontal", "Horizontal"}});
+        ImGui::EndTabItem();
+    }
+    if (ImGui::BeginTabItem("Fit")) {
+        enumCombo(pc, s, "If not enough room", "Fit", static_cast<int>(s.fit),
+                  {{"Either text or arrows (best fit)", "Best"},
+                   {"Arrows", "ArrowsFirst"},
+                   {"Text", "TextFirst"},
+                   {"Both text and arrows", "BothOutside"}},
+                  "DIMATFIT: what moves outside the extension lines when the text and arrows do "
+                  "not both fit.");
+        flagField(pc, s, "Always keep text between ext lines", "TextInside", s.textInsideForced,
+                  "Forced", "Auto");
+        flagField(pc, s, "Suppress arrows if they don't fit inside", "ArrowsOutside",
+                  s.suppressArrowsOutside, "Suppress", "Show");
+        enumCombo(pc, s, "Text not in default place", "TextMove", static_cast<int>(s.textMove),
+                  {{"Beside the dimension line", "WithLine"},
+                   {"Over the line, with leader", "Leader"},
+                   {"Over the line, without leader", "Free"}});
+        ImGui::SeparatorText("Scale for dimension features");
+        realField(pc, s, "Use overall scale of", "Scale", s.overallScale);
+        ImGui::SeparatorText("Fine tuning");
+        flagField(pc, s, "Draw dim line between ext lines", "LineInside", s.forceLineInside,
+                  "Force", "Auto");
+        ImGui::EndTabItem();
+    }
+    if (ImGui::BeginTabItem("Primary Units")) {
+        ImGui::SeparatorText("Linear dimensions");
+        enumCombo(pc, s, "Unit format", "LengthFormat", static_cast<int>(s.linearFormat),
+                  {{"Decimal", "Decimal"},
+                   {"Architectural", "Architectural"},
+                   {"Fractional", "Fractional"}});
+        enumCombo(pc, s, "Units", "Units", static_cast<int>(s.units),
+                  {{"mm", "mm"}, {"cm", "cm"}, {"m", "m"}, {"in", "in"}, {"ft", "ft"}});
+        precisionField(pc, s, "Precision", "Precision", s.precision);
+        enumCombo(pc, s, "Decimal separator", "DecimalMark", s.commaDecimal ? 1 : 0,
+                  {{"'.' (Period)", "Point"}, {"',' (Comma)", "Comma"}});
+        realField(pc, s, "Round off", "RoundOff", s.roundOff);
+        textField(pc, s, "Prefix", "Prefix", s.prefix);
+        textField(pc, s, "Suffix", "Suffix", s.suffix);
+        realField(pc, s, "Scale factor", "LinearFactor", s.linearFactor,
+                  "DIMLFAC: multiplies every length measurement before it is shown.");
+        flagField(pc, s, "Suppress leading zeros", "LeadingZeros", s.suppressLeadingZeros,
+                  "Suppress", "Show");
+        ImGui::SameLine();
+        flagField(pc, s, "Suppress trailing zeros", "TrailingZeros", s.suppressTrailingZeros,
+                  "Suppress", "Show");
+        ImGui::SeparatorText("Angular dimensions");
+        enumCombo(pc, s, "Units format", "AngleFormat", static_cast<int>(s.angleFormat),
+                  {{"Decimal degrees", "Degrees"},
+                   {"Degrees Minutes Seconds", "Dms"},
+                   {"Gradians", "Gradians"},
+                   {"Radians", "Radians"}});
+        int ap = s.angularPrecision;
+        ImGui::InputInt(leftLabel("Angle precision").c_str(), &ap, 1, 1, kNumber);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("-1 = the same as the linear precision");
+        if (ImGui::IsItemDeactivatedAfterEdit() && ap != s.angularPrecision)
+            pc.runCommand(editLine(s.name, "AngularPrecision",
+                                   ap < 0 ? "Same" : std::to_string(std::min(ap, 8))));
+        ImGui::EndTabItem();
+    }
+    if (ImGui::BeginTabItem("Alternate Units")) {
+        flagField(pc, s, "Display alternate units", "AltUnits", s.altUnits, "On", "Off");
+        ImGui::BeginDisabled(!s.altUnits);
+        enumCombo(pc, s, "Units", "AltUnit", static_cast<int>(s.altUnit),
+                  {{"mm", "mm"}, {"cm", "cm"}, {"m", "m"}, {"in", "in"}, {"ft", "ft"}});
+        realField(pc, s, "Multiplier", "AltScale", s.altScale);
+        precisionField(pc, s, "Precision", "AltPrecision", s.altPrecision);
+        textField(pc, s, "Prefix", "AltPrefix", s.altPrefix);
+        textField(pc, s, "Suffix", "AltSuffix", s.altSuffix);
+        ImGui::EndDisabled();
+        ImGui::EndTabItem();
+    }
+    if (ImGui::BeginTabItem("Tolerances")) {
+        enumCombo(pc, s, "Method", "Tolerance", static_cast<int>(s.tolerance),
+                  {{"None", "None"},
+                   {"Symmetrical", "Symmetrical"},
+                   {"Deviation", "Deviation"},
+                   {"Limits", "Limits"}});
+        ImGui::BeginDisabled(s.tolerance == DimTolerance::None);
+        precisionField(pc, s, "Precision", "TolPrecision", s.tolPrecision);
+        realField(pc, s, "Upper value", "TolUpper", s.tolUpper);
+        realField(pc, s, "Lower value", "TolLower", s.tolLower);
+        realField(pc, s, "Scaling for height", "TolHeight", s.tolHeightFactor);
+        ImGui::EndDisabled();
+        ImGui::EndTabItem();
+    }
+    ImGui::EndTabBar();
+}
 
-    ImGui::SeparatorText("Lines and arrows");
-    enumCombo(pc, s, "Arrow", "ArrowType", static_cast<int>(s.arrowType),
-              {{"Closed filled", "Filled"},
-               {"Open", "Open"},
-               {"Tick", "Tick"},
-               {"Dot", "Dot"},
-               {"None", "None"}});
-    realField(pc, s, "Arrow size", "ArrowSize", s.arrowSize);
-    realField(pc, s, "Extension offset", "ExtOffset", s.extLineOffset);
-    realField(pc, s, "Extension beyond", "ExtExtension", s.extLineExtension);
-    realField(pc, s, "Line beyond", "LineExtension", s.dimLineExtension);
-    colorField(pc, s, "Line colour", "LineColor", s.dimLineColor);
-    colorField(pc, s, "Extension colour", "ExtColor", s.extLineColor);
+// What a child or override style is for, from the part after '$'.
+std::string childLabel(const std::string& name) {
+    const auto at = name.rfind('$');
+    const std::string code = name.substr(at + 1);
+    if (code == "0")
+        return "Linear";
+    if (code == "2")
+        return "Angular";
+    if (code == "3")
+        return "Diameter";
+    if (code == "4")
+        return "Radius";
+    if (code == "6")
+        return "Ordinate";
+    if (code == "7")
+        return "Leaders";
+    return "Override " + code;
+}
 
-    ImGui::SeparatorText("Numbers");
-    enumCombo(pc, s, "Units", "Units", static_cast<int>(s.units),
-              {{"mm", "mm"}, {"cm", "cm"}, {"m", "m"}, {"in", "in"}, {"ft", "ft"}});
-    int prec = s.precision;
-    ImGui::InputInt(leftLabel("Decimals").c_str(), &prec, 1, 1, kNumber);
-    if (ImGui::IsItemDeactivatedAfterEdit() && prec != s.precision)
-        pc.runCommand(editLine(s.name, "Precision", std::to_string(std::clamp(prec, 0, 8))));
-    realField(pc, s, "Round off", "RoundOff", s.roundOff);
-    realField(pc, s, "Linear factor", "LinearFactor", s.linearFactor,
-              "DIMLFAC: multiplies every length measurement before it is shown (for drawings "
-              "made at a different scale).\nMust be above zero. Angles are not affected.");
-    textField(pc, s, "Prefix", "Prefix", s.prefix);
-    textField(pc, s, "Suffix", "Suffix", s.suffix);
-    bool lead = s.suppressLeadingZeros, trail = s.suppressTrailingZeros;
-    if (ImGui::Checkbox("Suppress leading zeros", &lead))
-        pc.runCommand(editLine(s.name, "LeadingZeros", lead ? "Suppress" : "Show"));
-    if (ImGui::Checkbox("Suppress trailing zeros", &trail))
-        pc.runCommand(editLine(s.name, "TrailingZeros", trail ? "Suppress" : "Show"));
-
-    ImGui::SeparatorText("Alternate units");
-    bool alt = s.altUnits;
-    if (ImGui::Checkbox("Show alternate units", &alt))
-        pc.runCommand(editLine(s.name, "AltUnits", alt ? "On" : "Off"));
-    ImGui::BeginDisabled(!s.altUnits);
-    enumCombo(pc, s, "Alt units", "AltUnit", static_cast<int>(s.altUnit),
-              {{"mm", "mm"}, {"cm", "cm"}, {"m", "m"}, {"in", "in"}, {"ft", "ft"}});
-    realField(pc, s, "Multiplier", "AltScale", s.altScale);
-    int altPrec = s.altPrecision;
-    ImGui::InputInt(leftLabel("Alt decimals").c_str(), &altPrec, 1, 1, kNumber);
-    if (ImGui::IsItemDeactivatedAfterEdit() && altPrec != s.altPrecision)
-        pc.runCommand(editLine(s.name, "AltPrecision", std::to_string(std::clamp(altPrec, 0, 8))));
-    textField(pc, s, "Alt prefix", "AltPrefix", s.altPrefix);
-    textField(pc, s, "Alt suffix", "AltSuffix", s.altSuffix);
-    ImGui::EndDisabled();
-
-    ImGui::SeparatorText("Tolerance");
-    enumCombo(pc, s, "Tolerance", "Tolerance", static_cast<int>(s.tolerance),
-              {{"None", "None"},
-               {"Symmetrical", "Symmetrical"},
-               {"Deviation", "Deviation"},
-               {"Limits", "Limits"}});
-    ImGui::BeginDisabled(s.tolerance == DimTolerance::None);
-    realField(pc, s, "Upper", "TolUpper", s.tolUpper);
-    realField(pc, s, "Lower", "TolLower", s.tolLower);
-    int tolPrec = s.tolPrecision;
-    ImGui::InputInt(leftLabel("Tol decimals").c_str(), &tolPrec, 1, 1, kNumber);
-    if (ImGui::IsItemDeactivatedAfterEdit() && tolPrec != s.tolPrecision)
-        pc.runCommand(editLine(s.name, "TolPrecision", std::to_string(std::clamp(tolPrec, 0, 8))));
-    ImGui::EndDisabled();
-
-    ImGui::SeparatorText("Scale");
-    realField(pc, s, "Overall scale", "Scale", s.overallScale);
+void drawCompare(ui::PanelContext& pc, const DimStyle& a) {
+    static DimStyleId other{};
+    const DimStyle* b = pc.doc->dimStyle(other);
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::BeginCombo("##comparewith", b ? b->name.c_str() : "Compare with...")) {
+        for (const auto& [id, st] : pc.doc->dimStyles())
+            if (id != a.id && ImGui::Selectable(st.name.c_str(), id == other))
+                other = id;
+        ImGui::EndCombo();
+    }
+    if (!b || b->id == a.id)
+        return;
+    const auto da = describeStyle(*pc.doc, a), db = describeStyle(*pc.doc, *b);
+    int differences = 0;
+    if (ImGui::BeginTable(
+            "##compare", 3,
+            ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_ScrollY,
+            ImVec2(0, 160))) {
+        ImGui::TableSetupColumn("Property");
+        ImGui::TableSetupColumn(a.name.c_str());
+        ImGui::TableSetupColumn(b->name.c_str());
+        ImGui::TableHeadersRow();
+        for (std::size_t i = 0; i < da.size() && i < db.size(); ++i) {
+            if (da[i].second == db[i].second)
+                continue;
+            ++differences;
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(da[i].first.c_str());
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(da[i].second.c_str());
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(db[i].second.c_str());
+        }
+        ImGui::EndTable();
+    }
+    ImGui::Text(differences == 0 ? "The styles are the same." : "%d difference(s).", differences);
 }
 
 void drawPanel(ui::PanelContext& pc) {
@@ -293,13 +452,25 @@ void drawPanel(ui::PanelContext& pc) {
     if (!pc.doc->dimStyle(st.selected))
         st.selected = current;
 
+    // Parents with their child and override styles under them.
     ImGui::BeginChild("dimstyle-list",
-                      ImVec2(std::clamp(ImGui::GetContentRegionAvail().x * 0.3f, 90.0f, 170.0f), 0),
+                      ImVec2(std::clamp(ImGui::GetContentRegionAvail().x * 0.3f, 90.0f, 190.0f), 0),
                       ImGuiChildFlags_Borders);
     for (const auto& [id, s] : pc.doc->dimStyles()) {
-        std::string label = s.name + (id == current ? "  (current)" : "");
+        if (s.name.find('$') != std::string::npos &&
+            pc.doc->dimStyleByName(s.name.substr(0, s.name.rfind('$'))))
+            continue;  // listed under its parent
+        const std::string label = s.name + (id == current ? "  (current)" : "");
         if (ImGui::Selectable(label.c_str(), id == st.selected))
             st.selected = id;
+        for (const auto& [cid, c] : pc.doc->dimStyles()) {
+            if (c.name.size() <= s.name.size() + 1 || c.name.rfind(s.name + "$", 0) != 0 ||
+                c.name.find('$', s.name.size() + 1) != std::string::npos)
+                continue;
+            const std::string child = "    " + childLabel(c.name) + "##" + c.name;
+            if (ImGui::Selectable(child.c_str(), cid == st.selected))
+                st.selected = cid;
+        }
     }
     ImGui::EndChild();
 
@@ -311,8 +482,9 @@ void drawPanel(ui::PanelContext& pc) {
     if (const DimStyle* found = pc.doc->dimStyle(st.selected))
         selRow = *found;
     const DimStyle* sel = selRow ? &*selRow : nullptr;
+    const bool isChild = sel && sel->name.find('$') != std::string::npos;
     if (sel) {
-        ImGui::BeginDisabled(st.selected == current || hasSpace(sel->name));
+        ImGui::BeginDisabled(st.selected == current || hasSpace(sel->name) || isChild);
         if (ImGui::Button("Set current"))
             pc.runCommand("DIMSTYLE Current " + sel->name + " Done");
         ImGui::EndDisabled();
@@ -325,7 +497,7 @@ void drawPanel(ui::PanelContext& pc) {
         ImGui::SetNextItemWidth(boxBeside("Rename"));
         ImGui::InputTextWithHint("##renamedimstyle", "New name", st.renameTo, sizeof st.renameTo);
         ImGui::SameLine();
-        ImGui::BeginDisabled(st.selected == kDimStyleStandard || hasSpace(sel->name) ||
+        ImGui::BeginDisabled(st.selected == kDimStyleStandard || hasSpace(sel->name) || isChild ||
                              hasSpace(st.renameTo) || st.renameTo[0] == '\0' ||
                              pc.doc->dimStyleByName(st.renameTo) != nullptr);
         if (ImGui::Button("Rename")) {
@@ -334,18 +506,50 @@ void drawPanel(ui::PanelContext& pc) {
         }
         ImGui::EndDisabled();
     }
-    ImGui::SetNextItemWidth(boxBeside("New from current"));
-    ImGui::InputTextWithHint("##newdimstyle", "Name for new style", st.newName, sizeof st.newName);
-    ImGui::SameLine();
-    ImGui::BeginDisabled(hasSpace(st.newName) || pc.doc->dimStyleByName(st.newName) != nullptr);
-    if (ImGui::Button("New from current")) {
-        pc.runCommand(std::string("DIMSTYLE New ") + st.newName + " Done");
-        st.newName[0] = '\0';
-        st.selected = {};
+    // New: a style of its own (copied from the current one), or a child of the selected style
+    // used only for one kind of dimension.
+    static int useFor = 0;
+    static const std::pair<const char*, const char*> kUseFor[] = {
+        {"All dimensions", ""}, {"Linear", "0"},   {"Angular", "2"}, {"Radius", "4"},
+        {"Diameter", "3"},      {"Ordinate", "6"}, {"Leaders", "7"}};
+    ImGui::SetNextItemWidth(150);
+    if (ImGui::BeginCombo("Use for", kUseFor[useFor].first)) {
+        for (int i = 0; i < 7; ++i)
+            if (ImGui::Selectable(kUseFor[i].first, i == useFor))
+                useFor = i;
+        ImGui::EndCombo();
     }
-    ImGui::EndDisabled();
-    if (sel)
+    if (useFor == 0) {
+        ImGui::SetNextItemWidth(boxBeside("New from current"));
+        ImGui::InputTextWithHint("##newdimstyle", "Name for new style", st.newName,
+                                 sizeof st.newName);
+        ImGui::SameLine();
+        ImGui::BeginDisabled(hasSpace(st.newName) || pc.doc->dimStyleByName(st.newName) != nullptr);
+        if (ImGui::Button("New from current")) {
+            pc.runCommand(std::string("DIMSTYLE New ") + st.newName + " Done");
+            st.newName[0] = '\0';
+            st.selected = {};
+        }
+        ImGui::EndDisabled();
+    } else {
+        const std::string childName =
+            sel && !isChild ? sel->name + "$" + kUseFor[useFor].second : std::string();
+        ImGui::BeginDisabled(childName.empty() || hasSpace(childName) ||
+                             pc.doc->dimStyleByName(childName) != nullptr);
+        const std::string label = std::string("New ") + kUseFor[useFor].first + " child of " +
+                                  (sel && !isChild ? sel->name : std::string("...")) + "##newchild";
+        if (ImGui::Button(label.c_str())) {
+            pc.runCommand("DIMSTYLE New " + childName + " Done");
+            if (const DimStyle* made = pc.doc->dimStyleByName(childName))
+                st.selected = made->id;
+        }
+        ImGui::EndDisabled();
+    }
+    if (sel) {
+        if (ImGui::CollapsingHeader("Compare"))
+            drawCompare(pc, *sel);
         drawEditor(pc, *sel);
+    }
     ImGui::EndGroup();
 }
 
@@ -477,7 +681,10 @@ void drawContextTab(ui::PanelContext& pc) {
 
 }  // namespace
 
+void registerMLeaderStylePanel(ui::UiRegistry& ui);  // mleader_ui.cpp
+
 void registerUi(ui::UiRegistry& ui) {
+    registerMLeaderStylePanel(ui);
     ui.addMenuItem("Dimension/Linear", "DIMLINEAR", "dim.linear");
     ui.addMenuItem("Dimension/Aligned", "DIMALIGNED", "dim.aligned");
     ui.addMenuItem("Dimension/Radius", "DIMRADIUS", "dim.radius");

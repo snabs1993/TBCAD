@@ -665,6 +665,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeDimInspectCommand());
     (void)registry.add(makeDimDisassocCommand());
     (void)registry.add(makeMLeaderStyleCommand());
+    (void)registry.add(makeMLeaderStylePanelCommand());
     (void)registry.add(makeContinueCommand());
     (void)registry.add(makeBaselineCommand());
     (void)registry.add(makeTextEditCommand());

@@ -180,3 +180,66 @@ TEST_CASE("rebaseStored keeps a relative xref path pointing at the same file") {
     // And back again.
     CHECK(rebaseStored(rebaseStored("../lib/plan.tbcad", a, b), b, a) == "../lib/plan.tbcad");
 }
+
+TEST_CASE("content copies multileader, table and multiline styles with what they use") {
+    Source s;
+    s.doc = std::make_unique<Document>();
+    {
+        Transaction tx = s.doc->begin("source");
+        TextStyle notes;
+        notes.name = "Notes";
+        TextStyleId ns = tx.addTextStyle(notes).value();
+        DimStyle companion;
+        companion.name = "MLEADER-Callout";
+        companion.textStyle = ns;
+        (void)tx.addDimStyle(companion);
+        TextStyle plan;
+        plan.name = "PlanText";
+        (void)tx.addTextStyle(plan);
+        (void)tx.modifyHeader([](Header& h) {
+            h.custom["tbcad.mleaderstyle.Callout"] = "Block";
+            h.custom["tbcad.tablestyle.s:Schedule"] = "40|9|3|1|PlanText";
+            h.custom["mlstyle.WALL"] = "x";
+        });
+        tx.commit();
+    }
+    const auto all = listContent(*s.doc);
+    auto listed = [&](ContentKind k, const char* n) {
+        for (const ContentItem& i : all)
+            if (i.kind == k && i.name == n)
+                return true;
+        return false;
+    };
+    CHECK(listed(ContentKind::MLeaderStyle, "Callout"));
+    CHECK(listed(ContentKind::TableStyle, "Schedule"));
+    CHECK(listed(ContentKind::MLineStyle, "WALL"));
+    CHECK_FALSE(listed(ContentKind::DimStyle, "MLEADER-Callout"));
+
+    Document doc;
+    Transaction tx = doc.begin("import");
+    ImportReport report;
+    REQUIRE(importContent(tx, doc, s,
+                          {{ContentKind::MLeaderStyle, "callout"},
+                           {ContentKind::TableStyle, "Schedule"},
+                           {ContentKind::MLineStyle, "wall"},
+                           {ContentKind::TableStyle, "Nope"}},
+                          report)
+                .ok());
+    tx.commit();
+    CHECK(report.added == 3);
+    REQUIRE(report.skipped.size() == 1);
+    CHECK(doc.header().custom.at("tbcad.mleaderstyle.Callout") == "Block");
+    CHECK(doc.header().custom.at("tbcad.tablestyle.s:Schedule") == "40|9|3|1|PlanText");
+    CHECK(doc.header().custom.at("mlstyle.WALL") == "x");
+    REQUIRE(doc.dimStyleByName("MLEADER-Callout"));
+    CHECK(doc.textStyleByName("Notes"));
+    CHECK(doc.textStyleByName("PlanText"));
+
+    // A second copy finds them there already.
+    Transaction tx2 = doc.begin("again");
+    ImportReport again;
+    REQUIRE(importContent(tx2, doc, s, {{ContentKind::MLineStyle, "WALL"}}, again).ok());
+    tx2.commit();
+    CHECK(again.added == 0);
+    CHECK(again.skipped.size() == 1);
+}

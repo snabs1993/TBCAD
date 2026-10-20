@@ -11,7 +11,7 @@ tbcad_add_library(dim_commands
 
 if(TBCAD_BUILD_APP)
   include(deps/imgui)
-  target_sources(tbcad_dim_commands PRIVATE ui/dim_ui.cpp)
+  target_sources(tbcad_dim_commands PRIVATE ui/dim_ui.cpp ui/mleader_ui.cpp)
   target_link_libraries(tbcad_dim_commands PRIVATE tbcad::ui tbcad::imgui)
 endif()
 

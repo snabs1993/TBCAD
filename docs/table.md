@@ -35,7 +35,10 @@ centred title. Text in a cell is TBCAD markup (plain text works) and wraps at th
   Default. It is stored as the MTEXT paragraph code `\pxql;`, `\pxqc;` or `\pxqr;` at the start of the cell text,
   so it needs no file format change; formulas, CSV export and explode look through it, and editing the cell text
   keeps it.
-- **TABLESTYLE** (alias TS): named sets of column width, row height, text height, margin and text style, kept in the
+- **TABLESTYLE** (alias TS) opens the **Table Style** dialog: the styles with a preview, Set current, New (starting
+  with the selected style), Delete, Apply to tables, and the general sizes and the Title / Header / Data cell styles
+  of the selected one. Each change runs `-TABLESTYLE Modify` with the whole style, one undo step.
+- **-TABLESTYLE**: the typed form. Named sets of column width, row height, text height, margin and text style, kept in the
   drawing. Keywords: Set (make current), New, Modify, Delete, Apply (give a style's sizes to tables already drawn),
   List. TABLE starts from the current style; `Standard` (30 x 8, text 2.8, margin 1) always exists.
 - Grips: the top-left corner moves the table, the bottom-right corner rescales the grid keeping proportions.

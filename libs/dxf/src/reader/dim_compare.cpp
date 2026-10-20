@@ -183,7 +183,7 @@ void Importer::compareDimension(const Record& r, const Entity& dim) {
 
     const double factor = annotationFactor(doc_->header(), dim.common, 0);
     const dim::Layout L = dim::layoutDimension(*doc_, *d, 0.01, factor);
-    const DimStyle& style = dim::styleOf(*doc_, d->style);
+    const DimStyle& style = dim::drawStyleOf(*doc_, *d);
 
     DimComparison c;
     c.handle = handleOf(r).value_or(0);

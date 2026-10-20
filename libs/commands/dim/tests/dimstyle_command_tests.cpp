@@ -452,3 +452,42 @@ TEST_CASE("DIMOVERRIDE changes one property of the selected dimensions only") {
     CHECK(f.host->undo());
     CHECK(f.doc.dimStyle(style(dims[2]))->name == "Standard$1");
 }
+
+TEST_CASE("DIMSTYLE child styles - the parent stays current and dimensions of that kind use it") {
+    Fixture f;
+    f.host->run("DIMSTYLE", {"New", "Arch", "New", "Arch$4", "Edit", "Arch$4", "TextHeight", "5",
+                             "Done", "Done"});
+    CHECK(f.host->logContains("Child style Arch$4 of Arch added."));
+    const DimStyle* arch = f.doc.dimStyleByName("Arch");
+    const DimStyle* radius = f.doc.dimStyleByName("Arch$4");
+    REQUIRE(arch);
+    REQUIRE(radius);
+    CHECK(f.doc.header().currentDimStyle == arch->id);
+    CHECK(dim::childStyleCode(DimKind::Radius) == 4);
+    CHECK(dim::childStyleCode(DimKind::Linear) == 0);
+    CHECK(dim::childStyleName("Arch", 4) == "Arch$4");
+    DimensionData d;
+    d.style = arch->id;
+    d.kind = DimKind::Radius;
+    CHECK(dim::drawStyleOf(f.doc, d).id == radius->id);
+    d.kind = DimKind::Linear;  // no $0 child: the parent
+    CHECK(dim::drawStyleOf(f.doc, d).id == arch->id);
+    CHECK(dim::leaderStyleOf(f.doc, arch->id).id == arch->id);
+    // A child of a style that does not exist is just a style with a $ in its name.
+    f.host->run("DIMSTYLE", {"New", "Ghost$0", "Done"});
+    CHECK(f.doc.header().currentDimStyle == f.doc.dimStyleByName("Ghost$0")->id);
+}
+
+TEST_CASE("DIMSTYLE FixedExt and FixedExtLength") {
+    Fixture f;
+    f.host->run("DIMSTYLE", {"New", "Fx", "Edit", "Fx", "FixedExt", "On", "FixedExtLength", "4",
+                             "Done", "Done"});
+    const DimStyle* s = f.doc.dimStyleByName("Fx");
+    REQUIRE(s);
+    CHECK(s->fixedExtLines);
+    CHECK(s->fixedExtLength == doctest::Approx(4));
+    bool listed = false;
+    for (const auto& [k, v] : dimcmd::describeStyle(f.doc, *s))
+        listed |= k == "FixedExt" && v == "On";
+    CHECK(listed);
+}

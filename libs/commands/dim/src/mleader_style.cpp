@@ -51,8 +51,7 @@ std::string currentName(const Document& doc) {
 
 class MLeaderStyleCommand final : public cmd::Command {
 public:
-    std::string_view name() const override { return "MLEADERSTYLE"; }
-    std::vector<std::string> defaultAliases() const override { return {"MLS"}; }
+    std::string_view name() const override { return "-MLEADERSTYLE"; }
     std::string_view description() const override {
         return "Create, select, rename, edit or delete multileader styles (arrow, landing gap, "
                "text style, content type)";
@@ -156,7 +155,8 @@ public:
             } else if (k.keyword == "Edit") {
                 for (;;) {
                     cmd::KeywordOptions po;
-                    po.keywords = {"Arrow", "Gap", "TextStyle", "Content", "Done"};
+                    po.keywords = {"Arrow",      "ArrowSize", "Gap", "TextStyle",
+                                   "TextHeight", "Content",   "Done"};
                     po.defaultKeyword = "Done";
                     auto p = co_await ctx.getKeyword("Property of \"" + name + "\"", po);
                     if (!p.ok() || p.keyword == "Done")
@@ -180,9 +180,11 @@ public:
                         ctx.message("The style has no arrow settings.");
                         continue;
                     }
-                    const char* key = p.keyword == "Arrow" ? "ArrowType"
-                                      : p.keyword == "Gap" ? "TextGap"
-                                                           : "TextStyle";
+                    const char* key = p.keyword == "Arrow"        ? "ArrowType"
+                                      : p.keyword == "ArrowSize"  ? "ArrowSize"
+                                      : p.keyword == "Gap"        ? "TextGap"
+                                      : p.keyword == "TextHeight" ? "TextHeight"
+                                                                  : "TextStyle";
                     std::string err;
                     auto r = ctx.tx().modifyDimStyle(
                         d->id, [&](DimStyle& s) { err = applyProperty(ctx.doc(), s, key, val); });
@@ -202,7 +204,32 @@ private:
     }
 };
 
+class MLeaderStylePanelCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "MLEADERSTYLE"; }
+    std::vector<std::string> defaultAliases() const override { return {"MLS"}; }
+    std::string_view description() const override { return "Open the Multileader Style Manager"; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().openPanel("mleaderstyles");
+        co_return;
+    }
+};
+
 }  // namespace
+
+std::vector<std::string> mleaderStyleNames(const Document& doc) {
+    return styleNames(doc);
+}
+std::string currentMLeaderStyleName(const Document& doc) {
+    return currentName(doc);
+}
+std::string mleaderContent(const Document& doc, const std::string& name) {
+    auto it = doc.header().custom.find(styleKey(name));
+    return it == doc.header().custom.end() ? std::string("Text") : it->second;
+}
+std::string mleaderCompanionName(const std::string& name) {
+    return companionName(name);
+}
 
 MLeaderStyle currentMLeaderStyle(const Document& doc) {
     MLeaderStyle out;
@@ -219,6 +246,9 @@ MLeaderStyle currentMLeaderStyle(const Document& doc) {
 
 std::unique_ptr<cmd::Command> makeMLeaderStyleCommand() {
     return std::make_unique<MLeaderStyleCommand>();
+}
+std::unique_ptr<cmd::Command> makeMLeaderStylePanelCommand() {
+    return std::make_unique<MLeaderStylePanelCommand>();
 }
 
 }  // namespace tbcad::dimcmd

@@ -126,7 +126,7 @@ TEST_CASE("TEXT Justify options") {
 
 TEST_CASE("TEXT Style option picks an existing style, unknown names are reported") {
     Fixture f;
-    f.host.run("STYLE", {"Tall", "Sarabun", "0.5", "0", "0"});
+    f.host.run("-TEXTSTYLE", {"Tall", "Sarabun", "0.5", "0", "0"});
     // STYLE made "Tall" current; pick Standard explicitly for this text.
     f.host.run("TEXT", {"S", "Nope", "S", "Standard", "0,0", "2", "0", "x"});
     CHECK(f.host.logContains("Unknown text style: Nope"));

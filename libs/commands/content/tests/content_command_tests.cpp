@@ -94,8 +94,8 @@ TEST_CASE("CONTENTIMPORT List shows what a file offers - bad paths are reported"
     const fs::path file = writeSource(dir.path);
     Fixture f;
     f.host.run("CONTENTIMPORT", {file.string(), "List"});
-    CHECK(f.host.logContains("Block     door"));
-    CHECK(f.host.logContains("Layer     walls~inner"));
+    CHECK(f.host.logContains("Block        door"));
+    CHECK(f.host.logContains("Layer        walls~inner"));
     f.host.run("CONTENTIMPORT", {(dir.path / "missing.tbcad").string()});
     CHECK(f.host.logContains("Cannot find"));
     f.host.run("CONTENTIMPORT", {file.string(), "Block", " | "});

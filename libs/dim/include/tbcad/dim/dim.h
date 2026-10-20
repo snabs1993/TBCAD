@@ -17,6 +17,16 @@ namespace tbcad::dim {
 // default (so a damaged file still draws). The reference stays valid while the document does.
 const DimStyle& styleOf(const Document& doc, DimStyleId id);
 
+// AutoCAD's child styles: "<style>$0" (linear and aligned), "$2" (angular and arc length), "$3"
+// (diameter), "$4" (radius and jogged), "$6" (ordinate), "$7" (leaders). A dimension of style S
+// draws with S's child for its kind when the drawing has one, else with S. -1 for no child.
+int childStyleCode(DimKind kind);
+std::string childStyleName(const std::string& parent, int code);
+// The style a dimension draws with: its style's child for its kind, else the style itself.
+const DimStyle& drawStyleOf(const Document& doc, const DimensionData& d);
+// The style a leader draws with ("$7" child).
+const DimStyle& leaderStyleOf(const Document& doc, DimStyleId id);
+
 // A style of a dimension's own: `base` with `change` made, named "<style>$N" after the style it
 // comes from, as AutoCAD's dimension overrides (DIMOVERRIDE, the text grip menu). A derived style
 // with the same settings is shared; a change that leaves the settings as they are returns `base`.
