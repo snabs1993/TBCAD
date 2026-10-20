@@ -133,6 +133,7 @@ std::optional<Entity> blockContent(const Document& doc, const Entity& e, double 
     ins.position = m->contentPos;
     ins.scale = {m->blockScale * f, m->blockScale * f};
     ins.rotation = m->blockRotation;
+    ins.attribs = m->attribs;
     Entity out;
     out.common = e.common;
     out.common.id = {};

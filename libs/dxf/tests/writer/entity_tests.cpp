@@ -912,6 +912,43 @@ TEST_CASE("a multileader is exported as leaders, a dogleg line and its note") {
     CHECK(m->style == kDimStyleStandard);
 }
 
+TEST_CASE("a multileader's block keeps its attribute values through DXF") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("mleader");
+        const BlockId b = tx.addBlock(BlockDef{.name = "TagCircle", .base = {0, 0}}).value();
+        TextData t;
+        t.utf8 = "NO";
+        t.attdef = AttDefInfo{"NO", "", "1", false, false, false, false};
+        REQUIRE(tx.add(make(Indirect<TextData>(std::move(t))), b).ok());
+        MLeaderData m;
+        m.lines = {{{0, 0}, {5, 5}}};
+        m.landing = {5, 5};
+        m.contentPos = {7, 5};
+        m.content = MLeaderData::Content::Block;
+        m.block = b;
+        m.attribs = {AttribValue{"NO", "B12", {}}};
+        REQUIRE(tx.add(make(Indirect<MLeaderData>(m))).ok());
+        tx.commit();
+    }
+    Report exportReport;
+    Result<ExportResult> out = exportDxf(doc, ExportOptions{}, exportReport);
+    REQUIRE(out.ok());
+    Report report;
+    Result<ImportResult> in =
+        importDxf(testing::bytesOf(out.value().bytes), ImportOptions{}, report);
+    REQUIRE(in.ok());
+    const MLeaderData* m = nullptr;
+    in.value().document->forEachEntity([&](const Entity& e) {
+        if (const auto* x = entityAs<MLeaderData>(e))
+            m = x;
+    });
+    REQUIRE(m);
+    CHECK(m->content == MLeaderData::Content::Block);
+    REQUIRE(m->attribs.size() == 1);
+    CHECK(m->attribs[0].value == "B12");
+}
+
 TEST_CASE("multileaders in a block, with a Thai note, and pieces lost in another program") {
     Document doc;
     BlockId b;

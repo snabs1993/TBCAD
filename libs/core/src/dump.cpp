@@ -315,6 +315,12 @@ struct DataDumper {
             for (const Vec2& p : line)
                 o << " " << p;
         }
+        for (const AttribValue& a : d.attribs) {
+            o << " ATTRIB ";
+            o.quoted(a.tag);
+            o << "=";
+            o.quoted(a.value);
+        }
         breaksOf(d);
     }
     void operator()(const MlineData& d) {

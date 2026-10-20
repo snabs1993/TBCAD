@@ -764,6 +764,8 @@ struct MLeaderData {
     BlockId block{};        // Content::Block: inserted at contentPos
     double blockScale = 1;
     double blockRotation = 0;
+    // Content::Block: values of the block's non-constant attributes, by tag, as on an Insert.
+    std::vector<AttribValue> attribs{};
     // DIMBREAK gaps in the leader lines, as on a dimension (see DimensionData::breakWith).
     std::vector<DimBreak> breaks{};
     std::vector<EntityId> breakWith{};

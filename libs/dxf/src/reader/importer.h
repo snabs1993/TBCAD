@@ -23,6 +23,15 @@
 
 namespace tbcad::dxf::detail {
 
+// A handle in upper case, the form the importer's by-handle maps use.
+inline std::string upperHandle(std::string_view h) {
+    std::string s(h);
+    for (char& c : s)
+        if (c >= 'a' && c <= 'f')
+            c = static_cast<char>(c - 'a' + 'A');
+    return s;
+}
+
 // ACI (AutoCAD colour index) to the nearest entry of the TBCAD palette. 1..7 map to themselves.
 Color mapAci(int aci);
 
@@ -203,6 +212,8 @@ private:
     std::map<std::string, std::string> blockNameByHandle_{};
     // LTYPE names by handle (upper case): DIMLTYPE, DIMLTEX1 and DIMLTEX2 name theirs by handle.
     std::map<std::string, std::string> ltypeNameByHandle_{};
+    // ATTDEF tags by handle (upper case): a MULTILEADER names the attributes of its block so.
+    std::map<std::string, std::string> attdefTagByHandle_{};
     std::vector<Record> pendingDimStyles_{};
     // The arrow kind of a DIMBLK value: a block name, or the handle of its block record.
     ArrowType arrowKindOf(std::string_view raw, ArrowType none) const;
