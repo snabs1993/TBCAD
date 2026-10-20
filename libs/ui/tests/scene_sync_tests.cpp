@@ -221,6 +221,47 @@ TEST_CASE("a wipeout is drawn between the objects below it and the ones above it
     CHECK_FALSE(scene.needsRelevel());
 }
 
+TEST_CASE("objects built out of view are built for a far zoom, then again as the camera comes") {
+    constexpr int kN = 30000;
+    Document doc;
+    render::Scene scene;
+    SceneSync sync(doc, scene);
+    {
+        auto tx = doc.begin("gen");
+        for (int i = 0; i < kN; ++i)
+            (void)tx.add(Entity{{}, CircleData{{(i % 200) * 100.0, (i / 200) * 100.0}, 40}});
+        tx.commit();
+    }
+    {
+        auto tx = doc.begin("move");
+        for (EntityId id : doc.modelSpace())
+            (void)tx.modify(id, [](Entity& e) { std::get<CircleData>(e.data).center.y += 1e5; });
+        tx.commit();
+    }
+    REQUIRE(sync.pendingCount() == static_cast<std::size_t>(kN));
+    auto verts = [&] {
+        std::size_t n = 0;
+        for (const auto& [k, tile] : scene.tiles())
+            for (const auto& [bk, b] : tile.batches)
+                n += b.verts.size();
+        return n;
+    };
+    // A close-up camera over empty paper: everything is built out of its view.
+    render::Camera2D close;
+    close.center = {-50000, -50000};
+    close.pixelsPerMm = 100;
+    close.viewportW = 1000;
+    close.viewportH = 1000;
+    CHECK(sync.pumpPending(close, 100000) == static_cast<std::size_t>(kN));
+    const std::size_t coarse = verts();
+    CHECK(coarse < static_cast<std::size_t>(kN) * 80);  // not at 0.01 mm a pixel
+    CHECK(sync.staleOffscreen());
+    // The camera comes to a corner at the same zoom: what it sees is built for it.
+    close.center = {0, 1e5};
+    CHECK(sync.refreshStale(close) > 0);
+    CHECK(verts() > coarse);
+}
+
 TEST_CASE(
     "an edit of a very large number of objects is built in slices, what the camera sees first") {
     constexpr int kN = 30000;

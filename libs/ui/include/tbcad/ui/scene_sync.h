@@ -45,7 +45,7 @@ public:
     std::size_t refreshStale(const render::Camera2D& camera, std::size_t limit = 20000);
     // True when the last refreshStale() left stale objects alone because they are out of view:
     // the camera must be checked again after it moves.
-    bool staleOffscreen() const { return skippedOffscreen_; }
+    bool staleOffscreen() const { return skippedOffscreen_ || builtCoarse_; }
 
     // A change of a very large number of objects (a MOVE of the whole drawing, its undo) takes
     // them out of the scene at once but builds their geometry later: first what the camera sees,
@@ -135,6 +135,7 @@ private:
     double pixelSizeMm_ = 0.1;
     unsigned maxThreads_ = 0;
     bool skippedOffscreen_ = false;
+    bool builtCoarse_ = false;  // objects out of view were built for a far zoom (pumpPending)
     std::unordered_set<LayerId> lockedLayers_{};
     double lockedKeep_ = 0.4;
     std::unordered_map<LayerId, std::uint8_t> layerTransparency_{};

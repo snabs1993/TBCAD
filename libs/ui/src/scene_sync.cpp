@@ -503,6 +503,25 @@ std::size_t SceneSync::pumpPending(const render::Camera2D& camera, std::size_t l
     }
     buildSlice();
     if (built == 0 && !stopped) {  // nothing in view: use the time to catch up on the rest
+        // Out of view, an object is built for a zoom that shows the whole drawing and built again
+        // for the real zoom when the camera comes to it. Built for a close-up camera, every
+        // hatch pattern of a big drawing got its full dashes, out of sight (+2.3 million
+        // vertices per step of a walk along 20,000 hatched rooms), and how many depended on the
+        // frame budget.
+        BBox2 all = scene_.bounds();
+        all.merge(view);
+        for (const PendingRec& rec : pending_)
+            if (!rec.dead)
+                all.merge(rec.box);
+        const double fine = pixelSizeMm_;
+        pixelSizeMm_ = std::max(fine, std::max(all.width(), all.height()) / 4096.0);
+        if (pixelSizeMm_ > fine * 4)
+            builtCoarse_ = true;
+        struct Restore {
+            double& px;
+            double value;
+            ~Restore() { px = value; }
+        } restore{pixelSizeMm_, fine};
         for (PendingRec& rec : pending_) {
             if (built + slice.size() >= limit / 2)
                 break;

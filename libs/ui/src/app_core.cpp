@@ -2203,6 +2203,7 @@ void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
     if (render::Scene::needsRetessellation(lastTessellatedFor_, camera_) ||
         (staleWaiting_ && !(lastTessellatedFor_ == camera_))) {
         session_->sync->setPixelSize(camera_.pixelSizeMm());
+        profile::EditTimer t("frame: rebuild for the new zoom");
         session_->sync->refreshStale(camera_);
         staleWaiting_ = session_->sync->staleOffscreen();
         // Keep the zoom the waiting objects were measured against: only a pan re-checks.
@@ -2218,6 +2219,8 @@ void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
     pumpTimer.emplace("frame: build waiting objects", session_->sync->pendingCount());
     const std::size_t pumped = session_->sync->pumpPending(camera_, 8000, 30.0);
     pumpTimer.reset();
+    if (pumped > 0 && session_->sync->staleOffscreen())
+        staleWaiting_ = true;  // objects built far out of view are built again as the camera comes
     if (pumped > 0) {
         ++generation_;
         trimWhenSettled_ = true;
