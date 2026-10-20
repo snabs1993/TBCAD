@@ -75,6 +75,7 @@ TEST_CASE("LAYFRZ refuses the current layer but still freezes the others") {
 TEST_CASE("LAYISO hides the other layers and LAYUNISO brings back the earlier state") {
     Fixture f;
     f.setup();
+    f.host.setSetting("layiso.mode", "off");
     {
         auto tx = f.doc.begin("off");
         REQUIRE(layers::setOn(f.doc, tx, f.b, false).ok());
@@ -91,6 +92,40 @@ TEST_CASE("LAYISO hides the other layers and LAYUNISO brings back the earlier st
     CHECK(f.doc.layer(f.a)->on);
     CHECK_FALSE(f.doc.layer(f.b)->on);  // it was off before the first LAYISO
     CHECK(f.doc.header().custom.count("tbcad.layiso") == 0);
+}
+
+TEST_CASE("LAYISO Lock and fade locks the other layers, Settings switches the mode") {
+    Fixture f;
+    f.setup();
+    {
+        auto tx = f.doc.begin("lock");
+        REQUIRE(layers::setLocked(f.doc, tx, f.b, true).ok());
+        tx.commit();
+    }
+    // Lock and fade is the default, as in AutoCAD.
+    CHECK(f.run("LAYISO", {cmd::ScriptItem::select({f.ea}), cmd::ScriptItem::enter()}).finished);
+    CHECK(f.doc.layer(f.a)->on);
+    CHECK_FALSE(f.doc.layer(f.a)->locked);
+    CHECK(f.doc.layer(f.b)->on);
+    CHECK(f.doc.layer(f.b)->locked);
+    CHECK(f.doc.layer(kLayerZero)->on);
+    CHECK(f.doc.layer(kLayerZero)->locked);
+    CHECK(f.run("LAYUNISO", {}).finished);
+    CHECK_FALSE(f.doc.layer(kLayerZero)->locked);
+    CHECK(f.doc.layer(f.b)->locked);  // it was locked before LAYISO
+
+    // Settings: Off, then the next isolation turns the other layers off.
+    CHECK(f.run("LAYISO",
+                {"Settings", "Off", cmd::ScriptItem::select({f.eb}), cmd::ScriptItem::enter()})
+              .finished);
+    CHECK(f.host.setting("layiso.mode") == "off");
+    CHECK_FALSE(f.doc.layer(f.a)->on);
+    CHECK(f.run("LAYUNISO", {}).finished);
+    CHECK(f.doc.layer(f.a)->on);
+    // Settings: Lock and fade asks for the fade.
+    CHECK(f.run("LAYISO", {"Settings", "Lock", "40", cmd::ScriptItem::esc()}).finished);
+    CHECK(f.host.setting("layiso.mode") == "lock");
+    CHECK(f.host.setting("view.lockFade") == "40");
 }
 
 TEST_CASE("LAYMCH moves objects to the layer of the picked object") {

@@ -151,6 +151,45 @@ TEST_CASE("layers panel: groups and merge") {
     CHECK(onWalls == 2);
 }
 
+TEST_CASE("layers panel: column sorting and the property filter editor") {
+    Harness h(1920, 1080);
+    threeLayers(h);
+    run(h, "-LAYER Off A-Doors");
+    auto y = [&](const char* name) {
+        const auto* it = h.find(name, "Layers");
+        REQUIRE(it);
+        return it->min.y;
+    };
+    CHECK(y("A-Doors") < y("A-Walls"));  // by name to start with
+    // The Name header sits just above the first row (layer 0).
+    const auto* zero = h.find("0", "Layers");
+    REQUIRE(zero);
+    const float headerX = zero->min.x + 20, headerY = zero->min.y - 8;
+    h.click(headerX, headerY);  // again: Z-A
+    h.frame(3);
+    CHECK(y("A-Walls") < y("A-Doors"));
+    h.click(headerX, headerY);  // and back
+    h.frame(3);
+    CHECK(y("A-Doors") < y("A-Walls"));
+
+    // A property filter: the layers that are off, saved and applied.
+    REQUIRE(h.click("New property filter...", "Layers"));
+    h.frame(2);
+    REQUIRE(h.windowOpen("Layer Filter Properties"));
+    REQUIRE(h.enterText("Filter name", "Off-ones", "Layer Filter Properties"));
+    REQUIRE(h.click("On", "Layer Filter Properties"));
+    h.frame(2);
+    REQUIRE(h.click("Off", "Combo"));
+    h.frame(2);
+    REQUIRE(h.click("Save and apply", "Layer Filter Properties"));
+    h.frame(3);
+    const auto names = layers::layerFilterNames(h.core().document());
+    REQUIRE(names.size() == 1);
+    CHECK(names[0] == "off-ones");
+    CHECK(h.has("A-Doors", "Layers"));
+    CHECK_FALSE(h.has("A-Walls", "Layers"));
+}
+
 TEST_CASE("quick properties open next to the pointer, or in the corner") {
     Harness h(1920, 1080);
     threeLayers(h);
@@ -1218,13 +1257,14 @@ TEST_CASE("viewport menu: selection items fit the picked object and run") {
     CHECK_FALSE(h.has("Edit Polyline", "Popup"));
     CHECK(h.has("Select Similar", "Popup"));
 
-    // Isolate Layer from the menu hides the other layers.
+    // Isolate Layer from the menu locks and fades the other layers (LAYISO's default).
     REQUIRE(h.click("Isolate Layer", "Popup"));
     h.frame(3);
     h.core().pressEscape();
-    CHECK_FALSE(layer(h, "A-Walls")->on);
-    CHECK_FALSE(layer(h, "A-Doors")->on);
-    CHECK(layer(h, "0")->on);
+    CHECK(layer(h, "A-Walls")->locked);
+    CHECK(layer(h, "A-Doors")->locked);
+    CHECK(layer(h, "A-Walls")->on);
+    CHECK_FALSE(layer(h, "0")->locked);
 }
 
 TEST_CASE("layout tabs: add, switch, rename, delete and back to Model") {

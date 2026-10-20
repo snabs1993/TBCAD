@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <map>
 #include <set>
 #include <sstream>
@@ -44,18 +45,28 @@ struct PanelState {
     std::string filter{};
     std::string lastCommandFilter{};  // last layers.filter.serial we applied
     std::string stateName{};
-    bool invert = false;        // show the layers the filter does NOT match
-    std::string newName{};      // text field of the "Save filter" / "New group" popups
+    bool invert = false;    // show the layers the filter does NOT match
+    std::string newName{};  // text field of the "Save filter" / "New group" popups
+    // The property filter editor: one choice per switch (0 any, 1 yes, 2 no) and text fields.
+    struct PropFilter {
+        std::string name, pattern, colour, linetype, lineweight;
+        int on = 0, frozen = 0, locked = 0, plot = 0, used = 0;
+    } prop{};
     std::string stateRename{};  // new name typed for a layer state
     bool restoreHide = false;   // "turn off layers not in the state" on Restore
     // Layer States Manager dialog.
     std::string mgrSel{};   // the state picked in the list
     std::string mgrName{};  // text field for the new name / the rename
+    std::string lasPath{};  // file for Import / Export
     bool mgrVisibility = true, mgrLock = true, mgrPlot = true, mgrLook = true, mgrCurrent = true;
     // Layer Translator dialog.
     std::string trFilter{};
     std::map<std::uint32_t, std::string> trNew{};  // typed replacement name per layer
     std::set<std::uint32_t> collapsed{};
+    // Column the rows are sorted by (-1 or 0: by name, A-Z); sub-layers sort among their
+    // siblings. Set from the table header, which remembers it with the panel's layout.
+    int sortColumn = -1;
+    bool sortDescending = false;
     std::set<std::string> collapsedXrefs{};  // external references whose layers are folded away
     LayerId selected{};
     std::set<std::uint32_t> multi{};     // Ctrl / Shift click selection; always holds `selected`
@@ -136,8 +147,60 @@ std::vector<Row> buildRows(const Document& doc, const PanelState& st) {
         return false;
     };
     std::map<std::string, std::vector<LayerId>> xrefs;  // external reference -> its layers
+    auto sorted = [&](std::vector<LayerId> ids) {
+        if (st.sortColumn < 0 || (st.sortColumn == 0 && !st.sortDescending))
+            return ids;  // childrenOf already lists them by name
+        auto key = [&](const Layer& l) -> std::string {
+            char buf[16];
+            switch (st.sortColumn) {
+                case 1:
+                    return l.on ? "1" : "0";
+                case 2:
+                    return l.frozen ? "1" : "0";
+                case 4:
+                    return l.locked ? "1" : "0";
+                case 5:
+                    if (l.color.kind == ColorKind::Index) {
+                        std::snprintf(buf, sizeof buf, "0%03d", l.color.indexValue());
+                        return buf;
+                    }
+                    std::snprintf(buf, sizeof buf, "1%02x%02x%02x", l.color.r, l.color.g,
+                                  l.color.b);
+                    return buf;
+                case 6:
+                    return lowered(linetypeName(doc, l.linetype));
+                case 7:
+                    std::snprintf(buf, sizeof buf, "%05d", l.lineweight.v + 10);
+                    return buf;
+                case 8:
+                    return l.plot ? "1" : "0";
+                case 9:
+                    std::snprintf(buf, sizeof buf, "%03d", l.transparency);
+                    return buf;
+                case 10:
+                    return lowered(l.description);
+                default:
+                    return {};
+            }
+        };
+        std::stable_sort(ids.begin(), ids.end(), [&](LayerId a, LayerId b) {
+            const Layer* la = doc.layer(a);
+            const Layer* lb = doc.layer(b);
+            if (!la || !lb)
+                return false;
+            std::string ka = key(*la), kb = key(*lb);
+            if (ka == kb) {  // ties (and the Name column) go by name
+                ka = lowered(la->name);
+                kb = lowered(lb->name);
+                if (ka == kb)
+                    return false;
+            }
+            return st.sortDescending ? kb < ka : ka < kb;
+        });
+        return ids;
+    };
     auto visit = [&](auto&& self, LayerId parent, int depth) -> void {
-        for (LayerId id : childrenOf(doc, parent)) {
+        for (LayerId id : sorted(childrenOf(doc, parent))) {
             if (const Layer* l = doc.layer(id); l && depth == 0) {
                 if (std::string x = xrefPrefix(*l); !x.empty()) {
                     if (f.empty() || subtreeMatches(subtreeMatches, id))
@@ -577,6 +640,27 @@ void layerStatesManager(ui::PanelContext& ctx, const Document& doc, PanelState& 
     }
     ImGui::EndDisabled();
 
+    // Layer state files: Import reads TBCAD's own and AutoCAD's .las files and names the state
+    // after the file; Export writes the picked state.
+    ImGui::SetNextItemWidth(260);
+    ImGui::InputTextWithHint("##lasfile", "Layer state file (.las)", &st.lasPath);
+    ImGui::SameLine();
+    ImGui::BeginDisabled(st.lasPath.empty());
+    if (ImGui::Button("Import")) {
+        const std::filesystem::path p(std::u8string(st.lasPath.begin(), st.lasPath.end()));
+        const std::u8string stem = p.stem().u8string();
+        std::string name(stem.begin(), stem.end());
+        exec(ctx,
+             {"-LAYERSTATE", "Import", name.empty() ? std::string("Imported") : name, st.lasPath});
+        st.mgrSel = lowered(name);
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!picked);
+    if (ImGui::Button("Export") && picked)
+        exec(ctx, {"-LAYERSTATE", "Export", st.mgrSel, st.lasPath});
+    ImGui::EndDisabled();
+    ImGui::EndDisabled();
+
     ImGui::SeparatorText("Restore these properties");
     ImGui::Checkbox("On / frozen", &st.mgrVisibility);
     ImGui::SameLine();
@@ -603,6 +687,111 @@ void layerStatesManager(ui::PanelContext& ctx, const Document& doc, PanelState& 
     ImGui::EndDisabled();
     ImGui::SameLine();
     if (ImGui::Button("Close") || !open)
+        ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
+}
+
+// The words of the -LAYERFILTER language for the property filter editor's choices.
+std::string propertyFilterExpression(const PanelState::PropFilter& p) {
+    std::string e;
+    auto add = [&](const std::string& w) { e += (e.empty() ? "" : " ") + w; };
+    auto trimmed = [](std::string t) {
+        while (!t.empty() && t.back() == ' ')
+            t.pop_back();
+        while (!t.empty() && t.front() == ' ')
+            t.erase(0, 1);
+        return t;
+    };
+    if (!trimmed(p.pattern).empty())
+        add("name:" + trimmed(p.pattern));
+    const std::pair<int, std::pair<const char*, const char*>> switches[] = {
+        {p.on, {"on", "off"}},
+        {p.frozen, {"frozen", "thawed"}},
+        {p.locked, {"locked", "unlocked"}},
+        {p.plot, {"plot", "noplot"}},
+        {p.used, {"used", "empty"}}};
+    for (const auto& [v, words] : switches)
+        if (v == 1 || v == 2)
+            add(v == 1 ? words.first : words.second);
+    if (!trimmed(p.colour).empty())
+        add("color:" + trimmed(p.colour));
+    if (!trimmed(p.linetype).empty())
+        add("linetype:" + trimmed(p.linetype));
+    if (!trimmed(p.lineweight).empty())
+        add("lineweight:" + trimmed(p.lineweight));
+    return e;
+}
+
+// AutoCAD's Layer Filter Properties: name a filter, set what it matches, see which layers
+// match, and save it among the drawing's filters (-LAYERFILTER Save).
+void propertyFilterEditor(ui::PanelContext& ctx, const Document& doc, PanelState& st) {
+    ImGui::SetNextWindowSize(ImVec2(440, 0), ImGuiCond_Appearing);
+    bool open = true;
+    if (!ImGui::BeginPopupModal(
+            "Layer Filter Properties", &open,
+            ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize))
+        return;
+    PanelState::PropFilter& p = st.prop;
+    ImGui::SetNextItemWidth(200);
+    ImGui::InputTextWithHint("Filter name", "e.g. Walls-frozen", &p.name);
+    ImGui::Separator();
+    ImGui::SetNextItemWidth(200);
+    ImGui::InputTextWithHint("Layer name", "* and ? allowed, e.g. A-WALL*", &p.pattern);
+    auto tri = [](const char* label, int& v, const char* yes, const char* no) {
+        const char* items[] = {"Any", yes, no};
+        ImGui::SetNextItemWidth(200);
+        ImGui::Combo(label, &v, items, 3);
+    };
+    tri("On", p.on, "On", "Off");
+    tri("Freeze", p.frozen, "Frozen", "Thawed");
+    tri("Lock", p.locked, "Locked", "Unlocked");
+    tri("Plot", p.plot, "Plot", "No plot");
+    tri("In use", p.used, "Used", "Unused");
+    ImGui::SetNextItemWidth(200);
+    ImGui::InputTextWithHint("Colour", "red, 3 or 255,128,0", &p.colour);
+    ImGui::SetNextItemWidth(200);
+    ImGui::InputTextWithHint("Linetype", "e.g. Dashed", &p.linetype);
+    ImGui::SetNextItemWidth(200);
+    ImGui::InputTextWithHint("Lineweight", "e.g. 0.35", &p.lineweight);
+
+    const std::string expr = propertyFilterExpression(p);
+    std::string error;
+    std::vector<std::string> hits;
+    if (!expr.empty())
+        for (LayerId id : layerTreeOrder(doc)) {
+            std::string e;
+            if (layerMatchesFilter(doc, id, expr, &e))
+                hits.push_back(layerPath(doc, id));
+            if (!e.empty()) {
+                error = e;
+                break;
+            }
+        }
+    ImGui::Separator();
+    if (expr.empty())
+        ImGui::TextDisabled("Choose at least one property.");
+    else if (!error.empty())
+        ImGui::TextColored(ImVec4(0.95f, 0.45f, 0.35f, 1.0f), "%s", error.c_str());
+    else {
+        ImGui::TextDisabled("%zu layer(s) match: %s", hits.size(), expr.c_str());
+        if (ImGui::BeginChild("##hits", ImVec2(0, 90), true)) {
+            for (const std::string& h : hits)
+                ImGui::TextUnformatted(h.c_str());
+        }
+        ImGui::EndChild();
+    }
+    const bool canSave = !expr.empty() && error.empty() && !p.name.empty();
+    ImGui::BeginDisabled(!canSave);
+    if (ImGui::Button("Save and apply") && canSave) {
+        exec(ctx, {"-LAYERFILTER Save " + p.name, expr});
+        st.filter = "filter:" + p.name;
+        st.invert = false;
+        p = {};
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel") || !open)
         ImGui::CloseCurrentPopup();
     ImGui::EndPopup();
 }
@@ -729,8 +918,10 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
 
     // Toolbar. Buttons wrap onto the next row when the panel is narrow, so none is clipped.
     const auto nextButton = [](const char* label) {
+        // Room left on the row of the previous item (the cursor is already on the next row).
         const float w = ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2.0f;
-        if (ImGui::GetContentRegionAvail().x > w + ImGui::GetStyle().ItemSpacing.x)
+        const float right = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
+        if (right - ImGui::GetItemRectMax().x > w + ImGui::GetStyle().ItemSpacing.x)
             ImGui::SameLine();
     };
     if (ImGui::Button("New"))
@@ -798,7 +989,12 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
     if (ImGui::Button("Save filter..."))
         ImGui::OpenPopup("##savefilter");
     ImGui::EndDisabled();
-    ImGui::SameLine();
+    nextButton("New property filter...");
+    if (ImGui::Button("New property filter..."))
+        ImGui::OpenPopup("Layer Filter Properties");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("A saved filter by name, switches, colour, linetype and lineweight");
+    nextButton("New group...");
     ImGui::BeginDisabled(!st.selected || !doc.layer(st.selected));
     if (ImGui::Button("New group..."))
         ImGui::OpenPopup("##newgroup");
@@ -824,6 +1020,7 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
         }
         ImGui::EndPopup();
     }
+    propertyFilterEditor(ctx, doc, st);
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##filter", "Filter layers (text, or name:S-* frozen ...)",
                              &st.filter);
@@ -893,10 +1090,11 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
     for (const Row& r : rows)
         st.order.push_back(r.id.value);
 
-    constexpr ImGuiTableFlags kFlags = ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY |
-                                       ImGuiTableFlags_ScrollX | ImGuiTableFlags_RowBg |
-                                       ImGuiTableFlags_BordersInnerV |
-                                       ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_Hideable;
+    // Widths, order, shown columns and the sort are remembered with the panel layout (imgui.ini).
+    constexpr ImGuiTableFlags kFlags =
+        ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY | ImGuiTableFlags_ScrollX |
+        ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit |
+        ImGuiTableFlags_Hideable | ImGuiTableFlags_Sortable | ImGuiTableFlags_Reorderable;
     const float footer = ImGui::GetTextLineHeightWithSpacing() + 6;
     const float availWidth = ImGui::GetContentRegionAvail().x;
     if (ImGui::BeginTable("##layers2", 11, kFlags, ImVec2(0, -footer))) {
@@ -909,11 +1107,13 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
         const VpTarget vp = viewportTarget(ctx);
         const float others = 30 * 3 + 40 + 34 + (narrow ? 0 : 72 + 56) + (vp ? 40 : 0) +
                              (narrow ? 6 : 8) * ImGui::GetStyle().CellPadding.x * 2;
-        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed,
-                                std::max(150.0f, availWidth - others));
+        ImGui::TableSetupColumn(
+            "Name", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_DefaultSort,
+            std::max(150.0f, availWidth - others));
         ImGui::TableSetupColumn("On", ImGuiTableColumnFlags_WidthFixed, 30);
         ImGui::TableSetupColumn("Frz", ImGuiTableColumnFlags_WidthFixed, 30);
-        ImGui::TableSetupColumn("VP Frz", ImGuiTableColumnFlags_WidthFixed, 44);
+        ImGui::TableSetupColumn(
+            "VP Frz", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoSort, 44);
         ImGui::TableSetupColumn("Lck", ImGuiTableColumnFlags_WidthFixed, 30);
         ImGui::TableSetupColumn("Colour", ImGuiTableColumnFlags_WidthFixed, 40);
         ImGui::TableSetupColumn(
@@ -929,6 +1129,21 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
             "Transp.", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_DefaultHide, 56);
         ImGui::TableSetupColumn(
             "Description", ImGuiTableColumnFlags_WidthStretch | ImGuiTableColumnFlags_DefaultHide);
+        // Clicking a header sorts by it, again reverses (by name A-Z to start with).
+        if (ImGuiTableSortSpecs* specs = ImGui::TableGetSortSpecs(); specs && specs->SpecsDirty) {
+            const int col = specs->SpecsCount > 0 ? specs->Specs[0].ColumnIndex : -1;
+            const bool desc = specs->SpecsCount > 0 &&
+                              specs->Specs[0].SortDirection == ImGuiSortDirection_Descending;
+            specs->SpecsDirty = false;
+            if (col != st.sortColumn || desc != st.sortDescending) {
+                st.sortColumn = col;
+                st.sortDescending = desc;
+                rows = buildRows(doc, st);
+                st.order.clear();
+                for (const Row& r : rows)
+                    st.order.push_back(r.id.value);
+            }
+        }
         // VP Frz only exists while a layout viewport is the target.
         static bool vpShown = false;
         if (vpShown != static_cast<bool>(vp) || ImGui::GetFrameCount() < 3) {
@@ -1026,8 +1241,8 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
                         break;
                     if (vp) {
                         ImGui::TableSetColumnIndex(3);
-                        const bool fz =
-                            std::find(vp.frozen.begin(), vp.frozen.end(), row.id) != vp.frozen.end();
+                        const bool fz = std::find(vp.frozen.begin(), vp.frozen.end(), row.id) !=
+                                        vp.frozen.end();
                         bool v = fz;
                         if (ImGui::Checkbox("##vpfrz", &v)) {
                             ctx.host->setSetting("tmp.layout.viewport",

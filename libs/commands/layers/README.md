@@ -58,12 +58,26 @@ locked unlocked plot noplot used empty current`, `name:S-*`, `path:S-FLOOR~e*`, 
 wildcards. A bare word is a name pattern. `-LAYERFILTER Apply` sets the host setting
 `layers.filter`; the Layers panel follows it and also accepts expressions in its filter box (any
 text with a `:`). The panel has a "Layer states..." list to restore a state and save the current one.
+"New property filter..." opens Layer Filter Properties (name pattern, on, freeze, lock, plot, in
+use, colour, linetype, lineweight), lists the layers that match, and saves the filter with
+`-LAYERFILTER Save`.
+
+`-LAYERSTATE Import` (and Import in the Layer States Manager) reads TBCAD's own state files and
+AutoCAD's `.las` files: DXF group codes, of which the first LAYERSTATE is read with each LAYER's
+8 name, 70/90 flags (1 frozen, 4 locked), 62 colour (negative: off), 420 true colour, 6 linetype,
+370 lineweight, 290 plot, and 302 current layer. Export writes TBCAD's format.
+
+The table sorts by any column (click the header; again for the other direction); sub-layers sort
+among their siblings. Column widths, order, shown columns and the sort are kept with the panel
+layout.
 
 ## Layer tools (Q74m)
 
 Object-driven one-step commands (select objects, the layers they sit on are changed):
-LAYOFF, LAYFRZ (skips the current layer), LAYLCK, LAYULK, LAYISO (keeps the earlier on/off state
-in `tbcad.layiso` so LAYUNISO can restore it; repeated LAYISO keeps the first snapshot), LAYUNISO,
+LAYOFF, LAYFRZ (skips the current layer), LAYLCK, LAYULK, LAYISO (keeps the earlier on/off and
+lock state in `tbcad.layiso` so LAYUNISO can restore it; repeated LAYISO keeps the first snapshot;
+its Settings choose Off or Lock and fade for the other layers, `layiso.mode`, with the fade in
+`view.lockFade` = LAYLOCKFADECTL; Lock and fade is the default, as in AutoCAD), LAYUNISO,
 LAYON and LAYTHW (no prompt: show / thaw every layer), LAYMCH (move objects to the layer of a picked
 object), LAYMRG (merge the layers of the selected objects into the layer of a picked object, one
 undo step) and LAYDEL (asks Yes/No, then erases the layer with all its objects).

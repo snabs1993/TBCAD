@@ -242,6 +242,148 @@ Result<void> restoreLayerState(const Document& doc, Transaction& tx, std::string
 
 constexpr std::string_view kStateFileHeader = "TBCAD-LAYERSTATE 1";
 
+namespace {
+
+// AutoCAD's layer state file (.las) is DXF text: a group code on one line, its value on the
+// next. It starts with LAYERSTATEDICTIONARY and LAYERSTATE records; each LAYER record lists one
+// layer with the codes of the LAYER table: 8 name, 70/90 flags (1 frozen, 4 locked), 62 colour
+// (negative when the layer is off), 420 true colour, 6 linetype, 370 lineweight, 290 plot.
+// The first LAYERSTATE is turned into the lines of a stored state (see saveLayerState); its
+// current layer is 302 (read only when it names a layer). Empty when the text is not such a file.
+std::optional<std::string> fromAcadLas(std::string_view text, std::string& error) {
+    std::vector<std::pair<int, std::string>> pairs;
+    std::size_t pos = 0;
+    auto nextLine = [&](std::string& out) {
+        if (pos >= text.size())
+            return false;
+        std::size_t nl = text.find('\n', pos);
+        out.assign(text.substr(pos, nl == std::string_view::npos ? nl : nl - pos));
+        pos = nl == std::string_view::npos ? text.size() : nl + 1;
+        while (!out.empty() && (out.back() == '\r' || out.back() == ' '))
+            out.pop_back();
+        std::size_t b = 0;
+        while (b < out.size() && out[b] == ' ')
+            ++b;
+        out.erase(0, b);
+        return true;
+    };
+    std::string code, value;
+    while (nextLine(code)) {
+        if (code.size() >= 3 && code.compare(0, 3, "\xEF\xBB\xBF") == 0)
+            code.erase(0, 3);
+        if (code.empty() && pos >= text.size())
+            break;
+        char* end = nullptr;
+        const long c = std::strtol(code.c_str(), &end, 10);
+        if (code.empty() || *end != 0 || !nextLine(value)) {
+            if (pairs.empty())
+                return std::nullopt;  // not group codes: some other file
+            error = "The .las file is damaged near group code " + code + ".";
+            return std::string();
+        }
+        pairs.emplace_back(static_cast<int>(c), value);
+    }
+    if (pairs.empty() || pairs[0].first != 0 ||
+        (pairs[0].second != "LAYERSTATEDICTIONARY" && pairs[0].second != "LAYERSTATE"))
+        return std::nullopt;
+
+    struct LasLayer {
+        std::string name;
+        int flags = 0;
+        int aci = 7;
+        std::optional<std::uint32_t> rgb;
+        std::string linetype = "Continuous";
+        int weight = -3;
+        bool plot = true;
+    };
+    std::vector<LasLayer> layers;
+    std::string current;
+    int states = 0;
+    enum class In { None, State, Layer } in = In::None;
+    for (const auto& [c, v] : pairs) {
+        if (c == 0) {
+            if (v == "LAYERSTATE") {
+                if (++states > 1)
+                    break;  // only the first state of the file
+                in = In::State;
+            } else if (v == "LAYER" && states == 1) {
+                layers.emplace_back();
+                in = In::Layer;
+            } else {
+                in = In::None;
+            }
+            continue;
+        }
+        if (in == In::State && c == 302 && current.empty())
+            current = v;
+        if (in != In::Layer)
+            continue;
+        LasLayer& l = layers.back();
+        const long n = std::strtol(v.c_str(), nullptr, 10);
+        switch (c) {
+            case 8:
+                l.name = v;
+                break;
+            case 70:
+            case 90:
+                l.flags = static_cast<int>(n);
+                break;
+            case 62:
+                l.aci = static_cast<int>(n);
+                break;
+            case 420:
+                l.rgb = static_cast<std::uint32_t>(n) & 0xFFFFFFu;
+                break;
+            case 6:
+                l.linetype = v;
+                break;
+            case 370:
+                l.weight = static_cast<int>(n);
+                break;
+            case 290:
+                l.plot = n != 0;
+                break;
+            default:
+                break;
+        }
+    }
+    std::string body;
+    std::size_t count = 0;
+    if (!current.empty())
+        for (const LasLayer& l : layers)
+            if (l.name == current)
+                body += "#current\t" + escape(current) + '\n';
+    for (const LasLayer& l : layers) {
+        if (l.name.empty())
+            continue;
+        Color colour = Color::index(static_cast<std::uint8_t>(std::clamp(std::abs(l.aci), 1, 255)));
+        if (l.rgb)
+            colour = Color::rgb(static_cast<std::uint8_t>(*l.rgb >> 16),
+                                static_cast<std::uint8_t>(*l.rgb >> 8),
+                                static_cast<std::uint8_t>(*l.rgb));
+        LineWeight w = LineWeight::defaultWeight();
+        if (l.weight >= 0 && l.weight <= 211)
+            w = LineWeight::hundredths(static_cast<std::int16_t>(l.weight));
+        else if (l.weight == -1)
+            w = LineWeight::byLayer();
+        body += escape(l.name) + '\t';
+        body += l.aci >= 0 ? '1' : '0';
+        body += (l.flags & 1) ? '1' : '0';
+        body += (l.flags & 4) ? '1' : '0';
+        body += l.plot ? '1' : '0';
+        body += '\t' + escape(colorName(colour)) + '\t' + escape(l.linetype) + '\t' +
+                escape(lineweightName(w)) + '\n';
+        ++count;
+    }
+    if (count == 0) {
+        error = "The .las file holds no layers.";
+        return std::string();
+    }
+    return body;
+}
+
+}  // namespace
+
 Result<std::string> exportLayerStateText(const Document& doc, std::string_view name) {
     auto key = cleanName(name);
     if (!key)
@@ -257,6 +399,13 @@ Result<void> importLayerStateText(const Document& doc, Transaction& tx, std::str
     auto key = cleanName(name);
     if (!key)
         return key.error();
+    std::string lasError;
+    if (auto las = fromAcadLas(text, lasError)) {  // a file written by AutoCAD
+        if (!lasError.empty())
+            return err(ErrorCode::InvalidArgument, lasError);
+        return tx.modifyHeader(
+            [&](Header& h) { h.custom[std::string(kStatePrefix) + key.value()] = *las; });
+    }
     std::string body;
     std::size_t pos = 0;
     bool first = true;

@@ -1,6 +1,8 @@
 // One-step layer tools that work from picked objects: LAYOFF, LAYFRZ, LAYLCK, LAYULK, LAYISO,
 // LAYUNISO, LAYON, LAYTHW, LAYMCH, LAYMRG, LAYDEL.
 #include <algorithm>
+#include <cmath>
+#include <cstdlib>
 #include <sstream>
 
 #include "commands.h"
@@ -77,25 +79,63 @@ private:
     Act act_;
 };
 
+// LAYISO: the layers of the picked objects stay; the others are turned off, or (Settings > Lock
+// and fade, layiso.mode = lock) locked so that they show faded by LAYLOCKFADECTL.
 class LayIsoCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "LAYISO"; }
     std::string_view description() const override {
-        return "Hide every layer except those of the selected objects";
+        return "Hide or lock and fade every layer except those of the selected objects";
     }
     Task run(CommandContext& ctx) override {
-        auto sel = co_await ctx.getSelection("Select objects on the layers to isolate");
+        cmd::SelectionOptions so;
+        so.keywords = {"Settings"};
+        cmd::SelectionResult sel;
+        for (;;) {
+            const bool lock = ctx.host().setting("layiso.mode").value_or("lock") == "lock";
+            ctx.message(std::string("Current setting: ") +
+                        (lock ? "Lock and fade other layers" : "Turn off other layers"));
+            sel = co_await ctx.getSelection(
+                "Select objects on the layer(s) to be isolated or [Settings]", so);
+            if (sel.status != cmd::Status::Keyword)
+                break;
+            cmd::KeywordOptions ko;
+            ko.keywords = {"Off", "Lock"};
+            ko.defaultKeyword = lock ? "Lock" : "Off";
+            auto k = co_await ctx.getKeyword(
+                "Enter setting for layers not isolated [Off/Lock and fade] <" +
+                    std::string(lock ? "Lock and fade" : "Off") + ">",
+                ko);
+            if (!k.ok())
+                co_return;
+            const bool wantLock = k.keyword == "Lock";
+            ctx.host().setSetting("layiso.mode", wantLock ? "lock" : "off");
+            if (wantLock) {
+                cmd::IntOptions io;
+                io.min = 0;
+                io.max = 90;
+                io.defaultValue = static_cast<int>(std::lround(std::strtod(
+                    ctx.host().setting("view.lockFade").value_or("60").c_str(), nullptr)));
+                auto fade = co_await ctx.getInteger("Enter fade value (0-90)", io);
+                if (!fade.ok())
+                    co_return;
+                ctx.host().setSetting("view.lockFade", std::to_string(fade.value));
+            }
+        }
         if (!sel.ok())
             co_return;
         std::vector<LayerId> keep = layersOf(ctx.doc(), sel.ids);
         if (keep.empty())
             co_return;
-        // Remember which layers were on so LAYUNISO can bring them back (kept across repeats).
+        const bool lock = ctx.host().setting("layiso.mode").value_or("lock") == "lock";
+        // Remember which layers were on and unlocked so LAYUNISO can bring them back (kept
+        // across repeats).
         std::string saved;
         if (!ctx.doc().header().custom.count(kIsoKey))
             for (const auto& [id, l] : ctx.doc().layers())
-                saved += std::to_string(id.value) + "\t" + (l.on ? "1" : "0") + "\n";
-        auto r = isolateLayers(ctx.doc(), ctx.tx(), keep);
+                saved += std::to_string(id.value) + "\t" + (l.on ? "1" : "0") + "\t" +
+                         (l.locked ? "1" : "0") + "\n";
+        auto r = isolateLayers(ctx.doc(), ctx.tx(), keep, lock);
         if (!r) {
             ctx.message(r.error().message);
             co_return;
@@ -116,6 +156,7 @@ public:
             ctx.message("No layers are isolated.");
             co_return;
         }
+        // Lines "id<TAB>on[<TAB>locked]"; drawings saved before Lock and fade have no third field.
         std::istringstream in(it->second);
         std::string line;
         while (std::getline(in, line)) {
@@ -123,8 +164,12 @@ public:
             if (tab == std::string::npos)
                 continue;
             LayerId id{static_cast<std::uint32_t>(std::stoul(line.substr(0, tab)))};
-            if (ctx.doc().layer(id))
-                (void)setOn(ctx.doc(), ctx.tx(), id, line.substr(tab + 1) == "1");
+            if (!ctx.doc().layer(id))
+                continue;
+            const auto tab2 = line.find('\t', tab + 1);
+            (void)setOn(ctx.doc(), ctx.tx(), id, line.substr(tab + 1, tab2 - tab - 1) == "1");
+            if (tab2 != std::string::npos)
+                (void)setLocked(ctx.doc(), ctx.tx(), id, line.substr(tab2 + 1) == "1");
         }
         (void)ctx.tx().modifyHeader([](Header& h) { h.custom.erase(kIsoKey); });
         ctx.message("Layers restored.");
