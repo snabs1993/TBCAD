@@ -656,7 +656,7 @@ void Writer::mleaderNote(const MLeaderData& m, std::vector<DataItem>& items) {
         items.push_back(it);
     };
     items.push_back(noteText("c=" + std::to_string(static_cast<int>(m.content)) +
-                                   ";d=" + (m.dogleg ? "1" : "0")));
+                             ";d=" + (m.dogleg ? "1" : "0")));
     real(m.textHeight);
     real(m.blockScale);
     real(m.blockRotation);
@@ -1204,11 +1204,14 @@ void Writer::writeMText(const Props& p, const MTextData& d, std::uint64_t owner)
         o.d(45, d.bgScale);
     }
     if (d.columns > 1 && d.width > 0) {
-        o.i(75, 2);  // dynamic columns, automatic height
+        const bool fixed = d.columnHeight > 0;
+        o.i(75, fixed ? 1 : 2);  // static columns, or dynamic ones of automatic height
         o.i(76, d.columns);
-        o.i(79, 1);
+        o.i(79, fixed ? 0 : 1);
         o.d(48, d.width);
         o.d(49, d.columnGap > 0 ? d.columnGap : 2 * d.height);
+        if (fixed)
+            o.d(46, d.columnHeight);
     }
     count("MTEXT");
 }

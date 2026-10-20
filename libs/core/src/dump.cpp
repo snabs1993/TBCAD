@@ -169,6 +169,8 @@ struct DataDumper {
           << " att" << static_cast<int>(d.attach) << " style" << d.style << " ";
         if (d.columns > 1)
             o << "cols" << static_cast<int>(d.columns) << " gap" << d.columnGap << " ";
+        if (d.columns > 1 && d.columnHeight > 0)
+            o << "colh" << d.columnHeight << " ";
         if (d.lineSpacing != 1.0)
             o << "ls" << d.lineSpacing << " ";
         if (d.bgMode)

@@ -121,12 +121,34 @@ is done by the renderer from the rings.
 | `MTEXTFORMAT` | `MTF` | select MTEXT; Background (None / Window / Colour, then the border factor) or LineSpacing. The Text panel has buttons for underline, strike, width, paragraph alignment, indent and tab, and a shortcut to this command |
 | `SPELL` | | select text; each English word that is not in the dictionary asks Ignore / Change / Add / All, plus Suggest (takes the nearest known word) when there is one. Words with Thai or other non-ASCII letters, digits or all capitals are never flagged. Added words are saved in the drawing |
 | `STYLE` | `ST` | name (`?` lists), font family or `.ttf/.otf` file, width factor, oblique angle, fixed height (0 = variable); makes it current |
-| `TEXTEDIT` | `ED`, `DDEDIT` | selected text (pre-selection works), new text; the old text is the default |
+| `TEXTEDIT` | `ED`, `DDEDIT` | selected text, new text (edited in place in a box at the text; the old text is the default). **Mode** Single / Multiple; with `TEXTEDITMODE` 0 (Multiple, the default) it asks for the next object until Enter, and **Undo** takes the last edit back. An object selected first (a double-click, the Text panel) is always a single edit. The whole command is one undo step |
 
-The **Text** panel (View > panels) edits the single selected text object in a multiline input
-with B / I / Height buttons that wrap the selected text in markup. Apply runs `TEXTEDIT`, so an
-edit is one undo step. It uses the ordinary ImGui text input, so the Windows IME works as it does
-in the command line.
+## The text editors
+
+MTEXT and TEXTEDIT on multiline text edit in a box at the text, with a formatting bar above it.
+The **Text** panel (View > panels) has the same bar for the selected object; Apply runs `TEXTEDIT`.
+Both use the ordinary ImGui text input, so the Windows IME (Thai) works as it does in the command
+line. The bar (`textcmd::FormatBar`, edits in `format_edits.h`):
+
+* **B I U O S**: wrap the selected text in bold, italic, underline, overline or strikethrough
+  markup; **a/b** stacks a selected `1/2`, `1#2` or `1^2` (`\S1/2;`).
+* **Colour** (ACI 1 to 9 or a number) and **Set height** for the selected text.
+* **@ Symbol**: degree, plus/minus, diameter, almost equal, angle, delta, identity, not equal, ohm,
+  centre line, property line, squared, cubed, subscript 2, non-breaking space, Baht and the Thai
+  marks ๆ and ฯ.
+* **Left / Centre / Right / Justify** for the paragraph at the cursor.
+* **Bullets and numbering**: bulleted, numbered (1. 2. 3.) or lettered (a. b. c.) lists with a
+  hanging indent of two text heights, or Off; the paragraph after a list starts without the indent.
+* **Paragraph...**: first line indent, left and right indents, tab stops, space before and after
+  and alignment, as one `\px...;` code at the start of the paragraph (it holds until the next).
+* **Find and replace** inside the text, with a live count and Match case.
+* **Spelling**: the English words SPELL would flag, each with its suggestions to click.
+
+MTEXT's box also has Height, Justify and Style, **Columns** (none; 2 to 4 dynamic, balanced to end
+at about the same height; or 2 to 4 static, each as tall as the rectangle or the **Column height**
+typed) and **Mask** (background mask in the drawing background colour; MTEXTFORMAT sets a fill
+colour and the border). Static columns are stored as `MTextData::columnHeight` (DXF 75 = 1 with
+the height in 46; a tail of the `.tbcad` MTEXT record that older readers ignore).
 
 ## Fixed text height
 

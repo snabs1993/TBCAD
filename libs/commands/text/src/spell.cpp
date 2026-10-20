@@ -8,6 +8,7 @@
 #include <sstream>
 
 #include "commands.h"
+#include "tbcad/textcmd/textcmd.h"
 
 namespace tbcad::textcmd {
 
@@ -302,6 +303,15 @@ public:
 };
 
 }  // namespace
+
+std::vector<SpellIssue> misspelledWords(const Document& doc, const std::string& markup) {
+    std::vector<SpellIssue> out;
+    const std::set<std::string> user = userWords(doc);
+    for (const Span& sp : candidates(markup, true))
+        if (!known(sp.word, user))
+            out.push_back({sp.word, sp.begin, suggestions(sp.word, user)});
+    return out;
+}
 
 std::unique_ptr<cmd::Command> makeSpellCommand() {
     return std::make_unique<SpellCommand>();

@@ -396,9 +396,11 @@ struct MTextData {
     std::string utf8{};  // TBCAD markup
     // Columns: with `columns` > 1 and a `width` the text flows through that many columns of
     // `width` each, `columnGap` apart (0 = twice the text height), balanced so they end at about
-    // the same height.
+    // the same height. A `columnHeight` > 0 makes the columns static: each holds that much text
+    // before the next one starts (the last one takes the rest).
     std::uint8_t columns = 1;
     double columnGap = 0;
+    double columnHeight = 0;
     // Line pitch as a multiple of the usual one (DXF 44: 0.25 to 4).
     double lineSpacing = 1.0;
     // Background mask (DXF 90/63/45): 0 none, 1 hides what is behind in the drawing background
