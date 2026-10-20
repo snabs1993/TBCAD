@@ -186,9 +186,9 @@ TEST_CASE("INSERT in a drawing with no blocks still takes a typed drawing file")
 TEST_CASE("paletteInsertLines adds only the options that differ from plain INSERT") {
     CHECK(paletteInsertLines("Door", {}) == std::vector<std::string>{"INSERT", "Door"});
     InsertOptions o{.scale = 2.5, .rotationDeg = 90, .repeat = true, .explode = true};
-    CHECK(paletteInsertLines("Door", o) ==
-          std::vector<std::string>{"INSERT", "Door", "Scale", "2.5", "Rotate", "90", "Multiple",
-                                   "Explode"});
+    CHECK(paletteInsertLines("Door", o) == std::vector<std::string>{"INSERT", "Door", "Scale",
+                                                                    "2.5", "Rotate", "90",
+                                                                    "Multiple", "Explode"});
     CHECK(paletteInsertLines("D", {.scale = 0}) == std::vector<std::string>{"INSERT", "D"});
 }
 
@@ -209,8 +209,9 @@ TEST_CASE("the recent block list keeps the newest first, once per block and file
     CHECK(list.size() == kMaxRecentBlocks);
     CHECK(list.front().name == "B39");
     CHECK(parseRecent(formatRecent(list)) == list);
-    CHECK(parseRecent("broken\x1e\x1fno name\x1f" "0\x1eok\x1f\x1f" "1") ==
-          std::vector<RecentBlock>{{"ok", "", true}});
+    CHECK(parseRecent("broken\x1e\x1fno name\x1f"
+                      "0\x1eok\x1f\x1f"
+                      "1") == std::vector<RecentBlock>{{"ok", "", true}});
 }
 
 TEST_CASE("INSERT records recent blocks, with the drawing file for whole files") {

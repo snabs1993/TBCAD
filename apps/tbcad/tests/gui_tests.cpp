@@ -2281,13 +2281,14 @@ TEST_CASE("block editor: BEDIT opens Block Authoring, its buttons run the editor
     CHECK(def->dynamic->params[0].states.size() == 2);
 }
 
-TEST_CASE("blocks palette: double-click inserts with the palette's options, drag lands at the drop") {
+TEST_CASE(
+    "blocks palette: double-click inserts with the palette's options, drag lands at the drop") {
     Harness h(1920, 1080);
     h.frame(3);
     for (const char* s : {"LINE", "0,0", "10,0", ""})
         h.core().submitText(s);
     h.core().selectAll();
-    for (const char* s : {"BLOCK", "Sym", "0,0", "D"})
+    for (const char* s : {"BLOCK", "Sym", "0,0", "R"})
         h.core().submitText(s);
     h.core().submitText("ZOOM");
     h.core().submitText("W");
@@ -2307,8 +2308,13 @@ TEST_CASE("blocks palette: double-click inserts with the palette's options, drag
     h.frame(3);
     h.core().submitText("30,40");
     h.frame(3);
-    const std::size_t afterClick = entityCount(h);
-    REQUIRE(afterClick == 1);
+    auto inserts = [&] {
+        std::size_t n = 0;
+        h.core().document().forEachEntity(
+            [&](const Entity& e) { n += kind(e) == EntityKind::Insert; });
+        return n;
+    };
+    REQUIRE(inserts() == 1);
     const InsertData* first = nullptr;
     h.core().document().forEachEntity([&](const Entity& e) {
         if (const auto* i = entityAs<InsertData>(e))
@@ -2322,7 +2328,7 @@ TEST_CASE("blocks palette: double-click inserts with the palette's options, drag
     const ImVec2 drop = screenOf(h, {-50, -20});
     h.drag(at.x, at.y, drop.x, drop.y);
     h.frame(4);
-    REQUIRE(entityCount(h) == 2);
+    REQUIRE(inserts() == 2);
     bool found = false;
     h.core().document().forEachEntity([&](const Entity& e) {
         if (const auto* i = entityAs<InsertData>(e))

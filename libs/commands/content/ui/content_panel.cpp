@@ -3,8 +3,8 @@
 
 #include <algorithm>
 #include <filesystem>
-#include <memory>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
@@ -306,13 +306,13 @@ void drawItems(ui::PanelContext& pc, State& st) {
                 if (t == st.thumbs.end()) {
                     const BlockDef* b = st.source->doc->blockByName(item.name);
                     t = st.thumbs
-                            .emplace(item.name, b ? block_cmds::thumbnailOfBlock(*st.source->doc,
-                                                                                 b->id)
-                                                  : block_cmds::Thumbnail{})
+                            .emplace(item.name,
+                                     b ? block_cmds::thumbnailOfBlock(*st.source->doc, b->id)
+                                       : block_cmds::Thumbnail{})
                             .first;
                 }
-                drawThumb(ImGui::GetWindowDrawList(), ImVec2(at.x + 4, at.y + 2), 32.0f,
-                          t->second, ink);
+                drawThumb(ImGui::GetWindowDrawList(), ImVec2(at.x + 4, at.y + 2), 32.0f, t->second,
+                          ink);
                 ImGui::SetCursorScreenPos(ImVec2(at.x + 44, at.y + 9));
             }
             ImGui::TextUnformatted(item.name.c_str());

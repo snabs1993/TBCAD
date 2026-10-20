@@ -222,9 +222,8 @@ TEST_CASE("toolsFromObjects: inserts, hatches and other objects become tools on 
         e.data = std::move(data);
         return tx.add(std::move(e)).value();
     };
-    const EntityId ins =
-        put(Indirect<InsertData>(InsertData{door, {5, 5}, {2, 2}, 3.14159265358979323846 / 2}),
-            walls);
+    const EntityId ins = put(
+        Indirect<InsertData>(InsertData{door, {5, 5}, {2, 2}, 3.14159265358979323846 / 2}), walls);
     HatchData h;
     h.solid = false;
     h.pattern = "ANSI31";

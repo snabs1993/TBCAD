@@ -277,9 +277,7 @@ void drawPanel(ui::PanelContext& pc) {
                     }
                     if (ImGui::MenuItem("Properties...")) {
                         st.draft = t;
-                        st.kind = t.kind == ToolKind::Block   ? 0
-                                  : t.kind == ToolKind::Hatch ? 1
-                                                              : 2;
+                        st.kind = t.kind == ToolKind::Block ? 0 : t.kind == ToolKind::Hatch ? 1 : 2;
                         st.draftPalette = name;
                         st.editing = t.name;
                         st.openAdd = true;

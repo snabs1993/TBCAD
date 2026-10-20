@@ -80,8 +80,8 @@ public:
                 auto sel = co_await ctx.getSelection("Select objects to add as tools");
                 if (!sel.ok() || sel.ids.empty())
                     continue;
-                const std::vector<Tool> tools = toolsFromObjects(
-                    ctx.doc(), sel.ids, ctx.host().documentFile());
+                const std::vector<Tool> tools =
+                    toolsFromObjects(ctx.doc(), sel.ids, ctx.host().documentFile());
                 std::size_t added = 0;
                 for (const Tool& t : tools) {
                     if (std::string e = store.addTool(palette, t); e.empty())

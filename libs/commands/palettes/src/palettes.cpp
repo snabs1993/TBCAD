@@ -352,32 +352,54 @@ std::string layerPathOf(const Document& doc, LayerId id) {
 
 const char* commandFor(const Entity& e) {
     switch (kind(e)) {
-        case EntityKind::Line: return "LINE";
-        case EntityKind::Circle: return "CIRCLE";
-        case EntityKind::Arc: return "ARC";
-        case EntityKind::Polyline: return "PLINE";
-        case EntityKind::Point: return "POINT";
-        case EntityKind::Ellipse: return "ELLIPSE";
-        case EntityKind::Spline: return "SPLINE";
-        case EntityKind::Text: return "TEXT";
-        case EntityKind::MText: return "MTEXT";
-        case EntityKind::Leader: return "QLEADER";
-        case EntityKind::Table: return "TABLE";
-        case EntityKind::Ray: return "XLINE";
-        case EntityKind::MLine: return "MLINE";
-        case EntityKind::MLeader: return "MLEADER";
+        case EntityKind::Line:
+            return "LINE";
+        case EntityKind::Circle:
+            return "CIRCLE";
+        case EntityKind::Arc:
+            return "ARC";
+        case EntityKind::Polyline:
+            return "PLINE";
+        case EntityKind::Point:
+            return "POINT";
+        case EntityKind::Ellipse:
+            return "ELLIPSE";
+        case EntityKind::Spline:
+            return "SPLINE";
+        case EntityKind::Text:
+            return "TEXT";
+        case EntityKind::MText:
+            return "MTEXT";
+        case EntityKind::Leader:
+            return "QLEADER";
+        case EntityKind::Table:
+            return "TABLE";
+        case EntityKind::Ray:
+            return "XLINE";
+        case EntityKind::MLine:
+            return "MLINE";
+        case EntityKind::MLeader:
+            return "MLEADER";
         case EntityKind::Dimension:
             switch (entityAs<DimensionData>(e)->kind) {
-                case DimKind::Aligned: return "DIMALIGNED";
-                case DimKind::Radius: return "DIMRADIUS";
-                case DimKind::Diameter: return "DIMDIAMETER";
+                case DimKind::Aligned:
+                    return "DIMALIGNED";
+                case DimKind::Radius:
+                    return "DIMRADIUS";
+                case DimKind::Diameter:
+                    return "DIMDIAMETER";
                 case DimKind::Angular2Line:
-                case DimKind::Angular3Point: return "DIMANGULAR";
-                case DimKind::ArcLength: return "DIMARC";
-                case DimKind::Ordinate: return "DIMORDINATE";
-                default: return "DIMLINEAR";
+                case DimKind::Angular3Point:
+                    return "DIMANGULAR";
+                case DimKind::ArcLength:
+                    return "DIMARC";
+                case DimKind::Ordinate:
+                    return "DIMORDINATE";
+                default:
+                    return "DIMLINEAR";
             }
-        default: return nullptr;
+        default:
+            return nullptr;
     }
 }
 

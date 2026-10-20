@@ -398,9 +398,8 @@ void drawOtherTab(ui::PanelContext& ctx) {
             st.path = st.open = *f;
             ctx.host->setSetting("tmp.blocks.otherfile", "");
         }
-    const auto history =
-        ui::parsePathHistory(ctx.host ? ctx.host->setting(ui::kDrawingHistorySetting).value_or("")
-                                      : std::string());
+    const auto history = ui::parsePathHistory(
+        ctx.host ? ctx.host->setting(ui::kDrawingHistorySetting).value_or("") : std::string());
     ImGui::SetNextItemWidth(-FLT_MIN - 70);
     const bool enter = ImGui::InputTextWithHint("##otherpath", "Drawing file (.tbcad, .dxf)",
                                                 &st.path, ImGuiInputTextFlags_EnterReturnsTrue);
@@ -500,8 +499,8 @@ void drawRecentTab(ui::PanelContext& ctx) {
     std::vector<LibraryItem> wholeFiles;
     for (const RecentBlock& r : list)
         if (r.whole)
-            wholeFiles.push_back({std::filesystem::path(std::u8string(r.file.begin(), r.file.end())),
-                                  r.name});
+            wholeFiles.push_back(
+                {std::filesystem::path(std::u8string(r.file.begin(), r.file.end())), r.name});
     files.loadNext(wholeFiles);
     ImGui::BeginChild("##recenttiles", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()));
     int budget = 4;
