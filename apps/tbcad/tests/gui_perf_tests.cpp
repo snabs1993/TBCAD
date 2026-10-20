@@ -127,6 +127,7 @@ TEST_CASE("frame time with a 393k drawing selected: the shell and every panel an
         measure(what, medianFrameMs(h, 7) - shell);
         h.key(ImGuiKey_Escape);
         h.frame(3);
+        h.core().selectAll();  // Escape also clears the selection
     }
     for (const auto& [what, ms] : over)
         MESSAGE("over budget: " << what << " adds " << ms << " ms per frame");
