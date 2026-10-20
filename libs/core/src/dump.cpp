@@ -275,6 +275,8 @@ struct DataDumper {
             o << " oblique" << d.oblique;
         if (d.textRotated)
             o << " textrot" << d.textRotation;
+        if (d.flipArrow1 || d.flipArrow2)
+            o << " flip" << d.flipArrow1 << d.flipArrow2;
     }
     void operator()(const LeaderData& d) {
         o << "LEADER style" << d.style << " text" << d.textPos << " ";

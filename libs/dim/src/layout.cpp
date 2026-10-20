@@ -352,11 +352,20 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
     for (std::size_t i = 0; i + 1 < leader.size(); ++i)
         addSeg(L, leader[i], leader[i + 1], Role::DimLine, c.tol);
 
+    // Flip Arrow: that arrowhead turns the other way; turned out, it has a stub of line beyond.
+    const bool flipA = swap ? d.flipArrow2 : d.flipArrow1;
+    const bool flipB = swap ? d.flipArrow1 : d.flipArrow2;
     if (!noArrows) {
-        if (!hideA)
-            addArrow(L, c, A, arrowsIn ? uu : -uu);
-        if (!hideB)
-            addArrow(L, c, B, arrowsIn ? -uu : uu);
+        if (!hideA) {
+            addArrow(L, c, A, arrowsIn != flipA ? uu : -uu);
+            if (arrowsIn && flipA && lineStart > -stub)
+                addSeg(L, A - uu * stub, A + uu * std::min(lineStart, 0.0), Role::DimLine, c.tol);
+        }
+        if (!hideB) {
+            addArrow(L, c, B, arrowsIn != flipB ? -uu : uu);
+            if (arrowsIn && flipB && lineEnd < len + stub)
+                addSeg(L, A + uu * std::max(lineEnd, len), B + uu * stub, Role::DimLine, c.tol);
+        }
     }
     if (tw > 0 || !txt.empty()) {
         L.text = {txt, center, rotText, c.th, false, false, tw};
@@ -424,9 +433,11 @@ void layoutRadial(const Ctx& c, const DimensionData& d, const std::string& txt, 
                 addSeg(L, B, center - q * reach, Role::DimLine, c.tol);
         }
     }
-    addArrow(L, c, B, -dir);
+    // Flip Arrow turns an arrowhead the other way.
+    const bool flipB = dia ? d.flipArrow2 : d.flipArrow1;
+    addArrow(L, c, B, flipB ? dir : -dir);
     if (dia)
-        addArrow(L, c, A, dir);
+        addArrow(L, c, A, d.flipArrow1 ? -dir : dir);
     // DIMCEN: a cross at the centre; a negative size also lets the axes run through the circle.
     if (c.st.centerMark != 0) {
         const double k = c.st.overallScale > 0 ? c.st.overallScale : 1.0;

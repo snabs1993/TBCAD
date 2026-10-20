@@ -2124,17 +2124,7 @@ ChangeSet Transaction::commit() {
             cs.order.push_back(oc);
     }
 
-    std::sort(outOfArea_.begin(), outOfArea_.end());
-    outOfArea_.erase(std::unique(outOfArea_.begin(), outOfArea_.end()), outOfArea_.end());
-    for (EntityId id : outOfArea_) {
-        const Entity* live = d.find(id);
-        if (!live)
-            continue;
-        Entity copy = *live;
-        Result<double> ext = validateEntity(d, copy, d.ownerBlock(id));
-        if (ext && ext.value() > d.header_.workArea)
-            cs.outOfArea.push_back(id);
-    }
+    cs.outOfArea = stillOutOfArea();
 
     d.active_ = nullptr;
     doc_ = nullptr;
@@ -2142,6 +2132,38 @@ ChangeSet Transaction::commit() {
     timer.reset();
     if (!cs.empty())
         d.notify(cs);
+    return cs;
+}
+
+std::vector<EntityId> Transaction::stillOutOfArea() {
+    Document& d = doc();
+    std::sort(outOfArea_.begin(), outOfArea_.end());
+    outOfArea_.erase(std::unique(outOfArea_.begin(), outOfArea_.end()), outOfArea_.end());
+    std::vector<EntityId> out;
+    for (EntityId id : outOfArea_) {
+        const Entity* live = d.find(id);
+        if (!live)
+            continue;
+        Entity copy = *live;
+        Result<double> ext = validateEntity(d, copy, d.ownerBlock(id));
+        if (ext && ext.value() > d.header_.workArea)
+            out.push_back(id);
+    }
+    return out;
+}
+
+ChangeSet Transaction::commitUnrecorded() {
+    Document& d = doc();
+    if (!d.observers_.empty())
+        return commit();
+    if (!touched_.empty() || d.allocCursor() > startNextId_)
+        followAssociations();
+    ChangeSet cs;
+    cs.name = name_;
+    cs.outOfArea = stillOutOfArea();
+    d.active_ = nullptr;
+    doc_ = nullptr;
+    ++d.revision_;
     return cs;
 }
 

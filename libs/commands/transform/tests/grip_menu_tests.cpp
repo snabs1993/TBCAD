@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "common.h"
+#include "tbcad/dim/dim.h"
 #include "tbcad/geom/geom.h"
 #include "tbcad/transform/grip_menu.h"
 #include "tbcad/transform/transform.h"
@@ -688,4 +689,40 @@ TEST_CASE("dimension grips as in AutoCAD: line ends, no stray grip, the text dra
     re.data = Indirect<DimensionData>(r);
     CHECK(geom::gripPoints(re).size() == 3);
     CHECK(geom::dimTextGrip(r) == 2);
+}
+
+TEST_CASE("dimension line end grip: Flip arrow turns that arrowhead out, again turns it back") {
+    Fixture f;
+    f.host.run("DIMLINEAR", {"0,0", "100,0", "50,20"});
+    EntityId dimId{};
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (entityAs<DimensionData>(e))
+            dimId = e.common.id;
+    });
+    REQUIRE(dimId);
+    CHECK(offers(f.doc, dimId, 2, GripAction::FlipArrow));
+    CHECK(offers(f.doc, dimId, 3, GripAction::FlipArrow));
+    CHECK_FALSE(offers(f.doc, dimId, 0, GripAction::FlipArrow));
+    CHECK_FALSE(offers(f.doc, dimId, 4, GripAction::FlipArrow));
+    f.host.setSelection({dimId});
+    REQUIRE(f.host.run("GRIPEDIT", {"0,20", "FlipArrow"}).finished);
+    CHECK(get<DimensionData>(f.doc, dimId).flipArrow1);
+    CHECK_FALSE(get<DimensionData>(f.doc, dimId).flipArrow2);
+    // The arrowhead at x = 0 now points inward from outside: its tail lies at x < 0, and a stub
+    // of dimension line runs out to it.
+    const auto L = dim::layoutDimension(f.doc, get<DimensionData>(f.doc, dimId));
+    bool tailOutside = false, stub = false;
+    for (const auto& a : L.arrows)
+        if (std::abs(a.ring[0].x) < 1e-9)
+            tailOutside = a.ring[1].x < 0;
+    for (const auto& l : L.lines)
+        if (l.role == dim::Role::DimLine && std::min(l.pts.front().x, l.pts.back().x) < -1)
+            stub = true;
+    CHECK(tailOutside);
+    CHECK(stub);
+    f.host.setSelection({dimId});
+    REQUIRE(f.host.run("GRIPEDIT", {"0,20", "FlipArrow"}).finished);
+    CHECK_FALSE(get<DimensionData>(f.doc, dimId).flipArrow1);
+    CHECK(f.host.undo());
+    CHECK(get<DimensionData>(f.doc, dimId).flipArrow1);
 }

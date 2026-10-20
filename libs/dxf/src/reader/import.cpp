@@ -2693,7 +2693,7 @@ Result<ImportResult> Importer::run() {
         }
     }
 
-    ChangeSet cs = tx_->commit();
+    ChangeSet cs = tx_->commitUnrecorded();
     tx_.reset();
 
     // Dimensions draw themselves: put the text where our generator puts it (the position the

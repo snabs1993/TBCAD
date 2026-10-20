@@ -23,6 +23,7 @@ enum class GripAction {
     ResetText,      // dimension text goes back to its automatic place
     Continue,       // linear dimension: start a continued dimension from this extension line
     Baseline,       // linear dimension: start a baseline dimension from this extension line
+    FlipArrow,      // dimension: the arrowhead at this end turns the other way
 };
 
 // Menu text ("Add vertex") and the keyword GRIPEDIT understands ("AddVertex").
@@ -35,7 +36,7 @@ bool gripActionFromKeyword(const std::string& word, GripAction& out);
 std::vector<GripAction> gripActions(const Document& doc, const Grip& grip);
 
 // True when the action needs a point from the user (RemoveVertex, ConvertToLine, ResetText,
-// Continue and Baseline do not).
+// Continue, Baseline and FlipArrow do not).
 bool gripActionNeedsPoint(GripAction a);
 
 // The entity after the action at grip `index`; `target` is the point the user gave (ignored when
