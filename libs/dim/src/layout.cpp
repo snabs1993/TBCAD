@@ -865,48 +865,69 @@ static void applyBreaks(Layout& L, const std::vector<DimBreak>& breaks) {
             piece(from, sweep);
     }
     L.arcs = std::move(arcs);
+    // Lines, segment by segment (a leader is one line of several points).
     std::vector<Layout::Line> out;
     for (Layout::Line& line : L.lines) {
-        if (line.pts.size() != 2 || line.role == Role::Text) {
+        if (line.pts.size() < 2 || line.role == Role::Text) {
             out.push_back(std::move(line));
             continue;
         }
-        const Vec2 a = line.pts[0], d = line.pts[1] - a;
-        const double len = std::hypot(d.x, d.y);
-        if (!(len > 1e-9)) {
-            out.push_back(std::move(line));
-            continue;
-        }
-        auto param = [&](Vec2 p, double& t) {
-            t = ((p.x - a.x) * d.x + (p.y - a.y) * d.y) / (len * len);
-            const Vec2 q = a + d * t;
-            return std::hypot(p.x - q.x, p.y - q.y) <= kOnLine;
+        std::vector<Layout::Line> pieces;
+        std::vector<Vec2> cur{line.pts[0]};
+        auto flush = [&] {
+            if (cur.size() >= 2)
+                pieces.push_back({cur, line.role});
+            cur.clear();
         };
-        std::vector<std::pair<double, double>> gaps;
-        for (const DimBreak& b : breaks) {
-            double t0, t1;
-            if (!param(b.a, t0) || !param(b.b, t1))
+        bool cut = false;
+        for (std::size_t i = 0; i + 1 < line.pts.size(); ++i) {
+            const Vec2 a = line.pts[i], d = line.pts[i + 1] - a;
+            const double len = std::hypot(d.x, d.y);
+            std::vector<std::pair<double, double>> gaps;
+            if (len > 1e-9) {
+                auto param = [&](Vec2 p, double& t) {
+                    t = ((p.x - a.x) * d.x + (p.y - a.y) * d.y) / (len * len);
+                    const Vec2 q = a + d * t;
+                    return std::hypot(p.x - q.x, p.y - q.y) <= kOnLine;
+                };
+                for (const DimBreak& b : breaks) {
+                    double t0, t1;
+                    if (!param(b.a, t0) || !param(b.b, t1))
+                        continue;
+                    if (t0 > t1)
+                        std::swap(t0, t1);
+                    t0 = std::max(t0, 0.0);
+                    t1 = std::min(t1, 1.0);
+                    if (t1 - t0 > 1e-9)
+                        gaps.emplace_back(t0, t1);
+                }
+            }
+            if (gaps.empty()) {
+                cur.push_back(line.pts[i + 1]);
                 continue;
-            if (t0 > t1)
-                std::swap(t0, t1);
-            t0 = std::max(t0, 0.0);
-            t1 = std::min(t1, 1.0);
-            if (t1 - t0 > 1e-9)
-                gaps.emplace_back(t0, t1);
+            }
+            cut = true;
+            std::sort(gaps.begin(), gaps.end());
+            double from = 0;  // `cur` ends at a + d * from
+            for (const auto& [g0, g1] : gaps) {
+                if (g1 <= from + 1e-9)
+                    continue;
+                if (g0 > from + 1e-9)
+                    cur.push_back(a + d * g0);
+                flush();
+                from = g1;
+                cur.push_back(a + d * from);
+            }
+            if (from < 1 - 1e-9)
+                cur.push_back(line.pts[i + 1]);
         }
-        if (gaps.empty()) {
+        if (!cut) {
             out.push_back(std::move(line));
             continue;
         }
-        std::sort(gaps.begin(), gaps.end());
-        double from = 0;
-        for (const auto& [g0, g1] : gaps) {
-            if (g0 > from + 1e-9)
-                out.push_back({{a + d * from, a + d * g0}, line.role});
-            from = std::max(from, g1);
-        }
-        if (from < 1 - 1e-9)
-            out.push_back({{a + d * from, a + d}, line.role});
+        flush();
+        for (Layout::Line& p : pieces)
+            out.push_back(std::move(p));
     }
     L.lines = std::move(out);
 }
@@ -1047,6 +1068,8 @@ Layout layoutLeader(const Document& doc, const LeaderData& d, double tolerance, 
         addSeg(L, last, last + Vec2{right ? c.arrow : -c.arrow, 0}, Role::DimLine, c.tol);
         L.text = {d.utf8, d.textPos, 0, c.th, true, !right, 0};
     }
+    if (!d.breaks.empty())
+        applyBreaks(L, d.breaks);
     return L;
 }
 
@@ -1072,6 +1095,8 @@ Layout layoutMLeader(const Document& doc, const MLeaderData& d, double tolerance
         const Vec2 at = d.contentPos + Vec2{right ? c.gap : -c.gap, 0};
         L.text = {d.utf8, at, 0, c.th, true, !right, 0};
     }
+    if (!d.breaks.empty())
+        applyBreaks(L, d.breaks);
     return L;
 }
 

@@ -610,6 +610,10 @@ struct LeaderData {
     DimStyleId style{};
     std::string utf8{};  // annotation
     Vec2 textPos{};
+    // DIMBREAK gaps, as on a dimension (see DimensionData::breakWith).
+    std::vector<DimBreak> breaks{};
+    std::vector<EntityId> breakWith{};
+    std::uint32_t autoBreaks = 0;
 };
 
 // Read-only placeholder for an unknown imported entity.
@@ -739,6 +743,10 @@ struct MLeaderData {
     BlockId block{};        // Content::Block: inserted at contentPos
     double blockScale = 1;
     double blockRotation = 0;
+    // DIMBREAK gaps in the leader lines, as on a dimension (see DimensionData::breakWith).
+    std::vector<DimBreak> breaks{};
+    std::vector<EntityId> breakWith{};
+    std::uint32_t autoBreaks = 0;
 };
 
 // The alternatives are in EntityKind order. Larger kinds are boxed in Indirect<> to keep Entity

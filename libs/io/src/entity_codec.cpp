@@ -384,11 +384,29 @@ struct PayloadWriter {
                 w.varint(id.value);
         }
     }
+    // Optional tail of a leader or multileader: u8 1, DIMBREAK gaps and the objects of the
+    // automatic ones (format 1.18; an older reader warns and skips it).
+    template <class D>
+    void leaderBreaks(const D& d) {
+        if (d.breaks.empty() && d.breakWith.empty())
+            return;
+        w.u8(1);
+        w.varint(d.breaks.size());
+        for (const DimBreak& b : d.breaks) {
+            w.vec2(b.a);
+            w.vec2(b.b);
+        }
+        w.varint(d.autoBreaks);
+        w.varint(d.breakWith.size());
+        for (EntityId id : d.breakWith)
+            w.varint(id.value);
+    }
     void operator()(const LeaderData& d) {
         points(d.vertices);
         w.varint(d.style.value);
         str(d.utf8);
         w.vec2(d.textPos);
+        leaderBreaks(d);
     }
     void operator()(const RayData& d) {
         w.vec2(d.origin);
@@ -428,6 +446,7 @@ struct PayloadWriter {
         w.varint(d.block.value);
         w.f64(d.blockScale);
         w.f64(d.blockRotation);
+        leaderBreaks(d);
     }
     void operator()(const TableData& d) {
         w.vec2(d.origin);
@@ -566,6 +585,27 @@ struct PayloadReader {
         if (v > std::numeric_limits<decltype(IdT::value)>::max())
             bad("id out of range");
         return IdT{static_cast<decltype(IdT::value)>(v)};
+    }
+    // Optional DIMBREAK tail of a leader or multileader (format 1.18).
+    template <class D>
+    void leaderBreaks(D& d) {
+        if (r.remaining() == 0 || r.u8() != 1)
+            return;
+        const std::size_t n = r.count(32);
+        d.breaks.reserve(n);
+        for (std::size_t i = 0; i < n; ++i) {
+            DimBreak b;
+            b.a = r.vec2();
+            b.b = r.vec2();
+            d.breaks.push_back(b);
+        }
+        d.autoBreaks = static_cast<std::uint32_t>(r.varint());
+        const std::size_t m = r.count(1);
+        d.breakWith.reserve(m);
+        for (std::size_t i = 0; i < m; ++i)
+            d.breakWith.push_back(id<EntityId>());
+        if (d.autoBreaks > d.breaks.size())
+            bad("invalid leader break count");
     }
     template <class E>
     E enumeration(std::uint8_t maxValue) {
@@ -939,6 +979,7 @@ struct PayloadReader {
                 d.style = id<DimStyleId>();
                 d.utf8 = str();
                 d.textPos = r.vec2();
+                leaderBreaks(d);
                 return make(std::move(d));
             }
             case EntityKind::Proxy:
@@ -989,6 +1030,7 @@ struct PayloadReader {
                 d.block = id<BlockId>();
                 d.blockScale = r.f64();
                 d.blockRotation = r.f64();
+                leaderBreaks(d);
                 return make(std::move(d));
             }
             case EntityKind::Table: {

@@ -1954,6 +1954,27 @@ void collectRows(const detail::Table<Row, IdT>& t, const P& pending,
             out.push_back(std::move(c));
     }
 }
+
+// The objects that made the automatic DIMBREAK gaps of a dimension, leader or multileader.
+const std::vector<EntityId>* breakWithOf(const Entity& e) {
+    if (const auto* d = entityAs<DimensionData>(e))
+        return &d->breakWith;
+    if (const auto* d = entityAs<LeaderData>(e))
+        return &d->breakWith;
+    if (const auto* d = entityAs<MLeaderData>(e))
+        return &d->breakWith;
+    return nullptr;
+}
+
+bool sameBreaks(const Entity& a, const Entity& b) {
+    auto same = [](const auto* x, const auto* y) {
+        return x && y && x->breaks == y->breaks && x->breakWith == y->breakWith &&
+               x->autoBreaks == y->autoBreaks;
+    };
+    return same(entityAs<DimensionData>(a), entityAs<DimensionData>(b)) ||
+           same(entityAs<LeaderData>(a), entityAs<LeaderData>(b)) ||
+           same(entityAs<MLeaderData>(a), entityAs<MLeaderData>(b));
+}
 }  // namespace
 
 // Brings the definition points of associative dimensions along with the objects they follow. A
@@ -1975,13 +1996,14 @@ void Transaction::followAssociations() {
     auto close = [](Vec2 a, Vec2 b) {
         return distance(a, b) <= 1e-7 * (1.0 + std::abs(a.x) + std::abs(a.y));
     };
-    std::vector<EntityId> broken;  // dimensions with automatic DIMBREAK gaps, made before now
+    // dimensions and leaders with automatic DIMBREAK gaps, made before now
+    std::vector<EntityId> broken;
     d.forEachEntity([&](const Entity& e) {
+        if (const auto* bw = breakWithOf(e); bw && !bw->empty() && e.common.id.value < startNextId_)
+            broken.push_back(e.common.id);
         const auto* dm = entityAs<DimensionData>(e);
         if (!dm)
             return;
-        if (!dm->breakWith.empty() && e.common.id.value < startNextId_)
-            broken.push_back(e.common.id);
         Plan p{e.common.id, dm->defPts, dm->assoc, false, {}, 0, {}, true};
         bool changed = false;
         for (std::size_t i = 0; i < 4; ++i) {
@@ -2065,20 +2087,17 @@ void Transaction::followAssociations() {
         return;
     for (EntityId id : broken) {
         const Entity* now = d.find(id);
-        const auto* dm = now ? entityAs<DimensionData>(*now) : nullptr;
-        if (!dm)
+        const auto* bw = now ? breakWithOf(*now) : nullptr;
+        if (!bw)
             continue;
         bool hit = touched_.find(id) != TouchedIndex::kNone;
-        for (std::size_t i = 0; !hit && i < dm->breakWith.size(); ++i)
-            hit = touched_.find(dm->breakWith[i]) != TouchedIndex::kNone;
+        for (std::size_t i = 0; !hit && i < bw->size(); ++i)
+            hit = touched_.find((*bw)[i]) != TouchedIndex::kNone;
         if (!hit)
             continue;
         Entity e = *now;
         breaks(*doc_, e);
-        const auto* was = entityAs<DimensionData>(*now);
-        const auto* is = entityAs<DimensionData>(e);
-        if (is && (is->breaks != was->breaks || is->breakWith != was->breakWith ||
-                   is->autoBreaks != was->autoBreaks))
+        if (!sameBreaks(*now, e))
             (void)modify(id, [&](Entity& x) { x = std::move(e); });
     }
 }
