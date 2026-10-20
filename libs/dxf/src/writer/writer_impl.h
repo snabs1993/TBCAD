@@ -354,6 +354,8 @@ private:
     std::unordered_map<std::uint32_t, std::uint64_t> tsHandle_{};
     std::map<std::string, std::uint64_t> shapeFileHandle_{};  // shape files named by linetypes
     std::unordered_map<std::uint32_t, std::uint64_t> layerHandle_{};  // LAYER record handles
+    // LTYPE record handles by folded name (DIMLTYPE, DIMLTEX1 and DIMLTEX2 point at them).
+    std::map<std::string, std::uint64_t> ltHandle_{};
     std::unordered_map<std::uint32_t, std::string> layerName_{}, ltName_{}, tsName_{}, dsName_{},
         blockName_{};
     NameSet layerSet_{}, ltSet_{}, tsSet_{}, dsSet_{}, blockSet_{};

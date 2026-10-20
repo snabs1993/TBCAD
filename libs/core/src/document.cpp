@@ -775,6 +775,13 @@ bool inUse(const Document& d, LinetypeId id, const detail::ObjectRefs* refs = nu
         if (l.linetype == id)
             return true;
     }
+    // Dimension styles name their linetypes (DIMLTYPE, DIMLTEX1, DIMLTEX2).
+    if (const Linetype* lt = d.linetype(id)) {
+        for (const auto& [sid, s] : d.dimStyles())
+            for (const std::string* n : {&s.dimLinetype, &s.ext1Linetype, &s.ext2Linetype})
+                if (!n->empty() && d.linetypeByName(*n) == lt)
+                    return true;
+    }
     if (refs)
         return refs->linetypes.count(id.value) != 0;
     bool used = false;

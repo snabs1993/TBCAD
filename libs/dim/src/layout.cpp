@@ -69,9 +69,9 @@ double textWidth(const Ctx& c, const std::string& s) {
     return s.empty() ? 0 : text::measureWidth(c.tstyle, s, c.th);
 }
 
-void addSeg(Layout& L, Vec2 a, Vec2 b, Role role, double tol) {
+void addSeg(Layout& L, Vec2 a, Vec2 b, Role role, double tol, std::uint8_t ext = 0) {
     if (distance(a, b) > tol)
-        L.lines.push_back({{a, b}, role});
+        L.lines.push_back({{a, b}, role, ext});
 }
 
 // Arrow whose tip is at `tip`; `body` is the unit vector from the tip towards the tail.
@@ -177,7 +177,9 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
         double sg = ss[i] >= 0 ? 1 : -1;
         // A fixed length runs from the dimension line back toward the origin.
         const double from = c.st.fixedExtLines ? std::max(c.off, dist - c.fxl) : c.off;
-        L.lines.push_back({{pts[i] + e * (sg * from), feet[i] + e * (sg * c.ext)}, Role::ExtLine});
+        L.lines.push_back({{pts[i] + e * (sg * from), feet[i] + e * (sg * c.ext)},
+                           Role::ExtLine,
+                           static_cast<std::uint8_t>(i + 1)});
     }
 
     const bool swap = dot(f1, u) > dot(f2, u);
@@ -500,7 +502,7 @@ void layoutAngular(const Ctx& c, const DimensionData& d, const std::string& txt,
         }
         if (r > start + c.off)
             addSeg(L, V + dirs[i] * (start + c.off), V + dirs[i] * (r + c.ext), Role::ExtLine,
-                   c.tol);
+                   c.tol, static_cast<std::uint8_t>(i + 1));
     }
 
     const double tw = textWidth(c, txt);
@@ -578,9 +580,12 @@ void layoutArcLength(const Ctx& c, const DimensionData& d, const std::string& tx
     // Extension lines run along the radii from just off the measured arc to just past the
     // dimension arc.
     const double pr = g.arcRadius;
-    for (double a : {a1, a2})
+    for (int i = 0; i < 2; ++i) {
+        const double a = i == 0 ? a1 : a2;
         if (r > pr + c.off)
-            addSeg(L, V + unit(a) * (pr + c.off), V + unit(a) * (r + c.ext), Role::ExtLine, c.tol);
+            addSeg(L, V + unit(a) * (pr + c.off), V + unit(a) * (r + c.ext), Role::ExtLine, c.tol,
+                   static_cast<std::uint8_t>(i + 1));
+    }
 
     const double tw = textWidth(c, txt);
     const double arcLen = r * g.sweep;
@@ -856,7 +861,7 @@ static void applyBreaks(Layout& L, const std::vector<DimBreak>& breaks) {
         double from = 0;
         auto piece = [&](double u0, double u1) {
             arcs.push_back({arc.center, arc.radius, normalizeAngle(arc.startAngle + u0),
-                            normalizeAngle(arc.startAngle + u1), arc.role});
+                            normalizeAngle(arc.startAngle + u1), arc.role, arc.ext});
         };
         for (const auto& [g0, g1] : gaps) {
             if (g0 > from + 1e-9)
@@ -878,7 +883,7 @@ static void applyBreaks(Layout& L, const std::vector<DimBreak>& breaks) {
         std::vector<Vec2> cur{line.pts[0]};
         auto flush = [&] {
             if (cur.size() >= 2)
-                pieces.push_back({cur, line.role});
+                pieces.push_back({cur, line.role, line.ext});
             cur.clear();
         };
         bool cut = false;
