@@ -28,7 +28,14 @@ public:
     std::string buf{};
     std::size_t badNumbers = 0;
 
-    void raw(int code, std::string_view ascii) { emit(code, ascii.data(), ascii.size()); }
+    // The XDATA application the record is in (the last 1001 group since its "0" group).
+    std::string xdataApp{};
+
+    void raw(int code, std::string_view ascii) {
+        if (code == 1001)
+            xdataApp = ascii;
+        emit(code, ascii.data(), ascii.size());
+    }
     void str(int code, std::string_view utf8) { raw(code, encodeText(utf8, utf8_)); }
     void i(int code, long long v) {
         char b[24];
@@ -76,7 +83,10 @@ public:
         d(code + 10, p.y);
     }
     // Section / table / entity type: "0 <type>".
-    void zero(std::string_view type) { raw(0, type); }
+    void zero(std::string_view type) {
+        xdataApp.clear();
+        raw(0, type);
+    }
 
     bool r12() const { return r12_; }
     bool utf8() const { return utf8_; }
@@ -213,8 +223,11 @@ private:
     // TBCAD XDATA naming the entity's level ("level=<name>"), written at the end of the
     // record that setLevelTag() prepared; a no-op when no tag is pending.
     void emitLevelTag();
-    // Opens the record's TBCAD XDATA unless it is open already (one 1001 per application).
+    // Opens the record's TBCAD XDATA unless it is the application being written (one 1001 per
+    // application and record).
     void openTbcadXdata();
+    // TBCAD XDATA flags every kind of object can carry: wipeout, annotative and its scales.
+    void writeCommonFlags(const EntityCommon& c);
     void setLevelTag(const EntityCommon& c);
     void levelsXdata(Out& o);
     void skipEntity(std::string_view what, const std::string& why);

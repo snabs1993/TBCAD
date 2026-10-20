@@ -1958,4 +1958,54 @@ TEST_CASE("Active Only does not lock the other layers in the DXF") {
     CHECK(b->locked);
 }
 
+TEST_CASE("an annotative insert with attributes and a clip stays annotative through DXF") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("block");
+        BlockDef def;
+        def.name = "MARK";
+        const BlockId block = tx.addBlock(def).value();
+        LineData l;
+        l.a = {0, 0};
+        l.b = {10, 0};
+        REQUIRE(tx.add(make(l), block));
+        TextData t;
+        t.position = t.alignPoint = {0, 2};
+        t.height = 2.5;
+        t.utf8 = "TAG";
+        AttDefInfo a;
+        a.tag = "TAG";
+        a.defaultValue = "A";
+        t.attdef = a;
+        REQUIRE(tx.add(make(Indirect<TextData>(t)), block));
+        InsertData in;
+        in.block = block;
+        in.position = {5, 5};
+        in.attribs.push_back(AttribValue{"TAG", "B", {}});
+        in.clip = {{-1, -1}, {11, -1}, {11, 5}, {-1, 5}};
+        Entity e = make(Indirect<InsertData>(in));
+        e.common.annotative = true;
+        e.common.annoScales = ScaleList(std::vector<double>{50, 100});
+        REQUIRE(tx.add(std::move(e)));
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    CHECK_MESSAGE(rt.diff.empty(), rt.diff);
+    bool seen = false;
+    rt.back->forEachEntity([&](const Entity& e) {
+        if (const auto* in = entityAs<InsertData>(e)) {
+            seen = true;
+            CHECK(e.common.annotative);
+            CHECK(e.common.annoScales.size() == 2);
+            CHECK(in->clip.size() == 4);
+        }
+    });
+    CHECK(seen);
+    // One TBCAD application in the INSERT record, holding the clip and the flags.
+    const std::size_t insert = rt.bytes.find("INSERT");
+    const std::size_t app = rt.bytes.find("TBCAD", insert);
+    REQUIRE(app != std::string::npos);
+    CHECK(rt.bytes.find("TBCAD", app + 1) > rt.bytes.find("annotative=1", app));
+}
+
 }  // namespace tbcad::dxf
