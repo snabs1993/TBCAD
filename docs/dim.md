@@ -85,6 +85,13 @@ DIMLWD and DIMLWE (`dimLineWeight`, `extLineWeight`, DIMSTYLE keys `LineWeight` 
 `ExtWeight`) give the dimension line (with its arrows) and the extension lines their own
 lineweight; ByBlock, the default, keeps the dimension's lineweight.
 
+DIMLTYPE, DIMLTEX1 and DIMLTEX2 (`dimLinetype`, `ext1Linetype`, `ext2Linetype`, DIMSTYLE keys
+`Linetype`, `ExtLinetype1` and `ExtLinetype2`) give the dimension line and each extension line a
+linetype by name: ByBlock (stored empty, the default) keeps the dimension's linetype, ByLayer takes
+the layer's, and a name the drawing has no linetype for is ignored. Leaders keep their own
+linetype. DXF stores them as handles of LTYPE records (groups 345 to 347, also as DSTYLE
+overrides); a style that names a linetype keeps it from PURGE.
+
 Tick marks (`ArrowType::ArchTick`, DXF `_ARCHTICK` or `_OBLIQUE`, or a DIMTSZ above 0, which
 sets the arrow size to DIMTSZ) are drawn as AutoCAD's block: a stroke at 45 degrees from
 (-a/2,-a/2) to (a/2,a/2) round the tip, so `a·√2` long.

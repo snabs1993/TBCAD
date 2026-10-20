@@ -65,12 +65,14 @@ struct Layout {
     struct Line {
         std::vector<Vec2> pts{};
         Role role = Role::DimLine;
+        std::uint8_t ext = 0;  // extension lines: 1 or 2, for DIMLTEX1 / DIMLTEX2
     };
     struct Arc {
         Vec2 center{};
         double radius = 0;
         double startAngle = 0, endAngle = 0;  // counter-clockwise, radians
         Role role = Role::DimLine;
+        std::uint8_t ext = 0;
     };
     struct Arrow {  // a filled polygon (closed arrow, dot)
         std::vector<Vec2> ring{};

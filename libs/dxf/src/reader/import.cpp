@@ -1286,6 +1286,8 @@ LevelId Importer::levelFor(const Record& r) {
 void Importer::readLinetype(const Record& r) {
     std::string name = dec(r.raw(2));
     std::string f = fold(name);
+    if (r.has(5) && !name.empty())
+        ltypeNameByHandle_[upperHandle(r.raw(5))] = name;
     if (f.empty() || f == "continuous" || f == "bylayer" || f == "byblock") {
         if (f == "continuous")
             ltypeByRaw_[fold(r.raw(2))] = kLinetypeContinuous;
@@ -1686,6 +1688,17 @@ void Importer::readDimStyle(const Record& r) {
     };
     dimWeight(371, ds.dimLineWeight);
     dimWeight(372, ds.extLineWeight);
+    // DIMLTYPE, DIMLTEX1, DIMLTEX2: linetypes by the handle of their LTYPE record.
+    auto dimLinetype = [&](int code, std::string& out) {
+        if (!r.has(code))
+            return;
+        if (const auto l = ltypeNameByHandle_.find(upperHandle(r.raw(code)));
+            l != ltypeNameByHandle_.end())
+            out = fold(l->second) == "byblock" ? std::string() : l->second;
+    };
+    dimLinetype(345, ds.dimLinetype);
+    dimLinetype(346, ds.ext1Linetype);
+    dimLinetype(347, ds.ext2Linetype);
     dimColor(176, ds.dimLineColor);
     dimColor(177, ds.extLineColor);
     dimColor(178, ds.textColor);

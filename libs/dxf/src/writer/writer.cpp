@@ -485,15 +485,18 @@ void Writer::writeLinetypes(Out& o, std::uint64_t table) {
         const char* desc;
     };
     for (const Std& s : {Std{"ByBlock", ""}, Std{"ByLayer", ""}, Std{"Continuous", "Solid line"}}) {
-        tableRecord(o, "LTYPE", newHandle(), table, "AcDbLinetypeTableRecord", s.name, 0);
+        const std::uint64_t h = newHandle();
+        ltHandle_[NameSet::fold(s.name)] = h;
+        tableRecord(o, "LTYPE", h, table, "AcDbLinetypeTableRecord", s.name, 0);
         o.str(3, s.desc);
         o.i(72, 65);
         o.i(73, 0);
         o.d(40, 0);
     }
     for (const Linetype* lt : rows) {
-        tableRecord(o, "LTYPE", newHandle(), table, "AcDbLinetypeTableRecord",
-                    ltName_[lt->id.value], 0);
+        const std::uint64_t h = newHandle();
+        ltHandle_[NameSet::fold(lt->name)] = h;
+        tableRecord(o, "LTYPE", h, table, "AcDbLinetypeTableRecord", ltName_[lt->id.value], 0);
         o.str(3, lt->description);
         o.i(72, 65);
         double total = 0;
@@ -755,6 +758,14 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
         if (!r12_) {
             o.i(371, ds.dimLineWeight.v);  // DIMLWD
             o.i(372, ds.extLineWeight.v);  // DIMLWE
+            // DIMLTYPE, DIMLTEX1, DIMLTEX2: the LTYPE records (the LTYPE table is written first).
+            for (const auto& [code, name] :
+                 {std::pair<int, const std::string*>{345, &ds.dimLinetype},
+                  {346, &ds.ext1Linetype},
+                  {347, &ds.ext2Linetype}})
+                if (const auto l = ltHandle_.find(NameSet::fold(*name));
+                    !name->empty() && l != ltHandle_.end())
+                    o.h(code, l->second);
             o.i(271, std::clamp(ds.precision, 0, 16));
             o.i(280, ds.textJustify);                    // DIMJUST
             o.i(275, static_cast<int>(ds.angleFormat));  // DIMAUNIT (same numbering)

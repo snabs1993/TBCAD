@@ -519,3 +519,23 @@ TEST_CASE("DIMSTYLE LineWeight and ExtWeight set DIMLWD and DIMLWE") {
         listed |= k == "LineWeight" && v == "0.35";
     CHECK(listed);
 }
+
+TEST_CASE("DIMSTYLE Linetype and ExtLinetype1/2 set DIMLTYPE and DIMLTEX1/2") {
+    Fixture f;
+    {
+        Transaction tx = f.doc.begin("setup");
+        REQUIRE(tx.addLinetype({.name = "CENTER", .pattern = {12, -3, 3, -3}}).ok());
+        tx.commit();
+    }
+    f.host->run("DIMSTYLE", {"New", "Lt", "Edit", "Lt", "Linetype", "center", "ExtLinetype1",
+                             "ByLayer", "ExtLinetype2", "NOPE", "Done", "Done"});
+    const DimStyle* s = f.doc.dimStyleByName("Lt");
+    REQUIRE(s);
+    CHECK(s->dimLinetype == "CENTER");  // the drawing's spelling
+    CHECK(s->ext1Linetype == "ByLayer");
+    CHECK(s->ext2Linetype.empty());  // an unknown linetype is refused
+    bool listed = false;
+    for (const auto& [k, v] : dimcmd::describeStyle(f.doc, *s))
+        listed |= k == "ExtLinetype2" && v == "ByBlock";
+    CHECK(listed);
+}

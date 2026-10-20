@@ -192,6 +192,8 @@ private:
     // BLOCK_RECORD names by handle: DIMBLK and the arrow overrides of a dimension name their
     // block by handle. The table comes after DIMSTYLE, so dimension styles wait for it.
     std::map<std::string, std::string> blockNameByHandle_{};
+    // LTYPE names by handle (upper case): DIMLTYPE, DIMLTEX1 and DIMLTEX2 name theirs by handle.
+    std::map<std::string, std::string> ltypeNameByHandle_{};
     std::vector<Record> pendingDimStyles_{};
     // The arrow kind of a DIMBLK value: a block name, or the handle of its block record.
     ArrowType arrowKindOf(std::string_view raw, ArrowType none) const;

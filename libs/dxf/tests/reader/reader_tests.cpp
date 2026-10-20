@@ -1260,6 +1260,38 @@ TEST_CASE("dimension style: DIMLWD and DIMLWE, also as an override") {
     CHECK(ds->extLineWeight == LineWeight::hundredths(50));
 }
 
+TEST_CASE("dimension style: DIMLTYPE and DIMLTEX1/2 by LTYPE handle, also as an override") {
+    Pairs p;
+    p.section("TABLES").g(0, "TABLE").g(2, "LTYPE");
+    p.g(0, "LTYPE").g(5, "14").g(2, "ByBlock").g(70, 0).g(3, "").g(72, 65).g(73, 0).g(40, 0.0);
+    p.g(0, "LTYPE").g(5, "15").g(2, "ByLayer").g(70, 0).g(3, "").g(72, 65).g(73, 0).g(40, 0.0);
+    p.g(0, "LTYPE").g(5, "a1").g(2, "HIDDEN").g(70, 0).g(3, "__ __").g(72, 65).g(73, 2);
+    p.g(40, 9.0).g(49, 6.0).g(74, 0).g(49, -3.0).g(74, 0);
+    p.g(0, "ENDTAB").g(0, "TABLE").g(2, "DIMSTYLE");
+    p.g(0, "DIMSTYLE").g(105, "30").g(2, "Lt").g(345, "15").g(346, "A1").g(347, "14");
+    p.g(140, 2.5).g(41, 2.5);
+    p.g(0, "ENDTAB").end();
+    p.section("ENTITIES");
+    p.g(0, "DIMENSION").g(8, "0").g(2, "*D1").g(3, "Lt").g(10, 5.0).g(20, 25.0).g(11, 5.0);
+    p.g(21, 28.0).g(70, 1).g(13, 0.0).g(23, 20.0).g(14, 10.0).g(24, 20.0).g(42, 10.0);
+    p.g(1001, "ACAD").g(1000, "DSTYLE").g(1002, "{").g(1070, 345).g(1005, "14").g(1070, 347);
+    p.g(1005, "a1").g(1002, "}");
+    p.end().g(0, "EOF");
+    Loaded l = load(p.text);
+    const DimStyle* lt = l.doc().dimStyleByName("Lt");
+    REQUIRE(lt != nullptr);
+    CHECK(lt->dimLinetype == "ByLayer");
+    CHECK(lt->ext1Linetype == "HIDDEN");
+    CHECK(lt->ext2Linetype.empty());
+    auto dims = modelEntities<DimensionData>(l.doc());
+    REQUIRE(dims.size() == 1);
+    const DimStyle* ds = l.doc().dimStyle(dims[0]->style);
+    REQUIRE(ds != nullptr);
+    CHECK(ds->dimLinetype.empty());
+    CHECK(ds->ext1Linetype == "HIDDEN");
+    CHECK(ds->ext2Linetype == "HIDDEN");
+}
+
 TEST_CASE("dimension style: a built-in arrow block name picks the arrow kind") {
     Pairs p;
     p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE");

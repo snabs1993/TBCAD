@@ -273,7 +273,9 @@ Since 1.17. More dimension style variables, for the styles that set one: `varint
 style `varint dimStyleId`, `varint n`, `n` × (`varint tag`, `f64 value`). Tag 1 is DIMTVP (text
 heights); tag 2 (since 1.19) the arrow of leaders (DIMLDRBLK, the `ArrowType` number); tags 3 and 4
 (since 1.20) DIMLWD and DIMLWE (lineweight in hundredths of a mm, -1 ByLayer, -2 ByBlock, -3
-Default). A reader skips tags it does not know, so later variables need no new chunk.
+Default); tags 5, 6 and 7 (since 1.21) DIMLTYPE, DIMLTEX1 and DIMLTEX2 (the linetype name, as its
+index in the string table). A reader skips tags it does not know, so later variables need no new
+chunk.
 
 ## Reading safely
 

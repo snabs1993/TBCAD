@@ -1,3 +1,4 @@
+#include <cctype>
 #include <cmath>
 #include <optional>
 
@@ -45,6 +46,36 @@ EntityCommon commonFor(const Entity& e, const DimStyle& st, Role role) {
                                                   : LineWeight::byBlock();
     if (!lw.isByBlock())
         c.lineweight = lw;
+    return c;
+}
+
+bool sameName(std::string_view a, std::string_view b) {
+    if (a.size() != b.size())
+        return false;
+    for (std::size_t i = 0; i < a.size(); ++i)
+        if (std::tolower(static_cast<unsigned char>(a[i])) !=
+            std::tolower(static_cast<unsigned char>(b[i])))
+            return false;
+    return true;
+}
+
+// commonFor plus DIMLTYPE (the dimension line) or DIMLTEX1 / DIMLTEX2 (extension line `ext`).
+// Dimensions only: leaders keep their own linetype.
+EntityCommon commonFor(const Document& doc, const Entity& e, const DimStyle& st, Role role,
+                       std::uint8_t ext) {
+    EntityCommon c = commonFor(e, st, role);
+    if (kind(e) != EntityKind::Dimension)
+        return c;
+    const std::string& name = role == Role::DimLine   ? st.dimLinetype
+                              : role != Role::ExtLine ? std::string()
+                              : ext == 2              ? st.ext2Linetype
+                                                      : st.ext1Linetype;
+    if (name.empty() || sameName(name, "ByBlock"))
+        return c;
+    if (sameName(name, "ByLayer"))
+        c.linetype = kLinetypeByLayer;
+    else if (const Linetype* lt = doc.linetypeByName(name))
+        c.linetype = lt->id;
     return c;
 }
 
@@ -126,24 +157,27 @@ void buildDimensionDisplay(const Document& doc, const Entity& e, const geom::Dis
     const double tol = ctx.tolerance();
     Layout L = layoutOf(doc, e, tol, ctx.annoScale);
 
-    auto styleOfRole = [&](Role r) {
+    auto styleOfRole = [&](Role r, std::uint8_t ext) {
         Entity tmp;
-        tmp.common = commonFor(e, st, r);
+        tmp.common = commonFor(doc, e, st, r, ext);
         return geom::resolveStyle(doc, tmp, ctx);
     };
-    const DisplayStyle lineStyle = styleOfRole(Role::DimLine);
-    const DisplayStyle extStyle = styleOfRole(Role::ExtLine);
+    const DisplayStyle lineStyle = styleOfRole(Role::DimLine, 0);
+    const DisplayStyle extStyle[2] = {styleOfRole(Role::ExtLine, 1), styleOfRole(Role::ExtLine, 2)};
+    auto roleStyle = [&](Role r, std::uint8_t ext) -> const DisplayStyle& {
+        return r == Role::ExtLine ? extStyle[ext == 2 ? 1 : 0] : lineStyle;
+    };
 
     for (const Layout::Line& l : L.lines) {
         DisplayPolyline pl;
         pl.pts = l.pts;
-        pl.style = l.role == Role::ExtLine ? extStyle : lineStyle;
+        pl.style = roleStyle(l.role, l.ext);
         out.items.emplace_back(std::move(pl));
     }
     for (const Layout::Arc& a : L.arcs) {
         DisplayPolyline pl;
         pl.pts = arcPoints(a, tol);
-        pl.style = a.role == Role::ExtLine ? extStyle : lineStyle;
+        pl.style = roleStyle(a.role, a.ext);
         out.items.emplace_back(std::move(pl));
     }
     for (const Layout::Arrow& a : L.arrows) {
@@ -191,20 +225,20 @@ Result<std::vector<Entity>> explodeDimension(const Document& doc, const Entity& 
     const DimStyle& st = styleForEntity(doc, e);
     Layout L = layoutOf(doc, e, tolerance);
     std::vector<Entity> out;
-    auto make = [&](Role role, EntityData data) {
+    auto make = [&](Role role, EntityData data, std::uint8_t ext = 0) {
         Entity n;
-        n.common = commonFor(e, st, role);
+        n.common = commonFor(doc, e, st, role, ext);
         n.data = std::move(data);
         out.push_back(std::move(n));
     };
     auto makeLine = [&](const Layout::Line& l) {
         if (l.pts.size() == 2) {
-            make(l.role, LineData{l.pts[0], l.pts[1]});
+            make(l.role, LineData{l.pts[0], l.pts[1]}, l.ext);
         } else {
             PolylineData pl;
             for (const Vec2& p : l.pts)
                 pl.v.push_back({p, 0, 0, 0});
-            make(l.role, std::move(pl));
+            make(l.role, std::move(pl), l.ext);
         }
     };
     // The text frame is the last line; it is drawn after the fill box so the box does not hide it.
@@ -212,7 +246,7 @@ Result<std::vector<Entity>> explodeDimension(const Document& doc, const Entity& 
     for (std::size_t i = 0; i < plainLines; ++i)
         makeLine(L.lines[i]);
     for (const Layout::Arc& a : L.arcs)
-        make(a.role, ArcData{a.center, a.radius, a.startAngle, a.endAngle});
+        make(a.role, ArcData{a.center, a.radius, a.startAngle, a.endAngle}, a.ext);
     for (const Layout::Arrow& a : L.arrows) {
         HatchData h;
         HatchLoop loop;
@@ -296,7 +330,7 @@ Result<std::vector<Entity>> mleaderAsLeaders(const Document& doc, const Entity& 
     const Layout L = layoutOf(doc, e, 0.01);
     if (m->dogleg && distance(m->landing, m->contentPos) > 1e-9) {
         Entity n;
-        n.common = commonFor(e, st, Role::DimLine);
+        n.common = commonFor(doc, e, st, Role::DimLine, 0);
         n.data = LineData{m->landing, m->contentPos};  // no arrowhead, so a plain line
         out.push_back(std::move(n));
     }

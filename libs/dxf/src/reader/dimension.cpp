@@ -18,6 +18,16 @@ namespace tbcad::dxf::detail {
 
 namespace {
 
+bool isByBlock(std::string_view n) {
+    static constexpr std::string_view k = "byblock";
+    if (n.size() != k.size())
+        return false;
+    for (std::size_t i = 0; i < k.size(); ++i)
+        if (std::tolower(static_cast<unsigned char>(n[i])) != k[i])
+            return false;
+    return true;
+}
+
 constexpr double kDeg = kPi / 180.0;
 constexpr int kMaxInsertDepth = 4;
 
@@ -133,6 +143,8 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
                 handles[var] = h;
             else if (var == 340 && styleNameByHandle_.count(std::string(g.str())))
                 handles[var] = std::string(g.str());  // DIMTXSTY
+            else if ((var == 345 || var == 346 || var == 347) && ltypeNameByHandle_.count(h))
+                handles[var] = h;  // DIMLTYPE, DIMLTEX1, DIMLTEX2
             var = -1;
             continue;
         }
@@ -232,6 +244,17 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
                 ds.textHeight = f->second / ds.overallScale * factor;
             extraKey += "|txsty=" + std::to_string(t->id.value);
         }
+        handles.erase(h);
+    }
+    for (int code : {345, 346, 347}) {
+        const auto h = handles.find(code);
+        if (h == handles.end())
+            continue;
+        std::string name = ltypeNameByHandle_.at(h->second);
+        if (isByBlock(name))
+            name.clear();
+        (code == 345 ? ds.dimLinetype : code == 346 ? ds.ext1Linetype : ds.ext2Linetype) = name;
+        extraKey += "|lt" + std::to_string(code) + "=" + name;
         handles.erase(h);
     }
     if (const auto h = handles.find(341); h != handles.end()) {
