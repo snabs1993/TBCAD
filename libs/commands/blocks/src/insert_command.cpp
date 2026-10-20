@@ -16,6 +16,14 @@ constexpr const char* kLastBlockSetting = "block.lastinsert";
 constexpr const char* kLibrarySetting = "block.library";
 // "0": INSERT does not ask for attribute values and keeps the defaults.
 constexpr const char* kAttReqSetting = "block.attreq";
+// Set by the block palette just before it runs INSERT, from its "on screen" boxes: "S" asks for
+// the scale and "R" for the rotation after the insertion point is picked. INSERT clears it.
+constexpr const char* kAskSetting = "tmp.insert.ask";
+// Blocks placed lately, for the Recent tab of the block palette (see parseRecent).
+constexpr const char* kRecentSetting = "block.recent";
+// Set by the block palette just before it inserts a block copied from another drawing: that
+// drawing, recorded with the block in the recent list. INSERT clears it.
+constexpr const char* kSourceSetting = "tmp.insert.source";
 
 std::string blockNames(const Document& doc) {
     std::string s;
@@ -36,9 +44,10 @@ std::filesystem::path pathSetting(cmd::CommandContext& ctx, const char* key) {
 
 // A typed name that is not a block but names a drawing file: the file becomes a block (once; an
 // existing block of the same name is reused).
-const BlockDef* blockFromFile(cmd::CommandContext& ctx, const std::string& typed) {
+const BlockDef* blockFromFile(cmd::CommandContext& ctx, const std::string& typed,
+                              std::filesystem::path& file) {
     Document& doc = ctx.doc();
-    std::filesystem::path file =
+    file =
         libraryFileFor(typed, pathSetting(ctx, "document.file"), pathSetting(ctx, kLibrarySetting));
     if (file.empty())
         return nullptr;
@@ -74,6 +83,13 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         Document& doc = ctx.doc();
+        // What the block palette asked for this one run.
+        const std::string ask = ctx.host().setting(kAskSetting).value_or("");
+        const std::string source = ctx.host().setting(kSourceSetting).value_or("");
+        ctx.host().setSetting(kAskSetting, "");
+        ctx.host().setSetting(kSourceSetting, "");
+        const bool askScale = ask.find('S') != std::string::npos;
+        const bool askRotation = ask.find('R') != std::string::npos;
         // (With no blocks yet a drawing file can still be typed: it becomes the first block.)
         if (doc.blocks().empty())
             ctx.message(
@@ -82,6 +98,7 @@ public:
 
         // Block name.
         const BlockDef* def = nullptr;
+        std::filesystem::path wholeFile;  // the drawing file inserted as a block, if one was typed
         for (;;) {
             cmd::StringOptions so;
             if (auto last = ctx.host().setting(kLastBlockSetting);
@@ -100,7 +117,7 @@ public:
             }
             def = doc.blockByName(text);
             if (!def)
-                def = blockFromFile(ctx, text);
+                def = blockFromFile(ctx, text, wholeFile);
             if (def)
                 break;
             ctx.message("No block named \"" + text + "\". Blocks: " + blockNames(doc));
@@ -111,6 +128,15 @@ public:
         const std::string blockName = def->name;
         def = nullptr;
         ctx.host().setSetting(kLastBlockSetting, blockName);
+        {
+            const std::u8string whole = wholeFile.u8string();
+            RecentBlock recent{blockName,
+                               whole.empty() ? source : std::string(whole.begin(), whole.end()),
+                               !whole.empty()};
+            ctx.host().setSetting(
+                kRecentSetting,
+                pushRecent(ctx.host().setting(kRecentSetting).value_or(""), recent));
+        }
 
         // Placement. Scale and rotation can be changed before the point is picked.
         InsertData data{block, {}, {1, 1}, ctx.host().ucsAngle()};  // squared to the UCS
@@ -186,6 +212,44 @@ public:
                         co_return;
                     data.rotation = normalizeAngle(a.value);
                 }
+            }
+
+            // Scale and rotation on screen, after the point (the palette's "Specify on screen").
+            if (askScale) {
+                for (;;) {
+                    auto s = co_await ctx.getReal(
+                        "Specify scale factor <" + formatDouble(data.scale.x) + ">",
+                        cmd::RealOptions{.defaultValue = data.scale.x});
+                    if (!s.ok())
+                        co_return;
+                    if (s.value == 0) {
+                        ctx.message("A scale factor cannot be zero");
+                        continue;
+                    }
+                    data.scale = {s.value, s.value};
+                    break;
+                }
+            }
+            if (askRotation) {
+                cmd::AngleOptions ao;
+                ao.base = data.position;
+                ao.defaultValue = normalizeAngle(data.rotation - ctx.host().ucsAngle());
+                ao.inUcs = true;
+                ao.preview = [&doc, &ctx, data](Vec2 cursor, DisplayList& out) {
+                    InsertData d = data;
+                    if (distance(cursor, d.position) > 0)
+                        d.rotation = std::atan2(cursor.y - d.position.y, cursor.x - d.position.x);
+                    Entity e;
+                    e.common.layer = doc.header().currentLayer;
+                    e.data = Indirect<InsertData>(d);
+                    geom::DisplayContext dc;
+                    dc.pixelSizeMm = ctx.host().view().scale;
+                    blocks::buildInsertDisplay(doc, e, dc, out);
+                };
+                auto a = co_await ctx.getAngle("Specify rotation angle", std::move(ao));
+                if (!a.ok())
+                    co_return;
+                data.rotation = normalizeAngle(a.value);
             }
 
             if (array_) {
@@ -349,7 +413,38 @@ private:
     bool array_;
 };
 
+// BLOCKSPALETTE: opens the Blocks palette (blocks of this drawing, recent blocks, blocks of another
+// drawing and a library folder, as tiles to click or drag).
+class BlocksPaletteCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "BLOCKSPALETTE"; }
+    std::vector<std::string> defaultAliases() const override { return {"BLOCKS", "BP"}; }
+    std::string_view description() const override { return "Open the Blocks palette"; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().openPanel("blocks");
+        co_return;
+    }
+};
+
+class BlocksPaletteCloseCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "BLOCKSPALETTECLOSE"; }
+    std::string_view description() const override { return "Close the Blocks palette"; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().closePanel("blocks");
+        co_return;
+    }
+};
+
 }  // namespace
+
+std::unique_ptr<cmd::Command> makeBlocksPaletteCommand() {
+    return std::make_unique<BlocksPaletteCommand>();
+}
+
+std::unique_ptr<cmd::Command> makeBlocksPaletteCloseCommand() {
+    return std::make_unique<BlocksPaletteCloseCommand>();
+}
 
 std::unique_ptr<cmd::Command> makeMinsertCommand() {
     return std::make_unique<InsertCommand>(true);

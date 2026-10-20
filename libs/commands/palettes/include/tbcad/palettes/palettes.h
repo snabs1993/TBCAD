@@ -60,6 +60,9 @@ public:
     std::string removePalette(const std::string& name);
     std::string addTool(const std::string& palette, Tool tool);
     std::string removeTool(const std::string& palette, const std::string& tool);
+    // Replaces the tool named `tool` (its Properties), checked like addTool; the new name may be
+    // the old one.
+    std::string replaceTool(const std::string& palette, const std::string& tool, Tool with);
     // Moves a tool within its palette by `delta` places (negative = earlier).
     std::string moveTool(const std::string& palette, const std::string& tool, int delta);
 
@@ -74,6 +77,14 @@ private:
 // block still has to be copied from its file first. An empty string in the list means "send an
 // empty line" (end of a command).
 std::vector<std::string> toolLines(const Tool& tool, const Document& doc);
+
+// Tools that make more objects like the given ones ("Add selected objects to the palette"): an
+// insert gives a Block tool (its scale and rotation; `drawingFile` as the file it comes from), a
+// hatch a Hatch tool (pattern, scale, angle), anything else a Command tool that starts the command
+// drawing that kind of object. Each tool sets the object's layer. One tool per distinct result,
+// named after the block, pattern or command.
+std::vector<Tool> toolsFromObjects(const Document& doc, const std::vector<EntityId>& ids,
+                                   const std::string& drawingFile = {});
 
 void registerCommands(cmd::Registry& registry);
 void registerUi(ui::UiRegistry& ui);

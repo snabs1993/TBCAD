@@ -12,6 +12,7 @@
 #include <sstream>
 
 #include "gui_harness.h"
+#include "tbcad/block_cmds/palette.h"
 #include "tbcad/layers/layer_states.h"
 #include "tbcad/render/overlay.h"
 #include "tbcad/ui/app_core.h"
@@ -2278,4 +2279,57 @@ TEST_CASE("block editor: BEDIT opens Block Authoring, its buttons run the editor
     const BlockDef* def = h.core().document().blockByName("Sym");
     REQUIRE((def && def->dynamic));
     CHECK(def->dynamic->params[0].states.size() == 2);
+}
+
+TEST_CASE("blocks palette: double-click inserts with the palette's options, drag lands at the drop") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    for (const char* s : {"LINE", "0,0", "10,0", ""})
+        h.core().submitText(s);
+    h.core().selectAll();
+    for (const char* s : {"BLOCK", "Sym", "0,0", "D"})
+        h.core().submitText(s);
+    h.core().submitText("ZOOM");
+    h.core().submitText("W");
+    h.core().submitText("-100,-100");
+    h.core().submitText("100,100");
+    h.core().setSetting("block.palette.scale", "2");
+    h.core().submitText("BLOCKSPALETTE");
+    h.frame(6);
+    REQUIRE(h.windowOpen("Blocks"));
+    CHECK(h.has("Current Drawing", "Blocks"));
+    CHECK(h.has("Recent", "Blocks"));
+    CHECK(h.has("Other Drawing", "Blocks"));
+    const auto* tile = h.find("##tile", "Blocks");
+    REQUIRE(tile);
+    const ImVec2 at((tile->min.x + tile->max.x) / 2, (tile->min.y + tile->max.y) / 2);
+    h.doubleClick(at.x, at.y);
+    h.frame(3);
+    h.core().submitText("30,40");
+    h.frame(3);
+    const std::size_t afterClick = entityCount(h);
+    REQUIRE(afterClick == 1);
+    const InsertData* first = nullptr;
+    h.core().document().forEachEntity([&](const Entity& e) {
+        if (const auto* i = entityAs<InsertData>(e))
+            first = i;
+    });
+    REQUIRE(first);
+    CHECK(first->position == Vec2{30, 40});
+    CHECK(first->scale == Vec2{2, 2});
+
+    // Drag the tile onto the drawing: placed where it is dropped.
+    const ImVec2 drop = screenOf(h, {-50, -20});
+    h.drag(at.x, at.y, drop.x, drop.y);
+    h.frame(4);
+    REQUIRE(entityCount(h) == 2);
+    bool found = false;
+    h.core().document().forEachEntity([&](const Entity& e) {
+        if (const auto* i = entityAs<InsertData>(e))
+            found |= distance(i->position, {-50, -20}) < 2.0;
+    });
+    CHECK(found);
+    CHECK_FALSE(h.core().runner().active());
+    // Both show up in Recent.
+    CHECK(block_cmds::parseRecent(h.core().setting("block.recent").value_or("")).size() == 1);
 }

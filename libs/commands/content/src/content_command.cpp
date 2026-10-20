@@ -110,12 +110,26 @@ public:
 class ContentPanelCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "CONTENT"; }
-    std::vector<std::string> defaultAliases() const override { return {"ADC"}; }
+    // The DesignCenter names drafters know.
+    std::vector<std::string> defaultAliases() const override {
+        return {"ADC", "ADCENTER", "DC", "DCENTER"};
+    }
     std::string_view description() const override {
         return "Open the content browser (blocks, layers and styles from other drawings)";
     }
     cmd::Task run(cmd::CommandContext& ctx) override {
         ctx.host().openPanel("content");
+        co_return;
+    }
+};
+
+// ADCCLOSE: closes the content browser.
+class ContentCloseCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "ADCCLOSE"; }
+    std::string_view description() const override { return "Close the content browser"; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().closePanel("content");
         co_return;
     }
 };
@@ -128,6 +142,10 @@ std::unique_ptr<cmd::Command> makeContentImportCommand() {
 
 std::unique_ptr<cmd::Command> makeContentPanelCommand() {
     return std::make_unique<ContentPanelCommand>();
+}
+
+std::unique_ptr<cmd::Command> makeContentCloseCommand() {
+    return std::make_unique<ContentCloseCommand>();
 }
 
 }  // namespace tbcad::content_cmds

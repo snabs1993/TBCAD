@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -11,6 +12,9 @@
 #include "tbcad/block_cmds/block_list.h"
 #include "tbcad/block_cmds/palette.h"
 #include "tbcad/blocks/tbcad_blocks.h"
+#include "tbcad/ui/drag_payload.h"
+#include "tbcad/ui/recent_paths.h"
+#include "tbcad/xref/xref.h"
 
 #ifdef TBCAD_BLOCK_PANEL_IMGUI
 #include <imgui.h>
@@ -87,6 +91,144 @@ TileResult drawTile(const char* id, const std::string& name, const std::string& 
     return r;
 }
 
+// ---- Options: how the palette places a block --------------------------------------------------
+
+struct PaletteOptions {
+    InsertOptions insert{};
+    bool askScale = false;     // scale on screen, after the point
+    bool askRotation = false;  // rotation on screen, after the point
+    bool loaded = false;
+};
+
+double numberSetting(cmd::IHost* host, const char* key, double fallback) {
+    if (!host)
+        return fallback;
+    auto v = host->setting(key);
+    if (!v || v->empty())
+        return fallback;
+    char* end = nullptr;
+    const double d = std::strtod(v->c_str(), &end);
+    return end != v->c_str() ? d : fallback;
+}
+
+bool flagSetting(cmd::IHost* host, const char* key) {
+    return host && host->setting(key).value_or("0") == "1";
+}
+
+PaletteOptions& options(cmd::IHost* host) {
+    static PaletteOptions o;
+    if (!o.loaded && host) {
+        o.insert.scale = numberSetting(host, "block.palette.scale", 1);
+        if (o.insert.scale == 0)
+            o.insert.scale = 1;
+        o.insert.rotationDeg = numberSetting(host, "block.palette.rotation", 0);
+        o.insert.repeat = flagSetting(host, "block.palette.repeat");
+        o.insert.explode = flagSetting(host, "block.palette.explode");
+        o.askScale = flagSetting(host, "block.palette.askScale");
+        o.askRotation = flagSetting(host, "block.palette.askRotation");
+        o.loaded = true;
+    }
+    return o;
+}
+
+void saveOptions(cmd::IHost* host, const PaletteOptions& o) {
+    if (!host)
+        return;
+    host->setSetting("block.palette.scale", formatDouble(o.insert.scale));
+    host->setSetting("block.palette.rotation", formatDouble(o.insert.rotationDeg));
+    host->setSetting("block.palette.repeat", o.insert.repeat ? "1" : "0");
+    host->setSetting("block.palette.explode", o.insert.explode ? "1" : "0");
+    host->setSetting("block.palette.askScale", o.askScale ? "1" : "0");
+    host->setSetting("block.palette.askRotation", o.askRotation ? "1" : "0");
+}
+
+void drawOptions(ui::PanelContext& ctx) {
+    PaletteOptions& o = options(ctx.host);
+    if (!ImGui::CollapsingHeader("Options"))
+        return;
+    bool changed = false;
+    ImGui::BeginDisabled(o.askScale);
+    ImGui::SetNextItemWidth(90);
+    changed |= ImGui::InputDouble("Scale", &o.insert.scale, 0, 0, "%.4g");
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    changed |= ImGui::Checkbox("On screen##scale", &o.askScale);
+    ImGui::BeginDisabled(o.askRotation);
+    ImGui::SetNextItemWidth(90);
+    changed |= ImGui::InputDouble("Rotation", &o.insert.rotationDeg, 0, 0, "%.4g");
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    changed |= ImGui::Checkbox("On screen##rotation", &o.askRotation);
+    changed |= ImGui::Checkbox("Repeat placement", &o.insert.repeat);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Keep placing copies until Enter or Esc");
+    ImGui::SameLine();
+    changed |= ImGui::Checkbox("Explode", &o.insert.explode);
+    if (o.insert.scale == 0)
+        o.insert.scale = 1;
+    if (changed)
+        saveOptions(ctx.host, o);
+}
+
+// Places a block with the palette's options. `file` is the drawing the block comes from (copied
+// in first when this drawing does not have it); `whole` inserts that whole file as a block.
+void placeBlock(ui::PanelContext& ctx, const std::string& name, const std::string& file = {},
+                bool whole = false) {
+    if (!ctx.runCommand || !ctx.host || !ctx.doc)
+        return;
+    if (ctx.cancelCommand)
+        ctx.cancelCommand();
+    const PaletteOptions& o = options(ctx.host);
+    InsertOptions io = o.insert;
+    if (o.askScale)
+        io.scale = 1;
+    if (o.askRotation)
+        io.rotationDeg = 0;
+    ctx.host->setSetting("tmp.insert.ask",
+                         std::string(o.askScale ? "S" : "") + (o.askRotation ? "R" : ""));
+    if (whole) {
+        for (const std::string& line : paletteInsertLines(file, io))
+            ctx.runCommand(line);
+        return;
+    }
+    if (!file.empty()) {
+        ctx.host->setSetting("tmp.insert.source", file);
+        if (!ctx.doc->blockByName(name)) {
+            ctx.runCommand("CONTENTIMPORT");
+            ctx.runCommand(file);
+            ctx.runCommand("Block");
+            ctx.runCommand(name);
+        }
+    }
+    for (const std::string& line : paletteInsertLines(name, io))
+        ctx.runCommand(line);
+}
+
+// A tile dragged onto the drawing (inserted where it is dropped) or onto a tool palette.
+void dragSource(const std::string& file, const std::string& name, const Thumbnail* thumb) {
+    if (!ImGui::BeginDragDropSource())
+        return;
+    const std::string data = ui::encodeContent({file, "Block", {name}});
+    ImGui::SetDragDropPayload(ui::kContentPayload, data.c_str(), data.size() + 1);
+    if (thumb)
+        drawThumbnail(ImGui::GetWindowDrawList(), ImGui::GetCursorScreenPos(), 48, *thumb,
+                      ImGui::GetColorU32(ImGuiCol_Text));
+    ImGui::Dummy(ImVec2(48, 48));
+    ImGui::TextUnformatted(name.c_str());
+    ImGui::EndDragDropSource();
+}
+
+// Lays out tiles in rows: call after each tile.
+void nextTile(float& used) {
+    used += kTile + ImGui::GetStyle().ItemSpacing.x;
+    if (used + kTile > ImGui::GetContentRegionAvail().x)
+        used = 0;
+    else
+        ImGui::SameLine();
+}
+
+// ---- Current Drawing tab -----------------------------------------------------------------------
+
 struct DrawingTab {
     const Document* doc = nullptr;
     std::map<BlockId, std::pair<std::uint64_t, Thumbnail>> cache{};
@@ -128,16 +270,23 @@ void drawDrawingTab(ui::PanelContext& ctx) {
         const BlockDef* def = ctx.doc->block(r.id);
         const bool isXref = def && !def->xrefPath.empty();
         std::string caption = isXref ? "xref" : "x" + std::to_string(r.references);
-        TileResult t = drawTile(r.name.c_str(), r.name, caption,
-                                slot.first ? &slot.second : nullptr, st.selected == r.id);
+        const Thumbnail* thumb = slot.first ? &slot.second : nullptr;
+        TileResult t = drawTile(r.name.c_str(), r.name, caption, thumb, st.selected == r.id);
+        if (!isXref)
+            dragSource({}, r.name, thumb);
         if (t.clicked)
             st.selected = r.id;
-        if (t.doubleClicked && ctx.runCommand)
-            ctx.runCommand("INSERT " + r.name);
+        if (t.doubleClicked)
+            placeBlock(ctx, r.name);
         if (ImGui::BeginPopupContextItem("##tilemenu")) {
             st.selected = r.id;
-            if (ImGui::MenuItem("Insert") && ctx.runCommand)
-                ctx.runCommand("INSERT " + r.name);
+            if (ImGui::MenuItem("Insert"))
+                placeBlock(ctx, r.name);
+            if (!isXref && ImGui::MenuItem("Edit block") && ctx.runCommand) {
+                ctx.runCommand("BEDIT");
+                ctx.runCommand("Name");
+                ctx.runCommand(r.name);
+            }
             if (isXref && ctx.runCommand) {
                 if (ImGui::MenuItem("Reload xref")) {
                     ctx.runCommand("XRELOAD");
@@ -173,15 +322,226 @@ void drawDrawingTab(ui::PanelContext& ctx) {
             }
             ImGui::EndPopup();
         }
-        used += kTile + ImGui::GetStyle().ItemSpacing.x;
-        if (used + kTile > ImGui::GetContentRegionAvail().x)
-            used = 0;
-        else
-            ImGui::SameLine();
+        nextTile(used);
     }
     ImGui::EndChild();
-    ImGui::TextDisabled("Double-click a block to insert it; right-click for more");
+    ImGui::TextDisabled("Double-click or drag a block to insert it; right-click for more");
 }
+
+// ---- Other Drawing tab and the drawings it reads -----------------------------------------------
+
+// Drawings read for the Recent and Other Drawing tabs, with block thumbnails. Read again when the
+// file changes on disk.
+struct SourceCache {
+    struct Entry {
+        std::int64_t stamp = -1;
+        std::shared_ptr<xref::Source> source{};
+        std::string error{};
+        std::map<std::string, Thumbnail> thumbs{};
+    };
+    std::map<std::string, Entry> files{};
+
+    Entry& get(const std::string& file) {
+        Entry& e = files[file];
+        const std::filesystem::path path(std::u8string(file.begin(), file.end()));
+        std::error_code ec;
+        const auto t = std::filesystem::last_write_time(path, ec);
+        const std::int64_t stamp = ec ? 0 : t.time_since_epoch().count();
+        if (e.stamp != stamp) {
+            e = Entry{};
+            e.stamp = stamp;
+            auto src = xref::loadSource(path);
+            if (src)
+                e.source = std::make_shared<xref::Source>(std::move(src.value()));
+            else
+                e.error = src.error().message;
+        }
+        return e;
+    }
+    const Thumbnail* thumb(Entry& e, const std::string& block, int& budget) {
+        if (!e.source || !e.source->doc)
+            return nullptr;
+        auto it = e.thumbs.find(block);
+        if (it != e.thumbs.end())
+            return &it->second;
+        if (budget <= 0)
+            return nullptr;
+        --budget;
+        const BlockDef* def = e.source->doc->blockByName(block);
+        return &(e.thumbs[block] = def ? thumbnailOfBlock(*e.source->doc, def->id) : Thumbnail{});
+    }
+};
+
+SourceCache& sources() {
+    static SourceCache c;
+    return c;
+}
+
+void rememberDrawing(cmd::IHost* host, const std::string& file) {
+    if (host)
+        host->setSetting(
+            ui::kDrawingHistorySetting,
+            ui::pushPathHistory(host->setting(ui::kDrawingHistorySetting).value_or(""), file));
+}
+
+struct OtherTab {
+    std::string path{};
+    std::string open{};  // the file shown
+    std::string filter{};
+    std::string selected{};
+};
+
+void drawOtherTab(ui::PanelContext& ctx) {
+    static OtherTab st;
+    if (ctx.host)
+        if (auto f = ctx.host->setting("tmp.blocks.otherfile"); f && !f->empty()) {
+            st.path = st.open = *f;
+            ctx.host->setSetting("tmp.blocks.otherfile", "");
+        }
+    const auto history =
+        ui::parsePathHistory(ctx.host ? ctx.host->setting(ui::kDrawingHistorySetting).value_or("")
+                                      : std::string());
+    ImGui::SetNextItemWidth(-FLT_MIN - 70);
+    const bool enter = ImGui::InputTextWithHint("##otherpath", "Drawing file (.tbcad, .dxf)",
+                                                &st.path, ImGuiInputTextFlags_EnterReturnsTrue);
+    ImGui::SameLine();
+    ImGui::BeginDisabled(history.empty());
+    if (ImGui::Button("Recent", ImVec2(-FLT_MIN, 0)))
+        ImGui::OpenPopup("##otherhistory");
+    ImGui::EndDisabled();
+    if (ImGui::BeginPopup("##otherhistory")) {
+        for (const std::string& h : history)
+            if (ImGui::MenuItem(h.c_str())) {
+                st.path = h;
+                st.open = h;
+            }
+        ImGui::EndPopup();
+    }
+    if (enter && !st.path.empty())
+        st.open = st.path;
+    if (st.open.empty()) {
+        ImGui::Spacing();
+        ImGui::TextWrapped(
+            "Type the path of another drawing and press Enter to see its blocks. Double-click or "
+            "drag one to copy it into this drawing and insert it.");
+        return;
+    }
+    SourceCache::Entry& e = sources().get(st.open);
+    if (!e.source) {
+        ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.4f, 1.0f), "%s", e.error.c_str());
+        return;
+    }
+    if (st.open == st.path)
+        rememberDrawing(ctx.host, st.open);
+    st.path = st.open;
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::InputTextWithHint("##otherfilter", "Filter blocks", &st.filter);
+    const auto rows = blockRows(*e.source->doc, st.filter);
+    std::vector<const BlockRow*> shown;
+    for (const BlockRow& r : rows) {
+        const BlockDef* def = e.source->doc->block(r.id);
+        if (def && def->xrefPath.empty())
+            shown.push_back(&r);
+    }
+    if (shown.empty()) {
+        ImGui::TextDisabled("The drawing has no blocks");
+        return;
+    }
+    ImGui::BeginChild("##othertiles", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()));
+    int budget = 4;
+    float used = 0;
+    for (const BlockRow* r : shown) {
+        const Thumbnail* thumb = sources().thumb(e, r->name, budget);
+        const bool here = ctx.doc->blockByName(r->name) != nullptr;
+        TileResult t = drawTile(r->name.c_str(), r->name, here ? "in drawing" : "", thumb,
+                                st.selected == r->name);
+        dragSource(st.open, r->name, thumb);
+        if (t.clicked)
+            st.selected = r->name;
+        if (t.doubleClicked)
+            placeBlock(ctx, r->name, st.open);
+        if (ImGui::BeginPopupContextItem("##othermenu")) {
+            if (ImGui::MenuItem("Insert"))
+                placeBlock(ctx, r->name, st.open);
+            if (ImGui::MenuItem("Copy into this drawing") && ctx.runCommand) {
+                ctx.runCommand("CONTENTIMPORT");
+                ctx.runCommand(st.open);
+                ctx.runCommand("Block");
+                ctx.runCommand(r->name);
+            }
+            ImGui::EndPopup();
+        }
+        nextTile(used);
+    }
+    ImGui::EndChild();
+    ImGui::TextDisabled("Double-click or drag to insert; the block is copied in first");
+}
+
+// ---- Recent tab --------------------------------------------------------------------------------
+
+void drawRecentTab(ui::PanelContext& ctx) {
+    static DrawingTab here;  // thumbnails of this drawing's blocks
+    static LibraryThumbnails files;
+    if (here.doc != ctx.doc) {
+        here = DrawingTab{};
+        here.doc = ctx.doc;
+    }
+    const auto list =
+        parseRecent(ctx.host ? ctx.host->setting("block.recent").value_or("") : std::string());
+    if (list.empty()) {
+        ImGui::Spacing();
+        ImGui::TextDisabled("Blocks you insert show up here");
+        return;
+    }
+    if (ImGui::SmallButton("Clear") && ctx.host) {
+        ctx.host->setSetting("block.recent", "");
+        return;
+    }
+    std::vector<LibraryItem> wholeFiles;
+    for (const RecentBlock& r : list)
+        if (r.whole)
+            wholeFiles.push_back({std::filesystem::path(std::u8string(r.file.begin(), r.file.end())),
+                                  r.name});
+    files.loadNext(wholeFiles);
+    ImGui::BeginChild("##recenttiles", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()));
+    int budget = 4;
+    float used = 0;
+    int i = 0;
+    for (const RecentBlock& r : list) {
+        const Thumbnail* thumb = nullptr;
+        std::string caption;
+        if (r.whole) {
+            thumb = files.find(std::filesystem::path(std::u8string(r.file.begin(), r.file.end())));
+            caption = "file";
+        } else if (const BlockDef* def = ctx.doc->blockByName(r.name)) {
+            auto& slot = here.cache[def->id];
+            if (slot.first != ctx.doc->revision() + 1 && budget-- > 0)
+                slot = {ctx.doc->revision() + 1, thumbnailOfBlock(*ctx.doc, def->id)};
+            thumb = slot.first ? &slot.second : nullptr;
+        } else if (!r.file.empty()) {
+            thumb = sources().thumb(sources().get(r.file), r.name, budget);
+            caption = std::filesystem::path(std::u8string(r.file.begin(), r.file.end()))
+                          .filename()
+                          .string();
+        } else {
+            caption = "not here";
+        }
+        const std::string id = std::to_string(i++) + r.name;
+        TileResult t = drawTile(id.c_str(), r.name, caption, thumb, false);
+        if (ImGui::IsItemHovered() && !r.file.empty())
+            ImGui::SetTooltip("%s\n%s", r.name.c_str(), r.file.c_str());
+        const bool placeable = r.whole || ctx.doc->blockByName(r.name) || !r.file.empty();
+        if (placeable && !r.whole)
+            dragSource(ctx.doc->blockByName(r.name) ? std::string() : r.file, r.name, thumb);
+        if (t.doubleClicked && placeable)
+            placeBlock(ctx, r.name, r.file, r.whole);
+        nextTile(used);
+    }
+    ImGui::EndChild();
+    ImGui::TextDisabled("Double-click or drag to insert again");
+}
+
+// ---- Library tab -------------------------------------------------------------------------------
 
 struct LibraryTab {
     std::string folder{};
@@ -239,43 +599,61 @@ void drawLibraryTab(ui::PanelContext& ctx) {
                                 st.thumbs.find(item.path), st.selected == item.path);
         if (t.clicked)
             st.selected = item.path;
-        auto insert = [&] {
-            if (!ctx.runCommand || !ctx.host)
-                return;
-            ctx.host->setSetting("block.lastinsert", path);
-            ctx.runCommand("INSERT");
-            ctx.runCommand("");  // take the file as the answer
-        };
         if (t.doubleClicked)
-            insert();
+            placeBlock(ctx, item.name, path, true);
         if (ImGui::BeginPopupContextItem("##libmenu")) {
             if (ImGui::MenuItem("Insert as block"))
-                insert();
+                placeBlock(ctx, item.name, path, true);
+            if (ImGui::MenuItem("Show its blocks") && ctx.host) {
+                rememberDrawing(ctx.host, path);
+                ctx.host->setSetting("tmp.blocks.tab", "other");
+            }
             if (ImGui::MenuItem("Attach as xref") && ctx.runCommand) {
                 ctx.runCommand("XATTACH");
                 ctx.runCommand(path);
             }
             ImGui::EndPopup();
         }
-        used += kTile + ImGui::GetStyle().ItemSpacing.x;
-        if (used + kTile > ImGui::GetContentRegionAvail().x)
-            used = 0;
-        else
-            ImGui::SameLine();
+        nextTile(used);
     }
     ImGui::EndChild();
     ImGui::TextDisabled("Double-click to insert; right-click to attach as xref");
 }
 
-// The block palette: blocks of the drawing and a library folder, as tiles with thumbnails.
+// The block palette: blocks of this drawing, recently inserted blocks, blocks of another drawing
+// and a library folder, as tiles with thumbnails, plus the options the palette inserts with.
 void drawBlockPanel(ui::PanelContext& ctx) {
     if (!ctx.doc) {
         ImGui::TextUnformatted("No drawing open");
         return;
     }
+    drawOptions(ctx);
+    // "Show its blocks" in the Library tab switches to Other Drawing.
+    std::string jump;
+    if (ctx.host)
+        if (auto t = ctx.host->setting("tmp.blocks.tab"); t && !t->empty()) {
+            jump = *t;
+            ctx.host->setSetting("tmp.blocks.tab", "");
+        }
     if (ImGui::BeginTabBar("##blocktabs")) {
-        if (ImGui::BeginTabItem("Drawing")) {
+        if (ImGui::BeginTabItem("Current Drawing")) {
             drawDrawingTab(ctx);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Recent")) {
+            drawRecentTab(ctx);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Other Drawing", nullptr,
+                                jump == "other" ? ImGuiTabItemFlags_SetSelected : 0)) {
+            if (jump == "other" && ctx.host) {
+                // Open the drawing the Library tab asked for.
+                const auto h = ui::parsePathHistory(
+                    ctx.host->setting(ui::kDrawingHistorySetting).value_or(""));
+                if (!h.empty())
+                    ctx.host->setSetting("tmp.blocks.otherfile", h.front());
+            }
+            drawOtherTab(ctx);
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Library")) {

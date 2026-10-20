@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include "tbcad/ui/drag_payload.h"
+#include "tbcad/ui/recent_paths.h"
 
 using namespace tbcad::ui;
 
@@ -20,7 +21,10 @@ TEST_CASE("content drag payload round trips and becomes import lines") {
     CHECK(lines[4] == "INSERT DOOR");
 
     CHECK(contentDropLines({"f", "Layer", {"A"}}).size() == 4);  // no INSERT for a layer
-    CHECK(contentDropLines({"", "Block", {"A"}}).empty());
+    // A block of the open drawing (block palette) is inserted without copying.
+    CHECK(contentDropLines({"", "Block", {"A"}}) == std::vector<std::string>{"INSERT A"});
+    CHECK(contentDropLines({"", "Layer", {"A"}}).empty());
+    CHECK(contentDropLines({"f", "Block", {}}).empty());
 }
 
 TEST_CASE("tool drag payload keeps empty Enter lines and drops the origin line") {
@@ -31,4 +35,17 @@ TEST_CASE("tool drag payload keeps empty Enter lines and drops the origin line")
     CHECK(lines[0] == "INSERT DOOR");
     CHECK(lines[1].empty());
     CHECK(lines[2] == "0.5");
+}
+
+TEST_CASE("drawing history keeps the newest path first, once, and at most twelve") {
+    std::string h = pushPathHistory("", "C:/a.tbcad");
+    h = pushPathHistory(h, "C:/b.dxf");
+    h = pushPathHistory(h, "c:\\A.TBCAD");  // the same file written differently
+    CHECK(parsePathHistory(h) == std::vector<std::string>{"c:\\A.TBCAD", "C:/b.dxf"});
+    for (int i = 0; i < 20; ++i)
+        h = pushPathHistory(h, "f" + std::to_string(i));
+    const auto list = parsePathHistory(h);
+    CHECK(list.size() == kMaxDrawingHistory);
+    CHECK(list.front() == "f19");
+    CHECK(parsePathHistory("\x1e\x1ex") == std::vector<std::string>{"x"});
 }

@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <memory>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -12,6 +13,7 @@
 #include "tbcad/block_cmds/palette.h"
 #include "tbcad/palettes/palettes.h"
 #include "tbcad/ui/drag_payload.h"
+#include "tbcad/ui/recent_paths.h"
 #include "tbcad/xref/xref.h"
 
 namespace tbcad::content_cmds {
@@ -31,6 +33,7 @@ struct State {
     std::string error;
     std::set<std::string> selected;  // "<kind>:<name>"
     int tab = 0;
+    std::map<std::string, block_cmds::Thumbnail> thumbs;  // blocks of `source`, by name
 };
 
 State& state() {
@@ -60,12 +63,15 @@ bool isDrawing(const fs::path& p) {
     return e == ".tbcad" || e == ".dxf" || e == ".tbt";
 }
 
-void openFile(State& st, const fs::path& file) {
+// Opens a drawing for browsing and remembers it in the drawing history (shared with the Other
+// Drawing tab of the Blocks palette).
+void openFile(ui::PanelContext& pc, State& st, const fs::path& file) {
     st.file = file;
     st.selected.clear();
     st.items.clear();
     st.error.clear();
     st.source.reset();
+    st.thumbs.clear();
     // A template is an ordinary .tbcad file; loadSource keys on the extension.
     auto res = xref::loadSource(file);
     if (!res) {
@@ -74,6 +80,11 @@ void openFile(State& st, const fs::path& file) {
     }
     st.source = std::make_shared<xref::Source>(std::move(res.value()));
     st.items = xref::listContent(*st.source->doc);
+    if (pc.host)
+        pc.host->setSetting(
+            ui::kDrawingHistorySetting,
+            ui::pushPathHistory(pc.host->setting(ui::kDrawingHistorySetting).value_or(""),
+                                utf8(file)));
 }
 
 const char* kindName(xref::ContentKind k) {
@@ -144,10 +155,35 @@ void drawFiles(ui::PanelContext& pc, State& st) {
         st.folderEdit = st.folder;
     }
     ImGui::SameLine();
+    // Drawings browsed lately (here or in the Blocks palette).
+    const auto history = ui::parsePathHistory(
+        pc.host ? pc.host->setting(ui::kDrawingHistorySetting).value_or("") : std::string());
+    ImGui::BeginDisabled(history.empty());
+    if (ImGui::Button("History"))
+        ImGui::OpenPopup("##contentHistory");
+    ImGui::EndDisabled();
+    if (ImGui::BeginPopup("##contentHistory")) {
+        for (const std::string& h : history)
+            if (ImGui::MenuItem(h.c_str())) {
+                st.folder = utf8(pathOf(h).parent_path());
+                st.folderEdit = st.folder;
+                openFile(pc, st, pathOf(h));
+            }
+        ImGui::EndPopup();
+    }
+    ImGui::SameLine();
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::InputText("##contentFolder", &st.folderEdit, ImGuiInputTextFlags_EnterReturnsTrue) &&
-        fs::is_directory(pathOf(st.folderEdit))) {
-        st.folder = st.folderEdit;
+    // A folder to list, or a drawing file to open at once.
+    if (ImGui::InputText("##contentFolder", &st.folderEdit, ImGuiInputTextFlags_EnterReturnsTrue)) {
+        const fs::path typed = pathOf(st.folderEdit);
+        std::error_code ec;
+        if (fs::is_directory(typed, ec)) {
+            st.folder = st.folderEdit;
+        } else if (fs::is_regular_file(typed, ec) && isDrawing(typed)) {
+            st.folder = utf8(typed.parent_path());
+            st.folderEdit = st.folder;
+            openFile(pc, st, typed);
+        }
         if (pc.host)
             pc.host->setSetting(kFolderSetting, st.folder);
     }
@@ -178,7 +214,7 @@ void drawFiles(ui::PanelContext& pc, State& st) {
     }
     for (const fs::path& f : files)
         if (ImGui::Selectable(utf8(f.filename()).c_str(), f == st.file))
-            openFile(st, f);
+            openFile(pc, st, f);
     ImGui::EndChild();
 }
 
@@ -266,9 +302,17 @@ void drawItems(ui::PanelContext& pc, State& st) {
             }
             ImGui::SameLine();
             if (kind == xref::ContentKind::Block) {
-                if (const BlockDef* b = st.source->doc->blockByName(item.name))
-                    drawThumb(ImGui::GetWindowDrawList(), ImVec2(at.x + 4, at.y + 2), 32.0f,
-                              block_cmds::thumbnailOfBlock(*st.source->doc, b->id), ink);
+                auto t = st.thumbs.find(item.name);
+                if (t == st.thumbs.end()) {
+                    const BlockDef* b = st.source->doc->blockByName(item.name);
+                    t = st.thumbs
+                            .emplace(item.name, b ? block_cmds::thumbnailOfBlock(*st.source->doc,
+                                                                                 b->id)
+                                                  : block_cmds::Thumbnail{})
+                            .first;
+                }
+                drawThumb(ImGui::GetWindowDrawList(), ImVec2(at.x + 4, at.y + 2), 32.0f,
+                          t->second, ink);
                 ImGui::SetCursorScreenPos(ImVec2(at.x + 44, at.y + 9));
             }
             ImGui::TextUnformatted(item.name.c_str());
@@ -285,7 +329,6 @@ void drawItems(ui::PanelContext& pc, State& st) {
         if (ImGui::Button("Copy to drawing"))
             importSelected(pc, st, kind);
         if (kind == xref::ContentKind::Block) {
-            ImGui::SameLine();
             ImGui::SameLine();
             if (ImGui::Button("Add to palette"))
                 ImGui::OpenPopup("##addToPalette");

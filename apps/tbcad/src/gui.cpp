@@ -3259,7 +3259,8 @@ void Gui::viewportInput(const ViewportRect& rect) {
         ImGui::SetMouseCursor(ImGuiMouseCursor_None);
 }
 
-// Content browser items and palette tools dragged onto the drawing run as if typed.
+// Content browser items, Blocks palette tiles and palette tools dragged onto the drawing run as if
+// typed.
 void Gui::dropIntoViewport(const ViewportRect& rect) {
     const ImGuiPayload* pl = ImGui::GetDragDropPayload();
     if (!pl || !pl->Data || !ImGui::IsMouseReleased(ImGuiMouseButton_Left))
@@ -3276,6 +3277,16 @@ void Gui::dropIntoViewport(const ViewportRect& rect) {
         lines = ui::contentDropLines(ui::decodeContent(data));
     for (const std::string& line : lines)
         core_.submitText(line);
+    // A dropped block lands where it was dropped (the insertion point is the drop point); a
+    // palette that asks for more (Multiple, on-screen scale) goes on from there.
+    const auto* prompt = core_.runner().prompt();
+    if (prompt && prompt->kind == cmd::PromptInfo::Kind::Point && prompt->command == "INSERT") {
+        const ImGuiIO& io = ImGui::GetIO();
+        const double s = io.DisplayFramebufferScale.x > 0 ? io.DisplayFramebufferScale.x : 1.0;
+        const ui::PointerState ps{{(m.x - rect.x) * s, (m.y - rect.y) * s}, false, false};
+        core_.pointerMoved(ps);
+        core_.click(ps);
+    }
 }
 
 bool Gui::flag(std::string_view key, bool fallback) const {
