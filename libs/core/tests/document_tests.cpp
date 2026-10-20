@@ -2,6 +2,8 @@
 
 #include <cmath>
 #include <limits>
+#include <memory>
+#include <thread>
 
 #include "tbcad/core/core.h"
 
@@ -1068,4 +1070,57 @@ TEST_CASE(
     CHECK(canonicalDump(doc) == before);
     doc.apply(cs, Direction::Redo);
     CHECK(doc.modelSpaceCount() == 0);
+}
+
+TEST_CASE("a snapshot keeps the drawing as it was while the document goes on changing") {
+    auto doc = std::make_unique<Document>();
+    std::vector<EntityId> ids;
+    {
+        Transaction tx = doc->begin("lines");
+        for (int i = 0; i < 10000; ++i)  // more than two storage chunks, the last one partly
+            ids.push_back(tx.add(line(i, 0, i + 1, 1)).value());
+        tx.commit();
+    }
+    std::shared_ptr<const Document> snap = doc->snapshot();
+    CHECK(snap->entityCount() == 10000);
+    CHECK(snap->revision() == doc->revision());
+    CHECK(snap->uid() != doc->uid());
+
+    // Read on another thread while this one changes every part of the store.
+    std::thread reader([&] {
+        for (int round = 0; round < 20; ++round) {
+            double sum = 0;
+            snap->forEachEntity([&](const Entity& e) { sum += entityAs<LineData>(e)->a.x; });
+            CHECK(sum == doctest::Approx(9999.0 * 10000 / 2));
+        }
+    });
+    {
+        Transaction tx = doc->begin("change");
+        REQUIRE(tx.modify(ids[5], [](Entity& e) { std::get<LineData>(e.data).a.x = -1; }));
+        REQUIRE(tx.erase(ids[5000]));
+        for (int i = 0; i < 5000; ++i)
+            REQUIRE(tx.add(line(0, 0, 1, 1)));
+        tx.commit();
+    }
+    Transaction tx = doc->begin("layer");
+    Layer l;
+    l.name = "New";
+    REQUIRE(tx.addLayer(l));
+    tx.commit();
+    reader.join();
+
+    CHECK(entityAs<LineData>(*snap->find(ids[5]))->a.x == 5);
+    REQUIRE(snap->find(ids[5000]));
+    CHECK(snap->entityCount() == 10000);
+    CHECK(snap->layerByName("New") == nullptr);
+    CHECK(entityAs<LineData>(*doc->find(ids[5]))->a.x == -1);
+    CHECK(doc->find(ids[5000]) == nullptr);
+    CHECK(doc->entityCount() == 14999);
+
+    // A second snapshot sees the changes; the first outlives the document.
+    std::shared_ptr<const Document> later = doc->snapshot();
+    doc.reset();
+    CHECK(later->entityCount() == 14999);
+    CHECK(entityAs<LineData>(*later->find(ids[5]))->a.x == -1);
+    CHECK(entityAs<LineData>(*snap->find(ids[9999]))->a.x == 9999);
 }

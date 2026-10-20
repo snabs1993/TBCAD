@@ -930,8 +930,9 @@ void AppCore::shutdown() {
     removeAutosaveFiles();
 }
 
-// Starts the autosave of one drawing: the drawing is encoded now and the rest (deflate, write,
-// sync, rename) runs on other threads, so the window does not freeze on a big drawing.
+// Starts the autosave of one drawing: a snapshot of the drawing is taken now and the rest
+// (encode, deflate, write, sync, rename) runs on other threads, so the window does not freeze on
+// a big drawing.
 bool AppCore::startAutosave(DocSlot& slot) {
     Session& ses = *slot.session;
     if (slot.autosaveJob.valid() || ses.doc.revision() == ses.savedRevision ||
@@ -943,7 +944,7 @@ bool AppCore::startAutosave(DocSlot& slot) {
     io::WriteOptions opt;
     opt.keepBackup = false;
     std::future<Result<void>> written =
-        io::writeTbcadAsync(ses.doc, paths_.autosaveDir() / (base + ".tbcad"), opt);
+        io::writeTbcadAsync(ses.doc.snapshot(), paths_.autosaveDir() / (base + ".tbcad"), opt);
     slot.autosaveJobRevision = ses.doc.revision();
     const fs::path meta = paths_.autosaveDir() / (base + ".json");
     const std::string original = platform::pathToUtf8(ses.file);

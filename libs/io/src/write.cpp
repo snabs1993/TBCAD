@@ -833,6 +833,17 @@ std::future<Result<void>> writeTbcadAsync(const Document& doc, const std::filesy
                       });
 }
 
+std::future<Result<void>> writeTbcadAsync(std::shared_ptr<const Document> snapshot,
+                                          const std::filesystem::path& path,
+                                          const WriteOptions& options) {
+    return std::async(std::launch::async,
+                      [doc = std::move(snapshot), path, options]() -> Result<void> {
+                          if (!doc)
+                              return makeError(ErrorCode::InvalidArgument, "no document");
+                          return writeTbcad(*doc, path, options);
+                      });
+}
+
 }  // namespace tbcad::io
 
 namespace tbcad::io {

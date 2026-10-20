@@ -62,25 +62,53 @@ Error invalid(std::string msg) {
 
 namespace detail {
 
-EntityStore::~EntityStore() {
-    while (size_ > 0)
-        popBack();
-    for (Entity* c : chunks_)
-        ::operator delete(c, std::align_val_t{alignof(Entity)});
+EntityStore::Chunk::Chunk()
+    : mem(static_cast<Entity*>(
+          ::operator new(sizeof(Entity) * kChunk, std::align_val_t{alignof(Entity)}))) {}
+
+EntityStore::Chunk::~Chunk() {
+    while (count > 0)
+        mem[--count].~Entity();
+    ::operator delete(mem, std::align_val_t{alignof(Entity)});
 }
 
+void EntityStore::detach(std::shared_ptr<Chunk>& c) {
+    auto copy = std::make_shared<Chunk>();
+    for (; copy->count < c->count; ++copy->count)
+        new (&copy->mem[copy->count]) Entity(c->mem[copy->count]);
+    c = std::move(copy);
+}
+
+EntityStore::~EntityStore() = default;
+
 std::size_t EntityStore::pushBack(Entity&& e) {
-    if (size_ == chunks_.size() * kChunk) {
-        void* mem = ::operator new(sizeof(Entity) * kChunk, std::align_val_t{alignof(Entity)});
-        chunks_.push_back(static_cast<Entity*>(mem));
-    }
-    new (&at(size_)) Entity(std::move(e));
+    if (size_ == chunks_.size() * kChunk)
+        chunks_.push_back(std::make_shared<Chunk>());
+    std::shared_ptr<Chunk>& c = chunks_[size_ / kChunk];
+    if (c.use_count() > 1)
+        detach(c);
+    new (&c->mem[c->count]) Entity(std::move(e));
+    ++c->count;
     return size_++;
 }
 
 void EntityStore::popBack() {
-    at(size_ - 1).~Entity();
+    std::shared_ptr<Chunk>& c = chunks_[(size_ - 1) / kChunk];
+    if (c.use_count() > 1)
+        detach(c);
+    c->mem[--c->count].~Entity();
     --size_;
+}
+
+void EntityStore::shareInto(EntityStore& out) const {
+    out.chunks_.clear();
+    const std::size_t full = size_ / kChunk;
+    out.chunks_.assign(chunks_.begin(), chunks_.begin() + static_cast<std::ptrdiff_t>(full));
+    if (size_ % kChunk) {
+        out.chunks_.push_back(chunks_[full]);
+        detach(out.chunks_.back());
+    }
+    out.size_ = size_;
 }
 
 template <class Row, class IdT>
@@ -927,6 +955,28 @@ Document::Document() {
 
 Document::~Document() = default;
 
+std::shared_ptr<const Document> Document::snapshot() const {
+    auto d = std::make_shared<Document>();
+    d->header_ = header_;
+    store_.shareInto(d->store_);
+    d->posOf_ = posOf_;
+    d->nextEntityId_ = nextEntityId_;
+    d->windowNext_ = windowNext_;
+    d->windowLimit_ = windowLimit_;
+    d->owner_ = owner_;
+    d->orderOverride_ = orderOverride_;
+    d->layers_ = layers_;
+    d->levels_ = levels_;
+    d->linetypes_ = linetypes_;
+    d->textStyles_ = textStyles_;
+    d->dimStyles_ = dimStyles_;
+    d->blocks_ = blocks_;
+    d->filePath_ = filePath_;
+    d->viewHidden_ = viewHidden_;
+    d->revision_ = revision_;
+    return d;
+}
+
 const Entity* Document::find(EntityId id) const {
     if (id.value >= posOf_.size())
         return nullptr;
@@ -935,7 +985,10 @@ const Entity* Document::find(EntityId id) const {
 }
 
 Entity* Document::findMutable(EntityId id) {
-    return const_cast<Entity*>(static_cast<const Document*>(this)->find(id));
+    if (id.value >= posOf_.size())
+        return nullptr;
+    std::uint32_t pos = posOf_[id.value];
+    return pos == 0xFFFFFFFFu ? nullptr : &store_.at(pos);  // copies a chunk a snapshot shares
 }
 
 void Document::insertEntity(Entity&& e) {

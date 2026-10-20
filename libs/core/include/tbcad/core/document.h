@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -273,7 +274,9 @@ public:
 
 namespace detail {
 
-// Chunked storage with stable addresses while the entity count only grows.
+// Chunked storage with stable addresses while the entity count only grows. A snapshot shares
+// the full chunks; the first change to a shared chunk copies it (and so moves the entities in
+// it), and a snapshot copies the last chunk, so adding entities never moves any.
 class EntityStore {
 public:
     EntityStore() = default;
@@ -282,10 +285,19 @@ public:
     ~EntityStore();
 
     std::size_t size() const { return size_; }
-    Entity& at(std::size_t i) { return chunks_[i / kChunk][i % kChunk]; }
-    const Entity& at(std::size_t i) const { return chunks_[i / kChunk][i % kChunk]; }
+    Entity& at(std::size_t i) {
+        std::shared_ptr<Chunk>& c = chunks_[i / kChunk];
+        if (c.use_count() > 1)
+            detach(c);
+        else  // a snapshot that let go of the chunk on another thread is done reading it
+            std::atomic_thread_fence(std::memory_order_acquire);
+        return c->mem[i % kChunk];
+    }
+    const Entity& at(std::size_t i) const { return chunks_[i / kChunk]->mem[i % kChunk]; }
     std::size_t pushBack(Entity&& e);
     void popBack();
+    // A store with the same entities that shares this one's full chunks.
+    void shareInto(EntityStore& out) const;
 
     template <class Fn>
     void forEach(Fn&& fn) const {
@@ -295,7 +307,16 @@ public:
 
 private:
     static constexpr std::size_t kChunk = 4096;
-    std::vector<Entity*> chunks_{};
+    struct Chunk {
+        Entity* mem = nullptr;
+        std::size_t count = 0;  // constructed entities, from the start
+        Chunk();
+        ~Chunk();
+        Chunk(const Chunk&) = delete;
+        Chunk& operator=(const Chunk&) = delete;
+    };
+    static void detach(std::shared_ptr<Chunk>& c);
+    std::vector<std::shared_ptr<Chunk>> chunks_{};
     std::size_t size_ = 0;
 };
 
@@ -428,6 +449,12 @@ public:
     // left alone). Used by file readers to restore ids that were handed out before the file was
     // saved. Not undoable; fails while a transaction is open.
     Result<void> reserveIds(const NextIds& ids);
+
+    // A read-only copy of the drawing as it is now, for reading on another thread while this
+    // document goes on changing (an autosave encodes it). It shares the stored objects with this
+    // document until either changes them, so it is cheap to take. It has its own uid(), the same
+    // revision() and no observers. During a transaction it holds the edits made so far.
+    std::shared_ptr<const Document> snapshot() const;
 
     // Incremented by every commit, undo and redo.
     std::uint64_t revision() const { return revision_; }
