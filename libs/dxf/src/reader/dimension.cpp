@@ -66,6 +66,32 @@ std::string dimensionLines(std::string t) {
 
 }  // namespace
 
+// The relative height ("\\H0.8x;") that starts a text and so sizes all of it, else 1. Other
+// leading codes ("\\A1;", a font) may come first; a height in the middle ("9d{\\H0.8x;b}")
+// sizes just the letters after it.
+double leadingHeightFactor(std::string_view t) {
+    std::size_t i = 0;
+    while (i < t.size()) {
+        if (t[i] == '{') {
+            ++i;
+        } else if (t[i] == '\\' && i + 1 < t.size() &&
+                   std::string_view("ACcFfQTWpbi").find(t[i + 1]) != std::string_view::npos &&
+                   t.find(';', i) != std::string_view::npos) {
+            i = t.find(';', i) + 1;
+        } else {
+            break;
+        }
+    }
+    if (t.substr(i, 2) != "\\H")
+        return 1;
+    i += 2;
+    const std::size_t j = t.find(';', i);
+    if (j == std::string_view::npos || j <= i || t[j - 1] != 'x')
+        return 1;
+    const double v = std::strtod(std::string(t.substr(i, j - 1 - i)).c_str(), nullptr);
+    return std::isfinite(v) && v > 0 && v < 1e6 ? v : 1;
+}
+
 // A dimension can carry its own values for a few style variables (the "DSTYLE" block of its
 // extended data), and its text can start with a relative height ("{\\H560x;<>}"). Both make a
 // copy of the style named by the dimension; copies with the same values are shared.
@@ -142,35 +168,7 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
             var = -1;
         }
     }
-    double factor = 1;
-    {
-        const std::string t = dec(r.raw(1));
-        // Only a height at the start counts (after other leading codes such as "\\A1;"): one
-        // in the middle ("9d{\\H0.8x;b}") sizes just the letters after it.
-        std::size_t i = 0;
-        while (i < t.size()) {
-            if (t[i] == '{') {
-                ++i;
-            } else if (t[i] == '\\' && i + 1 < t.size() &&
-                       std::string_view("ACcFfQTWp").find(t[i + 1]) != std::string_view::npos &&
-                       t.find(';', i) != std::string::npos) {
-                i = t.find(';', i) + 1;
-            } else {
-                break;
-            }
-        }
-        if (t.compare(i, 2, "\\H") != 0)
-            i = std::string::npos;
-        if (i != std::string::npos) {
-            i = t.find("\\H", i) + 2;
-            std::size_t j = t.find(';', i);
-            if (j != std::string::npos && j > i && t[j - 1] == 'x') {
-                const double v = std::strtod(t.substr(i, j - 1 - i).c_str(), nullptr);
-                if (std::isfinite(v) && v > 0 && v < 1e6)
-                    factor = v;
-            }
-        }
-    }
+    const double factor = leadingHeightFactor(dec(r.raw(1)));
     if (!txt && !asz && !scale && !gap && !exo && !exe && !dle && !tp && !tm && !tolOn && !limOn &&
         !altOn && extra.empty() && factor == 1)
         return base;
