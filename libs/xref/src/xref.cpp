@@ -1406,4 +1406,38 @@ std::size_t useCount(const Document& doc, BlockId block) {
     return n;
 }
 
+std::vector<BlockId> children(const Document& doc, BlockId block) {
+    std::vector<BlockId> out;
+    const BlockDef* def = doc.block(block);
+    if (!def)
+        return out;
+    for (EntityId id : def->entities) {
+        const Entity* e = doc.find(id);
+        const auto* ins = e ? entityAs<InsertData>(*e) : nullptr;
+        if (!ins || ins->block == block)
+            continue;
+        const BlockDef* b = doc.block(ins->block);
+        if (b && !b->xrefPath.empty() && std::find(out.begin(), out.end(), b->id) == out.end())
+            out.push_back(b->id);
+    }
+    std::sort(out.begin(), out.end(),
+              [&](BlockId a, BlockId b) { return doc.block(a)->name < doc.block(b)->name; });
+    return out;
+}
+
+PathType pathTypeOf(std::string_view stored) {
+    if (auto hash = stored.find('#'); hash != std::string_view::npos)
+        stored = stored.substr(0, hash);
+    const std::filesystem::path p(std::u8string(stored.begin(), stored.end()));
+    // A drive letter counts as absolute on every platform, so a drawing from Windows reads the same.
+    const bool drive = stored.size() > 2 && stored[1] == ':' &&
+                       (stored[2] == '\\' || stored[2] == '/');
+    if (p.is_absolute() || drive || p.has_root_directory() ||
+        (!stored.empty() && (stored[0] == '\\' || stored[0] == '/')))
+        return PathType::Absolute;
+    if (stored.find_first_of("/\\") == std::string_view::npos)
+        return PathType::None;
+    return PathType::Relative;
+}
+
 }  // namespace tbcad::xref

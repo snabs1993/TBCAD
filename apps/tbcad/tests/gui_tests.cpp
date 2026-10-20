@@ -6,6 +6,7 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -409,6 +410,63 @@ TEST_CASE("external references panel: attach, unload, reload, detach") {
     h.frame(3);
     CHECK(refs().empty());
     CHECK(h.has("Attach...", "External References"));
+}
+
+TEST_CASE("external references panel: tree, details, type switch, row menu and change balloon") {
+    Harness h(1920, 1080);
+    h.core().submitText("LINE");
+    h.core().submitText("0,0");
+    h.core().submitText("100,0");
+    h.core().pressEscape();
+    const fs::path dir = scratchDir("xref2");
+    const fs::path source = dir / "source.tbcad";
+    REQUIRE(h.core().saveAs(source).ok());
+    h.core().newDocument();
+    h.frame(3);
+    h.core().submitText("XATTACH");
+    h.core().submitText(source.string());
+    h.core().submitText("Attach");
+    h.core().submitText("Absolute");
+    h.core().submitText("source");
+    h.core().submitText("0,0");
+    h.core().pressEscape();
+    h.frame(3);
+    REQUIRE(xref::xrefs(h.core().document()).size() == 1);
+    const BlockId id = xref::xrefs(h.core().document())[0];
+    const auto def = [&] { return h.core().document().block(id); };
+
+    h.core().submitText("XREF");
+    h.frame(3);
+    REQUIRE(h.click("source", "External References"));
+    h.frame(2);
+    CHECK(h.has("Open", "External References"));
+    REQUIRE(h.click("Make overlay", "External References"));
+    h.frame(3);
+    REQUIRE(def());
+    CHECK(def()->xrefOverlay);
+    CHECK(h.has("Make attachment", "External References"));
+
+    REQUIRE(h.click("Tree", "External References"));
+    h.frame(2);
+    CHECK(h.has("source", "External References"));
+    REQUIRE(h.rightClick("source", "External References"));
+    h.frame(2);
+    CHECK(h.has("Reference type"));
+    CHECK(h.has("Detach"));
+    h.core().pressEscape();
+    h.frame(2);
+
+    // The file changes on disk: a balloon names it and reloads it on request.
+    fs::last_write_time(source, fs::last_write_time(source) + std::chrono::seconds(10));
+    h.core().tickXrefs(std::chrono::steady_clock::now() + std::chrono::hours(1));
+    h.frame(2);
+    CHECK(xref::state(h.core().document(), id, {}) == xref::State::Changed);
+    REQUIRE(h.windowOpen("External reference changed"));
+    CHECK(h.has("Xref changed"));  // the status bar marker
+    REQUIRE(h.click("Reload source", "External reference changed"));
+    h.frame(3);
+    CHECK(xref::state(h.core().document(), id, {}) == xref::State::UpToDate);
+    CHECK_FALSE(h.windowOpen("External reference changed"));
 }
 
 TEST_CASE("plot panel: options change the exported PDF") {

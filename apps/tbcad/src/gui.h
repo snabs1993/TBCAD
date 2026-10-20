@@ -284,6 +284,8 @@ private:
     // Short non-blocking notices at the bottom right of the viewport (saved, opened, ...).
     void toast(const std::string& text);
     void drawToasts(const ViewportRect& rect);
+    // XREFNOTIFY 2: a balloon naming the external references whose file changed, to reload them.
+    void drawXrefBalloon(const ViewportRect& rect);
     struct Toast {
         std::string text;
         double shownAt = 0;

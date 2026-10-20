@@ -668,3 +668,30 @@ TEST_CASE("REFEDIT on a .tbcad xref edits it in place and REFCLOSE saves its fil
     CHECK(longest == doctest::Approx(50));
     CHECK(fs::exists(fs::path(file.string() + ".bak")));
 }
+
+TEST_CASE("XREFTYPE switches attach and overlay with undo - XOPEN asks the window to open the file") {
+    Dir dir;
+    fs::path file = writeSource(dir.path, "plan.tbcad", 2);
+    Fixture f;
+    f.host->run("XATTACH", {file.string(), "", "", "", "0,0"});
+    REQUIRE(f.doc.blockByName("plan"));
+    CHECK_FALSE(f.doc.blockByName("plan")->xrefOverlay);
+    f.host->run("XREFTYPE", {"plan", "Overlay"});
+    CHECK(f.doc.blockByName("plan")->xrefOverlay);
+    f.host->clearLog();
+    f.host->run("XREFTYPE", {"plan", ""});  // the default is the current type
+    CHECK(f.host->logContains("already an overlay"));
+    CHECK(f.host->undo());
+    CHECK_FALSE(f.doc.blockByName("plan")->xrefOverlay);
+
+    f.host->run("XOPEN", {"plan"});
+    REQUIRE_FALSE(f.host->uiRequests().empty());
+    const std::string req = f.host->uiRequests().back();
+    CHECK(req.rfind("openpath:", 0) == 0);
+    CHECK(fs::equivalent(fs::path(req.substr(9)), file));
+
+    fs::remove(file);
+    f.host->clearLog();
+    f.host->run("XOPEN", {"plan"});
+    CHECK(f.host->logContains("was not found"));
+}

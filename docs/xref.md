@@ -47,6 +47,10 @@ sub-layers (`site~walls`), and those rows are removed when nothing is drawn on t
 | `XBIND` | `XB` | Makes the xref an ordinary block (the path is dropped). **Bind** keeps its layers (`site~walls`) and nested blocks (`site$door`); **Insert** merges the layers into the drawing's own by name (`site~walls` becomes `walls`, sub-layers move below it, `site~0` becomes layer 0, the look is kept) and removes the `site$` prefix from nested blocks when the plain name is free. One undo step. |
 | `XPATH` | | Re-stores the path of an xref as **Relative**, **Absolute** or **None** (file name only) without moving the file. |
 | `XRELINK` | | Points an xref (typically one whose file was not found) at another file, checks it can be read, and reloads it. A file that cannot be read changes nothing. |
+| `XREFTYPE` | | Switches an xref between **Attach** and **Overlay** (one undo step). Pictures and PDF pages have no type. |
+| `XOPEN` | | Opens the file of an xref in its own tab. |
+| `EXTERNALREFERENCES` | `ER`, `XREF` | Opens the External References panel (below). |
+| `XREFNOTIFY` | | What happens when the file of an xref changes: 0 nothing, 1 a status-bar marker, 2 (default) the marker and a balloon, 3 reload by itself. |
 | `XLIST` | | Lists xrefs with path, state (up to date / changed on disk / file not found) and use count. |
 
 Relative paths are taken from the folder of the drawing (the host setting `document.file`); an
@@ -75,8 +79,25 @@ where it closes. Overlays inside a loaded file are left out.
 ## Reload when the file changes
 
 `AppCore::tickXrefs` (called every frame from `updateFrame`) checks all xrefs every two seconds.
-When a file's stamp differs from the snapshot and no command is running, it runs `XRELOAD`. A
-file that fails to load (half written, damaged) is not retried until its stamp changes again.
+What a changed file (its stamp differs from the snapshot) brings depends on `XREFNOTIFY`
+(setting `xref.notify`):
+
+* 0: nothing.
+* 1: an "Xref changed" marker in the status bar until the xref is reloaded. Click it for the
+  panel, right-click it to reload.
+* 2 (default, as in AutoCAD): the marker and a balloon naming the xrefs with **Reload**,
+  **External References...** and **Dismiss**. Each change of a file is announced once.
+* 3: reloads by itself (`XRELOAD`) once no command is running. A file that fails to load (half
+  written, damaged) is not retried until its stamp changes again.
+
+## External References panel
+
+`XREF` / `ER` opens it. Each row shows the reference name, its status (Loaded, Needs reload, Not
+found, Unloaded), file size, type (Attach, Overlay, Image, PDF), file date and saved path.
+**List / Tree**: the tree puts the xrefs another xref inserts below it. Selecting a row shows
+where the file was found, the saved path and its kind (relative, full, no path) and how often it
+is used, with Open, Reload, Unload, Detach, Bind, Insert (merge layers), Make overlay / Make
+attachment, Path type and Relink. Right-click a row for the same actions.
 
 ## Layer states (VISRETAIN)
 

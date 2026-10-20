@@ -126,6 +126,8 @@ struct AppCore::Session {
     // File stamp of each xref that a reload was already tried for (a failed reload is not retried
     // until the file changes again).
     std::map<BlockId, std::int64_t> xrefTried{};
+    std::vector<std::string> xrefChanged{};  // as of the last check
+    std::vector<std::string> xrefNotice{};   // for the balloon
     std::vector<AppCore::MissingXref> missingXrefs{};
     std::size_t xrefNoticeDismissedFor = 0;  // the notice was closed at this many missing xrefs
     // The current UCS (the "drafting.ucs" setting) of this drawing while it is in the background.
@@ -2035,24 +2037,81 @@ void AppCore::tickXrefs(std::chrono::steady_clock::time_point now) {
     if (now - lastXrefCheck_ < 2s)
         return;
     lastXrefCheck_ = now;
-    if (!session_ || session_->runner->active())
+    if (!session_)
         return;
-    bool stale = false;
+    const std::string notifyText = setting("xref.notify").value_or("2");
+    const int notify =
+        notifyText.size() == 1 && notifyText[0] >= '0' && notifyText[0] <= '3' ? notifyText[0] - '0'
+                                                                               : 2;
+    session_->xrefChanged.clear();
+    if (notify == 0) {
+        session_->xrefNotice.clear();
+        return;
+    }
+    if (session_->runner->active() && notify == 3)
+        return;
+    std::vector<std::string> fresh;
     for (BlockId id : xref::xrefs(session_->doc)) {
         if (xref::state(session_->doc, id, session_->file) != xref::State::Changed)
             continue;
         const BlockDef* def = session_->doc.block(id);
+        session_->xrefChanged.push_back(def->name);
         std::int64_t stamp = xref::fileStamp(xref::resolvePath(def->xrefPath, session_->file));
         auto tried = session_->xrefTried.find(id);
         if (tried != session_->xrefTried.end() && tried->second == stamp)
             continue;
         session_->xrefTried[id] = stamp;
-        stale = true;
+        fresh.push_back(def->name);
     }
-    if (!stale || !registry_.find("XRELOAD"))
+    // A reference reloaded or detached meanwhile leaves the balloon.
+    std::erase_if(session_->xrefNotice, [&](const std::string& n) {
+        return std::find(session_->xrefChanged.begin(), session_->xrefChanged.end(), n) ==
+               session_->xrefChanged.end();
+    });
+    if (fresh.empty())
+        return;
+    if (notify == 2) {
+        for (std::string& n : fresh)
+            if (std::find(session_->xrefNotice.begin(), session_->xrefNotice.end(), n) ==
+                session_->xrefNotice.end())
+                session_->xrefNotice.push_back(std::move(n));
+        return;
+    }
+    if (notify != 3 || !registry_.find("XRELOAD"))
         return;
     print("External reference changed on disk; reloading");
     xrefReloadWait_ = 1;  // one frame with the notice on screen, then the blocking reload
+}
+
+std::vector<std::string> AppCore::changedXrefs() const {
+    return session_ ? session_->xrefChanged : std::vector<std::string>{};
+}
+
+std::vector<std::string> AppCore::xrefChangeNotice() const {
+    return session_ ? session_->xrefNotice : std::vector<std::string>{};
+}
+
+void AppCore::dismissXrefChangeNotice() {
+    if (session_)
+        session_->xrefNotice.clear();
+}
+
+void AppCore::reloadXrefs(const std::vector<std::string>& names) {
+    if (!session_)
+        return;
+    const std::vector<std::string> targets = names.empty() ? session_->xrefChanged : names;
+    session_->xrefNotice.clear();
+    if (targets.empty() || !registry_.find("XRELOAD"))
+        return;
+    if (session_->runner->active())
+        pressEscape();
+    for (const std::string& n : targets) {
+        submitText("XRELOAD");
+        submitText(n);
+    }
+    std::erase_if(session_->xrefChanged, [&](const std::string& n) {
+        return std::find(targets.begin(), targets.end(), n) != targets.end();
+    });
 }
 
 std::vector<render::ImageDraw> AppCore::underlayImages() {
