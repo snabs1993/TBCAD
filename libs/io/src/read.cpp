@@ -104,7 +104,7 @@ public:
         check(tx.modifyHeader([&](Header& h) { h = header; }), "header");
         step("entities", [&] { loadEntities(tx); });
         step("draw order", [&] { loadOrder(tx); });
-        tx.commit();
+        tx.commitUnrecorded();
         check(doc_->reserveIds(nextIds_), "next ids");
         return std::move(doc_);
     }
