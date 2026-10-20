@@ -99,6 +99,12 @@ struct Attach {
 constexpr const char* kEditHeightKey = "tmp.mtext.height";
 constexpr const char* kEditAttachKey = "tmp.mtext.attach";
 constexpr const char* kEditStyleKey = "tmp.mtext.style";
+// Columns ("1" = none), "dynamic" or "static", the static height (0 = the rectangle's), and the
+// background mask ("1" = on).
+constexpr const char* kEditColumnsKey = "tmp.mtext.columns";
+constexpr const char* kEditColumnKindKey = "tmp.mtext.colkind";
+constexpr const char* kEditColumnHeightKey = "tmp.mtext.colheight";
+constexpr const char* kEditMaskKey = "tmp.mtext.bgmask";
 constexpr Attach kAttach[] = {
     {"TL", Attachment::TopLeft},      {"TC", Attachment::TopCenter},
     {"TR", Attachment::TopRight},     {"ML", Attachment::MiddleLeft},
@@ -411,16 +417,29 @@ public:
         d.width = st.width >= 0 ? st.width : (xmax - xmin);
         if (d.width < tol::kLinear)
             d.width = 0;
-        if (st.columns > 1 && d.width > 0) {
-            // The rectangle is the whole text block: cut it into columns with a gap of two lines.
-            const double gap = 2 * d.height;
-            const double each = (d.width - gap * (st.columns - 1)) / st.columns;
-            if (each > d.height) {
-                d.columns = static_cast<std::uint8_t>(st.columns);
-                d.columnGap = gap;
-                d.width = each;
-            }
-        }
+        const double blockW = d.width;
+        const double blockH = ymax - ymin;
+        // The rectangle is the whole text block: cut it into columns with a gap of two lines.
+        // Static columns are as tall as the rectangle (or the height typed in the editor).
+        const auto splitColumns = [blockW, blockH](MTextData& m, int cols, bool fixedHeight,
+                                                   double colHeight) {
+            m.width = blockW;
+            m.columns = 1;
+            m.columnGap = 0;
+            m.columnHeight = 0;
+            if (cols <= 1 || blockW <= 0)
+                return;
+            const double gap = 2 * m.height;
+            const double each = (blockW - gap * (cols - 1)) / cols;
+            if (each <= m.height)
+                return;
+            m.columns = static_cast<std::uint8_t>(std::min(cols, 16));
+            m.columnGap = gap;
+            m.width = each;
+            if (fixedHeight)
+                m.columnHeight = colHeight > 0 ? colHeight : blockH;
+        };
+        splitColumns(d, st.columns, false, 0);
 
         // The text box offers Height, Justify and Style while typing: it changes these settings
         // and the drawing follows them, so the command line is not asked again.
@@ -434,7 +453,11 @@ public:
         ctx.host().setSetting(kEditAttachKey, attachName(d.attach));
         if (const TextStyle* ts = ctx.doc().textStyle(d.style))
             ctx.host().setSetting(kEditStyleKey, ts->name);
-        const auto current = [&ctx, d, place]() {
+        ctx.host().setSetting(kEditColumnsKey, std::to_string(st.columns));
+        ctx.host().setSetting(kEditColumnKindKey, "dynamic");
+        ctx.host().setSetting(kEditColumnHeightKey, "0");
+        ctx.host().setSetting(kEditMaskKey, "0");
+        const auto current = [&ctx, d, place, splitColumns]() {
             MTextData m = d;
             if (auto h = ctx.host().setting(kEditHeightKey)) {
                 const double v = std::atof(h->c_str());
@@ -448,6 +471,14 @@ public:
             if (auto n = ctx.host().setting(kEditStyleKey))
                 if (const TextStyle* ts = ctx.doc().textStyleByName(*n))
                     m.style = ts->id;
+            const auto num = [&ctx](const char* key) {
+                const auto v = ctx.host().setting(key);
+                return v ? std::atof(v->c_str()) : 0.0;
+            };
+            splitColumns(m, static_cast<int>(num(kEditColumnsKey)),
+                         ctx.host().setting(kEditColumnKindKey).value_or("") == "static",
+                         num(kEditColumnHeightKey));
+            m.bgMode = ctx.host().setting(kEditMaskKey).value_or("0") == "1" ? 1 : 0;
             m.position = place(m.attach);
             return m;
         };
@@ -472,10 +503,7 @@ public:
             co_return;
         const MTextData chosen = current();
         const bool heightEdited = chosen.height != d.height;
-        d.height = chosen.height;
-        d.attach = chosen.attach;
-        d.style = chosen.style;
-        d.position = chosen.position;
+        d = chosen;
         d.utf8 = t.text;
         if (fixed <= 0 || heightEdited)
             rememberHeight(ctx, d.height);
@@ -509,41 +537,80 @@ public:
     std::vector<std::string> defaultAliases() const override { return {"ED", "DDEDIT", "MTEDIT"}; }
     std::string_view description() const override { return "Edit the content of a text object"; }
 
+    // TEXTEDITMODE ("textedit.mode"): 0 asks for another object after each edit until Enter or
+    // Esc, 1 ends after one. An object selected before the command (a double-click, the Text
+    // panel) is always a single edit. Undo takes back the last edit of this command.
     Task run(CommandContext& ctx) override {
-        cmd::SelectionOptions so;
-        so.single = true;
-        so.filter = isTextEntity;
-        auto sel = co_await ctx.getSelection("Select an annotation object", so);
-        if (!sel.ok() || sel.ids.empty())
-            co_return;
-        const Entity* e = ctx.doc().find(sel.ids.front());
-        if (!e || !isTextEntity(*e))
-            co_return;
-        std::string current;
-        if (const auto* t = entityAs<TextData>(*e))
-            current = t->utf8;
-        else
-            current = entityAs<MTextData>(*e)->utf8;
+        bool multiple = ctx.host().setting("textedit.mode").value_or("0") != "1";
+        struct Done {
+            EntityId id;
+            std::string before;
+        };
+        std::vector<Done> done;
+        for (bool first = true;; first = false) {
+            cmd::SelectionOptions so;
+            so.single = true;
+            so.filter = isTextEntity;
+            so.allowPreselection = first;
+            so.keywords = done.empty() ? std::vector<std::string>{"Mode"}
+                                       : std::vector<std::string>{"Undo", "Mode"};
+            auto sel = co_await ctx.getSelection("Select an annotation object", so);
+            if (sel.status == cmd::Status::Keyword) {
+                if (sel.keyword == "Undo" && !done.empty()) {
+                    const Done last = done.back();
+                    done.pop_back();
+                    (void)ctx.tx().modify(last.id,
+                                          [&](Entity& en) { setContent(en, last.before); });
+                } else if (sel.keyword == "Mode") {
+                    cmd::KeywordOptions ko{.keywords = {"Single", "Multiple"},
+                                           .defaultKeyword = multiple ? "Multiple" : "Single"};
+                    auto m = co_await ctx.getKeyword("Enter a text edit mode", ko);
+                    if (m.ok()) {
+                        multiple = m.keyword == "Multiple";
+                        ctx.host().setSetting("textedit.mode", multiple ? "0" : "1");
+                    }
+                }
+                continue;
+            }
+            if (!sel.ok() || sel.ids.empty())
+                co_return;
+            const bool preselected = first && !ctx.usedPreselection().empty();
+            const Entity* e = ctx.doc().find(sel.ids.front());
+            if (!e || !isTextEntity(*e))
+                co_return;
+            std::string current;
+            if (const auto* t = entityAs<TextData>(*e))
+                current = t->utf8;
+            else
+                current = entityAs<MTextData>(*e)->utf8;
 
-        cmd::StringOptions o;
-        o.defaultValue = current;
-        if (const auto* m = entityAs<MTextData>(*e))
-            o.editor = cmd::TextEditorHint{m->position, m->width, 0};
-        else if (const auto* t = entityAs<TextData>(*e))
-            o.editor = cmd::TextEditorHint{{t->position.x, t->position.y + t->height}, 0, 0, false};
-        auto r = co_await ctx.getString("Enter new text", o);
-        if (!r.ok())
-            co_return;
-        const std::string value = r.text;
-        auto res = ctx.tx().modify(sel.ids.front(), [&](Entity& en) {
-            if (auto* t = entityAs<TextData>(en))
-                t->utf8 = value;
-            else if (auto* m = entityAs<MTextData>(en))
-                m->utf8 = value;
-        });
-        if (!res)
-            ctx.message(res.error().message);
-        co_return;
+            cmd::StringOptions o;
+            o.defaultValue = current;
+            if (const auto* m = entityAs<MTextData>(*e))
+                o.editor = cmd::TextEditorHint{m->position, m->width, 0};
+            else if (const auto* t = entityAs<TextData>(*e))
+                o.editor =
+                    cmd::TextEditorHint{{t->position.x, t->position.y + t->height}, 0, 0, false};
+            auto r = co_await ctx.getString("Enter new text", o);
+            if (!r.ok())
+                co_return;
+            const std::string value = r.text;
+            auto res = ctx.tx().modify(sel.ids.front(), [&](Entity& en) { setContent(en, value); });
+            if (!res)
+                ctx.message(res.error().message);
+            else
+                done.push_back({sel.ids.front(), current});
+            if (!multiple || preselected)
+                co_return;
+        }
+    }
+
+private:
+    static void setContent(Entity& en, const std::string& value) {
+        if (auto* t = entityAs<TextData>(en))
+            t->utf8 = value;
+        else if (auto* m = entityAs<MTextData>(en))
+            m->utf8 = value;
     }
 };
 

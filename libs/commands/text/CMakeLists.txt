@@ -13,12 +13,14 @@ set(_textcmd_sources
   src/spell.cpp
   src/mtext_format.cpp
   src/mtext_explode.cpp
+  src/format_edits.cpp
   src/register.cpp)
 
 # The editor panel needs Dear ImGui, which is only fetched when the application is built.
 if(TBCAD_BUILD_APP)
   include(deps/imgui)
-  list(APPEND _textcmd_sources ui/text_editor_panel.cpp ui/text_style_panel.cpp ui/annotation_section.cpp)
+  list(APPEND _textcmd_sources ui/text_editor_panel.cpp ui/text_style_panel.cpp ui/annotation_section.cpp
+       ui/format_bar.cpp)
 endif()
 
 tbcad_add_library(textcmd
@@ -35,6 +37,7 @@ tbcad_add_tests(textcmd
   SOURCES
     tests/main.cpp
     tests/editable_tests.cpp
+    tests/format_edits_tests.cpp
     tests/text_command_tests.cpp
     tests/style_command_tests.cpp
     tests/annotative_tests.cpp

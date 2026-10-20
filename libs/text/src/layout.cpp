@@ -867,6 +867,11 @@ static TextLayout layoutMTextRaw(const Document& doc, const MTextData& d) {
             if (explicitBreaks) {
                 if (metas[i].columnBreak && i > 0)
                     want = std::min(cols - 1, col + 1);
+            } else if (d.columnHeight > 0) {
+                // Static columns: a line that would end below the column height starts the next.
+                const double below = reach[i] + out.lines[i].height - shiftY;
+                if (i > firstOfCol && below > d.columnHeight)
+                    want = std::min(cols - 1, col + 1);
             } else {
                 const double mid = reach[i] + out.lines[i].height / 2;
                 want = std::min(cols - 1, static_cast<std::size_t>(mid / target));

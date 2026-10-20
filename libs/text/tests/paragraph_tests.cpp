@@ -183,3 +183,20 @@ TEST_CASE("style width factor: wrapping, indents and tabs are in drawing units")
           doctest::Approx(10).epsilon(0.05));  // the indent is 10 mm on the drawing
     CHECK(c.toWorld.apply({c.glyphs[1].origin.x, 0}).x == doctest::Approx(30));  // the tab stop
 }
+
+TEST_CASE("static columns fill to their height before the next one starts") {
+    Document doc;
+    MTextData m = mtext("A\\PB\\PC\\PD\\PE\\PF", 50);
+    m.columns = 2;
+    m.columnGap = 20;
+    TextLayout balanced = layoutMText(doc, m);
+    REQUIRE(balanced.lines.size() == 6);
+    CHECK(balanced.lines[3].x0 == doctest::Approx(70));  // balanced: three and three
+    const double pitch = balanced.lines[0].baseline - balanced.lines[1].baseline;
+    m.columnHeight = 3.5 * pitch + balanced.lines[0].height;  // room for four lines
+    TextLayout l = layoutMText(doc, m);
+    REQUIRE(l.lines.size() == 6);
+    CHECK(l.lines[3].x0 == doctest::Approx(0));
+    CHECK(l.lines[4].x0 == doctest::Approx(70));
+    CHECK(l.lines[4].baseline == doctest::Approx(l.lines[0].baseline));
+}

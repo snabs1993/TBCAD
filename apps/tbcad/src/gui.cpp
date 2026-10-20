@@ -2821,12 +2821,65 @@ void Gui::textEditor(const ViewportRect& rect) {
                     }
                 ImGui::EndCombo();
             }
+            ImGui::SameLine();
+            // Columns: none, dynamic (balanced) or static (each as tall as the rectangle or the
+            // height typed), cut from the rectangle's width.
+            const int cols = std::max(1, std::atoi(getS("tmp.mtext.columns", "1").c_str()));
+            const bool stat = getS("tmp.mtext.colkind", "dynamic") == "static";
+            const std::string colLabel =
+                cols <= 1 ? std::string("No columns")
+                          : std::to_string(cols) + (stat ? " static" : " dynamic");
+            ImGui::SetNextItemWidth(110 * dpiScale_);
+            if (ImGui::BeginCombo("Columns", colLabel.c_str())) {
+                if (ImGui::Selectable("No columns", cols <= 1)) {
+                    core_.setSetting("tmp.mtext.columns", "1");
+                    changed = true;
+                }
+                for (const char* kind : {"dynamic", "static"})
+                    for (int n = 2; n <= 4; ++n) {
+                        const std::string label = std::to_string(n) + " " + kind;
+                        if (ImGui::Selectable(label.c_str(), label == colLabel)) {
+                            core_.setSetting("tmp.mtext.columns", std::to_string(n));
+                            core_.setSetting("tmp.mtext.colkind", kind);
+                            changed = true;
+                        }
+                    }
+                ImGui::EndCombo();
+            }
+            if (cols > 1 && stat) {
+                ImGui::SameLine();
+                double ch = std::atof(getS("tmp.mtext.colheight", "0").c_str());
+                ImGui::SetNextItemWidth(64 * dpiScale_);
+                if (ImGui::InputDouble("Column height", &ch, 0, 0, "%.4g") && ch >= 0) {
+                    core_.setSetting("tmp.mtext.colheight", std::to_string(ch));
+                    changed = true;
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("0 = the height of the rectangle");
+            }
+            ImGui::SameLine();
+            bool mask = getS("tmp.mtext.bgmask", "0") == "1";
+            if (ImGui::Checkbox("Mask", &mask)) {
+                core_.setSetting("tmp.mtext.bgmask", mask ? "1" : "0");
+                changed = true;
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Background mask: hide what is behind the text");
             if (changed)
                 core_.textEdited(newlinesToCodes(textEditorBuf_));
         }
         if (hint.multiline) {
-            ImGui::InputTextMultiline("##text", &textEditorBuf_, ImVec2(boxW, boxH), flags);
+            const double barHeight =
+                std::atof(core_.setting("tmp.mtext.height").value_or("2.5").c_str());
+            formatBar_.draw(core_.document(), textEditorBuf_, barHeight > 0 ? barHeight : 2.5);
+            ImGui::InputTextMultiline("##text", &textEditorBuf_, ImVec2(boxW, boxH),
+                                      flags | ImGuiInputTextFlags_CallbackAlways,
+                                      &textcmd::FormatBar::callback, &formatBar_);
             focusEditor();
+            // A bar button took the focus: give it back so the box applies the edit, with the
+            // selection it had.
+            if (formatBar_.pending() && !ImGui::IsItemActive())
+                ImGui::ActivateItemByID(ImGui::GetItemID());
             if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
                 ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Enter))
                 accept = true;

@@ -243,6 +243,65 @@ TEST_CASE("TEXTEDIT edits TEXT and MTEXT in one undo step") {
     CHECK(g.firstMText()->utf8 == "{\\b1;bold}\\Pnext");
 }
 
+TEST_CASE("TEXTEDIT Multiple mode edits one object after another, Undo takes the last back") {
+    Fixture f;
+    f.host.run("TEXT", {"0,0", "5", "0", "one"});
+    f.host.run("TEXT", {"0,20", "5", "0", "two"});
+    const EntityId a = f.doc.modelSpace()[0], b = f.doc.modelSpace()[1];
+    auto content = [&](EntityId id) { return entityAs<TextData>(*f.doc.find(id))->utf8; };
+    // TEXTEDITMODE 0 (the default): the command asks for the next object until Enter.
+    auto r =
+        f.host.run("TEXTEDIT", {cmd::ScriptItem::pick(a), "uno", cmd::ScriptItem::pick(b), "dos"});
+    CHECK_FALSE(r.finished);
+    CHECK(content(a) == "uno");
+    CHECK(content(b) == "dos");
+    f.host.feed({"U"});  // the last edit goes back
+    CHECK(content(b) == "two");
+    f.host.feed({cmd::ScriptItem::enter()});
+    CHECK(content(a) == "uno");
+    CHECK(f.host.undoStack().undoLabel() == "TEXTEDIT");
+    f.host.undo();  // the whole command is one step
+    CHECK(content(a) == "one");
+
+    // Mode Single ends after one edit and is remembered as TEXTEDITMODE 1.
+    r = f.host.run("TEXTEDIT", {"M", "S", cmd::ScriptItem::pick(a), "single"});
+    CHECK(r.finished);
+    CHECK(content(a) == "single");
+    CHECK(f.host.setting("textedit.mode").value_or("") == "1");
+    f.host.run("TEXTEDITMODE", {"0"});
+    CHECK(f.host.setting("textedit.mode").value_or("") == "0");
+
+    // An object selected first (a double-click) is a single edit whatever the mode.
+    f.host.setSelection({b});
+    r = f.host.run("TEXTEDIT", {"pre"});
+    CHECK(r.finished);
+    CHECK(content(b) == "pre");
+}
+
+TEST_CASE("MTEXT: columns and background mask chosen in the text box") {
+    Fixture f;
+    f.host.run("MTEXT", {"H", "2", "0,100", "100,50"});  // now waiting for the text
+    f.host.setSetting("tmp.mtext.columns", "2");
+    f.host.setSetting("tmp.mtext.colkind", "static");
+    f.host.setSetting("tmp.mtext.bgmask", "1");
+    f.host.feed({"a\\Pb\\Pc"});
+    const MTextData* m = f.firstMText();
+    REQUIRE(m);
+    CHECK(m->columns == 2);
+    CHECK(m->width == doctest::Approx((100 - 4) / 2.0));
+    CHECK(m->columnHeight == doctest::Approx(50));  // the rectangle's height
+    CHECK(m->bgMode == 1);
+
+    Fixture g;
+    g.host.run("MTEXT", {"C", "3", "0,100", "100,50"});
+    g.host.setSetting("tmp.mtext.columns", "1");  // "No columns" in the box wins
+    g.host.feed({"x"});
+    REQUIRE(g.firstMText());
+    CHECK(g.firstMText()->columns == 1);
+    CHECK(g.firstMText()->width == doctest::Approx(100));
+    CHECK(g.firstMText()->bgMode == 0);
+}
+
 TEST_CASE("TEXTEDIT ignores objects that are not text") {
     Fixture f;
     auto tx = f.doc.begin("line");

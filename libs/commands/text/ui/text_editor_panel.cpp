@@ -2,12 +2,14 @@
 // platform's IME like any other ImGui input, so Thai can be typed with the Windows keyboard
 // layout or IME. Apply runs TEXTEDIT, so the edit is one undo step.
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <misc/cpp/imgui_stdlib.h>
 
 #include <algorithm>
 #include <string>
 
 #include "commands.h"
+#include "tbcad/textcmd/format_bar.h"
 #include "tbcad/textcmd/textcmd.h"
 #include "tbcad/ui/ui_registry.h"
 
@@ -17,32 +19,12 @@ namespace {
 
 struct EditorState {
     EntityId id{};
-    std::string stored;    // what the entity contained when the editor last loaded it
-    std::string buffer;    // editable form (MTEXT: "\P" shown as a newline)
-    std::string wrapOpen;  // markup to wrap around the selection on the next callback
-    std::string insert;    // markup to put at the cursor on the next callback
+    std::string stored;  // what the entity contained when the editor last loaded it
+    std::string buffer;  // editable form (MTEXT: "\P" shown as a newline)
 };
 
 EditorState g_state;
-
-int wrapCallback(ImGuiInputTextCallbackData* d) {
-    auto* st = static_cast<EditorState*>(d->UserData);
-    if (!st->insert.empty()) {
-        d->InsertChars(d->CursorPos, st->insert.c_str());
-        st->insert.clear();
-        return 0;
-    }
-    if (st->wrapOpen.empty())
-        return 0;
-    int a = std::min(d->SelectionStart, d->SelectionEnd);
-    int b = std::max(d->SelectionStart, d->SelectionEnd);
-    d->InsertChars(b, "}");
-    d->InsertChars(a, st->wrapOpen.c_str());
-    d->CursorPos = a + static_cast<int>(st->wrapOpen.size()) + (b - a);
-    d->SelectionStart = d->SelectionEnd = d->CursorPos;
-    st->wrapOpen.clear();
-    return 0;
-}
+FormatBar g_bar;
 
 const Entity* selectedText(ui::PanelContext& pc) {
     if (!pc.doc || !pc.selection || pc.selection->size() != 1)
@@ -72,47 +54,20 @@ void drawPanel(ui::PanelContext& pc) {
 
     ImGui::TextUnformatted(isMText ? "Multiline text" : "Single-line text");
     if (isMText) {
-        if (ImGui::SmallButton("B"))
-            g_state.wrapOpen = "{\\b1;";
-        ImGui::SameLine();
-        if (ImGui::SmallButton("I"))
-            g_state.wrapOpen = "{\\i1;";
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Height x2"))
-            g_state.wrapOpen = "{\\H2x;";
-        ImGui::SameLine();
-        if (ImGui::SmallButton("U"))
-            g_state.wrapOpen = "{\\L";
-        ImGui::SameLine();
-        if (ImGui::SmallButton("S"))
-            g_state.wrapOpen = "{\\K";
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Narrow"))
-            g_state.wrapOpen = "{\\W0.8;";
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Wide"))
-            g_state.wrapOpen = "{\\W1.25;";
-        ImGui::SameLine();
-        ImGui::TextDisabled("(wraps the selected text)");
-        // Paragraph settings go in at the cursor and hold until the next one.
-        ImGui::TextDisabled("Paragraph:");
-        for (const auto& [label, code] : {std::pair<const char*, const char*>{"Left", "\\pql;"},
-                                          {"Centre", "\\pqc;"},
-                                          {"Right", "\\pqr;"},
-                                          {"Justify", "\\pqj;"},
-                                          {"Indent", "\\pxi-3,l3;"},
-                                          {"Tab", "\\pt10,20,30;"}}) {
-            ImGui::SameLine();
-            if (ImGui::SmallButton(label))
-                g_state.insert = code;
-        }
-        ImGui::SameLine();
+        g_bar.draw(*pc.doc, g_state.buffer, entityAs<MTextData>(*e)->height);
         if (ImGui::SmallButton("Background / spacing...") && pc.runCommand)
             pc.runCommand("MTEXTFORMAT");
     }
     ImVec2 size(-FLT_MIN, ImGui::GetTextLineHeight() * (isMText ? 10 : 3));
-    ImGui::InputTextMultiline("##text", &g_state.buffer, size, ImGuiInputTextFlags_CallbackAlways,
-                              wrapCallback, &g_state);
+    if (isMText) {
+        ImGui::InputTextMultiline("##text", &g_state.buffer, size,
+                                  ImGuiInputTextFlags_CallbackAlways, &FormatBar::callback, &g_bar);
+        // A bar button took the focus: give it back so the box applies the edit.
+        if (g_bar.pending() && !ImGui::IsItemActive())
+            ImGui::ActivateItemByID(ImGui::GetItemID());
+    } else {
+        ImGui::InputTextMultiline("##text", &g_state.buffer, size);
+    }
     if (ImGui::Button("Apply") && pc.runCommand) {
         std::string value = isMText ? editableToMarkup(g_state.buffer) : g_state.buffer;
         if (!isMText)
