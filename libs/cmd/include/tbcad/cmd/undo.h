@@ -50,7 +50,8 @@ public:
     // Labels, oldest first.
     std::vector<std::string> undoLabels() const;
 
-    // Return false when there is nothing to do or a group is still open.
+    // Return false when there is nothing to do. undo() first closes an open group (all levels),
+    // so the group is undone whole; redo() refuses while a group is open.
     bool undo(Document& doc);
     bool redo(Document& doc);
 
