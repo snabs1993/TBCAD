@@ -157,6 +157,10 @@ private:
             }
             m->utf8 = std::move(t);
         }
+        // An aligned dimension runs along its two points: a rotation means nothing to it, and DXF
+        // has none for it.
+        if (auto* d = entityAs<DimensionData>(e); d && d->kind == DimKind::Aligned)
+            d->rotation = 0;
         // A left-aligned text on its baseline is placed by its position alone: DXF writes no
         // alignment point for it, and the importer sets it to the position.
         if (auto* t = entityAs<TextData>(e); t && t->h == HAlign::Left && t->v == VAlign::Baseline)
