@@ -62,17 +62,23 @@ Result<ui::ForeignOpenResult> readDwgFile(const std::filesystem::path& path) {
     std::ifstream f(platform::longPath(path), std::ios::binary);
     if (!f)
         return makeError(ErrorCode::Io, "The file cannot be read.");
-    std::vector<char> raw((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-    std::vector<std::byte> bytes(raw.size());
-    for (std::size_t i = 0; i < raw.size(); ++i)
-        bytes[i] = static_cast<std::byte>(raw[i]);
+    // One read of the whole file (was a character at a time, then copied).
+    f.seekg(0, std::ios::end);
+    const std::streamoff size = f.tellg();
+    f.seekg(0, std::ios::beg);
+    std::vector<std::byte> bytes(size > 0 ? static_cast<std::size_t>(size) : 0);
+    if (!bytes.empty())
+        f.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
     step("load file bytes");
 
     dxf::Report report;
     dxf::ImportOptions options;
     options.diagnostics = false;  // nobody reads the structure trace when opening a drawing
-    Result<dxf::ImportResult> imported = dwg::importDwg(bytes, options, report);
+    std::vector<std::pair<std::string, double>> inner;
+    Result<dxf::ImportResult> imported = dwg::importDwg(bytes, options, report, &inner);
     step("decode, convert and import (importDwg)");
+    for (auto& [name, ms] : inner)
+        timings.emplace_back("  " + name, ms);
     if (!imported) {
         // One plain sentence for the message box; the reader's reason follows it.
         const dwg::VersionInfo v = dwg::detectVersion(bytes);

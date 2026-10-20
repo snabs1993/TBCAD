@@ -24,6 +24,14 @@ enum class GripAction {
     Continue,       // linear dimension: start a continued dimension from this extension line
     Baseline,       // linear dimension: start a baseline dimension from this extension line
     FlipArrow,      // dimension: the arrowhead at this end turns the other way
+    // Linear dimension text grip, as AutoCAD's: the text is dragged with the dimension line
+    // (DIMTMOVE 0), on its own (2) or with a leader (1), or put above the dimension line (DIMTAD 1)
+    // or centred on it (0). Each changes that dimension's own style (an override, "<style>$N").
+    MoveWithLine,
+    MoveTextOnly,
+    MoveWithLeader,
+    AboveLine,
+    CenterVertically,
 };
 
 // Menu text ("Add vertex") and the keyword GRIPEDIT understands ("AddVertex").
@@ -42,6 +50,10 @@ bool gripActionNeedsPoint(GripAction a);
 // The entity after the action at grip `index`; `target` is the point the user gave (ignored when
 // the action needs none). Errors say why the action cannot be done.
 Result<Entity> applyGripAction(const Entity& e, int index, GripAction action, Vec2 target);
+
+// The style change of a text action (MoveWithLine ... CenterVertically) made on `s`; false for the
+// other actions, which leave the style alone.
+bool gripActionStyle(GripAction a, DimStyle& s);
 
 // Command line that does the action from the UI: `GRIPEDIT x,y Keyword` (the user is then asked
 // for the point), or the dimension command for Continue / Baseline. Empty when not applicable.

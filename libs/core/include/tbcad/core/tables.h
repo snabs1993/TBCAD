@@ -198,6 +198,7 @@ struct DimStyle {
         return angleFormat != DimAngleFormat::Degrees || angularPrecision != -1 || commaDecimal ||
                baselineSpacing != 0 || centerMark != 0;
     }
+    friend bool operator==(const DimStyle&, const DimStyle&) = default;
 };
 
 // The text and line rules of a dimension style packed in one byte (bit 0 outside text horizontal,

@@ -3,6 +3,7 @@
 #include <limits>
 
 #include "tbcad/blocks/dynamic.h"
+#include "tbcad/dim/dim.h"
 #include "tbcad/geom/geom.h"
 #include "tbcad/transform/apply.h"
 #include "tbcad/transform/grip_menu.h"
@@ -182,6 +183,24 @@ public:
                     }
                     ctx.checkpoint();
                     Entity changed = std::move(res).value();
+                    // A text action gives the dimension a style of its own with the change, and
+                    // places moved text by that style's rule.
+                    if (auto* dd = entityAs<DimensionData>(changed)) {
+                        if (DimStyle probe; gripActionStyle(act, probe)) {
+                            const DimStyleId sid =
+                                dim::overrideStyle(ctx.tx(), dd->style,
+                                                   [act](DimStyle& s) { gripActionStyle(act, s); });
+                            if (!sid.value) {
+                                ctx.message(std::string(gripActionLabel(act)) +
+                                            ": the dimension style could not be added");
+                                continue;
+                            }
+                            dd->style = sid;
+                            if (gripActionNeedsPoint(act))
+                                dim::placeText(ctx.doc(), *dd, target);
+                            dim::refresh(ctx.doc(), *dd);
+                        }
+                    }
                     if (copy) {
                         (void)ctx.tx().add(std::move(changed));
                     } else if (auto m = ctx.tx().modify(

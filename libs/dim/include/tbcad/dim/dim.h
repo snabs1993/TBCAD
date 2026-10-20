@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -15,6 +16,13 @@ namespace tbcad::dim {
 // The style a dimension or leader uses: its own, else the document's current one, else a built-in
 // default (so a damaged file still draws). The reference stays valid while the document does.
 const DimStyle& styleOf(const Document& doc, DimStyleId id);
+
+// A style of a dimension's own: `base` with `change` made, named "<style>$N" after the style it
+// comes from, as AutoCAD's dimension overrides (DIMOVERRIDE, the text grip menu). A derived style
+// with the same settings is shared; a change that leaves the settings as they are returns `base`.
+// Empty when the style cannot be added.
+DimStyleId overrideStyle(Transaction& tx, DimStyleId base,
+                         const std::function<void(DimStyle&)>& change);
 
 // Measured value computed from the definition points: millimetres for the length kinds, radians
 // for the angular kinds. The cached DimensionData::measurement is ignored by the generator.
@@ -64,7 +72,7 @@ struct Layout {
         double height = 0;
         bool mtext = false;  // leader annotation: markup, left / right attached to `center`
         bool attachRight = false;
-        double width = 0;  // advance width (dimensions only)
+        double width = 0;      // advance width (dimensions only)
         bool stacked = false;  // dimension text with a stacked tolerance: markup centred
         // A dimension's text point (DXF group 11): the middle of the text, or the point on the
         // dimension line under text lifted above it (DIMTAD), as AutoCAD writes it.

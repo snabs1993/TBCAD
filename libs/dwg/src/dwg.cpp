@@ -109,6 +109,12 @@ Result<bool> readR2004Plus(Bytes file, Version version, detail::Drawing& drawing
     const auto t2 = Clock::now();
     detail::decodeObjects(objects, map, classes, drawing, notes, fmt);
     const auto t3 = Clock::now();
+    auto msd = [](Clock::time_point a, Clock::time_point b) {
+        return std::chrono::duration<double, std::milli>(b - a).count();
+    };
+    drawing.stageMs = {{"sections (decompress)", msd(t0, t1)},
+                       {"object map, classes, header", msd(t1, t2)},
+                       {"objects", msd(t2, t3)}};
     drawing.walkNotes.push_back(
         "read stages (ms): sections " + ms(t0, t1) + ", map/classes/header " + ms(t1, t2) +
         ", objects " + ms(t2, t3) + " (" + std::to_string(objects.size() / 1024) +
@@ -120,6 +126,12 @@ Result<bool> readR2004Plus(Bytes file, Version version, detail::Drawing& drawing
 
 Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                                     const dxf::ImportOptions& options, dxf::Report& report) {
+    return importDwg(bytes, options, report, nullptr);
+}
+
+Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
+                                    const dxf::ImportOptions& options, dxf::Report& report,
+                                    std::vector<std::pair<std::string, double>>* timings) {
     VersionInfo v = detectVersion(bytes);
     if (v.code.empty())
         return makeError(ErrorCode::Parse, "this does not look like a DWG file");
@@ -796,6 +808,19 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
     const long long emitMs = msSince(tEmit);
     const auto tImport = Clock::now();
     auto result = dxf::importDxfGroups(groups, options, report);
+    if (timings) {
+        auto msd = [](Clock::time_point a, Clock::time_point b) {
+            return std::chrono::duration<double, std::milli>(b - a).count();
+        };
+        const auto now = Clock::now();
+        for (const auto& st : drawing.stageMs)
+            timings->push_back(st);
+        if (drawing.stageMs.empty())
+            timings->emplace_back("read", msd(tStart, tDiag));
+        timings->emplace_back("notes and diagnostics", msd(tDiag, tEmit));
+        timings->emplace_back("convert to DXF groups", msd(tEmit, tImport));
+        timings->emplace_back("import the groups", msd(tImport, now));
+    }
     report.summary(code::kSkippedObject,
                    "timing (ms): read " + std::to_string(readMs) + ", diagnostics " +
                        std::to_string(diagMs) + ", to DXF text " + std::to_string(emitMs) + " (" +
