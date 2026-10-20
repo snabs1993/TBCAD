@@ -2218,6 +2218,8 @@ void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
     pumpTimer.emplace("frame: build waiting objects", session_->sync->pendingCount());
     const std::size_t pumped = session_->sync->pumpPending(camera_, 8000, 30.0);
     pumpTimer.reset();
+    // (objects out of view may have been built for a far zoom: rebuilt when the camera comes)
+    staleWaiting_ = staleWaiting_ || session_->sync->staleOffscreen();
     if (pumped > 0) {
         ++generation_;
         trimWhenSettled_ = true;

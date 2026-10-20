@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cstring>
 
 #include "tbcad/blocks/display.h"
@@ -293,6 +294,51 @@ TEST_CASE(
     CHECK(after.min.x == doctest::Approx(before.min.x));
     CHECK(after.max.x == doctest::Approx(before.max.x));
     CHECK(after.max.y == doctest::Approx(before.max.y));
+}
+
+TEST_CASE(
+    "waiting objects out of view are built for a far zoom and rebuilt when the camera comes") {
+    constexpr int kN = 30000;
+    Document doc;
+    render::Scene scene;
+    SceneSync sync(doc, scene);
+    {
+        auto tx = doc.begin("gen");
+        for (int i = 0; i < kN; ++i)
+            (void)tx.add(Entity{{}, CircleData{{(i % 200) * 100.0, (i / 200) * 100.0}, 40}});
+        tx.commit();
+    }
+    {
+        auto tx = doc.begin("move");
+        for (EntityId id : doc.modelSpace())
+            (void)tx.modify(id, [](Entity& e) { std::get<CircleData>(e.data).center.x += 1e6; });
+        tx.commit();
+    }
+    REQUIRE(sync.pendingCount() == kN);
+
+    // Close in on an empty place: the waiting circles are built anyway, but not for this zoom
+    // (built for it, a drawing of big hatches took 1.5 GB).
+    render::Camera2D cam;
+    cam.center = {0, 0};
+    cam.pixelsPerMm = 10;
+    cam.viewportW = 1000;
+    cam.viewportH = 1000;
+    const std::size_t built = sync.pumpPending(cam, 100000);
+    CHECK(built > 0);
+    CHECK(sync.staleOffscreen());
+    CHECK(sync.pixelSize() == doctest::Approx(cam.pixelSizeMm()));
+
+    // The camera comes to them at the same zoom: they are stale, and rebuilt for it.
+    cam.center = {1e6 + 50, 50};
+    const EntityId first = doc.modelSpace().front();  // the circle under the camera
+    auto stale = [&] {
+        const auto ids = scene.staleEntities(cam);
+        return std::find(ids.begin(), ids.end(), first) != ids.end();
+    };
+    CHECK(stale());
+    CHECK(sync.refreshStale(cam) > 0);
+    CHECK(sync.staleOffscreen());  // (the others wait for the camera)
+    CHECK_FALSE(stale());
 }
 
 TEST_CASE("FILL and QTEXT changes in the header rebuild the scene") {
