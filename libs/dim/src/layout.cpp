@@ -961,7 +961,7 @@ static void applyJogs(Layout& L, const std::vector<Vec2>& jogs, double width) {
 Layout layoutDimension(const Document& doc, const DimensionData& d, double tolerance,
                        double annoScale) {
     Layout L;
-    const DimStyle st = scaledStyle(styleOf(doc, d.style), annoScale);
+    const DimStyle st = scaledStyle(drawStyleOf(doc, d), annoScale);
     Ctx c(doc, st, tolerance > 0 ? tolerance : 0.01);
     // A dimension style's text style with a fixed height sets the text's height, as in AutoCAD:
     // DIMTXT and DIMSCALE do not apply to it.
@@ -1035,7 +1035,7 @@ Layout layoutLeader(const Document& doc, const LeaderData& d, double tolerance, 
     Layout L;
     if (d.vertices.size() < 2)
         return L;
-    const DimStyle st = scaledStyle(styleOf(doc, d.style), annoScale);
+    const DimStyle st = scaledStyle(leaderStyleOf(doc, d.style), annoScale);
     Ctx c(doc, st, tolerance > 0 ? tolerance : 0.01);
     Layout::Line line;
     line.pts = d.vertices;
@@ -1089,7 +1089,7 @@ void placeText(const Document& doc, DimensionData& d, Vec2 at) {
     d.textPos = at;
     d.textPosUser = true;
     if ((d.kind != DimKind::Linear && d.kind != DimKind::Aligned) ||
-        styleOf(doc, d.style).textMove != DimTextMove::WithLine)
+        drawStyleOf(doc, d).textMove != DimTextMove::WithLine)
         return;
     Vec2 u = d.kind == DimKind::Linear ? unit(d.rotation) : normalized(d.defPts[1] - d.defPts[0]);
     if (tol::isZeroLength(u))

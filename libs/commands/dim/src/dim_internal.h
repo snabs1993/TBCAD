@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "tbcad/cmd/cmd.h"
@@ -35,6 +36,14 @@ struct MLeaderStyle {
     std::string content = "Text";
 };
 MLeaderStyle currentMLeaderStyle(const Document& doc);
+// MLEADERSTYLE [MLS] opens the Multileader Style Manager; -MLEADERSTYLE edits on the command line.
+std::unique_ptr<cmd::Command> makeMLeaderStylePanelCommand();
+// The stored multileader styles (Standard is implied), the current one ("" = Standard), the
+// content type of one and the name of the dimension style that carries its arrow and text.
+std::vector<std::string> mleaderStyleNames(const Document& doc);
+std::string currentMLeaderStyleName(const Document& doc);
+std::string mleaderContent(const Document& doc, const std::string& name);
+std::string mleaderCompanionName(const std::string& name);
 std::unique_ptr<cmd::Command> makeContinueCommand();
 std::unique_ptr<cmd::Command> makeBaselineCommand();
 std::unique_ptr<cmd::Command> makeTextEditCommand();
@@ -77,5 +86,8 @@ std::string applyProperty(const Document& doc, DimStyle& style, std::string_view
                           std::string_view value);
 
 const std::vector<std::string>& propertyKeywords();
+// Every property as (keyword, value text), in the order of propertyKeywords() (Compare).
+std::vector<std::pair<std::string, std::string>> describeStyle(const Document& doc,
+                                                               const DimStyle& style);
 
 }  // namespace tbcad::dimcmd

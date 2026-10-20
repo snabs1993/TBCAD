@@ -1,5 +1,7 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
+
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/text/text.h"
@@ -84,4 +86,27 @@ TEST_CASE("TEXTSTYLES and -STYLE are registered") {
     CHECK(f.reg.find("TEXTSTYLES"));
     CHECK(f.reg.find("-STYLE"));
     CHECK(f.reg.find("-ST"));
+}
+
+TEST_CASE("-STYLE Edit sets Annotative, Backwards and UpsideDown - STYLE opens the dialog") {
+    Fixture f;
+    f.host.run("-STYLE", {"New", "Fx", "Edit", "Fx", "Annotative", "Yes", "Backwards", "Yes",
+                          "UpsideDown", "Yes", "Done", "Done"});
+    const TextStyle* s = f.doc.textStyleByName("Fx");
+    REQUIRE(s);
+    CHECK(s->annotative);
+    CHECK(s->backward);
+    CHECK(s->upsideDown);
+    f.host.run("-STYLE", {"Edit", "Fx", "Backwards", "No", "Done", "Done"});
+    CHECK_FALSE(f.doc.textStyleByName("Fx")->backward);
+    CHECK(f.host.run("STYLE", {}).finished);
+    CHECK(f.host.run("ST", {}).finished);
+    CHECK(f.reg.find("-TEXTSTYLE"));
+}
+
+TEST_CASE("fontHasThai - Sarabun has Thai letters, shape fonts have none") {
+    CHECK(text::fontHasThai("", ""));
+    CHECK_FALSE(text::fontHasThai("", "romans.shx"));
+    const std::vector<std::string> fams = text::installedFontFamilies();
+    CHECK(std::is_sorted(fams.begin(), fams.end()));
 }

@@ -58,6 +58,49 @@ const DimStyle& styleOf(const Document& doc, DimStyleId id) {
     return defaultStyle();
 }
 
+int childStyleCode(DimKind kind) {
+    switch (kind) {
+        case DimKind::Linear:
+        case DimKind::Aligned:
+            return 0;
+        case DimKind::Angular2Line:
+        case DimKind::Angular3Point:
+        case DimKind::ArcLength:
+            return 2;
+        case DimKind::Diameter:
+            return 3;
+        case DimKind::Radius:
+        case DimKind::Jogged:
+            return 4;
+        case DimKind::Ordinate:
+            return 6;
+    }
+    return -1;
+}
+
+std::string childStyleName(const std::string& parent, int code) {
+    return parent + "$" + std::to_string(code);
+}
+
+namespace {
+const DimStyle& childOf(const Document& doc, const DimStyle& base, int code) {
+    // A child or an override is never a parent itself.
+    if (code < 0 || base.name.find('$') != std::string::npos)
+        return base;
+    if (const DimStyle* c = doc.dimStyleByName(childStyleName(base.name, code)))
+        return *c;
+    return base;
+}
+}  // namespace
+
+const DimStyle& drawStyleOf(const Document& doc, const DimensionData& d) {
+    return childOf(doc, styleOf(doc, d.style), childStyleCode(d.kind));
+}
+
+const DimStyle& leaderStyleOf(const Document& doc, DimStyleId id) {
+    return childOf(doc, styleOf(doc, id), 7);
+}
+
 DimStyleId overrideStyle(Transaction& tx, DimStyleId base,
                          const std::function<void(DimStyle&)>& change) {
     const Document& doc = tx.document();
@@ -79,7 +122,8 @@ DimStyleId overrideStyle(Transaction& tx, DimStyleId base,
         if (same == st)
             return id;
     }
-    int n = 1;
+    // Two digits: "$0".."$9" are left to AutoCAD's child styles (childStyleCode).
+    int n = 10;
     while (doc.dimStyleByName(root + "$" + std::to_string(n)))
         ++n;
     derived.id = {};

@@ -78,6 +78,11 @@ bool isStrokeFamily(std::string_view family);
 bool isStrokeFile(std::string_view path);
 /// True when the family / font file resolves to a usable font (system, file or bundled stroke).
 bool fontAvailable(const std::string& family, const std::string& file);
+/// True when the family / font file has Thai letters of its own. Thai text in a font without
+/// them is drawn with the bundled Sarabun instead. Shape (SHX) fonts have none.
+bool fontHasThai(const std::string& family, const std::string& file);
+/// The installed font families (lower case, sorted) for a font list.
+std::vector<std::string> installedFontFamilies();
 // The style a text entity uses: its own, else the document's current one, else Standard.
 const TextStyle* styleFor(const Document& doc, TextStyleId id);
 

@@ -6,10 +6,12 @@
 #include <misc/cpp/imgui_stdlib.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "commands.h"
 #include "tbcad/geom/entity.h"
@@ -122,9 +124,54 @@ void drawEditor(ui::PanelContext& pc, const TextStyle s) {  // by value: fields 
     if (ImGui::IsItemDeactivatedAfterEdit() && st.font != fontOf(s))
         send(pc,
              {head, "Edit", s.name, "Font", st.font.empty() ? "default" : st.font, "Done", "Done"});
+    // The installed fonts, filtered by what is typed in the box.
+    ImGui::SameLine();
+    if (ImGui::BeginCombo("##fontlist", "",
+                          ImGuiComboFlags_NoPreview | ImGuiComboFlags_HeightLarge)) {
+        static const std::vector<std::string> families = text::installedFontFamilies();
+        std::string filter = st.font;
+        for (char& c : filter)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (ImGui::Selectable("Sarabun (bundled, Thai)", st.font.empty())) {
+            st.font.clear();
+            send(pc, {head, "Edit", s.name, "Font", "default", "Done", "Done"});
+        }
+        if (ImGui::Selectable("tbcad-stroke (single line)", st.font == "tbcad-stroke")) {
+            st.font = "tbcad-stroke";
+            send(pc, {head, "Edit", s.name, "Font", st.font, "Done", "Done"});
+        }
+        ImGui::Separator();
+        const bool filtering = !filter.empty() && filter != fontOf(s);
+        for (const std::string& f : families) {
+            if (filtering && f.find(filter) == std::string::npos)
+                continue;
+            if (ImGui::Selectable(f.c_str(), f == st.font)) {
+                st.font = f;
+                send(pc, {head, "Edit", s.name, "Font", f, "Done", "Done"});
+            }
+        }
+        ImGui::EndCombo();
+    }
     if (!text::fontAvailable(s.fontFamily, s.fontFile))
         ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f),
                            "Font not found: the bundled Sarabun is used.");
+    else if (!text::fontHasThai(s.fontFamily, s.fontFile))
+        ImGui::TextDisabled("No Thai letters in this font: Thai text uses Sarabun.");
+    else
+        ImGui::TextDisabled("Has Thai letters.");
+
+    ImGui::SeparatorText("Effects");
+    bool annotative = s.annotative, backwards = s.backward, upside = s.upsideDown;
+    if (ImGui::Checkbox("Annotative", &annotative))
+        send(pc, {head, "Edit", s.name, "Annotative", annotative ? "Yes" : "No", "Done", "Done"});
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("New text in this style is sized by the annotation scale.");
+    ImGui::SameLine();
+    if (ImGui::Checkbox("Backwards", &backwards))
+        send(pc, {head, "Edit", s.name, "Backwards", backwards ? "Yes" : "No", "Done", "Done"});
+    ImGui::SameLine();
+    if (ImGui::Checkbox("Upside down", &upside))
+        send(pc, {head, "Edit", s.name, "UpsideDown", upside ? "Yes" : "No", "Done", "Done"});
 
     ImGui::SeparatorText("Shape");
     double w = s.widthFactor;

@@ -287,8 +287,7 @@ public:
 // ask for the sizes; Apply gives the sizes of a style to tables already drawn.
 class TableStyleCommand final : public cmd::Command {
 public:
-    std::string_view name() const override { return "TABLESTYLE"; }
-    std::vector<std::string> defaultAliases() const override { return {"TS"}; }
+    std::string_view name() const override { return "-TABLESTYLE"; }
     std::string_view description() const override {
         return "Define table styles and choose the one new tables use";
     }
@@ -501,7 +500,23 @@ public:
     }
 };
 
+// TABLESTYLE [TS]: the Table Style dialog; it edits through -TABLESTYLE.
+class TableStylePanelCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "TABLESTYLE"; }
+    std::vector<std::string> defaultAliases() const override { return {"TS"}; }
+    std::string_view description() const override { return "Open the Table Style dialog"; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().openPanel("tablestyles");
+        co_return;
+    }
+};
+
 }  // namespace
+
+#ifdef TBCAD_TABLECMD_WITH_IMGUI
+void registerTableStylePanel(ui::UiRegistry& ui);  // ui/style_panel.cpp
+#endif
 
 void registerCommands(cmd::Registry& registry) {
     table::registerDisplay();
@@ -516,6 +531,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<TableCommand>());
     (void)registry.add(std::make_unique<TableEditCommand>());
     (void)registry.add(std::make_unique<TableStyleCommand>());
+    (void)registry.add(std::make_unique<TableStylePanelCommand>());
     registerCsvCommands(registry);
 }
 
@@ -525,6 +541,9 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Format/Table Style...", "TABLESTYLE");
     ui.addMenuItem("Draw/Table from CSV...", "TABLEIMPORT");
     ui.addMenuItem("Modify/Export Table to CSV...", "TABLEEXPORT");
+#ifdef TBCAD_TABLECMD_WITH_IMGUI
+    registerTableStylePanel(ui);
+#endif
 }
 
 }  // namespace tbcad::tablecmd

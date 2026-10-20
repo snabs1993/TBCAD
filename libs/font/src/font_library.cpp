@@ -684,6 +684,16 @@ std::vector<FontLibrary::SystemFace> FontLibrary::scanFontFolders(
     return out;
 }
 
+std::vector<std::string> FontLibrary::systemFamilies() {
+    std::vector<std::string> out;
+    for (const SystemEntry& f : systemFaces())
+        if (!f.family.empty())
+            out.push_back(f.family);
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+    return out;
+}
+
 void FontLibrary::warmSystemFonts() {
     static std::once_flag started;
     std::call_once(started, [] { std::thread([] { (void)systemFaces(); }).detach(); });

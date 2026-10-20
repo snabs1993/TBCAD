@@ -70,17 +70,17 @@ TEST_CASE("MLINE options set justification and scale") {
 
 TEST_CASE("MLSTYLE creates a style that MLINE can use, and deletes it again") {
     Fx f;
-    f.host->run("MLSTYLE", {"New", "WALL", "1 0 -1", "Both"});
+    f.host->run("-MLSTYLE", {"New", "WALL", "1 0 -1", "Both"});
     auto s = mline::findStyle(f.doc, "wall");
     REQUIRE(s);
     CHECK(s->offsets.size() == 3);
     CHECK(s->startCap);
     CHECK(s->endCap);
-    f.host->run("MLSTYLE", {"Current", "WALL"});
+    f.host->run("-MLSTYLE", {"Current", "WALL"});
     f.host->run("MLINE", {"0,0", "10,0", ""});
     REQUIRE(f.mline());
     CHECK(f.mline()->style == "WALL");
-    f.host->run("MLSTYLE", {"Delete", "WALL"});
+    f.host->run("-MLSTYLE", {"Delete", "WALL"});
     CHECK(mline::findStyle(f.doc, "WALL").has_value());  // still used
 }
 
@@ -186,10 +186,10 @@ TEST_CASE("MLEDIT Cross and Tee cut the walls where they meet") {
 
 TEST_CASE("MLSTYLE gives each line a colour, and the display and explode use them") {
     Fx f;
-    f.host->run("MLSTYLE", {"New", "TWO", "0.5 -0.5", "None"});
-    f.host->run("MLSTYLE", {"Colors", "TWO", "1 3"});
-    f.host->run("MLSTYLE", {"Fill", "TWO", "5"});
-    f.host->run("MLSTYLE", {"Joints", "TWO", "On"});
+    f.host->run("-MLSTYLE", {"New", "TWO", "0.5 -0.5", "None"});
+    f.host->run("-MLSTYLE", {"Colors", "TWO", "1 3"});
+    f.host->run("-MLSTYLE", {"Fill", "TWO", "5"});
+    f.host->run("-MLSTYLE", {"Joints", "TWO", "On"});
     auto s = mline::findStyle(f.doc, "TWO");
     REQUIRE(s);
     REQUIRE(s->colors.size() == 2);
@@ -198,10 +198,10 @@ TEST_CASE("MLSTYLE gives each line a colour, and the display and explode use the
     CHECK(s->fill == 5);
     CHECK(s->joints);
     // A wrong count changes nothing.
-    f.host->run("MLSTYLE", {"Colors", "TWO", "1"});
+    f.host->run("-MLSTYLE", {"Colors", "TWO", "1"});
     CHECK(mline::findStyle(f.doc, "TWO")->colors.size() == 2);
 
-    f.host->run("MLSTYLE", {"Current", "TWO"});
+    f.host->run("-MLSTYLE", {"Current", "TWO"});
     f.host->run("MLINE", {"0,0", "100,0", "100,50", ""});
     REQUIRE(f.mline());
     f.doc.forEachEntity([&](const Entity& e) {
@@ -284,4 +284,9 @@ TEST_CASE(
             }
         }
     }
+}
+
+TEST_CASE("MLSTYLE opens the Multiline Style dialog") {
+    Fx f;
+    CHECK(f.host->run("MLSTYLE", {}).finished);
 }

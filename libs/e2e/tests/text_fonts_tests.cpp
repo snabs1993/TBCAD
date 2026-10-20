@@ -119,7 +119,7 @@ TEST_CASE("perf: 20,000 texts in mixed fonts - first frame, zoom, style change")
     core.updateFrame();
     const double zoom = ms(t);
     t = std::chrono::steady_clock::now();
-    core.submitText("STYLE");
+    core.submitText("-TEXTSTYLE");
     core.submitText("Lato");
     core.submitText("Sarabun");
     core.submitText("1");

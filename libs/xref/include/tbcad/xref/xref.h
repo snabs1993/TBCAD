@@ -150,7 +150,19 @@ Result<void> writeBack(const Document& host, BlockId block, const std::vector<En
 // ---- content: single items of another drawing (the content browser)
 // ------------------------------
 
-enum class ContentKind { Block, Layer, Linetype, TextStyle, DimStyle };
+// MLeaderStyle, TableStyle and MLineStyle are the styles the MLEADERSTYLE, TABLESTYLE and MLSTYLE
+// commands keep in Header::custom ("tbcad.mleaderstyle.<name>", "tbcad.tablestyle.s:<name>",
+// "mlstyle.<NAME>").
+enum class ContentKind {
+    Block,
+    Layer,
+    Linetype,
+    TextStyle,
+    DimStyle,
+    MLeaderStyle,
+    TableStyle,
+    MLineStyle
+};
 
 struct ContentItem {
     ContentKind kind = ContentKind::Block;
@@ -164,13 +176,15 @@ struct ImportReport {
 };
 
 // What a drawing offers: its blocks (not anonymous, not xrefs), layers (not "0"), linetypes (not
-// Continuous), text styles and dimension styles (not Standard), each sorted by name.
+// Continuous), text styles and dimension styles (not Standard, not the "MLEADER-" dimension styles
+// of multileader styles), multileader, table and multiline styles, each sorted by name.
 std::vector<ContentItem> listContent(const Document& src);
 
 // Copies the items from `source` into `doc`. Rows the drawing already has under that name are not
 // touched and reported as skipped; a block whose name is taken is skipped too. A block brings the
 // layers, linetypes and styles its entities use (matched by name, created when missing) and the
-// blocks it inserts, named "<block>$<nested>". A dimension style brings its text style.
+// blocks it inserts, named "<block>$<nested>". A dimension style brings its text style; a
+// multileader style its "MLEADER-" dimension style; a table style its text style.
 Result<void> importContent(Transaction& tx, Document& doc, const Source& source,
                            const std::vector<ContentItem>& items, ImportReport& report);
 

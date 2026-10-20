@@ -120,7 +120,8 @@ is done by the renderer from the rings.
 | `TCOUNT` | | select single-line text in the order you want, then give a start number, an increment, a prefix and a suffix; each text is replaced by its number |
 | `MTEXTFORMAT` | `MTF` | select MTEXT; Background (None / Window / Colour, then the border factor) or LineSpacing. The Text panel has buttons for underline, strike, width, paragraph alignment, indent and tab, and a shortcut to this command |
 | `SPELL` | | select text; each English word that is not in the dictionary asks Ignore / Change / Add / All, plus Suggest (takes the nearest known word) when there is one. Words with Thai or other non-ASCII letters, digits or all capitals are never flagged. Added words are saved in the drawing |
-| `STYLE` | `ST` | name (`?` lists), font family or `.ttf/.otf` file, width factor, oblique angle, fixed height (0 = variable); makes it current |
+| `STYLE` | `ST`, `TEXTSTYLES` | opens the **Text Styles** dialog (see below) |
+| `-TEXTSTYLE` | | the typed form: name (`?` lists), font family or `.ttf/.otf` file, width factor, oblique angle, fixed height (0 = variable); makes it current |
 | `TEXTEDIT` | `ED`, `DDEDIT` | selected text, new text (edited in place in a box at the text; the old text is the default). **Mode** Single / Multiple; with `TEXTEDITMODE` 0 (Multiple, the default) it asks for the next object until Enter, and **Undo** takes the last edit back. An object selected first (a double-click, the Text panel) is always a single edit. The whole command is one undo step |
 
 ## The text editors
@@ -171,3 +172,12 @@ bottom). The text is centred on the middle of the arc. Each letter is its own te
 not linked to the arc and is edited letter by letter; one undo step removes it all.
 
 `MTEDIT` is another name for `TEXTEDIT`.
+
+## Text Styles dialog
+
+`STYLE` (Format > Text Style Manager) lists the styles with a preview. Every change runs `-STYLE`,
+so it is one undo step. The font box takes a family or a file; the list beside it offers the
+bundled Sarabun, the stroke font and the fonts installed on the computer, filtered by what you
+type. Under it the dialog says whether the font has Thai letters; Thai text in a font without them
+is drawn with Sarabun. **Effects** sets Annotative, Backwards and Upside down, the same as
+`-STYLE Edit <name> Annotative|Backwards|UpsideDown Yes|No`.

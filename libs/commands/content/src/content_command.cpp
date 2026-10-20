@@ -33,6 +33,40 @@ std::vector<std::string> splitNames(const std::string& text) {
     return out;
 }
 
+const char* kindLabel(xref::ContentKind k) {
+    switch (k) {
+        case xref::ContentKind::Block:
+            return "Block        ";
+        case xref::ContentKind::Layer:
+            return "Layer        ";
+        case xref::ContentKind::Linetype:
+            return "Linetype     ";
+        case xref::ContentKind::TextStyle:
+            return "Textstyle    ";
+        case xref::ContentKind::DimStyle:
+            return "Dimstyle     ";
+        case xref::ContentKind::MLeaderStyle:
+            return "Mleaderstyle ";
+        case xref::ContentKind::TableStyle:
+            return "Tablestyle   ";
+        case xref::ContentKind::MLineStyle:
+            return "MLStyle      ";
+    }
+    return "";
+}
+
+xref::ContentKind kindOf(const std::string& keyword) {
+    using K = xref::ContentKind;
+    for (K k : {K::Block, K::Layer, K::Linetype, K::TextStyle, K::DimStyle, K::MLeaderStyle,
+                K::TableStyle, K::MLineStyle}) {
+        std::string label = kindLabel(k);
+        label.erase(label.find(' '));
+        if (cmd::toUpperAscii(label) == cmd::toUpperAscii(keyword))
+            return k;
+    }
+    return K::Block;
+}
+
 class ContentImportCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "CONTENTIMPORT"; }
@@ -52,31 +86,25 @@ public:
             co_return;
         }
         cmd::KeywordOptions ko;
-        ko.keywords = {"Block", "Layer", "Linetype", "Textstyle", "Dimstyle", "List"};
+        ko.keywords = {"Block",        "Layer",      "Linetype", "Textstyle", "Dimstyle",
+                       "Mleaderstyle", "TAblestyle", "MLStyle",  "List"};
         ko.defaultKeyword = "Block";
         auto kind = co_await ctx.getKeyword(
-            "What to copy [Block/Layer/Linetype/Textstyle/Dimstyle/List]", ko);
+            "What to copy "
+            "[Block/Layer/Linetype/Textstyle/Dimstyle/Mleaderstyle/TAblestyle/MLStyle/List]",
+            ko);
         if (!kind.ok())
             co_return;
 
         auto all = xref::listContent(*source.value().doc);
         if (kind.keyword == "List") {
             for (const auto& i : all)
-                ctx.message(std::string(i.kind == xref::ContentKind::Block       ? "Block     "
-                                        : i.kind == xref::ContentKind::Layer     ? "Layer     "
-                                        : i.kind == xref::ContentKind::Linetype  ? "Linetype  "
-                                        : i.kind == xref::ContentKind::TextStyle ? "Textstyle "
-                                                                                 : "Dimstyle  ") +
-                            i.name);
+                ctx.message(std::string(kindLabel(i.kind)) + i.name);
             if (all.empty())
                 ctx.message("The file has nothing to copy.");
             co_return;
         }
-        const xref::ContentKind want = kind.keyword == "Block"       ? xref::ContentKind::Block
-                                       : kind.keyword == "Layer"     ? xref::ContentKind::Layer
-                                       : kind.keyword == "Linetype"  ? xref::ContentKind::Linetype
-                                       : kind.keyword == "Textstyle" ? xref::ContentKind::TextStyle
-                                                                     : xref::ContentKind::DimStyle;
+        const xref::ContentKind want = kindOf(kind.keyword);
         cmd::StringOptions no;
         auto names = co_await ctx.getString("Names, separated by | (* = all)", no);
         if (!names.ok())

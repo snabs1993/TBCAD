@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include "../src/dim_internal.h"
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/script_host.h"
 #include "tbcad/dim/dim.h"
@@ -31,8 +32,8 @@ struct Fixture {
 
 TEST_CASE("MLEADERSTYLE New/Edit sets arrow, gap, text style and content - MLEADER uses it") {
     Fixture f;
-    f.host->run("MLEADERSTYLE", {"New", "Note", "Edit", "Note", "Arrow", "Tick", "Gap", "2",
-                                 "Content", "None", "Done", "Done"});
+    f.host->run("-MLEADERSTYLE", {"New", "Note", "Edit", "Note", "Arrow", "Tick", "Gap", "2",
+                                  "Content", "None", "Done", "Done"});
     const DimStyle* d = f.doc.dimStyleByName("MLEADER-Note");
     REQUIRE(d);
     CHECK(d->arrowType == ArrowType::ArchTick);
@@ -54,18 +55,34 @@ TEST_CASE("MLEADERSTYLE New/Edit sets arrow, gap, text style and content - MLEAD
 
 TEST_CASE("MLEADERSTYLE Rename, Current, Delete and bad input") {
     Fixture f;
-    f.host->run("MLS", {"New", "A", "New", "B", "Rename", "A", "C", "Done"});
+    f.host->run("-MLEADERSTYLE", {"New", "A", "New", "B", "Rename", "A", "C", "Done"});
     CHECK(f.doc.dimStyleByName("MLEADER-C"));
     CHECK(f.doc.dimStyleByName("MLEADER-A") == nullptr);
-    f.host->run("MLS", {"Delete", "B", "Current", "Standard", "Done"});
+    f.host->run("-MLEADERSTYLE", {"Delete", "B", "Current", "Standard", "Done"});
     CHECK(f.doc.dimStyleByName("MLEADER-B") == nullptr);
     CHECK(!f.doc.header().custom.count("tbcad.mleaderstyle.B"));
     CHECK(!f.doc.header().custom.count("tbcad.mleadercurrent"));
-    f.host->run("MLS", {"Edit", "C", "Content", "Sketch", "Arrow", "Round", "Done", "Done"});
+    f.host->run("-MLEADERSTYLE",
+                {"Edit", "C", "Content", "Sketch", "Arrow", "Round", "Done", "Done"});
     CHECK(f.host->logContains("Content must be"));
     CHECK(f.host->logContains("Arrow"));
-    f.host->run("MLS", {"New", "Standard", "Done"});
+    f.host->run("-MLEADERSTYLE", {"New", "Standard", "Done"});
     CHECK(f.host->logContains("already used"));
-    f.host->run("MLS", {"Edit", "Nope", "Done"});
+    f.host->run("-MLEADERSTYLE", {"Edit", "Nope", "Done"});
     CHECK(f.host->logContains("No multileader style"));
+}
+
+TEST_CASE("-MLEADERSTYLE sets arrow size and text height - MLEADERSTYLE opens the manager") {
+    Fixture f;
+    f.host->run("-MLEADERSTYLE",
+                {"New", "Big", "Edit", "Big", "ArrowSize", "5", "TextHeight", "7", "Done", "Done"});
+    const DimStyle* d = f.doc.dimStyleByName("MLEADER-Big");
+    REQUIRE(d);
+    CHECK(d->arrowSize == doctest::Approx(5));
+    CHECK(d->textHeight == doctest::Approx(7));
+    CHECK(dimcmd::mleaderStyleNames(f.doc) == std::vector<std::string>{"Big"});
+    CHECK(dimcmd::currentMLeaderStyleName(f.doc) == "Big");
+    CHECK(dimcmd::mleaderContent(f.doc, "Big") == "Text");
+    CHECK(f.host->run("MLEADERSTYLE", {}).finished);
+    CHECK(f.host->run("MLS", {}).finished);
 }

@@ -27,14 +27,17 @@ bool looksLikeFontFile(const std::string& s) {
     return ends(".ttf") || ends(".otf") || ends(".ttc") || ends(".tbsf") || ends(".shx");
 }
 
-// STYLE: create or change a text style and make it current.
+// -TEXTSTYLE: create or change a text style and make it current, one question after another
+// (STYLE opens the Text Styles dialog).
 class StyleCommand final : public cmd::Command {
 public:
-    std::string_view name() const override { return "STYLE"; }
-    std::vector<std::string> defaultAliases() const override { return {"ST"}; }
-    std::string_view description() const override { return "Create or change a text style"; }
+    std::string_view name() const override { return "-TEXTSTYLE"; }
+    std::string_view description() const override {
+        return "Create or change a text style step by step (command line)";
+    }
 
     Task run(CommandContext& ctx) override {
+        ctx.setUndoLabel("STYLE");
         const Document& doc = ctx.doc();
         const TextStyle* cur = doc.textStyle(doc.header().currentTextStyle);
         cmd::StringOptions no;

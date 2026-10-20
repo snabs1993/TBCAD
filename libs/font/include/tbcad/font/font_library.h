@@ -78,6 +78,9 @@ public:
     // Starts reading the installed fonts on a background thread, so that the first drawing
     // opened does not wait for it. Safe to call more than once.
     static void warmSystemFonts();
+    // The family names of the installed fonts (lower case, sorted, each once), for a font list.
+    // Reads the folders on first use, as findSystem does.
+    static std::vector<std::string> systemFamilies();
 
     // Shapes UTF-8 text. Characters the requested font lacks are taken from
     // the bundled Thai font, then the bundled Latin font, so the result can

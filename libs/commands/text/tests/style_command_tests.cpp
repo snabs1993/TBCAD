@@ -17,7 +17,7 @@ struct Fixture {
 
 TEST_CASE("STYLE creates a style and makes it current") {
     Fixture f;
-    auto r = f.host.run("ST", {"Narrow", "Sarabun", "0.8", "15", "5"});
+    auto r = f.host.run("-TEXTSTYLE", {"Narrow", "Sarabun", "0.8", "15", "5"});
     CHECK(r.finished);
     const TextStyle* s = f.doc.textStyleByName("Narrow");
     REQUIRE(s);
@@ -34,13 +34,13 @@ TEST_CASE("STYLE creates a style and makes it current") {
 
 TEST_CASE("STYLE changes an existing style - font files and families are stored") {
     Fixture f;
-    f.host.run("STYLE", {"Standard", "Some Family", "1", "0", "0"});
+    f.host.run("-TEXTSTYLE", {"Standard", "Some Family", "1", "0", "0"});
     const TextStyle* s = f.doc.textStyleByName("Standard");
     REQUIRE(s);
     CHECK(s->fontFamily == "Some Family");
     CHECK(f.host.logContains("Font not found"));  // reported, still stored
 
-    f.host.run("STYLE", {"Standard", "D:\\fonts\\My.ttf", "1", "0", "0"});
+    f.host.run("-TEXTSTYLE", {"Standard", "D:\\fonts\\My.ttf", "1", "0", "0"});
     s = f.doc.textStyleByName("Standard");
     CHECK(s->fontFile == "D:\\fonts\\My.ttf");
     CHECK(s->fontFamily.empty());
@@ -48,16 +48,16 @@ TEST_CASE("STYLE changes an existing style - font files and families are stored"
 
 TEST_CASE("STYLE ? lists the styles - Esc changes nothing") {
     Fixture f;
-    f.host.run("STYLE", {"?"});
+    f.host.run("-TEXTSTYLE", {"?"});
     CHECK(f.host.logContains("Standard"));
-    f.host.run("STYLE", {"X", cmd::ScriptItem::esc()});
+    f.host.run("-TEXTSTYLE", {"X", cmd::ScriptItem::esc()});
     CHECK(f.doc.textStyleByName("X") == nullptr);
 }
 
 TEST_CASE("text style drives the layout: width factor changes the text width") {
     Fixture f;
     f.host.run("TEXT", {"0,0", "10", "0", "TBCAD"});
-    f.host.run("STYLE", {"Half", "Sarabun", "0.5", "0", "0"});
+    f.host.run("-TEXTSTYLE", {"Half", "Sarabun", "0.5", "0", "0"});
     f.host.run("TEXT", {"0,0", "10", "0", "TBCAD"});
     std::vector<double> widths;
     for (EntityId id : f.doc.modelSpace()) {
@@ -73,7 +73,7 @@ TEST_CASE("text style drives the layout: width factor changes the text width") {
 
 TEST_CASE("a style with a fixed height sets the height of TEXT and MTEXT - 0 keeps it variable") {
     Fixture f;
-    f.host.run("ST", {"Fixed", "Sarabun", "1", "0", "7"});
+    f.host.run("-TEXTSTYLE", {"Fixed", "Sarabun", "1", "0", "7"});
     // TEXT asks no height: start point, rotation, then the text.
     f.host.run("TEXT", {"0,0", "0", "label"});
     const TextData* t = nullptr;
@@ -95,7 +95,7 @@ TEST_CASE("a style with a fixed height sets the height of TEXT and MTEXT - 0 kee
     CHECK(heights[0] == doctest::Approx(7));
     CHECK(heights[1] == doctest::Approx(3));
     // Back to variable: the height question returns.
-    f.host.run("ST", {"Fixed", "Sarabun", "1", "0", "0"});
+    f.host.run("-TEXTSTYLE", {"Fixed", "Sarabun", "1", "0", "0"});
     CHECK(f.doc.textStyleByName("Fixed")->height == 0);
     f.host.run("TEXT", {"0,200", "4", "0", "free"});
     double last = 0;
@@ -116,7 +116,7 @@ TEST_CASE("-STYLE Edit sets the fixed height") {
 
 TEST_CASE("a shape font that is not installed is reported by FONTCHECK and stands in") {
     Fixture f;
-    f.host.run("STYLE", {"Plan", "tbcad-no-such-font.shx", "1", "0", "0"});
+    f.host.run("-TEXTSTYLE", {"Plan", "tbcad-no-such-font.shx", "1", "0", "0"});
     const TextStyle* s = f.doc.textStyleByName("Plan");
     REQUIRE(s);
     CHECK(s->fontFile == "tbcad-no-such-font.shx");
@@ -124,7 +124,7 @@ TEST_CASE("a shape font that is not installed is reported by FONTCHECK and stand
     CHECK(f.host.logContains("Style Plan"));
     CHECK(f.host.logContains("tbcad-no-such-font.shx not found"));
     // Choosing a normal font again forgets the shape font.
-    f.host.run("STYLE", {"Plan", "Sarabun", "1", "0", "0"});
+    f.host.run("-TEXTSTYLE", {"Plan", "Sarabun", "1", "0", "0"});
     CHECK(f.doc.textStyleByName("Plan")->fontFile.empty());
     f.host.run("FONTCHECK", {});
     CHECK(f.host.logContains("All fonts used"));
@@ -132,7 +132,7 @@ TEST_CASE("a shape font that is not installed is reported by FONTCHECK and stand
 
 TEST_CASE("text in an annotative style is annotative") {
     Fixture f;
-    f.host.run("ST", {"Note", "Sarabun", "1", "0", "0"});
+    f.host.run("-TEXTSTYLE", {"Note", "Sarabun", "1", "0", "0"});
     {
         auto tx = f.doc.begin("anno");
         REQUIRE(tx.modifyTextStyle(f.doc.textStyleByName("Note")->id, [](TextStyle& t) {

@@ -80,17 +80,18 @@ std::string spaced(std::string_view v) {
 }
 
 const std::vector<std::string> kProps = {
-    "TextHeight",   "TextGap",         "TextStyle",     "ArrowType",   "ArrowSize",
-    "ExtOffset",    "ExtExtension",    "LineExtension", "Placement",   "Alignment",
-    "Units",        "Precision",       "Prefix",        "Suffix",      "RoundOff",
-    "Scale",        "LeadingZeros",    "TrailingZeros", "LineColor",   "ExtColor",
-    "TextColor",    "AltUnits",        "AltScale",      "AltUnit",     "AltPrecision",
-    "AltPrefix",    "AltSuffix",       "Tolerance",     "TolUpper",    "TolLower",
-    "TolPrecision", "LinearFactor",    "Fit",           "TextMove",    "AlignmentOutside",
-    "TextInside",   "ArrowsOutside",   "LineInside",    "ExtLine1",    "ExtLine2",
-    "DimLine1",     "DimLine2",        "Justify",       "AngleFormat", "AngularPrecision",
-    "DecimalMark",  "BaselineSpacing", "CenterMark",    "TextFill",    "TextFillColor",
-    "TextFrame",    "LengthFormat",    "TolHeight",     "TextVertPos"};
+    "TextHeight",    "TextGap",         "TextStyle",     "ArrowType",   "ArrowSize",
+    "ExtOffset",     "ExtExtension",    "LineExtension", "Placement",   "Alignment",
+    "Units",         "Precision",       "Prefix",        "Suffix",      "RoundOff",
+    "Scale",         "LeadingZeros",    "TrailingZeros", "LineColor",   "ExtColor",
+    "TextColor",     "AltUnits",        "AltScale",      "AltUnit",     "AltPrecision",
+    "AltPrefix",     "AltSuffix",       "Tolerance",     "TolUpper",    "TolLower",
+    "TolPrecision",  "LinearFactor",    "Fit",           "TextMove",    "AlignmentOutside",
+    "TextInside",    "ArrowsOutside",   "LineInside",    "ExtLine1",    "ExtLine2",
+    "DimLine1",      "DimLine2",        "Justify",       "AngleFormat", "AngularPrecision",
+    "DecimalMark",   "BaselineSpacing", "CenterMark",    "TextFill",    "TextFillColor",
+    "TextFrame",     "LengthFormat",    "TolHeight",     "TextVertPos", "FixedExt",
+    "FixedExtLength"};
 
 std::string num(double v) {
     char buf[40];
@@ -184,6 +185,8 @@ std::vector<std::pair<std::string, std::string>> describe(const Document& doc, c
         {"TextFillColor", std::to_string(s.textFillColor)},
         {"TextFrame", s.textFrame ? "Yes" : "No"},
         {"TextVertPos", num(s.textVertPos)},
+        {"FixedExt", s.fixedExtLines ? "On" : "Off"},
+        {"FixedExtLength", num(s.fixedExtLength)},
     };
 }
 
@@ -191,6 +194,11 @@ std::vector<std::pair<std::string, std::string>> describe(const Document& doc, c
 
 const std::vector<std::string>& propertyKeywords() {
     return kProps;
+}
+
+std::vector<std::pair<std::string, std::string>> describeStyle(const Document& doc,
+                                                               const DimStyle& style) {
+    return describe(doc, style);
 }
 
 std::string applyProperty(const Document& doc, DimStyle& s, std::string_view key,
@@ -385,6 +393,17 @@ std::string applyProperty(const Document& doc, DimStyle& s, std::string_view key
             return "TextFrame is Yes or No.";
         return {};
     }
+    if (same(key, "FixedExt")) {
+        if (same(value, "On"))
+            s.fixedExtLines = true;
+        else if (same(value, "Off"))
+            s.fixedExtLines = false;
+        else
+            return "FixedExt is On or Off.";
+        return {};
+    }
+    if (same(key, "FixedExtLength"))
+        return real(s.fixedExtLength, true);
     if (same(key, "TextVertPos")) {  // DIMTVP, in text heights
         double v = 0;
         if (!parseReal(value, v) || std::abs(v) > 100)
@@ -573,12 +592,22 @@ public:
                     ctx.message("That name is empty or already used.");
                     continue;
                 }
-                DimStyle copy = dim::styleOf(ctx.doc(), ctx.doc().header().currentDimStyle);
+                // "<style>$0" etc. is a child style (dim::childStyleCode): it starts as a copy of
+                // its parent and the parent stays current.
+                const DimStyle* parent = nullptr;
+                if (const auto at = name.rfind('$');
+                    at != std::string::npos && at + 2 == name.size() &&
+                    std::string_view("023467").find(name.back()) != std::string_view::npos)
+                    parent = ctx.doc().dimStyleByName(name.substr(0, at));
+                DimStyle copy =
+                    parent ? *parent : dim::styleOf(ctx.doc(), ctx.doc().header().currentDimStyle);
                 copy.id = {};
                 copy.name = name;
                 auto id = ctx.tx().addDimStyle(std::move(copy));
                 if (!id)
                     ctx.message(id.error().message);
+                else if (parent)
+                    ctx.message("Child style " + name + " of " + parent->name + " added.");
                 else
                     check(ctx, ctx.tx().modifyHeader(
                                    [i = id.value()](Header& h) { h.currentDimStyle = i; }));
