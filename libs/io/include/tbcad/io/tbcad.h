@@ -77,6 +77,11 @@ Result<void> saveTbcadBytes(std::span<const std::uint8_t> bytes, const std::file
 // returns. The future holds the same result writeTbcad would give.
 std::future<Result<void>> writeTbcadAsync(const Document& doc, const std::filesystem::path& path,
                                           const WriteOptions& options = {});
+// As above, with the encoding on another thread too: give it a Document::snapshot(), which costs
+// the caller next to nothing, and keep changing the document meanwhile.
+std::future<Result<void>> writeTbcadAsync(std::shared_ptr<const Document> snapshot,
+                                          const std::filesystem::path& path,
+                                          const WriteOptions& options = {});
 
 // The (inflated) payload of the optional chunk `type` that readTbcad kept for a file with chunks
 // this build does not interpret itself, or nothing.
