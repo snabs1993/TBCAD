@@ -30,12 +30,13 @@ TEST_CASE(
     REQUIRE(e2);
     CHECK(near(e2->pts.back(), {100, 11.25}));
 
-    // One dimension line from end to end, at y = 10; two arrows whose tips touch its ends.
+    // One dimension line at y = 10 between the tails of the closed filled arrows (as AutoCAD
+    // draws it), the arrows' tips at the extension lines.
     REQUIRE(count(L, Role::DimLine) == 1);
     for (const auto& l : L.lines)
         if (l.role == Role::DimLine) {
-            CHECK(near(l.pts.front(), {0, 10}));
-            CHECK(near(l.pts.back(), {100, 10}));
+            CHECK(near(l.pts.front(), {2.5, 10}));
+            CHECK(near(l.pts.back(), {97.5, 10}));
         }
     REQUIRE(L.arrows.size() == 2);
     BBox2 a = arrowBox(L.arrows[0]), b = arrowBox(L.arrows[1]);

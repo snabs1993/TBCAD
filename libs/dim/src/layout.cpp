@@ -321,13 +321,27 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
     }
     // DIMSOXD: arrows that do not fit are left out (with their stubs).
     const bool noArrows = !arrowsIn && c.st.suppressArrowsOutside;
-    const double lineStart = textBeforeA > 0 ? -textBeforeA
-                                             : (arrowsIn   ? 0
-                                                : noArrows ? 0
-                                                           : -stub) -
-                                                   (arrowsIn ? c.dext : 0);
+    double lineStart = textBeforeA > 0 ? -textBeforeA
+                                       : (arrowsIn   ? 0
+                                          : noArrows ? 0
+                                                     : -stub) -
+                                             (arrowsIn ? c.dext : 0);
     if (noArrows && textIn)
         lineEnd = len;
+    // Flip Arrow: that arrowhead turns the other way; turned out, it has a stub of line beyond.
+    const bool flipA = swap ? d.flipArrow2 : d.flipArrow1;
+    const bool flipB = swap ? d.flipArrow1 : d.flipArrow2;
+    // Between closed filled arrows AutoCAD draws the dimension line from tail to tail.
+    if (arrowsIn && c.arrow > 0 && len > 2 * c.arrow) {
+        auto filled = [&](int end) {
+            return (end == 2 && c.st.arrowType2 ? *c.st.arrowType2 : c.st.arrowType) ==
+                   ArrowType::ClosedFilled;
+        };
+        if (lineStart == 0 && !flipA && filled(swap ? 2 : 1))
+            lineStart = c.arrow;
+        if (lineEnd == len && !flipB && filled(swap ? 1 : 2))
+            lineEnd = len - c.arrow;
+    }
     // DIMTOFL off: arrows outside leave nothing between the extension lines.
     const bool gapInside = !arrowsIn && !c.st.forceLineInside && !noArrows;
 
@@ -369,9 +383,6 @@ void layoutLinear(const Ctx& c, const DimensionData& d, const std::string& txt, 
     for (std::size_t i = 0; i + 1 < leader.size(); ++i)
         addSeg(L, leader[i], leader[i + 1], Role::DimLine, c.tol);
 
-    // Flip Arrow: that arrowhead turns the other way; turned out, it has a stub of line beyond.
-    const bool flipA = swap ? d.flipArrow2 : d.flipArrow1;
-    const bool flipB = swap ? d.flipArrow1 : d.flipArrow2;
     if (!noArrows) {
         if (!hideA) {
             addArrow(L, c, A, arrowsIn != flipA ? uu : -uu, swap ? 2 : 1);
