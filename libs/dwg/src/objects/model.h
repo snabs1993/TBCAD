@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <map>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -173,8 +174,9 @@ struct Drawing {
     // Entities that were left out per DXF type: [0] damaged, [1] a number out of range.
     std::map<std::string, std::array<std::size_t, 2>> entityFailures{};
     std::vector<std::string> walkNotes{};
-    std::map<std::uint64_t, std::uint32_t> rawType{};  // object handle -> file type number
-    std::size_t layoutSeen = 0;                        // LAYOUT objects met
+    std::vector<std::pair<std::string, double>> stageMs{};  // reading steps, for open timings
+    std::map<std::uint64_t, std::uint32_t> rawType{};       // object handle -> file type number
+    std::size_t layoutSeen = 0;                             // LAYOUT objects met
     std::vector<std::string> layoutDiag{};  // LAYOUT objects that did not read (not note-capped)
 };
 
