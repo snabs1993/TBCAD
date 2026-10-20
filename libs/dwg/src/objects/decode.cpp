@@ -1180,6 +1180,16 @@ private:
                     d.arrow1 = resolveHandle(arrow1, self);
                     d.arrow2 = resolveHandle(arrow2, self);
                 }
+                if (fmt_.r2007 && !h.failed()) {
+                    const HandleRef lt = h.handle();
+                    const HandleRef lt1 = h.handle();
+                    const HandleRef lt2 = h.handle();
+                    if (!h.failed()) {
+                        d.ltype = resolveHandle(lt, self);
+                        d.ltex1 = resolveHandle(lt1, self);
+                        d.ltex2 = resolveHandle(lt2, self);
+                    }
+                }
                 d.flags = (flag64 ? 64 : 0) | (xdep ? 16 : 0) | (unknown ? 1 : 0);
                 out_.dimStyles[self] = std::move(d);
                 break;
@@ -2363,10 +2373,10 @@ private:
         for (int code : {40, 41, 42, 43, 44, 45, 46, 47, 48})
             bd(code);
         if (fmt_.r2007) {
-            bd(49);  // DIMFXL
-            bd(0);   // DIMJOGANG
-            bs(0);
-            cmc(0);
+            bd(49);   // DIMFXL
+            bd(50);   // DIMJOGANG
+            bs(69);   // DIMTFILL
+            cmc(70);  // DIMTFILLCLR
         }
         for (int code : {71, 72, 73, 74, 75, 76})
             bit(code);
@@ -2388,8 +2398,8 @@ private:
         bit(282);
         for (int code : {283, 284, 285, 286})
             bs(code);
-        bit(288);
-        bs(287);
+        bit(288);  // DIMUPT
+        bs(289);   // DIMATFIT
         if (fmt_.r2007)
             bit(290);
         if (fmt_.r2010) {

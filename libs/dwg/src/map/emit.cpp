@@ -288,6 +288,7 @@ dxf::GroupBuffer emitGroups(const Drawing& d) {
     o.group(70, static_cast<long long>(d.linetypes.size()));
     for (const auto& [h, t] : d.linetypes) {
         o.begin("LTYPE");
+        o.group(5, hexHandle(h));
         o.group(2, t.name);
         o.group(70, 0);
         o.group(3, t.description);
@@ -363,6 +364,11 @@ dxf::GroupBuffer emitGroups(const Drawing& d) {
             o.group(344, blk);
         if (const std::string blk = arrowName(ds.leaderArrow); !blk.empty())
             o.group(341, blk);
+        // DIMLTYPE, DIMLTEX1, DIMLTEX2: LTYPE records by handle (the LTYPE table carries them).
+        for (const auto& [code, lt] :
+             {std::pair<int, std::uint64_t>{345, ds.ltype}, {346, ds.ltex1}, {347, ds.ltex2}})
+            if (lt != 0 && d.linetypes.count(lt))
+                o.group(code, hexHandle(lt));
         for (const Group& g : ds.groups)
             emitGroup(o, g);
     }
