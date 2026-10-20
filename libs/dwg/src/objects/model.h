@@ -69,6 +69,9 @@ struct DimStyleRec {
     std::uint64_t textStyle = 0;  // handle of the text style (DIMTXSTY), 0 when not read
     // Arrow blocks (DIMLDRBLK, DIMBLK, DIMBLK1, DIMBLK2), 0 for the default closed filled arrow.
     std::uint64_t leaderArrow = 0, arrow = 0, arrow1 = 0, arrow2 = 0;
+    // Linetypes of the dimension line and the extension lines (DIMLTYPE, DIMLTEX1, DIMLTEX2;
+    // R2007 and later), 0 when not read.
+    std::uint64_t ltype = 0, ltex1 = 0, ltex2 = 0;
     std::vector<Group> groups{};
 };
 
