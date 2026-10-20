@@ -41,6 +41,8 @@ struct MLeaderStyle {
     double doglegLength = 0;  // 0 = the arrow size
 };
 MLeaderStyle currentMLeaderStyle(const Document& doc);
+// The settings of the named style ("" = Standard).
+MLeaderStyle mleaderStyleNamed(const Document& doc, const std::string& name);
 // MLEADERSTYLE [MLS] opens the Multileader Style Manager; -MLEADERSTYLE edits on the command line.
 std::unique_ptr<cmd::Command> makeMLeaderStylePanelCommand();
 // The stored multileader styles (Standard is implied), the current one ("" = Standard), the
