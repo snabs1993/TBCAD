@@ -34,6 +34,11 @@ std::unique_ptr<cmd::Command> makeMLeaderStyleCommand();
 struct MLeaderStyle {
     DimStyleId dim{};
     std::string content = "Text";
+    std::string block{};      // block content: the block MLEADER offers first ("" = ask)
+    bool annotative = false;  // new multileaders follow the annotation scale
+    long long maxPoints = 2;  // points of a leader line, arrowhead and landing included
+    bool dogleg = true;       // a horizontal landing between the leader and the note
+    double doglegLength = 0;  // 0 = the arrow size
 };
 MLeaderStyle currentMLeaderStyle(const Document& doc);
 // MLEADERSTYLE [MLS] opens the Multileader Style Manager; -MLEADERSTYLE edits on the command line.

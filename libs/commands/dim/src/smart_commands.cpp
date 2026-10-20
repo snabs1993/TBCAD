@@ -203,8 +203,8 @@ public:
         // Options for the content type, the number of points of a leader line and the dogleg.
         // Text typed instead of a point is the note itself.
         std::string contentType = mls.content;
-        long long maxPoints = 2;  // points of a leader line, arrowhead and landing included
-        bool dogleg = true;
+        long long maxPoints = mls.maxPoints;  // points of a leader line, arrowhead and landing
+        bool dogleg = mls.dogleg;
         std::optional<std::string> typedNote;
         const BlockDef* block = nullptr;
         auto isOption = [](const cmd::PointResult& r, const char* name) {
@@ -301,6 +301,13 @@ public:
             }
         };
 
+        // The style's block is offered first.
+        const std::string blockPrompt =
+            mls.block.empty() ? "Enter block name" : "Enter block name <" + mls.block + ">";
+        cmd::StringOptions blockOptions;
+        if (!mls.block.empty())
+            blockOptions.defaultValue = mls.block;
+
         auto* c = &ctx;
         std::vector<std::vector<Vec2>> lines;  // each from its arrowhead; the landing is added
         Vec2 landing{};
@@ -308,8 +315,7 @@ public:
 
         if (order == Order::Content) {
             if (contentType == "Block") {
-                cmd::StringOptions so;
-                takeContent(co_await ctx.getString("Enter block name", so), true);
+                takeContent(co_await ctx.getString(blockPrompt, blockOptions), true);
             } else if (contentType == "Text") {
                 cmd::StringOptions so;
                 so.allowEmpty = true;
@@ -412,8 +418,7 @@ public:
             so.allowEmpty = true;
             takeContent(co_await ctx.getString("Enter annotation text <none>", so), false);
         } else if (!contentAsked && contentType == "Block") {
-            cmd::StringOptions so;
-            takeContent(co_await ctx.getString("Enter block name", so), true);
+            takeContent(co_await ctx.getString(blockPrompt, blockOptions), true);
         }
         if (cancelled)
             co_return;
@@ -447,7 +452,8 @@ public:
         m.dogleg = dogleg;
         const DimStyle& ds = dim::styleOf(ctx.doc(), sid);
         const double k = ds.overallScale > 0 ? ds.overallScale : 1.0;
-        const double doglegLen = dogleg ? ds.arrowSize * k : 0.0;
+        const double doglegLen =
+            !dogleg ? 0.0 : (mls.doglegLength > 0 ? mls.doglegLength : ds.arrowSize) * k;
         if (contentAt) {
             // The note sits where it was put; the landing is one dogleg towards the arrows.
             const double side = contentAt->x >= lines.front().front().x ? 1 : -1;
@@ -474,6 +480,11 @@ public:
         Entity e;
         e.data = Indirect<MLeaderData>(std::move(m));
         applyCurrentProperties(ctx.doc().header(), e);
+        if (mls.annotative && !e.common.annotative) {
+            e.common.annotative = true;
+            e.common.annoScales =
+                ScaleList(std::vector<double>{currentAnnotationScale(ctx.doc().header())});
+        }
         auto id = ctx.tx().add(std::move(e));
         if (!id)
             ctx.message(id.error().message);

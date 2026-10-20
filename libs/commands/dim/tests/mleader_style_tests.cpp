@@ -86,3 +86,48 @@ TEST_CASE("-MLEADERSTYLE sets arrow size and text height - MLEADERSTYLE opens th
     CHECK(f.host->run("MLEADERSTYLE", {}).finished);
     CHECK(f.host->run("MLS", {}).finished);
 }
+
+TEST_CASE("MLEADERSTYLE block, annotative, leader points and dogleg length - MLEADER uses them") {
+    Fixture f;
+    {
+        Transaction tx = f.doc.begin("block");
+        BlockDef def;
+        def.name = "TagCircle";
+        REQUIRE(tx.addBlock(std::move(def)));
+        tx.commit();
+    }
+    f.host->run(
+        "-MLEADERSTYLE",
+        {"New",       "Tag",        "Edit",      "Tag",       "Content", "Block",        "Block",
+         "TagCircle", "Annotative", "Yes",       "MaxPoints", "3",       "DoglegLength", "10",
+         "Block",     "Nope",       "MaxPoints", "1",         "Done",    "Done"});
+    CHECK(f.host->logContains("no block named"));
+    CHECK(f.host->logContains("MaxPoints must be"));
+    const dimcmd::MLeaderStyle st = dimcmd::currentMLeaderStyle(f.doc);
+    CHECK(st.block == "TagCircle");
+    CHECK(st.annotative);
+    CHECK(st.maxPoints == 3);
+    CHECK(st.doglegLength == doctest::Approx(10));
+
+    // Arrowhead, one bend, the landing; Enter takes the style's block.
+    auto r = f.host->run("MLEADER", {"0,0", "10,10", "20,10", ""});
+    CHECK(r.finished);
+    const Entity* made = nullptr;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (entityAs<MLeaderData>(e))
+            made = &e;
+    });
+    REQUIRE(made);
+    const auto* m = entityAs<MLeaderData>(*made);
+    CHECK(made->common.annotative);
+    CHECK(m->content == MLeaderData::Content::Block);
+    CHECK(f.doc.block(m->block)->name == "TagCircle");
+    REQUIRE(m->lines.size() == 1);
+    CHECK(m->lines[0].size() == 3);
+    CHECK(m->contentPos.x == doctest::Approx(30));
+
+    // The settings follow a rename and go with a delete.
+    f.host->run("-MLEADERSTYLE", {"Rename", "Tag", "Tag2", "Done"});
+    CHECK(dimcmd::currentMLeaderStyle(f.doc).block == "TagCircle");
+    CHECK(!f.doc.header().custom.count("tbcad.mleaderopt.Tag"));
+}
