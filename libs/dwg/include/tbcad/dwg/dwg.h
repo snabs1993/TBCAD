@@ -6,6 +6,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "tbcad/dxf/reader.h"
@@ -44,6 +45,10 @@ bool looksLikeDwg(std::span<const std::byte> bytes);
 // summary's `version` is the DWG release and the JSON report says "format":"dwg".
 Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                                     const dxf::ImportOptions& options, dxf::Report& report);
+// The same, with the time of each step in ms (read sections, objects, conversion, import).
+Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
+                                    const dxf::ImportOptions& options, dxf::Report& report,
+                                    std::vector<std::pair<std::string, double>>* timings);
 
 // A structural description of a file for diagnosing files that do not open: version, container
 // steps, section sizes and the import messages. It contains no drawing content (only counts and a

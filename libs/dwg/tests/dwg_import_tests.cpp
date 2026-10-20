@@ -593,6 +593,22 @@ std::vector<std::uint8_t> sampleDrawing2004(const char* version) {
 
 }  // namespace
 
+TEST_CASE("an import names the time of each step for the open timings") {
+    auto file = asBytes(sampleDrawing());
+    dxf::Report report;
+    std::vector<std::pair<std::string, double>> timings;
+    auto r = importDwg(file, dxf::ImportOptions{}, report, &timings);
+    REQUIRE(r.ok());
+    std::vector<std::string> names;
+    for (const auto& [name, ms] : timings) {
+        names.push_back(name);
+        CHECK(ms >= 0);
+    }
+    CHECK(std::find(names.begin(), names.end(), "convert to DXF groups") != names.end());
+    CHECK(std::find(names.begin(), names.end(), "import the groups") != names.end());
+    CHECK(names.size() >= 4);
+}
+
 TEST_CASE("an R2000 file with tables, entities and a block imports") {
     auto file = asBytes(sampleDrawing());
     dxf::Report report;
