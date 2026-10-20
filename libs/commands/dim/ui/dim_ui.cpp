@@ -575,16 +575,16 @@ DimStyleId styleIdOf(const Entity& e, const Document& doc) {
 void drawDimensionSection(ui::PanelContext& pc, EntityId id) {
     if (!pc.doc)
         return;
-    std::vector<EntityId> ids;
+    std::vector<EntityId> single;
+    const std::vector<EntityId>* all = &single;
     if (pc.multiSelection && pc.selection) {
-        for (EntityId s : *pc.selection)
-            if (isDimOrLeader(*pc.doc, s))
-                ids.push_back(s);
-        if (ids.empty() || ids.front() != id)
+        all = &ui::selectedWhere(pc, "dimension", isDimOrLeader);
+        if (all->empty() || all->front() != id)
             return;  // one section for the whole selection
     } else if (isDimOrLeader(*pc.doc, id)) {
-        ids.push_back(id);
+        single.push_back(id);
     }
+    const std::vector<EntityId>& ids = *all;
     if (ids.empty())
         return;
     const Entity* first = pc.doc->find(ids.front());

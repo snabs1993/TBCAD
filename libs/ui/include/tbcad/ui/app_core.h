@@ -311,6 +311,8 @@ public:
     const std::vector<EntityId>& selection() const override { return selection_; }
     void setSelection(std::vector<EntityId> ids) override;
     void clearSelection() { setSelection({}); }
+    // Changes whenever the selection changes (never 0), for panels that keep what they found.
+    std::uint64_t selectionRevision() const { return selectionRevision_; }
     void selectAll();
     // Aperture of the pick box in mm at the current zoom.
     double apertureMm() const;
@@ -475,6 +477,7 @@ private:
     std::unique_ptr<Document> defaultDocument(std::string* problem = nullptr);
     platform::AppPaths paths_;
     std::vector<std::string> panelRequests_{};
+    std::uint64_t selectionRevision_ = 1;
     std::vector<std::string> panelCloses_{};
     bool dialogsAvailable_ = false;
     std::map<std::string, std::string> transient_{};  // "tmp.*" settings: not saved

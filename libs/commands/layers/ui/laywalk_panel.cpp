@@ -48,23 +48,33 @@ void drawLayWalkPanel(tbcad::ui::PanelContext& ctx) {
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##walkfilter", "Filter (text, or name:S-* used ...)", &st.filter);
 
-    std::string f = st.filter;
-    std::transform(f.begin(), f.end(), f.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    const bool expression = f.find(':') != std::string::npos;
-    std::vector<LayerId> rows;
-    for (LayerId id : layerTreeOrder(doc)) {
-        if (!f.empty()) {
-            if (expression ? !layerMatchesFilter(doc, id, st.filter) : [&] {
-                    std::string p = layerPath(doc, id);
-                    std::transform(p.begin(), p.end(), p.begin(), [](unsigned char c) {
-                        return static_cast<char>(std::tolower(c));
-                    });
-                    return p.find(f) == std::string::npos;
-                }())
-                continue;
+    // The rows only change with the drawing or the filter.
+    static std::uint64_t rowsDoc = 0;
+    static std::uint64_t rowsRevision = 0;
+    static std::string rowsFilter;
+    static std::vector<LayerId> rows;
+    if (rowsDoc != doc.uid() || rowsRevision != doc.revision() || rowsFilter != st.filter) {
+        rowsDoc = doc.uid();
+        rowsRevision = doc.revision();
+        rowsFilter = st.filter;
+        rows.clear();
+        std::string f = st.filter;
+        std::transform(f.begin(), f.end(), f.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        const bool expression = f.find(':') != std::string::npos;
+        for (LayerId id : layerTreeOrder(doc)) {
+            if (!f.empty()) {
+                if (expression ? !layerMatchesFilter(doc, id, st.filter) : [&] {
+                        std::string p = layerPath(doc, id);
+                        std::transform(p.begin(), p.end(), p.begin(), [](unsigned char c) {
+                            return static_cast<char>(std::tolower(c));
+                        });
+                        return p.find(f) == std::string::npos;
+                    }())
+                    continue;
+            }
+            rows.push_back(id);
         }
-        rows.push_back(id);
     }
 
     bool changed = false;

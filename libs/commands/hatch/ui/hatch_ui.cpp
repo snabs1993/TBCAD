@@ -74,34 +74,14 @@ std::string selectionCommand(const Params& p, bool includeBase) {
     return line + " D";
 }
 
+bool isHatch(const Document& doc, EntityId id) {
+    const Entity* e = doc.find(id);
+    return e && kind(*e) == EntityKind::Hatch;
+}
+
 bool hasHatchSelected(const ui::PanelContext& pc) {
-    if (!pc.doc || !pc.selection)
-        return false;
     // The panel asks on every frame; a big selection is only scanned again when it changed.
-    static const Document* cachedDoc = nullptr;
-    static std::uint64_t cachedRevision = 0;
-    static std::size_t cachedSize = 0;
-    static EntityId cachedFront{}, cachedBack{};
-    static bool cachedResult = false;
-    const auto& sel = *pc.selection;
-    const EntityId front = sel.empty() ? EntityId{} : sel.front();
-    const EntityId back = sel.empty() ? EntityId{} : sel.back();
-    if (cachedDoc == pc.doc && cachedRevision == pc.doc->revision() && cachedSize == sel.size() &&
-        cachedFront == front && cachedBack == back)
-        return cachedResult;
-    bool found = false;
-    for (EntityId id : sel)
-        if (const Entity* e = pc.doc->find(id); e && kind(*e) == EntityKind::Hatch) {
-            found = true;
-            break;
-        }
-    cachedDoc = pc.doc;
-    cachedRevision = pc.doc->revision();
-    cachedSize = sel.size();
-    cachedFront = front;
-    cachedBack = back;
-    cachedResult = found;
-    return found;
+    return !ui::selectedWhere(pc, "hatch", isHatch).empty();
 }
 
 // ---- Panel: pattern list with thumbnails, parameters, pick / apply buttons -------------------

@@ -113,15 +113,24 @@ std::vector<std::string> valueChoices(const Document& doc, Property p) {
 
 // A value field: a combo of the known names when there are some, always free to type.
 void valueField(const char* label, const Document& doc, Property p, std::string& value) {
-    const auto choices = valueChoices(doc, p);
     ImGui::SetNextItemWidth(220);
     ImGui::InputText(label, &value);
-    if (choices.empty())
+    // The names are only listed while the drop-down is open: a drawing with thousands of layers
+    // would otherwise build the list every frame.
+    bool any = p == Property::Layer || p == Property::Linetype || p == Property::Color ||
+               p == Property::Lineweight || p == Property::Style;
+    if (p == Property::Name)
+        for (const auto& [bid, b] : doc.blocks())
+            if (!b.anonymous) {
+                any = true;
+                break;
+            }
+    if (!any)
         return;
     ImGui::SameLine();
     const std::string id = std::string("##pick") + label;
     if (ImGui::BeginCombo(id.c_str(), "", ImGuiComboFlags_NoPreview)) {
-        for (const auto& c : choices)
+        for (const auto& c : valueChoices(doc, p))
             if (ImGui::Selectable(c.c_str(), c == value))
                 value = c;
         ImGui::EndCombo();
@@ -171,7 +180,7 @@ struct QuickState {
     std::string result{};
     // Cache of the object types offered, and what it was worked out for.
     std::set<std::string> types{};
-    std::optional<std::tuple<const Document*, std::uint64_t, bool, std::size_t, EntityId, EntityId>>
+    std::optional<std::tuple<std::uint64_t, std::uint64_t, bool, std::size_t, EntityId, EntityId>>
         typesKey{};
 };
 
@@ -196,7 +205,7 @@ void drawQuickSelect(ui::PanelContext& pc) {
 
     // The object types found where the search runs: worked out again only when the drawing, the
     // selection or the scope changed, as a walk over a big drawing takes far longer than a frame.
-    const std::tuple key{&doc,
+    const std::tuple key{doc.uid(),
                          doc.revision(),
                          st.withinSelection,
                          now.size(),

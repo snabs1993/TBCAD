@@ -42,7 +42,16 @@ struct PanelContext {
     // first selected object of its kind and must either handle all of `selection` or draw nothing.
     bool multiSelection = false;
     std::function<void()> drawMultiSections{};
+    // Changes whenever the selection changes; 0 when the host does not count (then nothing that
+    // depends on the selection may be kept from one frame to the next).
+    std::uint64_t selectionRevision = 0;
 };
+
+// The selected objects for which `keep` holds, in selection order. Worked out again only when the
+// drawing or the selection changes: with a select-all on a big drawing, each panel section walking
+// the selection every frame costs tens of milliseconds. `tag` names the cache (one per predicate).
+const std::vector<EntityId>& selectedWhere(const PanelContext& pc, const char* tag,
+                                           bool (*keep)(const Document&, EntityId));
 
 // The drawing a command module works on. Passed to the session hooks whenever a different
 // document becomes current, and once when the hook is installed.

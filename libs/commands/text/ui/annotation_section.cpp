@@ -41,17 +41,17 @@ void drawSection(ui::PanelContext& pc, EntityId id) {
     if (!pc.doc)
         return;
     // Every selected object that can be annotative; a single pick is the common case.
-    std::vector<EntityId> ids;
+    std::vector<EntityId> single;
+    const std::vector<EntityId>* all = &single;
     if (pc.multiSelection && pc.selection) {
-        for (EntityId s : *pc.selection)
-            if (takesPart(*pc.doc, s))
-                ids.push_back(s);
+        all = &ui::selectedWhere(pc, "annotation", takesPart);
         // One section for the whole selection, however many kinds it holds.
-        if (ids.empty() || ids.front() != id)
+        if (all->empty() || all->front() != id)
             return;
     } else if (takesPart(*pc.doc, id)) {
-        ids.push_back(id);
+        single.push_back(id);
     }
+    const std::vector<EntityId>& ids = *all;
     if (ids.empty())
         return;
     const Entity* e = pc.doc->find(id);

@@ -95,11 +95,32 @@ std::vector<LayerId> childrenOf(const Document& doc, LayerId parent) {
     return out;
 }
 
+std::unordered_map<std::uint32_t, std::vector<LayerId>> childIndex(const Document& doc) {
+    std::unordered_map<std::uint32_t, std::vector<std::pair<std::string, LayerId>>> named;
+    for (const auto& [id, l] : doc.layers())
+        named[id == kLayerZero ? 0u : l.parent.value].emplace_back(lower(l.name), id);
+    std::unordered_map<std::uint32_t, std::vector<LayerId>> out;
+    out.reserve(named.size());
+    for (auto& [parent, list] : named) {
+        std::sort(list.begin(), list.end(),
+                  [](const auto& a, const auto& b) { return a.first < b.first; });
+        auto& kids = out[parent];
+        kids.reserve(list.size());
+        for (const auto& entry : list)
+            kids.push_back(entry.second);
+    }
+    return out;
+}
+
 std::vector<LayerId> layerTreeOrder(const Document& doc) {
     std::vector<LayerId> out;
     out.reserve(doc.layers().size());
+    const auto index = childIndex(doc);
     auto visit = [&](auto&& self, LayerId parent) -> void {
-        for (LayerId id : childrenOf(doc, parent)) {
+        auto it = index.find(parent.value);
+        if (it == index.end())
+            return;
+        for (LayerId id : it->second) {
             out.push_back(id);
             self(self, id);
         }
@@ -116,9 +137,13 @@ std::size_t entityCount(const Document& doc, LayerId id) {
 
 std::vector<LayerId> branchOf(const Document& doc, LayerId id) {
     std::vector<LayerId> out{id};
-    for (std::size_t i = 0; i < out.size(); ++i)
-        for (LayerId c : childrenOf(doc, out[i]))
-            out.push_back(c);
+    const auto index = childIndex(doc);
+    for (std::size_t i = 0; i < out.size(); ++i) {
+        auto it = index.find(out[i].value);
+        if (it != index.end())
+            for (LayerId c : it->second)
+                out.push_back(c);
+    }
     return out;
 }
 

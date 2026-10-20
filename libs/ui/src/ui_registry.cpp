@@ -1,6 +1,8 @@
 #include "tbcad/ui/ui_registry.h"
 
 #include <algorithm>
+#include <map>
+#include <string>
 
 namespace tbcad::ui {
 
@@ -99,6 +101,40 @@ std::vector<const PropertySection*> UiRegistry::sectionsFor(EntityKind kind) con
         if (s.kind == kind)
             out.push_back(&s);
     return out;
+}
+
+const std::vector<EntityId>& selectedWhere(const PanelContext& pc, const char* tag,
+                                           bool (*keep)(const Document&, EntityId)) {
+    struct Cache {
+        std::uint64_t doc = 0;
+        std::uint64_t revision = 0;
+        const std::vector<EntityId>* selection = nullptr;
+        std::size_t size = 0;
+        std::uint64_t selectionRevision = 0;
+        std::vector<EntityId> ids{};
+    };
+    static std::map<std::string, Cache> caches;
+    Cache& c = caches[tag];
+    static const std::vector<EntityId> none;
+    if (!pc.doc || !pc.selection) {
+        c = Cache{};
+        return none;
+    }
+    const bool same = pc.selectionRevision != 0 && c.doc == pc.doc->uid() &&
+                      c.revision == pc.doc->revision() && c.selection == pc.selection &&
+                      c.size == pc.selection->size() && c.selectionRevision == pc.selectionRevision;
+    if (!same) {
+        c.doc = pc.doc->uid();
+        c.revision = pc.doc->revision();
+        c.selection = pc.selection;
+        c.size = pc.selection->size();
+        c.selectionRevision = pc.selectionRevision;
+        c.ids.clear();
+        for (EntityId id : *pc.selection)
+            if (keep(*pc.doc, id))
+                c.ids.push_back(id);
+    }
+    return c.ids;
 }
 
 }  // namespace tbcad::ui
