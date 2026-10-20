@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include "tbcad/ui/status_items.h"
 #include "tbcad/ui/ui_registry.h"
 
 using namespace tbcad;
@@ -96,4 +97,54 @@ TEST_CASE("underlay drawers are kept apart from overlay drawers") {
     ui.addUnderlayDrawer([](PanelContext&, render::Overlay&) {});
     CHECK(ui.underlayDrawers().size() == 1);
     CHECK(ui.overlayDrawers().empty());
+}
+
+TEST_CASE("a contextual tab shows for a selection made only of its kinds") {
+    UiRegistry ui;
+    CHECK(ui.addContextualTab("text", "Text Editor", {EntityKind::Text, EntityKind::MText},
+                              [](PanelContext&) {}));
+    CHECK(ui.addContextualTab("hatch", "Hatch Editor", {EntityKind::Hatch}, [](PanelContext&) {}));
+    CHECK_FALSE(ui.addContextualTab("text", "Again", {EntityKind::Line}, [](PanelContext&) {}));
+    CHECK_FALSE(ui.addContextualTab("x", "No kinds", {}, [](PanelContext&) {}));
+    CHECK_FALSE(ui.addContextualTab("y", "No draw", {EntityKind::Line}, nullptr));
+
+    Document doc;
+    Transaction tx = doc.begin("setup");
+    auto add = [&](EntityData d) {
+        Entity e;
+        e.data = std::move(d);
+        return tx.add(std::move(e)).value();
+    };
+    TextData t;
+    t.utf8 = "A";
+    t.height = 2.5;
+    const EntityId text = add(Indirect<TextData>(t));
+    MTextData m;
+    m.utf8 = "B";
+    m.height = 2.5;
+    const EntityId mtext = add(Indirect<MTextData>(m));
+    const EntityId line = add(LineData{{0, 0}, {1, 0}});
+    tx.commit();
+
+    CHECK(ui.contextualTabFor(doc, {}) == nullptr);
+    const ContextualTab* tab = ui.contextualTabFor(doc, {text, mtext});
+    REQUIRE(tab);
+    CHECK(tab->id == "text");
+    CHECK(ui.contextualTabFor(doc, {text, line}) == nullptr);  // mixed
+    CHECK(ui.contextualTabFor(doc, {line}) == nullptr);
+    CHECK(ui.contextualTabFor(doc, {EntityId{99999}}) == nullptr);  // gone
+}
+
+TEST_CASE("status bar items are hidden and shown through one setting") {
+    std::string s;
+    CHECK(statusItemShown(s, "grid"));
+    s = setStatusItemShown(s, "grid", false);
+    s = setStatusItemShown(s, "coords", false);
+    s = setStatusItemShown(s, "grid", false);  // once
+    CHECK(s == "grid,coords");
+    CHECK_FALSE(statusItemShown(s, "grid"));
+    CHECK(statusItemShown(s, "snap"));
+    s = setStatusItemShown(s, "grid", true);
+    CHECK(s == "coords");
+    CHECK(statusHiddenIds(" a, ,b ") == std::vector<std::string>{"a", "b"});
 }
