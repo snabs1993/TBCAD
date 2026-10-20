@@ -3081,6 +3081,7 @@ Result<ImportResult> Importer::run() {
                     std::vector<Vec2> jogs;
                     bool flip1 = false, flip2 = false;
                     std::array<DimAssoc, 4> assoc{};
+                    std::optional<Vec2> textPos;
                     for (const XdataApp& a : x.xdata) {
                         if (!isNote(a))
                             continue;
@@ -3100,6 +3101,9 @@ Result<ImportResult> Importer::run() {
                                 withWhole = withWhole && w;
                                 if (w)
                                     with.push_back(w);
+                            } else if (t.rfind("tp=", 0) == 0) {
+                                if (auto v = numbers(t.substr(3), 2); !v.empty())
+                                    textPos = Vec2{v[0], v[1]} * k_;
                             } else if (t.rfind("j=", 0) == 0) {
                                 if (auto v = numbers(t.substr(2), 2); !v.empty())
                                     jogs.push_back(Vec2{v[0], v[1]} * k_);
@@ -3147,6 +3151,8 @@ Result<ImportResult> Importer::run() {
                         l->breaks = std::move(breaks);
                         l->breakWith = std::move(with);
                         l->autoBreaks = autoBreaks;
+                        if (textPos && l->utf8.empty())
+                            l->textPos = *textPos;
                     }
                 });
             }

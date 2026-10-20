@@ -2040,7 +2040,7 @@ TEST_CASE("dimension breaks, jogs, flipped arrows and associative points survive
         }));
         LeaderData ld;
         ld.vertices = {{0, 50}, {30, 60}};
-        ld.textPos = {30, 60};
+        ld.textPos = {34, 60};  // no text: only TBCAD_DIM keeps where it would go
         ld.breaks = {DimBreak{{10, 53.333}, {12, 54}}};
         ld.breakWith = {crossing};
         ld.autoBreaks = 1;

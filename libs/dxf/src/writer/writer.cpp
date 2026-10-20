@@ -970,7 +970,8 @@ std::string Writer::tablesSection() {
                 if (assoc || !d->breaks.empty() || !d->jogs.empty() || d->flipArrow1 ||
                     d->flipArrow2)
                     extApps.insert("TBCAD_DIM");
-            } else if (const auto* l = entityAs<LeaderData>(e); l && !l->breaks.empty()) {
+            } else if (const auto* l = entityAs<LeaderData>(e);
+                       l && (!l->breaks.empty() || leaderKeepsTextPos(*l))) {
                 extApps.insert("TBCAD_DIM");
             }
         });
