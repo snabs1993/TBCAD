@@ -453,7 +453,24 @@ struct PayloadWriter {
         w.varint(d.block.value);
         w.f64(d.blockScale);
         w.f64(d.blockRotation);
-        leaderBreaks(d);
+        if (d.attribs.empty()) {
+            leaderBreaks(d);
+            return;
+        }
+        // Block attribute values (format 1.25) follow the DIMBREAK tail, written even when empty.
+        if (d.breaks.empty() && d.breakWith.empty()) {
+            w.u8(1);
+            w.varint(0);
+            w.varint(0);
+            w.varint(0);
+        } else {
+            leaderBreaks(d);
+        }
+        w.varint(d.attribs.size());
+        for (const AttribValue& a : d.attribs) {
+            str(a.tag);
+            str(a.value);
+        }
     }
     void operator()(const TableData& d) {
         w.vec2(d.origin);
@@ -1038,6 +1055,16 @@ struct PayloadReader {
                 d.blockScale = r.f64();
                 d.blockRotation = r.f64();
                 leaderBreaks(d);
+                if (r.remaining() > 0) {
+                    const std::size_t na = r.count(2);
+                    d.attribs.reserve(na);
+                    for (std::size_t i = 0; i < na; ++i) {
+                        AttribValue a;
+                        a.tag = str();
+                        a.value = str();
+                        d.attribs.push_back(std::move(a));
+                    }
+                }
                 return make(std::move(d));
             }
             case EntityKind::Table: {

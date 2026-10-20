@@ -234,6 +234,7 @@ std::unique_ptr<Document> makeRichDocument() {
             ml.breaks = {DimBreak{{1, 1}, {2, 2}}, DimBreak{{1, 9}, {2, 8}}};
             ml.autoBreaks = 1;
             ml.breakWith = {EntityId{1}};
+            ml.attribs = {AttribValue{"NO", "A1"}};
             add(make(std::move(ml), l0));
         }
         {

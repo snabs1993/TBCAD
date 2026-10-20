@@ -6,6 +6,7 @@
 
 #include "importer.h"
 #include "keep.h"
+#include "tbcad/dim/dim.h"
 #include "tbcad/gdt/gdt.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/geom/spline.h"
@@ -1469,6 +1470,8 @@ bool Importer::convText(const Record& r, const Frame& f, TextKind kind, std::vec
             d.utf8 = text;
         } else {
             d.utf8 = info.tag;
+            if (r.has(5))
+                attdefTagByHandle_[upperHandle(r.raw(5))] = info.tag;
             d.attdef = std::move(info);
         }
         text = d.utf8;
@@ -1869,13 +1872,36 @@ bool Importer::convMLeader(const Record& r, std::vector<Entity>& out) {
     std::string rawText;
     Vec2 base{}, textLoc{};
     bool hasBase = false, hasTextLoc = false;
-    bool inCtx = false, inLeader = false, inLine = false;
+    bool inCtx = false, inLeader = false, inLine = false, afterCtx = false;
+    // Block content: the block (by handle), where its insertion point is, its scale and rotation,
+    // and the values of its attributes (ATTDEF handle, then the text).
+    std::string blockHandle;
+    Vec2 blockPos{};
+    bool hasBlockPos = false;
+    double blockScale = 1, blockRotation = 0, textHeight = 0;
+    std::int64_t contentType = -1;
+    std::string attdefHandle;
+    std::vector<AttribValue> attribs;
     for (const Group& g : r.g) {
         const std::string_view s = g.code >= 300 && g.code < 320 ? g.str() : std::string_view{};
         if (g.code == 300 && s == "CONTEXT_DATA{") {
             inCtx = true;
         } else if (g.code == 301) {
             inCtx = false;
+            afterCtx = true;
+        } else if (afterCtx) {
+            if (g.code == 172) {
+                contentType = g.integer();
+            } else if (g.code == 344 && blockHandle.empty()) {
+                blockHandle = std::string(g.str());
+            } else if (g.code == 330) {
+                attdefHandle = upperHandle(g.str());
+            } else if (g.code == 302 && !attdefHandle.empty()) {
+                if (const auto t = attdefTagByHandle_.find(attdefHandle);
+                    t != attdefTagByHandle_.end())
+                    attribs.push_back({t->second, dec(std::string(g.str())), {}});
+                attdefHandle.clear();
+            }
         } else if (g.code == 302 && s == "LEADER{") {
             inLeader = true;
             branches.emplace_back();
@@ -1918,6 +1944,19 @@ bool Importer::convMLeader(const Record& r, std::vector<Entity>& out) {
                 hasTextLoc = true;
             } else if (g.code == 22) {
                 textLoc.y = g.number() * k_;
+            } else if (g.code == 41) {
+                textHeight = g.number() * k_;
+            } else if (g.code == 341) {
+                blockHandle = std::string(g.str());
+            } else if (g.code == 15) {
+                blockPos.x = g.number() * k_;
+                hasBlockPos = true;
+            } else if (g.code == 25) {
+                blockPos.y = g.number() * k_;
+            } else if (g.code == 16) {
+                blockScale = g.number();
+            } else if (g.code == 46) {
+                blockRotation = g.number();
             }
         }
     }
@@ -1956,6 +1995,34 @@ bool Importer::convMLeader(const Record& r, std::vector<Entity>& out) {
         if (text.empty())
             m.content = MLeaderData::Content::None;
         m.utf8 = text;
+        if (textHeight > 0) {
+            const DimStyle& ds = dim::styleOf(*doc_, style);
+            m.textHeight = textHeight / (ds.overallScale > 0 ? ds.overallScale : 1.0);
+        }
+        const auto blockName = blockNameByHandle_.find(upperHandle(blockHandle));
+        if (contentType != 2 && contentType != 0 && blockName != blockNameByHandle_.end()) {
+            if (const BlockId b = blockFor(blockName->second); b) {
+                m.content = MLeaderData::Content::Block;
+                m.utf8.clear();
+                m.block = b;
+                m.blockScale = blockScale != 0 ? blockScale : 1.0;
+                m.blockRotation = blockRotation;
+                m.attribs = std::move(attribs);
+                // The block is drawn with its insertion point at the end of the dogleg. When
+                // AutoCAD placed it elsewhere (beside the dogleg, by the centre of its extents),
+                // the dogleg becomes the last stretch of each line and the note point the
+                // block's own insertion point, so the drawing matches.
+                if (hasBlockPos && distance(blockPos, m.contentPos) > tol::kLinear) {
+                    if (m.dogleg) {
+                        for (auto& line : m.lines)
+                            line.push_back(m.contentPos);
+                        m.landing = m.contentPos;
+                        m.dogleg = false;
+                    }
+                    m.contentPos = blockPos;
+                }
+            }
+        }
         out.push_back(makeEntity(std::move(m)));
     } else if (!text.empty()) {
         MTextData mt;

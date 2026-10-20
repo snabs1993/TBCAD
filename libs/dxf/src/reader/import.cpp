@@ -394,16 +394,6 @@ void Importer::processClasses(RecordReader& rr) {
 
 // OBJECTS: only our annotation-scale note is read (the current scale and the scale list); the
 // SCALE objects other programs write are not needed because the note carries the same list.
-namespace {
-std::string upperHandle(std::string_view h) {
-    std::string s(h);
-    for (char& c : s)
-        if (c >= 'a' && c <= 'f')
-            c = static_cast<char>(c - 'a' + 'A');
-    return s;
-}
-
-}  // namespace
 
 // A named page setup (PLOTSETTINGS). Layouts carry the same data inside their own record; only the
 // named ones are collected here.
@@ -3044,8 +3034,10 @@ Result<ImportResult> Importer::run() {
                         continue;
                     if (const auto* l = entityAs<LeaderData>(*e); l && !m.style)
                         m.style = l->style;
-                    if (const auto* ins = entityAs<InsertData>(*e))
+                    if (const auto* ins = entityAs<InsertData>(*e)) {
                         m.block = ins->block;
+                        m.attribs = ins->attribs;
+                    }
                 }
                 if (!m.style)
                     if (const DimStyle* ds = doc_->dimStyleByName(g.style))

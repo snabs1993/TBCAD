@@ -1611,6 +1611,45 @@ TEST_CASE("MLEADER: lines, dogleg and text come in as one multileader") {
     CHECK(d.utf8.find("Room") != std::string::npos);
 }
 
+TEST_CASE("MLEADER: block content with an attribute, placed beside the dogleg") {
+    Pairs p;
+    p.section("TABLES").g(0, "TABLE").g(2, "BLOCK_RECORD");
+    p.g(0, "BLOCK_RECORD").g(5, "A1").g(2, "_TagCircle");
+    p.g(0, "ENDTAB").end();
+    p.section("BLOCKS").g(0, "BLOCK").g(2, "_TagCircle").g(70, 2).g(10, 0.0).g(20, 0.0);
+    p.g(30, 0.0).g(0, "CIRCLE").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(40, 5.0);
+    p.g(0, "ATTDEF").g(5, "b2").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(40, 2.5);
+    p.g(1, "TAGNUMBER").g(3, "Tag number").g(2, "TAGNUMBER").g(70, 0);
+    p.g(0, "ENDBLK").end();
+    p.section("ENTITIES");
+    p.g(0, "MULTILEADER").g(8, "0").g(100, "AcDbMLeader").g(270, 2);
+    p.g(300, "CONTEXT_DATA{").g(40, 1.0).g(10, 50.0).g(20, 20.0).g(30, 0.0);
+    p.g(41, 4.0).g(290, 0).g(296, 1).g(341, "A1").g(14, 0.0).g(24, 0.0).g(34, 1.0);
+    p.g(15, 55.0).g(25, 20.0).g(35, 0.0).g(16, 2.0).g(26, 2.0).g(36, 2.0).g(46, 0.0);
+    p.g(302, "LEADER{").g(290, 1).g(291, 1).g(10, 40.0).g(20, 20.0).g(30, 0.0);
+    p.g(11, 1.0).g(21, 0.0).g(31, 0.0).g(90, 0).g(40, 5.0);
+    p.g(304, "LEADER_LINE{").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(10, 40.0).g(20, 20.0);
+    p.g(30, 0.0).g(91, 0).g(305, "}").g(303, "}");
+    p.g(301, "}").g(172, 1).g(344, "A1").g(330, "B2").g(177, 1).g(44, 0.0).g(302, "7");
+    p.end().g(0, "EOF");
+    Loaded l = load(p.text);
+    auto leaders = modelEntities<MLeaderData>(l.doc());
+    REQUIRE(leaders.size() == 1);
+    const MLeaderData& d = *leaders[0];
+    CHECK(d.content == MLeaderData::Content::Block);
+    REQUIRE(l.doc().block(d.block) != nullptr);
+    CHECK(l.doc().block(d.block)->name == "_TagCircle");
+    CHECK(near(d.blockScale, 2.0));
+    // The block's insertion point is AutoCAD's, beyond the end of the dogleg (45,20); the
+    // dogleg is kept as the last stretch of the line.
+    CHECK(near(d.contentPos, Vec2{55, 20}));
+    REQUIRE(d.lines.size() == 1);
+    CHECK(near(d.lines[0].back(), Vec2{45, 20}));
+    REQUIRE(d.attribs.size() == 1);
+    CHECK(d.attribs[0].tag == "TAGNUMBER");
+    CHECK(d.attribs[0].value == "7");
+}
+
 TEST_CASE("3DFACE: the visible edges in plan") {
     Pairs p;
     p.g(0, "3DFACE").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(11, 10.0).g(21, 0.0).g(31, 5.0);

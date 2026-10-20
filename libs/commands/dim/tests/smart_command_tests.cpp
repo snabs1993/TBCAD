@@ -146,6 +146,34 @@ TEST_CASE("MLEADER: block content inserts the block at the landing point") {
     CHECK(f.all<MLeaderData>().size() == 1);
 }
 
+TEST_CASE("MLEADER: a block with attributes asks for their values") {
+    Fix f;
+    BlockId tag{};
+    {
+        Transaction tx = f.doc.begin("block");
+        BlockDef def;
+        def.name = "TagCircle";
+        auto b = tx.addBlock(std::move(def));
+        REQUIRE(b);
+        tag = b.value();
+        TextData t;
+        t.utf8 = "NO";
+        t.attdef = AttDefInfo{"NO", "Number", "1", false, false, false, false};
+        Entity e;
+        e.data = Indirect<TextData>(std::move(t));
+        REQUIRE(tx.add(std::move(e), tag));
+        tx.commit();
+    }
+    auto r = f.host->run("MLEADER",
+                         {"Options", "Type", "Block", "eXit", "0,0", "40,30", "TagCircle", "A7"});
+    CHECK(r.finished);
+    auto ms = f.all<MLeaderData>();
+    REQUIRE(ms.size() == 1);
+    REQUIRE(ms[0]->attribs.size() == 1);
+    CHECK(ms[0]->attribs[0].tag == "NO");
+    CHECK(ms[0]->attribs[0].value == "A7");
+}
+
 TEST_CASE("MLEADER leader Landing first: landing, then arrowheads, then the note") {
     Fix f;
     auto r = f.host->run("MLEADER", {"Landing", "40,30", "0,0", "0,60", "", "Beam"});

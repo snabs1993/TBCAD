@@ -5,6 +5,7 @@
 #include <optional>
 
 #include "dim_internal.h"
+#include "tbcad/blocks/attributes.h"
 #include "tbcad/dim/dim.h"
 #include "tbcad/geom/geom.h"
 
@@ -416,6 +417,29 @@ public:
         }
         if (cancelled)
             co_return;
+        // A block's attributes are filled in as for INSERT (unless ATTREQ is off).
+        std::vector<AttribValue> attribs;
+        if (block) {
+            attribs = blocks::defaultAttribs(ctx.doc(), block->id);
+            if (ctx.host().setting("block.attreq").value_or("1") != "0") {
+                for (const Entity* ad : blocks::attributeDefinitions(ctx.doc(), block->id)) {
+                    const AttDefInfo& info = *entityAs<TextData>(*ad)->attdef;
+                    if (info.constant || info.preset)
+                        continue;
+                    for (AttribValue& v : attribs) {
+                        if (v.tag != info.tag)
+                            continue;
+                        const std::string label = info.prompt.empty() ? info.tag : info.prompt;
+                        auto r = co_await ctx.getString(
+                            "Enter attribute value for " + label + " <" + v.value + ">",
+                            cmd::StringOptions{.defaultValue = v.value, .allowEmpty = true});
+                        if (!r.ok())
+                            co_return;
+                        v.value = r.text;
+                    }
+                }
+            }
+        }
 
         ctx.setUndoLabel("MLEADER");
         MLeaderData m;
@@ -441,6 +465,7 @@ public:
         if (block) {
             m.content = MLeaderData::Content::Block;
             m.block = block->id;
+            m.attribs = std::move(attribs);
         } else if (!text.empty()) {
             m.utf8 = text;
         } else {
