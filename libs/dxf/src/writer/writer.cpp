@@ -565,6 +565,9 @@ void Writer::writeLayers(Out& o, std::uint64_t table) {
     std::size_t flattened = 0;
     for (const auto& [id, layer] : doc_.layers()) {
         EffectiveLayer eff = doc_.effective(id);
+        // Active Only locks the other layers for this session only; the file keeps their own lock.
+        if (eff.inactive)
+            eff.locked = false;
         // Flag 2: frozen in new viewports.
         int flags =
             (eff.frozen ? 1 : 0) | (eff.locked ? 4 : 0) | (newVpFrozen.count(id.value) ? 2 : 0);
