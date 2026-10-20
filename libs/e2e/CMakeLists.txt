@@ -48,3 +48,15 @@ if(TARGET tbcad_e2e_tests)
     TBCAD_FONTS_DIR="${CMAKE_SOURCE_DIR}/assets/fonts"
     TBCAD_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/samples")
 endif()
+
+# Optional libFuzzer build (clang only): cmake -DTBCAD_CMD_FUZZ=ON. Commands with input made from
+# the fuzzer's bytes, on the Thai house sample.
+option(TBCAD_CMD_FUZZ "Build the command fuzz target with libFuzzer + ASan/UBSan" OFF)
+if(TBCAD_CMD_FUZZ)
+  add_executable(tbcad_cmd_fuzz tests/fuzz_commands.cpp)
+  target_link_libraries(tbcad_cmd_fuzz PRIVATE tbcad::io tbcad::cmd tbcad::command_registry)
+  target_compile_definitions(tbcad_cmd_fuzz PRIVATE TBCAD_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/samples")
+  target_compile_options(tbcad_cmd_fuzz PRIVATE
+    -fsanitize=fuzzer-no-link,address,undefined -fno-sanitize-recover=undefined)
+  target_link_options(tbcad_cmd_fuzz PRIVATE -fsanitize=fuzzer,address,undefined)
+endif()

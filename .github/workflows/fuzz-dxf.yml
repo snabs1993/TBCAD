@@ -1,4 +1,4 @@
-name: Fuzz file readers, MCP server and formulas
+name: Fuzz file readers, MCP server, formulas and commands
 
 # 30 s on every pull request that touches the DXF code, 5 min every night.
 on:
@@ -13,6 +13,9 @@ on:
       - "libs/plotstyle/**"
       - "libs/expr/**"
       - "libs/hatch/**"
+      - "libs/cmd/**"
+      - "libs/commands/**"
+      - "libs/e2e/tests/fuzz_commands.cpp"
       - "tests/corpus/**"
       - ".github/workflows/fuzz-dxf.yml"
   schedule:
@@ -38,11 +41,11 @@ jobs:
         run: >
           cmake -S . -B build/fuzz -G Ninja
           -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
-          -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTBCAD_DXF_FUZZ=ON -DTBCAD_IO_FUZZ=ON -DTBCAD_MCP_FUZZ=ON -DTBCAD_FORMATS_FUZZ=ON -DTBCAD_BUILD_TESTS=OFF
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo -DTBCAD_DXF_FUZZ=ON -DTBCAD_IO_FUZZ=ON -DTBCAD_MCP_FUZZ=ON -DTBCAD_FORMATS_FUZZ=ON -DTBCAD_CMD_FUZZ=ON -DTBCAD_BUILD_TESTS=OFF
       - name: Build
         run: cmake --build build/fuzz --target tbcad_dxf_fuzz_lexer tbcad_dxf_fuzz_reader tbcad_io_fuzz_tbcad tbcad_mcp_fuzz
           tbcad_font_fuzz_stroke tbcad_underlay_fuzz_pdf tbcad_plotstyle_fuzz_ctb tbcad_expr_fuzz
-          tbcad_hatch_fuzz_patterns
+          tbcad_hatch_fuzz_patterns tbcad_cmd_fuzz
       - name: Fuzz
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then seconds=300; else seconds=30; fi
@@ -88,6 +91,14 @@ jobs:
               -max_total_time=$seconds -timeout=10 -rss_limit_mb=2048 \
               -artifact_prefix=artifacts/
           done
+      - name: Fuzz the commands
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then seconds=300; else seconds=30; fi
+          mkdir -p build/fuzz-corpus-commands artifacts
+          cp tests/corpus/fuzz/commands/* build/fuzz-corpus-commands/
+          build/fuzz/libs/e2e/tbcad_cmd_fuzz "$PWD/build/fuzz-corpus-commands" \
+            -max_total_time=$seconds -timeout=30 -rss_limit_mb=4096 -max_len=512 \
+            -artifact_prefix="$PWD/artifacts/"
       - name: Upload crash inputs
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

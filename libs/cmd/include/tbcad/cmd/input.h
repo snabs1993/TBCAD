@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "tbcad/core/core.h"
+#include "tbcad/core/utf8.h"
 
 namespace tbcad::cmd {
 
@@ -163,7 +164,8 @@ struct Input {
     static Input typed(std::string s) {
         Input i;
         i.kind = Kind::Text;
-        i.text = std::move(s);
+        // (typed text becomes drawing text: broken bytes from a script are made U+FFFD)
+        i.text = utf8::isValid(s) ? std::move(s) : utf8::repaired(s);
         return i;
     }
     static Input enter() { return Input{}; }

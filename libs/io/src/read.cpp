@@ -104,6 +104,7 @@ public:
         check(tx.modifyHeader([&](Header& h) { h = header; }), "header");
         step("entities", [&] { loadEntities(tx); });
         step("draw order", [&] { loadOrder(tx); });
+        step("block draw order", [&] { loadBlockOrder(tx); });
         tx.commitUnrecorded();
         check(doc_->reserveIds(nextIds_), "next ids");
         return std::move(doc_);
@@ -147,6 +148,7 @@ private:
                 case kDynb:
                 case kAsmb:
                 case kOrdr:
+                case kBord:
                     if (std::exchange(seen_[c.type], true)) {
                         if (!salvage_)
                             bad("duplicate chunk " + fourccName(c.type));
@@ -646,8 +648,8 @@ private:
             row.extLineOffset = r.f64();
             row.extLineExtension = r.f64();
             row.dimLineExtension = r.f64();
-            row.textPlacement = readEnum<DimTextPlacement>(
-                r, static_cast<std::uint8_t>(DimTextPlacement::Below));
+            row.textPlacement =
+                readEnum<DimTextPlacement>(r, static_cast<std::uint8_t>(DimTextPlacement::Below));
             row.textAlign =
                 readEnum<DimTextAlign>(r, static_cast<std::uint8_t>(DimTextAlign::Horizontal));
             row.units = readEnum<LengthUnit>(r, static_cast<std::uint8_t>(LengthUnit::Foot));
@@ -1090,6 +1092,28 @@ private:
             return;
         }
         check(tx.setDrawOrder(order), "draw order");
+    }
+
+    void loadBlockOrder(Transaction& tx) {
+        const RawChunk* c = find(kBord);
+        if (!c)
+            return;
+        Payload p(*c);
+        ByteReader r(p.data);
+        const std::size_t blocks = r.count(2);
+        for (std::size_t b = 0; b < blocks; ++b) {
+            const BlockId id{static_cast<std::uint32_t>(r.varint())};
+            const std::size_t n = r.count(1);
+            std::vector<EntityId> order;
+            order.reserve(n);
+            for (std::size_t i = 0; i < n; ++i)
+                order.push_back(EntityId{r.varint()});
+            if (!tx.setDrawOrder(order, id))
+                report_.warnings.push_back("ignored a block draw order that does not match block " +
+                                           std::to_string(id.value));
+        }
+        if (!r.atEnd())
+            bad("trailing data in BORD");
     }
 
     const ParsedFile& file_;
