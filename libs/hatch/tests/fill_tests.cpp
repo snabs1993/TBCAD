@@ -523,3 +523,104 @@ TEST_CASE("FILL off shows solid and gradient hatches as their boundary") {
         CHECK(std::holds_alternative<DisplayFill>(filled.items.front()));
     }
 }
+
+TEST_CASE("gradient kinds: names, inverted kinds, shift and the radial kinds") {
+    for (std::uint8_t k = 1; k <= kGradientKindLast; ++k) {
+        const auto kind = static_cast<GradientKind>(k);
+        CHECK(gradientKindFromName(gradientName(kind)) == kind);
+    }
+    CHECK(gradientKindFromName("inv spherical") == GradientKind::InvSpherical);
+    CHECK_FALSE(gradientKindFromName("RAINBOW"));
+
+    HatchData h = squareHatch(100);
+    GradientData g;
+    g.kind = GradientKind::Cylinder;
+    h.gradient = g;
+    auto cyl = gradientBands(h, 0.01, 20);
+    g.kind = GradientKind::InvCylinder;
+    h.gradient = g;
+    auto inv = gradientBands(h, 0.01, 20);
+    REQUIRE(cyl.size() == inv.size());
+    for (std::size_t i = 0; i < cyl.size(); ++i)
+        CHECK(inv[i].t == doctest::Approx(1 - cyl[i].t));
+
+    // Shifted: the brightest band moves towards the start.
+    g.kind = GradientKind::Cylinder;
+    g.shift = 1;
+    h.gradient = g;
+    auto shifted = gradientBands(h, 0.01, 20);
+    std::size_t brightest = 0;
+    for (std::size_t i = 0; i < shifted.size(); ++i)
+        if (shifted[i].t > shifted[brightest].t)
+            brightest = i;
+    CHECK(brightest <= 1);
+
+    // Spherical: nested discs, outermost first, colour 2 at the centre.
+    g = GradientData{};
+    g.kind = GradientKind::Spherical;
+    h.gradient = g;
+    auto sph = gradientBands(h, 0.01, 20);
+    REQUIRE(sph.size() >= 2);
+    double lastArea = 1e300;
+    for (const GradientBand& b : sph) {
+        double a = 0;
+        for (const auto& r : b.rings)
+            for (std::size_t i = 0; i < r.size(); ++i)
+                a += cross(r[i], r[(i + 1) % r.size()]) / 2;
+        CHECK(a < lastArea);
+        lastArea = a;
+    }
+    CHECK(sph.front().t < sph.back().t);
+}
+
+TEST_CASE("tintedColor: 0 black, 0.5 the colour, 1 white") {
+    const Color c = Color::rgb(200, 100, 50);
+    CHECK(tintedColor(c, 0) == Color::rgb(0, 0, 0));
+    CHECK(tintedColor(c, 0.5) == c);
+    CHECK(tintedColor(c, 1) == Color::rgb(255, 255, 255));
+}
+
+TEST_CASE("trimHatch takes away the piece under the pick and keeps the island") {
+    Scene s;
+    s.rectLines({0, 0}, {100, 50});
+    s.add(circle({20, 25}, 10));
+    auto b = findBoundary(s.candidates(), {50, 5});
+    REQUIRE(b.ok());
+    HatchData h;
+    h.loops = b.value().loops;
+    h.solid = false;
+    h.pattern = "ANSI31";
+    h.sourceBoundary = {EntityId{7}};
+    const double before = hatchArea(h);
+    Entity cutter = line({60, -10}, {60, 60});
+    auto r = trimHatch(h, {80, 25}, {&cutter});
+    REQUIRE(r.ok());
+    CHECK(r.value().pattern == "ANSI31");
+    CHECK(r.value().sourceBoundary.empty());
+    CHECK(hatchArea(r.value()) == doctest::Approx(before - 40 * 50).epsilon(1e-3));
+    CHECK(r.value().loops.size() == 2);  // the island stays a hole
+
+    // Picks off the hatch, or with nothing that cuts, are refused.
+    CHECK_FALSE(trimHatch(h, {20, 25}, {&cutter}).ok());  // inside the island
+    CHECK_FALSE(trimHatch(h, {80, 25}, {}).ok());
+}
+
+TEST_CASE("separateAreas gives one hatch per area, islands with their area") {
+    Scene s;
+    s.rectLines({0, 0}, {10, 10});
+    s.add(circle({5, 5}, 2));
+    auto a = findBoundary(s.candidates(), {1, 1});
+    Scene t;
+    t.rectLines({20, 0}, {30, 10});
+    auto c = findBoundary(t.candidates(), {25, 5});
+    REQUIRE(a.ok());
+    REQUIRE(c.ok());
+    HatchData h;
+    h.loops = a.value().loops;
+    for (const HatchLoop& l : c.value().loops)
+        h.loops.push_back(l);
+    auto parts = separateAreas(h);
+    REQUIRE(parts.size() == 2);
+    CHECK(parts[0].loops.size() + parts[1].loops.size() == 3);
+    CHECK(hatchArea(parts[0]) + hatchArea(parts[1]) == doctest::Approx(hatchArea(h)));
+}
