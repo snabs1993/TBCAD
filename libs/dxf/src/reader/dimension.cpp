@@ -230,6 +230,12 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
                 if (v > 0)
                     ds.tolHeightFactor = std::min(v, 10.0);
                 break;
+            case 142:  // DIMTSZ: oblique strokes of that size instead of arrowheads
+                if (v > 0) {
+                    ds.arrowType = ArrowType::ArchTick;
+                    ds.arrowSize = v * k_;
+                }
+                break;
             case 145:  // DIMTVP
                 ds.textVertPos = std::clamp(v, -100.0, 100.0);
                 break;

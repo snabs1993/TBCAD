@@ -1224,6 +1224,29 @@ TEST_CASE("dimension style: a built-in arrow block name picks the arrow kind") {
     CHECK(ds->arrowType == ArrowType::ArchTick);
 }
 
+TEST_CASE("dimension style: DIMTSZ draws ticks of that size, also as an override") {
+    Pairs p;
+    p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE");
+    p.g(0, "DIMSTYLE").g(2, "Tsz").g(140, 2.5).g(41, 2.5).g(142, 1.5).g(40, 1.0);
+    p.g(0, "ENDTAB").end();
+    p.section("ENTITIES");
+    p.g(0, "DIMENSION").g(8, "0").g(2, "*D1").g(3, "Standard").g(10, 5.0).g(20, 5.0).g(11, 5.0);
+    p.g(21, 8.0).g(70, 1).g(13, 0.0).g(23, 0.0).g(14, 10.0).g(24, 0.0).g(42, 10.0);
+    p.g(1001, "ACAD").g(1000, "DSTYLE").g(1002, "{").g(1070, 142).g(1040, 0.8).g(1002, "}");
+    p.end().g(0, "EOF");
+    Loaded l = load(p.text);
+    const DimStyle* tsz = l.doc().dimStyleByName("Tsz");
+    REQUIRE(tsz != nullptr);
+    CHECK(tsz->arrowType == ArrowType::ArchTick);
+    CHECK(near(tsz->arrowSize, 1.5));
+    auto dims = modelEntities<DimensionData>(l.doc());
+    REQUIRE(dims.size() == 1);
+    const DimStyle* ds = l.doc().dimStyle(dims[0]->style);
+    REQUIRE(ds != nullptr);
+    CHECK(ds->arrowType == ArrowType::ArchTick);
+    CHECK(near(ds->arrowSize, 0.8));
+}
+
 TEST_CASE("dimension style: DIMSAH takes the separate arrows, also as an override") {
     Pairs p;
     p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE");

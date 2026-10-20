@@ -93,7 +93,9 @@ void addArrow(Layout& L, const Ctx& c, Vec2 tip, Vec2 body) {
             break;
         }
         case ArrowType::ArchTick: {
-            Vec2 d = rotated(body, 45 * kDeg) * (a / 2);
+            // AutoCAD's _ArchTick and _Oblique blocks: a stroke from (-1/2,-1/2) to (1/2,1/2)
+            // arrow sizes, so a·√2 long.
+            Vec2 d = rotated(body, 45 * kDeg) * (a * std::sqrt(0.5));
             L.lines.push_back({{tip - d, tip + d}, Role::DimLine});
             break;
         }
