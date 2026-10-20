@@ -115,3 +115,20 @@ TEST_CASE("formatDouble round trips exactly") {
         CHECK(std::stod(formatDouble(v)) == v);
     }
 }
+
+TEST_CASE("length and angle types as UNITS shows them") {
+    CHECK(formatLengthType(15.5, 2, 2) == "15.50");
+    CHECK(formatLengthType(1500, 1, 3) == "1.500E+03");
+    CHECK(formatLengthType(15.5, 3, 2) == "1'-3.50\"");
+    CHECK(formatLengthType(15.5, 4, 4) == "1'-3 1/2\"");
+    CHECK(formatLengthType(3.25, 4, 4) == "3 1/4\"");
+    CHECK(formatLengthType(11.999, 4, 4) == "1'-0\"");
+    CHECK(formatLengthType(2.0039, 5, 4) == "2");
+    CHECK(formatLengthType(-2.5, 5, 4) == "-2 1/2");
+    CHECK(formatAngleType(kPi / 4, 0, 1) == "45.0");
+    CHECK(formatAngleType(45.5 * kPi / 180, 1, 4) == "45d30'0\"");
+    CHECK(formatAngleType(kPi / 2, 2, 0) == "100g");
+    CHECK(formatAngleType(1, 3, 4) == "1.0000r");
+    CHECK(formatAngleType(kPi / 4, 4, 2) == "N 45d0' E");
+    CHECK(formatAngleType(kPi / 2, 4, 2) == "N");
+}

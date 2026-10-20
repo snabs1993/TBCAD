@@ -137,6 +137,18 @@ int linearPrecision(const Header& h);
 void setLinearPrecision(Header& h, int places);
 int anglePrecision(const Header& h);
 void setAnglePrecision(Header& h, int places);
+// How lengths and angles are written (UNITS), kept as the DXF header variables:
+//  LUNITS 1 scientific, 2 decimal (default), 3 engineering, 4 architectural, 5 fractional;
+//  AUNITS 0 decimal degrees (default), 1 degrees/minutes/seconds, 2 grads, 3 radians, 4 surveyor;
+//  ANGDIR 1 when angles are measured clockwise; ANGBASE the direction of angle 0, in radians.
+int lengthUnitsType(const Header& h);
+void setLengthUnitsType(Header& h, int lunits);
+int angleUnitsType(const Header& h);
+void setAngleUnitsType(Header& h, int aunits);
+bool anglesClockwise(const Header& h);
+void setAnglesClockwise(Header& h, bool clockwise);
+double angleBase(const Header& h);
+void setAngleBase(Header& h, double radians);
 bool psLtScale(const Header& h);
 bool msLtScale(const Header& h);
 bool plineGen(const Header& h);

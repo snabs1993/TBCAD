@@ -52,6 +52,16 @@ std::string formatAngle(double radians, Precision precision, AngleUnit unit = An
 // Without suffix the number is taken in defaultUnit. Returns radians.
 Result<double> parseAngle(std::string_view text, AngleUnit defaultUnit = AngleUnit::Degrees);
 
+// A length written as UNITS says (LUNITS): 1 scientific "1.5000E+01", 2 decimal "15.0000",
+// 3 engineering "1'-3.0000\"", 4 architectural "1'-3 1/2\"", 5 fractional "15 1/2". `value` is in
+// drawing units; engineering and architectural take it as inches. For the fractional forms
+// `precision` is the power of two of the smallest fraction (4 = sixteenths).
+std::string formatLengthType(double value, int lunits, Precision precision);
+// An angle written as UNITS says (AUNITS): 0 decimal degrees "45.0", 1 "45d30'0\"", 2 grads "50g",
+// 3 radians "0.7854r", 4 surveyor's bearing "N 45d0' E". `radians` is counted the usual way (from
+// east, counter-clockwise).
+std::string formatAngleType(double radians, int aunits, Precision precision);
+
 // Shortest decimal string that round-trips the double (locale independent).
 std::string formatDouble(double v);
 

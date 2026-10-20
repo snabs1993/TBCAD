@@ -18,6 +18,7 @@ set(_block_cmd_sources
   src/insert_command.cpp
   src/ncopy_command.cpp
   src/palette.cpp
+  src/purge_panel.cpp
   src/snap_provider.cpp
   src/xclip_command.cpp
   src/xref_commands.cpp
@@ -25,7 +26,8 @@ set(_block_cmd_sources
 
 tbcad_add_library(block_cmds
   SOURCES ${_block_cmd_sources}
-  DEPENDS tbcad::cmd tbcad::blocks tbcad::xref tbcad::drafting tbcad::geom tbcad::hatch tbcad::table tbcad::text tbcad::ui)
+  DEPENDS tbcad::cmd tbcad::blocks tbcad::xref tbcad::drafting tbcad::geom tbcad::hatch tbcad::table tbcad::text tbcad::ui
+          tbcad::select)
 
 # The panel draws with Dear ImGui, which only the application build fetches.
 if(TBCAD_BUILD_APP)

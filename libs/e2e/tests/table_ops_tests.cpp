@@ -88,7 +88,7 @@ TEST_CASE("PURGE keeps tables used only inside nested block definitions, then re
     Rig r;
     r.build();
     const std::string before = canonicalDump(r.doc);
-    r.host.run("PURGE", {"", "Yes"});
+    r.host.run("-PURGE", {"", "Yes"});
     // Everything is still reachable from the Outer insert.
     CHECK(r.doc.layerByName("OnlyInBlock") != nullptr);
     CHECK(r.doc.linetypeByName("DASHEDX") != nullptr);
@@ -102,7 +102,7 @@ TEST_CASE("PURGE keeps tables used only inside nested block definitions, then re
     r.host.setSelection({r.outerInsert});
     r.host.run("ERASE", {});
     const std::string erased = canonicalDump(r.doc);
-    r.host.run("PURGE", {"", "Yes"});
+    r.host.run("-PURGE", {"", "Yes"});
     CHECK(r.doc.blockByName("Outer") == nullptr);
     CHECK(r.doc.blockByName("Inner") == nullptr);
     CHECK(r.doc.layerByName("OnlyInBlock") == nullptr);
@@ -127,7 +127,7 @@ TEST_CASE("RENAME of a block, a layer and styles used inside blocks keeps every 
     CHECK(r.doc.linetypeByName("LT2") != nullptr);
     // The links are by id, so PURGE still finds everything in use.
     const std::string renamed = canonicalDump(r.doc);
-    r.host.run("PURGE", {"", "Yes"});
+    r.host.run("-PURGE", {"", "Yes"});
     CHECK(canonicalDump(r.doc) == renamed);
     for (int i = 0; i < 4; ++i)
         CHECK(r.host.undo());
@@ -188,7 +188,7 @@ TEST_CASE("PURGE removes an unreferenced xref block and keeps an inserted one") 
     }
     (void)insert;
     const std::string before = canonicalDump(r.doc);
-    r.host.run("PURGE", {"Blocks", "Yes"});
+    r.host.run("-PURGE", {"Blocks", "Yes"});
     CHECK(r.doc.blockByName("RefA") != nullptr);
     CHECK(r.doc.blockByName("RefB") == nullptr);
     CHECK(r.host.undo());
@@ -239,7 +239,7 @@ TEST_CASE("xref layers: PURGE, RENAME and LAYMRG leave an attached xref intact a
     const std::size_t layers = r.doc.layers().size();
 
     // PURGE must keep the xref block and the layers its objects are on.
-    r.host.run("PURGE", {"", "Yes"});
+    r.host.run("-PURGE", {"", "Yes"});
     CHECK(r.doc.blockByName("plan") != nullptr);
     CHECK(r.doc.layers().size() == layers);
 

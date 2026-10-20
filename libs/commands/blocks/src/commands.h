@@ -76,6 +76,8 @@ std::unique_ptr<cmd::Command> makeXRelinkCommand();
 std::unique_ptr<cmd::Command> makeBlockCountCommand();
 std::unique_ptr<cmd::Command> makeBlockReplaceCommand();
 void registerBlockPanel(ui::UiRegistry& ui);
+// The Purge dialog ("purge") and its File menu entry.
+void registerPurgePanel(ui::UiRegistry& ui);
 void registerBlockAuthoringPanel(ui::UiRegistry& ui);
 void registerXrefPanel(ui::UiRegistry& ui);
 

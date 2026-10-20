@@ -12,6 +12,8 @@ std::unique_ptr<cmd::Command> makeAudit();
 std::unique_ptr<cmd::Command> makeRecover();
 std::unique_ptr<cmd::Command> makeMassProp();
 std::unique_ptr<cmd::Command> makeDwgProps();
+std::unique_ptr<cmd::Command> makeDrawingRecovery();
+std::unique_ptr<cmd::Command> makeDwgPropsDialog();
 std::unique_ptr<cmd::Command> makeFindStray();
 std::unique_ptr<cmd::Command> makePickTrace();
 std::unique_ptr<cmd::Command> makeCal();

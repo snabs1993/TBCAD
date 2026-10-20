@@ -3691,6 +3691,8 @@ ViewportRect Gui::frame() {
             saveWorkspace(what.substr(15));
         else if (what == "cleanscreen:on" || what == "cleanscreen:off")
             cleanScreen_ = what == "cleanscreen:on";
+        else if (what == "drawingrecovery")
+            recoveryManagerOpen_ = true;
         else if (what.rfind("keys:", 0) == 0) {
             const bool import = what.rfind("keys:import:", 0) == 0;
             const std::string path = what.substr(12);
@@ -3922,11 +3924,81 @@ void Gui::closeTopModalOnEscape() {
     }
 }
 
+void Gui::recoveryManager() {
+    if (!recoveryManagerOpen_)
+        return;
+    ImGui::SetNextWindowSize(ImVec2(620, 380), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Drawing Recovery", &recoveryManagerOpen_)) {
+        ImGui::End();
+        return;
+    }
+    // Read from disk at most once a second: the window stays open while the user works.
+    static std::vector<ui::Recovery> autosaves, backups;
+    static double readAt = -10;
+    if (ImGui::GetTime() - readAt > 1.0) {
+        autosaves = core_.leftoverRecoveries();
+        backups = core_.backupFiles();
+        readAt = ImGui::GetTime();
+    }
+    auto table = [&](const char* id, std::vector<ui::Recovery>& rows, bool autosave) {
+        if (rows.empty()) {
+            ImGui::TextDisabled(autosave ? "No autosaves are waiting." : "No backup files found.");
+            return;
+        }
+        if (!ImGui::BeginTable(id, 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV))
+            return;
+        ImGui::TableSetupColumn("Drawing");
+        ImGui::TableSetupColumn("Saved", ImGuiTableColumnFlags_WidthFixed, 130);
+        ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 70);
+        ImGui::TableHeadersRow();
+        for (std::size_t i = 0; i < rows.size(); ++i) {
+            const ui::Recovery& r = rows[i];
+            ImGui::PushID(static_cast<int>(i));
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            const std::string name =
+                r.originalPath.empty()
+                    ? std::string("Untitled (never saved)")
+                    : platform::pathToUtf8(platform::pathFromUtf8(r.originalPath).filename());
+            ImGui::TextUnformatted(name.c_str());
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", platform::pathToUtf8(r.autosaveFile).c_str());
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(r.savedAt.c_str());
+            ImGui::TableNextColumn();
+            if (ImGui::SmallButton("Open")) {
+                if (auto res = core_.openRecovered(r, autosave); !res)
+                    lastError_ = res.error().message;
+                readAt = -10;
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    };
+    ImGui::SeparatorText("Autosaves of drawings that were not closed normally");
+    table("##autosaves", autosaves, true);
+    ImGui::SeparatorText("Backup files (.bak, the drawing before its last save)");
+    table("##backups", backups, false);
+    ImGui::Spacing();
+    if (!autosaves.empty() && ImGui::Button("Discard all autosaves")) {
+        for (const ui::Recovery& r : autosaves) {
+            std::error_code ec;
+            std::filesystem::path meta = r.autosaveFile;
+            meta.replace_extension(".json");
+            std::filesystem::remove(r.autosaveFile, ec);
+            std::filesystem::remove(meta, ec);
+        }
+        readAt = -10;
+    }
+    ImGui::End();
+}
+
 void Gui::dialogs() {
     openPending();
     historyPending();
     settings_.draw(core_);
     workspaceDialog();
+    recoveryManager();
     if (openRecoveryPrompt_) {
         ImGui::OpenPopup("Recover drawing?");
         openRecoveryPrompt_ = false;

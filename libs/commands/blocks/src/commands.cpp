@@ -90,6 +90,7 @@ void registerCommands(cmd::Registry& registry) {
 
 void registerUi(ui::UiRegistry& ui) {
     registerBlockPanel(ui);
+    registerPurgePanel(ui);
     registerBlockAuthoringPanel(ui);
     registerXrefPanel(ui);
     ui.addMenuItem("Insert/External References Palette", "EXTERNALREFERENCES", "block.xrefpanel");

@@ -318,7 +318,7 @@ TEST_CASE("perf: PURGE removes a chain of unused nested blocks, keeps the used o
         tx.commit();
     }
     auto t = std::chrono::steady_clock::now();
-    big.core->submitText("PURGE");
+    big.core->submitText("-PURGE");
     big.core->submitText("Blocks");
     big.core->submitText("Yes");
     const double ms1 = ms(t);

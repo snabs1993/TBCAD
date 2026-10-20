@@ -81,6 +81,15 @@ public:
     // Opens every pending recovery (the first replaces the untouched drawing, the rest get tabs).
     Result<void> recoverAll();
     void discardRecovery();
+    // ---- the Drawing Recovery Manager (DRAWINGRECOVERY) ----
+    // Autosaves that are not of a drawing open now (left by a session that did not close
+    // normally), and the .bak copies of the recent and open drawings (originalPath = the drawing).
+    std::vector<Recovery> leftoverRecoveries() const;
+    std::vector<Recovery> backupFiles() const;
+    // Opens an autosave or backup in a new tab as an unsaved drawing, so saving asks for a name
+    // and never replaces the original by accident. `removeAfter` deletes the autosave once it is
+    // open (its drawing gets autosaves of its own).
+    Result<void> openRecovered(const Recovery& r, bool removeAfter);
     // Writes settings; removes the autosave. Call on a normal exit.
     void shutdown();
 
@@ -529,7 +538,7 @@ private:
     std::string lastLayout_;    // the sheet we last left for model space
     void applyPendingSpace();
     void enterViewport(const std::string& layoutName, const layout::Viewport& vp);
-    double pendingZoomXp_ = 0;   // ZOOM nXP: the viewport scale as a fraction of paper space
+    double pendingZoomXp_ = 0;  // ZOOM nXP: the viewport scale as a fraction of paper space
     void hideViewportFrozenLayers();
     std::string vpHiddenKey_{};  // layout:viewport:revision the hidden layers were found for
     const void* vpHiddenSession_ = nullptr;

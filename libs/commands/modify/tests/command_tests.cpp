@@ -666,6 +666,20 @@ TEST_CASE("OVERKILL deletes duplicates and merges overlaps") {
     CHECK(f.count(EntityKind::Line) == 3);
 }
 
+TEST_CASE("OVERKILL Options set the tolerance and what is compared") {
+    Fixture f;
+    EntityId a = f.add(LineData{{0, 0}, {10, 0}});
+    EntityId b = f.add(LineData{{0, 0.2}, {10, 0.2}});
+    f.host.run("OVERKILL", {"Options", "Tolerance", "0.5", "Plines", "Yes", "Done",
+                            ScriptItem::select({a, b}), ScriptItem::enter()});
+    CHECK(f.host.setting("overkill.tolerance").value_or("") == "0.5");
+    CHECK(f.host.setting("overkill.optimize").value_or("") == "1");
+    CHECK(f.count(EntityKind::Line) == 1);  // 0.2 apart counts as the same at 0.5
+    CHECK(f.host.run("-OVERKILL", {"Options", "Endtoend", "No", "Done", ScriptItem::enter()})
+              .finished);
+    CHECK(f.host.setting("overkill.endtoend").value_or("") == "0");
+}
+
 TEST_CASE("PEDIT converts a line, closes, widens and joins") {
     Fixture f;
     EntityId l = f.add(LineData{{0, 0}, {10, 0}});

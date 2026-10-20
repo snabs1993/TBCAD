@@ -9,7 +9,8 @@
 | `CHPROP` | `CH` | Change one property of the selection (also what Quick Properties runs) |
 | `QUICKPROPERTIES` | `QP` | Show or hide the Quick Properties box (also View > Quick Properties) |
 | `ISOLATE` / `HIDE` / `UNISOLATE` | | Hide or show objects without touching their layers |
-| `PURGE` | `PU` | Remove unused layers, blocks, styles and linetypes; names the layers and blocks it removed |
+| `PURGE` | `PU` | Purge dialog: the unused layers, blocks (with a picture), text styles, linetypes and dimension styles in a tree with check boxes, or the items still in use; "Purge nested items" repeats until nothing more goes; unnamed objects: zero-length geometry, empty text and orphaned data. Purge Checked Items or Purge All is one undo step |
+| `-PURGE` | | Typed purge: a kind of name or All, then Zerolength, Emptytext and Orphaned each with a Yes/No; names what it removed |
 | `LAYTRANS` | | Bring layers to an office standard: `Export` writes all layers to a CSV (`Old,New,Color,Linetype,Lineweight`), `Load` applies a CSV, renaming each layer or merging it into the existing layer of the new name and restyling it; one undo step |
 
 ## Mouse

@@ -537,6 +537,10 @@ std::unique_ptr<cmd::Command> makeOptionVarCommand(std::string_view name) {
         return std::make_unique<SwitchSettingCommand>(
             "ISAVEBAK", "files.backup", true,
             "Keep the previous file as .bak when saving (0 or 1)");
+    if (name == "AUDITCTL")
+        return std::make_unique<SwitchSettingCommand>(
+            "AUDITCTL", "audit.report", false,
+            "AUDIT and RECOVER also write a report file next to the drawing (0 or 1)");
     if (name == "APBOX")
         return std::make_unique<SwitchSettingCommand>(
             "APBOX", "osnap.apbox", false,

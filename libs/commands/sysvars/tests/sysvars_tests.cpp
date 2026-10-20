@@ -42,7 +42,7 @@ TEST_CASE("LTSCALE and UNITS change the drawing header") {
     f.host.run("LTSCALE", {"-1", "4"});  // out of range: asked again
     CHECK(f.host.logContains("out of range"));
     CHECK(f.doc.header().ltScale == doctest::Approx(4));
-    f.host.run("UNITS", {"Inches"});
+    f.host.run("-UNITS", {"Inches"});
     CHECK(f.doc.header().units == LengthUnit::Inch);
     CHECK(f.host.undo());
     CHECK(f.doc.header().units == LengthUnit::Millimeter);

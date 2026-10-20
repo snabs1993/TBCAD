@@ -2,6 +2,10 @@
 
 #include <chrono>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <random>
+#include <sstream>
 
 #include "tbcad/blocks/display.h"
 #include "tbcad/cmd/cmd.h"
@@ -259,11 +263,69 @@ TEST_CASE("MASSPROP: circle moment is pi r^4 / 4") {
 TEST_CASE("DWGPROPS stores the drawing properties in the header") {
     Fixture f;
     cmd::ScriptHost host(f.doc, f.reg);
-    host.run("DWGPROPS", {"Title", "Floor plan", "Author", "Tong", cmd::ScriptItem::enter()});
+    host.run("-DWGPROPS", {"Title", "Floor plan", "Author", "Tong", cmd::ScriptItem::enter()});
     CHECK(f.doc.header().custom.at("tbcad.prop.title") == "Floor plan");
     CHECK(f.doc.header().custom.at("tbcad.prop.author") == "Tong");
-    host.run("DWGPROPS", {"Title", "", cmd::ScriptItem::enter()});
+    host.run("-DWGPROPS", {"Title", "", cmd::ScriptItem::enter()});
     CHECK(f.doc.header().custom.count("tbcad.prop.title") == 0);
+}
+
+TEST_CASE("-DWGPROPS Custom adds and removes custom properties - DWGPROPS opens the dialog") {
+    Fixture f;
+    cmd::ScriptHost host(f.doc, f.reg);
+    host.run("-DWGPROPS",
+             {"Custom", "Client", "Acme Co", "Custom", "Job", "J-12", cmd::ScriptItem::enter()});
+    auto props = inquiry::customProperties(f.doc.header());
+    REQUIRE(props.size() == 2);
+    CHECK(props[0] == std::pair<std::string, std::string>{"Client", "Acme Co"});
+    CHECK(props[1].first == "Job");
+    host.run("-DWGPROPS", {"Custom", "Client", "", cmd::ScriptItem::enter()});
+    CHECK(inquiry::customProperties(f.doc.header()).size() == 1);
+    host.clearLog();
+    host.run("-DWGPROPS", {cmd::ScriptItem::enter()});
+    CHECK(host.logContains("Custom Job: J-12"));
+}
+
+TEST_CASE("AUDIT repairs missing styles and AUDITCTL writes the report next to the drawing") {
+    Fixture f;
+    const auto dir = std::filesystem::temp_directory_path() /
+                     ("tbcad_audit_" + std::to_string(std::random_device{}()));
+    std::filesystem::create_directories(dir);
+    cmd::ScriptHost host(f.doc, f.reg);
+    host.setSetting("document.file", (dir / "plan.tbcad").string());
+    host.setSetting("audit.report", "1");
+    f.add(line({0, 0}, {10, 0}));
+    f.add(line({5, 5}, {5, 5}));  // zero length: broken
+    host.run("AUDIT", {"Yes"});
+    CHECK(host.logContains("Total errors found 1, fixed 1."));
+    std::ifstream in(dir / "plan.adt");
+    std::stringstream text;
+    text << in.rdbuf();
+    CHECK(text.str().find("line of zero length") != std::string::npos);
+    CHECK(text.str().find("Total errors found 1, fixed 1.") != std::string::npos);
+    in.close();
+    std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("-UNITS length and angle types, direction and base change what DIST shows") {
+    Fixture f;
+    cmd::ScriptHost host(f.doc, f.reg);
+    CHECK(host.run("-UNITS", {"Type", "Architectural"}).finished);
+    CHECK(lengthUnitsType(f.doc.header()) == 4);
+    CHECK(host.run("-UNITS", {"Angles", "DMS"}).finished);
+    CHECK(angleUnitsType(f.doc.header()) == 1);
+    CHECK(host.run("-UNITS", {"Precision", "4", "4"}).finished);
+    host.clearLog();
+    host.run("DIST", {"0,0", "381,0"});  // 15 inches
+    CHECK(host.logContains("Distance = 1'-3\""));
+    CHECK(host.logContains("Angle in XY plane = 0d0'0\""));
+    CHECK(host.run("-UNITS", {"Base", "90"}).finished);
+    CHECK(host.run("-UNITS", {"Direction", "Clockwise"}).finished);
+    CHECK(anglesClockwise(f.doc.header()));
+    CHECK(angleBase(f.doc.header()) == doctest::Approx(kPi / 2));
+    host.clearLog();
+    host.run("DIST", {"0,0", "381,0"});  // east is 90 degrees clockwise from north
+    CHECK(host.logContains("Angle in XY plane = 90d0'0\""));
 }
 
 TEST_CASE("FINDSTRAY leaves ordinary objects alone") {
@@ -597,7 +659,7 @@ TEST_CASE("UNITS Precision sets the decimal places DIST, ID and ANGLE show") {
     CHECK(host.logContains("Distance = 5.0000"));  // the default: 4 places, angles whole degrees
     CHECK(host.logContains("Angle in XY plane = 53"));
     CHECK_FALSE(host.logContains("53.1"));
-    CHECK(host.run("UNITS", {"Precision", "2", "1"}).finished);
+    CHECK(host.run("-UNITS", {"Precision", "2", "1"}).finished);
     CHECK(linearPrecision(f.doc.header()) == 2);
     CHECK(anglePrecision(f.doc.header()) == 1);
     host.clearLog();

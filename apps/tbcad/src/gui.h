@@ -124,6 +124,8 @@ private:
     void saveWorkspace(const std::string& name);
     void workspaceMenu();
     void workspaceDialog();
+    // DRAWINGRECOVERY: autosaves and .bak files to open.
+    void recoveryManager();
     void commandWindow();
     void updateSuggestions();
     void drawSuggestions(ImVec2 inputPos, float width);
@@ -213,6 +215,7 @@ private:
     std::string pendingHistoryLabel_{};
     std::string crashReport_{};  // newest unacknowledged crash report file, if any
     bool openRecoveryPrompt_ = false;
+    bool recoveryManagerOpen_ = false;
     BrowserPurpose browserPurpose_ = BrowserPurpose::Open;
     std::string errorText_{};
     std::vector<std::string> droppedFiles_{};

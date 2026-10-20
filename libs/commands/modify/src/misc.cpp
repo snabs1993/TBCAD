@@ -819,6 +819,7 @@ private:
 class OverkillCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "OVERKILL"; }
+    std::vector<std::string> defaultAliases() const override { return {"-OVERKILL"}; }
     std::string_view description() const override {
         return "Delete duplicate objects and merge overlapping lines and arcs";
     }
@@ -826,7 +827,12 @@ public:
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::SelectionOptions so;
         so.filter = editableFilter(ctx.doc());
-        auto sel = co_await ctx.getSelection("Select objects to clean up", so);
+        so.keywords = {"Options"};
+        auto sel = co_await ctx.getSelection("Select objects to clean up or [Options]", so);
+        while (sel.status == cmd::Status::Keyword) {
+            co_await options(ctx);
+            sel = co_await ctx.getSelection("Select objects to clean up or [Options]", so);
+        }
         if (!sel.ok())
             co_return;
         modify::OverkillOptions oo;
@@ -865,7 +871,58 @@ public:
             ctx.message(msg);
         }
     }
+
+private:
+    static cmd::Task options(cmd::CommandContext& ctx);
 };
+
+// The settings OVERKILL keeps (as AutoCAD's -OVERKILL options): how close counts as the same,
+// whether colour/layer/linetype... are ignored, and which merges happen.
+cmd::Task OverkillCommand::options(cmd::CommandContext& ctx) {
+    auto& host = ctx.host();
+    for (;;) {
+        auto yn = [](bool on) { return std::string(on ? "Yes" : "No"); };
+        const std::string state =
+            "Tolerance " + formatDouble(getSetting(host, "overkill.tolerance", 1e-6)) +
+            ", ignore properties " + yn(getFlag(host, "overkill.ignoreproperties", false)) +
+            ", optimize polylines " + yn(getFlag(host, "overkill.optimize", false)) +
+            ", combine overlapping " + yn(getFlag(host, "overkill.overlapping", true)) +
+            ", combine end to end " + yn(getFlag(host, "overkill.endtoend", true));
+        ctx.message(state);
+        cmd::KeywordOptions ko;
+        ko.keywords = {"Done", "Tolerance", "Ignore", "Plines", "parTial", "Endtoend"};
+        ko.defaultKeyword = "Done";
+        auto k = co_await ctx.getKeyword(
+            "Option to change [Done/Tolerance/Ignore/Plines/parTial overlap/Endtoend] <Done>", ko);
+        if (!k.ok() || k.keyword == "Done")
+            co_return;
+        if (k.keyword == "Tolerance") {
+            cmd::RealOptions ro;
+            ro.min = 0;
+            ro.defaultValue = getSetting(host, "overkill.tolerance", 1e-6);
+            auto r = co_await ctx.getReal("Tolerance (how close counts as the same)", ro);
+            if (r.ok())
+                putSetting(host, "overkill.tolerance", r.value);
+            continue;
+        }
+        const char* key = k.keyword == "Ignore"    ? "overkill.ignoreproperties"
+                          : k.keyword == "Plines"  ? "overkill.optimize"
+                          : k.keyword == "parTial" ? "overkill.overlapping"
+                                                   : "overkill.endtoend";
+        const std::string question =
+            k.keyword == "Ignore"    ? "Ignore colour, layer, linetype and other properties"
+            : k.keyword == "Plines"  ? "Optimize segments within polylines"
+            : k.keyword == "parTial" ? "Combine collinear objects that partially overlap"
+                                     : "Combine collinear objects that meet end to end";
+        const bool fallback = k.keyword == "parTial" || k.keyword == "Endtoend";
+        cmd::KeywordOptions yo;
+        yo.keywords = {"Yes", "No"};
+        yo.defaultKeyword = getFlag(host, key, fallback) ? "Yes" : "No";
+        auto a = co_await ctx.getKeyword(question, yo);
+        if (a.ok())
+            putFlag(host, key, a.keyword == "Yes");
+    }
+}
 
 // ---- PEDIT --------------------------------------------------------------------------------------
 

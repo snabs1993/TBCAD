@@ -4,6 +4,8 @@ namespace tbcad::select {
 
 void registerCommands(cmd::Registry& registry) {
     (void)registry.add(detail::makePurge());
+    (void)registry.add(detail::makePurgeDialog());
+    (void)registry.add(detail::makePurgeItems());
     (void)registry.add(detail::makeQSelect());
     (void)registry.add(detail::makeSelectSimilar());
     (void)registry.add(detail::makeIsolate());

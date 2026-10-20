@@ -1,5 +1,13 @@
+set(_inquiry_ui_sources)
+# The dialogs draw with Dear ImGui, which only exists when the application is built.
+if(TBCAD_BUILD_APP)
+  include(deps/imgui)
+  set(_inquiry_ui_sources src/props_panel.cpp)
+endif()
+
 tbcad_add_library(inquiry
   SOURCES
+    ${_inquiry_ui_sources}
     src/inquiry.cpp
     src/areatable.cpp
     src/audit.cpp
@@ -12,7 +20,11 @@ tbcad_add_library(inquiry
     src/quickcmd.cpp
     src/calc.cpp
     src/ui.cpp
-  DEPENDS tbcad::cmd tbcad::expr tbcad::geom tbcad::layout tbcad::plotstyle tbcad::ui)
+  DEPENDS tbcad::cmd tbcad::expr tbcad::geom tbcad::layout tbcad::plotstyle tbcad::ui tbcad::platform)
+if(TBCAD_BUILD_APP)
+  target_link_libraries(tbcad_inquiry PRIVATE tbcad::imgui)
+  target_compile_definitions(tbcad_inquiry PRIVATE TBCAD_INQUIRY_WITH_IMGUI=1)
+endif()
 
 tbcad_add_tests(inquiry
   SOURCES
