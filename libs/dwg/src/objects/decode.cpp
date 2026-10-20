@@ -2725,8 +2725,8 @@ private:
         const double height = r.bd();
         const int attach = r.bs();
         const int direction = r.bs();
-        r.bd();  // extents height
-        r.bd();  // extents width
+        const double extentsHeight = r.bd();
+        const double extentsWidth = r.bd();
         const std::string value = r.textBytes();
         const int spacingStyle = r.bs();
         const double spacingFactor = r.bd();
@@ -2767,6 +2767,11 @@ private:
         add(e, 72, direction);
         add(e, 1, value);
         point3(e, 11, xdir);
+        // The size AutoCAD measured the text at (DXF 42 / 43), with its own fonts.
+        if (extentsWidth > 0 && std::isfinite(extentsWidth))
+            add(e, 42, extentsWidth);
+        if (extentsHeight > 0 && std::isfinite(extentsHeight))
+            add(e, 43, extentsHeight);
         if (spacingStyle != 0)
             add(e, 73, spacingStyle);
         if (spacingFactor != 1 && spacingFactor != 0)

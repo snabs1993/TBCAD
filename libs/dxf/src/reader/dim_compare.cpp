@@ -126,16 +126,12 @@ std::string plain(const std::string& s) {
 
 std::string num(double v) {
     char buf[32];
-    std::snprintf(buf, sizeof buf, "%.6g", v);
+    std::snprintf(buf, sizeof buf, "%.8g", v);
     return buf;
 }
 
 std::string pt(Vec2 p) {
     return "(" + num(p.x) + "," + num(p.y) + ")";
-}
-
-std::string box(const BBox2& b) {
-    return b.empty() ? "none" : pt(b.min) + "-" + pt(b.max);
 }
 
 // The DSTYLE variables of the ACAD extended data as "var=value" pairs.
@@ -200,6 +196,7 @@ void Importer::compareDimension(const Record& r, const Entity& dim) {
     double storedHeight = 0;
     std::optional<Vec2> storedCenter;
     std::string storedRaw;
+    std::string storedSize;  // the writer's measured size of the text, and TBCAD's of the same
     if (!texts.empty()) {
         const Entity& t = texts.front();
         if (const auto* m = entityAs<MTextData>(t)) {
@@ -208,6 +205,12 @@ void Importer::compareDimension(const Record& r, const Entity& dim) {
             storedHeight = m->height;
             if (m->attach == Attachment::MiddleCenter)
                 storedCenter = m->position;
+            storedSize = " attach=" + std::to_string(static_cast<int>(m->attach));
+            if (auto it = mtextExtents_.find({m->position.x, m->position.y});
+                it != mtextExtents_.end())
+                storedSize += " storedExtent=" + num(it->second.x) + "x" + num(it->second.y);
+            if (const BBox2 b = geom::bounds(t, *doc_); !b.empty())
+                storedSize += " ourExtent=" + num(b.width()) + "x" + num(b.height());
         } else if (const auto* x = entityAs<TextData>(t)) {
             c.storedText = plain(x->utf8);
             storedRaw = x->utf8;
@@ -313,6 +316,19 @@ void Importer::compareDimension(const Record& r, const Entity& dim) {
         generatedBox.expand(s.a);
         generatedBox.expand(s.b);
     }
+    // Points are relative to the first definition point (`at`), so far from the origin they keep
+    // their digits.
+    const Vec2 o = d->defPts[0];
+    const auto rel = [&](Vec2 p) { return pt(p - o); };
+    const auto relBox = [&](const BBox2& b) {
+        return b.empty() ? std::string("none") : rel(b.min) + "-" + rel(b.max);
+    };
+    std::string font = "\"\"";
+    if (const TextStyle* ts = doc_->textStyle(style.textStyle))
+        font = "\"" + ts->name + "\" font=\"" + (ts->shxFile.empty() ? ts->fontFile : ts->shxFile) +
+               "\" family=\"" + ts->fontFamily + "\" wf=" + num(ts->widthFactor) +
+               " fixedH=" + num(ts->height);
+    c.style = style.name;
     c.detail = "override=\"" + dec(r.raw(1)) + "\" storedRaw=\"" + storedRaw + "\" style=\"" +
                style.name + "\" txt=" + num(style.textHeight) + " scale=" +
                num(style.overallScale) + " annotation=" + num(factor) +
@@ -320,25 +336,36 @@ void Importer::compareDimension(const Record& r, const Entity& dim) {
                "\" suffix=\"" + style.suffix + "\" units=" + num(k_) +
                " asz=" + num(style.arrowSize) + " gap=" + num(style.textGap) +
                " fit=" + std::to_string(static_cast<int>(style.fit)) +
-               " textWidth=" + num(L.text.width) + " storedHeight=" + num(storedHeight) + " generatedHeight=" + num(L.text.height) +
-               " measured=" + num(dim::measurement(*d)) + " defPts=" + pt(d->defPts[0]) +
-               pt(d->defPts[1]) + pt(d->defPts[2]) + pt(d->defPts[3]) +
-               " textPos=" + pt(d->textPos) + " storedText@" +
-               (storedCenter ? pt(*storedCenter) : std::string("none")) +
-               " generatedText@" + pt(L.text.center) + " storedBox=" + box(storedBox) +
-               " generatedBox=" + box(generatedBox) + " dstyle={" + dstyleGroups(r) + "}";
+               " tad=" + std::to_string(static_cast<int>(style.textPlacement)) +
+               " tih=" + std::to_string(static_cast<int>(style.textAlign)) +
+               " toh=" + std::to_string(static_cast<int>(style.textAlignOutside)) +
+               " tmove=" + std::to_string(static_cast<int>(style.textMove)) +
+               " tix=" + std::to_string(style.textInsideForced) +
+               " tofl=" + std::to_string(style.forceLineInside) +
+               " soxd=" + std::to_string(style.suppressArrowsOutside) +
+               " just=" + std::to_string(style.textJustify) +
+               " flags=" + std::to_string(r.integer(70)) + " user=" +
+               std::to_string(d->textPosUser) + " textStyle=" + font +
+               " textWidth=" + num(L.text.width) + " storedHeight=" + num(storedHeight) +
+               " generatedHeight=" + num(L.text.height) + storedSize +
+               " measured=" + num(dim::measurement(*d)) + " at=" + pt(o) + " defPts=" +
+               rel(d->defPts[0]) + rel(d->defPts[1]) + rel(d->defPts[2]) + rel(d->defPts[3]) +
+               " textPos=" + rel(d->textPos) + " storedText@" +
+               (storedCenter ? rel(*storedCenter) : std::string("none")) +
+               " generatedText@" + rel(L.text.center) + " storedBox=" + relBox(storedBox) +
+               " generatedBox=" + relBox(generatedBox) + " dstyle={" + dstyleGroups(r) + "}";
     if (r.has(12))
-        c.detail += " p12=" + pt(P(r, 12, 22));
+        c.detail += " p12=" + rel(P(r, 12, 22));
     // The lines themselves (the longest first, at most twelve of each), so a difference can be
     // located without the file.
-    auto segments = [](std::vector<Segment> v) {
+    auto segments = [&](std::vector<Segment> v) {
         std::sort(v.begin(), v.end(), [](const Segment& a, const Segment& b) {
             return distance(a.a, a.b) > distance(b.a, b.b);
         });
-        std::string o = std::to_string(v.size()) + ":";
+        std::string list = std::to_string(v.size()) + ":";
         for (std::size_t i = 0; i < v.size() && i < 12; ++i)
-            o += " " + pt(v[i].a) + pt(v[i].b);
-        return o;
+            list += " " + rel(v[i].a) + rel(v[i].b);
+        return list;
     };
     c.detail += " storedLines=[" + segments(stored) + "] generatedLines=[" +
                 segments(generatedLines) + "]";

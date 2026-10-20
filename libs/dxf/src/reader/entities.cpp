@@ -1520,6 +1520,8 @@ bool Importer::convMText(const Record& r, const Frame& f, std::vector<Entity>& o
         if (mirroredText_++ == 0)
             firstMirroredLine_ = r.line;
     }
+    if (opts_.dimensionCompare && r.has(42))
+        mtextExtents_[{d.position.x, d.position.y}] = {r.num(42) * k_, r.num(43) * k_};
     out.push_back(makeEntity(std::move(d)));
     return true;
 }

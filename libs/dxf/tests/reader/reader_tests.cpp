@@ -931,6 +931,37 @@ TEST_CASE("dimension comparison lists each dimension against its stored block") 
     CHECK(plain.result.summary.dimCompare.empty());
 }
 
+// The details carry what finding a difference needs without the file: the style's text rules,
+// points near the dimension rather than far from the origin, and the size the writing program
+// measured the stored text at (MTEXT 42 / 43, which AutoCAD measures with its own fonts).
+TEST_CASE("dimension comparison details: text rules, relative points, the writer's text size") {
+    const std::vector<std::byte> bytes = readFile(corpusPath("reader/r2000_dimensions.dxf"));
+    REQUIRE(!bytes.empty());
+    std::string text(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+    const std::string mtext = "  0\nMTEXT\n";
+    std::size_t marked = 0;
+    for (std::size_t at = text.find(mtext); at != std::string::npos;
+         at = text.find(mtext, at + 1), ++marked)
+        text.insert(at + mtext.size(), " 42\n4.5\n 43\n2.5\n");
+    REQUIRE(marked > 0);
+    ImportOptions compare;
+    compare.dimensionCompare = true;
+    Loaded l = load(text, compare);
+    const auto& all = l.result.summary.dimCompare;
+    REQUIRE(!all.empty());
+    bool sized = false;
+    for (const DimComparison& c : all) {
+        CHECK(c.detail.find(" tad=") != std::string::npos);
+        CHECK(c.detail.find(" tmove=") != std::string::npos);
+        CHECK(c.detail.find(" at=(") != std::string::npos);
+        CHECK(c.detail.find(" defPts=(0,0)") != std::string::npos);
+        CHECK(!c.style.empty());
+        sized = sized || c.detail.find("storedExtent=4.5x2.5") != std::string::npos;
+    }
+    CHECK(sized);
+    CHECK(l.result.summary.toJson(l.report).find("\"byStyle\":{") != std::string::npos);
+}
+
 TEST_CASE("dimensions: definition points and the drawn graphics") {
     ImportOptions withGraphics;
     withGraphics.dimensionGraphics = true;
