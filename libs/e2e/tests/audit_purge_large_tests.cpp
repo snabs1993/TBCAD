@@ -79,7 +79,7 @@ TEST_CASE("perf: PURGE of a big drawing is fast, exact and one undo step") {
     const std::size_t layers = big.core->document().layers().size();
     const std::size_t blocks = big.core->document().blocks().size();
     auto t = std::chrono::steady_clock::now();
-    big.core->submitText("PURGE");
+    big.core->submitText("-PURGE");
     big.core->submitText("");
     big.core->submitText("Yes");
     const double purgeMs = ms(t);

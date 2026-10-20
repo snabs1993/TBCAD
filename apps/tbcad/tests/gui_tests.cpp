@@ -2447,3 +2447,31 @@ TEST_CASE("Publish dialog: the drawing's sheets, save the list, publish one PDF"
     h.frame(3);
     CHECK(fs::exists(dir / "pub.pdf"));
 }
+
+TEST_CASE("Purge dialog removes an unused layer, the units, properties and recovery windows open") {
+    Harness h(1920, 1080);
+    run(h, "-LAYER New Junk");
+    auto hasJunk = [&] {
+        for (const auto& [id, row] : h.core().document().layers())
+            if (row.name == "Junk")
+                return true;
+        return false;
+    };
+    REQUIRE(hasJunk());
+    h.core().submitText("PURGE");
+    h.frame(3);
+    REQUIRE(h.windowOpen("Purge"));
+    REQUIRE(h.click("Purge Checked Items", "Purge"));
+    h.frame(3);
+    CHECK_FALSE(hasJunk());
+
+    h.core().submitText("UNITS");
+    h.frame(3);
+    CHECK(h.windowOpen("Drawing Units"));
+    h.core().submitText("DWGPROPS");
+    h.frame(3);
+    CHECK(h.windowOpen("Drawing Properties"));
+    h.core().submitText("DRAWINGRECOVERY");
+    h.frame(3);
+    CHECK(h.windowOpen("Drawing Recovery"));
+}

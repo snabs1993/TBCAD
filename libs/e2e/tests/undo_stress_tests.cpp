@@ -107,7 +107,7 @@ std::string randomStep(cmd::ScriptHost& host, const Document& doc, std::mt19937&
             (void)host.run("HATCH", {pt(rng, 3000), ScriptItem::enter()});
             return "HATCH";
         case 16:
-            (void)host.run("PURGE", {"", "Yes"});
+            (void)host.run("-PURGE", {"", "Yes"});
             return "PURGE";
         case 17:
             (void)host.run("RENAME",

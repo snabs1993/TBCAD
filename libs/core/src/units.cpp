@@ -176,6 +176,119 @@ std::string formatAngle(double radians, Precision precision, AngleUnit unit, boo
     return s;
 }
 
+namespace {
+
+// Whole part and fraction "n/d" (reduced) of a non-negative value, to 1/2^precision.
+std::string fractionText(double v, Precision precision) {
+    const int denom = 1 << std::clamp(precision, 0, 8);
+    long long whole = static_cast<long long>(std::floor(v));
+    long long num = std::llround((v - static_cast<double>(whole)) * denom);
+    if (num == denom) {
+        ++whole;
+        num = 0;
+    }
+    int d = denom;
+    while (num != 0 && num % 2 == 0 && d > 1) {
+        num /= 2;
+        d /= 2;
+    }
+    if (num == 0)
+        return std::to_string(whole);
+    const std::string frac = std::to_string(num) + "/" + std::to_string(d);
+    return whole == 0 ? frac : std::to_string(whole) + " " + frac;
+}
+
+}  // namespace
+
+std::string formatLengthType(double value, int lunits, Precision precision) {
+    precision = std::clamp(precision, 0, 8);
+    const bool negative = value < 0;
+    const double a = std::fabs(value);
+    std::string s;
+    switch (lunits) {
+        case 1: {
+            char buf[64];
+            std::snprintf(buf, sizeof buf, "%.*E", precision, a);
+            s = buf;
+            break;
+        }
+        case 3:
+        case 4: {
+            long long feet = static_cast<long long>(std::floor(a / 12.0));
+            double inches = a - static_cast<double>(feet) * 12.0;
+            const double step = lunits == 3 ? std::pow(10.0, -precision) : 1.0 / (1 << precision);
+            inches = std::round(inches / step) * step;
+            if (inches >= 12.0 - step / 2) {
+                ++feet;
+                inches = 0;
+            }
+            const std::string in =
+                lunits == 3 ? toFixed(inches, precision) : fractionText(inches, precision);
+            s = feet == 0 && lunits == 4 ? in + "\"" : std::to_string(feet) + "'-" + in + "\"";
+            break;
+        }
+        case 5:
+            s = fractionText(a, precision);
+            break;
+        default:
+            s = toFixed(a, precision);
+            break;
+    }
+    if (negative && a >= 0.5 * std::pow(10.0, -precision))
+        s = "-" + s;
+    return s;
+}
+
+std::string formatAngleType(double radians, int aunits, Precision precision) {
+    precision = std::clamp(precision, 0, 8);
+    double deg = radians * 180.0 / kPi;
+    deg = std::fmod(deg, 360.0);
+    if (deg < 0)
+        deg += 360.0;
+    auto dms = [&](double d) {
+        // Degrees, then minutes and seconds as far as the precision goes (0: d, 1-2: d m, 3+: d m
+        // s).
+        long long totalSec = std::llround(d * 3600.0);
+        long long dd = totalSec / 3600, mm = (totalSec / 60) % 60, ss = totalSec % 60;
+        if (precision == 0)
+            return std::to_string(std::llround(d)) + "d";
+        if (precision <= 2)
+            return std::to_string(dd) + "d" + std::to_string(std::llround((d - dd) * 60.0)) + "'";
+        std::string out = std::to_string(dd) + "d" + std::to_string(mm) + "'";
+        if (precision <= 4)
+            return out + std::to_string(ss) + "\"";
+        const double sec = (d - static_cast<double>(dd)) * 3600.0 - static_cast<double>(mm) * 60.0;
+        return out + toFixed(sec, precision - 4) + "\"";
+    };
+    switch (aunits) {
+        case 1:
+            return dms(deg);
+        case 2:
+            return toFixed(deg * 400.0 / 360.0, precision) + "g";
+        case 3:
+            return toFixed(deg * kPi / 180.0, precision) + "r";
+        case 4: {
+            // Bearing from north or south towards east or west.
+            const bool north = deg <= 180.0;
+            const double fromNorth = north ? std::fabs(90.0 - deg) : std::fabs(270.0 - deg);
+            const bool east = deg < 90.0 || deg > 270.0;
+            if (std::fabs(deg - 90.0) < 1e-9)
+                return "N";
+            if (std::fabs(deg - 270.0) < 1e-9)
+                return "S";
+            if (deg < 1e-9 || std::fabs(deg - 360.0) < 1e-9)
+                return "E";
+            if (std::fabs(deg - 180.0) < 1e-9)
+                return "W";
+            return std::string(north ? "N " : "S ") + dms(fromNorth) + (east ? " E" : " W");
+        }
+        default: {
+            std::string out = toFixed(deg, precision);
+            return out;
+        }
+    }
+}
+
 Result<double> parseAngle(std::string_view text, AngleUnit defaultUnit) {
     text = trim(text);
     double v = 0;

@@ -7,6 +7,8 @@
 namespace tbcad::select::detail {
 
 std::unique_ptr<cmd::Command> makePurge();
+std::unique_ptr<cmd::Command> makePurgeDialog();
+std::unique_ptr<cmd::Command> makePurgeItems();
 std::unique_ptr<cmd::Command> makeQSelect();
 std::unique_ptr<cmd::Command> makeSelectSimilar();
 std::unique_ptr<cmd::Command> makeIsolate();

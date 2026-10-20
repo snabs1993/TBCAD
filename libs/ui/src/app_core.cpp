@@ -12,6 +12,7 @@
 #include <iterator>
 #include <map>
 #include <mutex>
+#include <set>
 #include <sstream>
 #include <thread>
 #include <unordered_set>
@@ -814,6 +815,73 @@ Result<void> AppCore::recoverAll() {
 
 void AppCore::discardRecovery() {
     removeAutosaveFiles();
+}
+
+std::vector<Recovery> AppCore::leftoverRecoveries() const {
+    std::vector<Recovery> out;
+    for (Recovery& r : pendingRecoveries()) {
+        bool own = false;
+        for (const DocSlot& slot : slots_)
+            own = own || r.autosaveFile.filename() ==
+                             fs::path("recovery-" + std::to_string(slot.id) + ".tbcad");
+        if (!own)
+            out.push_back(std::move(r));
+    }
+    return out;
+}
+
+std::vector<Recovery> AppCore::backupFiles() const {
+    std::vector<fs::path> drawings;
+    for (const DocSlot& slot : slots_)
+        if (slot.session && !slot.session->file.empty())
+            drawings.push_back(slot.session->file);
+    for (const std::string& f : recentFiles())
+        drawings.push_back(platform::pathFromUtf8(f));
+    std::vector<Recovery> out;
+    std::set<fs::path> seen;
+    for (const fs::path& d : drawings) {
+        fs::path bak = d;
+        bak += ".bak";
+        std::error_code ec;
+        if (!seen.insert(bak.lexically_normal()).second || !fs::is_regular_file(bak, ec))
+            continue;
+        Recovery r = readRecovery(bak);
+        r.originalPath = platform::pathToUtf8(d);
+        out.push_back(std::move(r));
+    }
+    return out;
+}
+
+Result<void> AppCore::openRecovered(const Recovery& r, bool removeAfter) {
+    std::string ext = platform::pathFromUtf8(r.originalPath).extension().string();
+    for (char& c : ext)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (!r.originalPath.empty() && ext != ".tbcad" && ext != ".tbt" &&
+        r.autosaveFile.extension() == ".bak")
+        return makeError(ErrorCode::Unsupported,
+                         "Only backups of .tbcad drawings open here: rename " +
+                             platform::pathToUtf8(r.autosaveFile) + " and open it.");
+    io::IoReport report;
+    auto doc = io::readTbcad(r.autosaveFile, report);
+    if (!doc)
+        return doc.error();
+    addSession(std::move(doc.value()), {});
+    session_->savedRevision = ~std::uint64_t{0};
+    const std::string what =
+        r.originalPath.empty()
+            ? std::string("an unsaved drawing")
+            : platform::pathToUtf8(platform::pathFromUtf8(r.originalPath).filename());
+    print("Opened " +
+          std::string(r.autosaveFile.extension() == ".bak" ? "the backup" : "the autosave") +
+          " of " + what + " as a new drawing. Save it under a name to keep it.");
+    if (removeAfter) {
+        std::error_code ec;
+        fs::path meta = r.autosaveFile;
+        meta.replace_extension(".json");
+        fs::remove(r.autosaveFile, ec);
+        fs::remove(meta, ec);
+    }
+    return {};
 }
 
 // Collects a finished background autosave; with `wait` also waits for one still running.

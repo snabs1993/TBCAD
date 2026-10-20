@@ -115,6 +115,13 @@ double angleBetweenLines(Vec2 a0, Vec2 a1, Vec2 pickA, Vec2 b0, Vec2 b1, Vec2 pi
 }
 
 std::string formatLengthIn(const Document& doc, double mm, Precision precision) {
+    // Engineering and architectural lengths are feet and inches whatever the drawing unit.
+    const int lunits = lengthUnitsType(doc.header());
+    if (lunits == 3 || lunits == 4)
+        return formatLengthType(mm / 25.4, lunits, precision);
+    if (lunits != 2)
+        return formatLengthType(mm / mmPerUnit(doc.header().units), lunits, precision) + " " +
+               std::string(unitSuffix(doc.header().units));
     UnitFormat f;
     f.unit = doc.header().units;
     f.showSuffix = true;

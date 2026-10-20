@@ -14,6 +14,7 @@
 
 #include "tbcad/core/dim_assoc.h"
 #include "tbcad/core/profile.h"
+#include "tbcad/core/units.h"
 
 namespace tbcad {
 
@@ -2362,6 +2363,43 @@ int linearPrecision(const Header& h) {
 
 void setLinearPrecision(Header& h, int places) {
     setKeptVarInt(h, "$LUPREC", std::clamp(places, 0, 8));
+}
+
+int lengthUnitsType(const Header& h) {
+    return keptVarInt(h, "$LUNITS", 2, 1, 5);
+}
+
+void setLengthUnitsType(Header& h, int lunits) {
+    setKeptVarInt(h, "$LUNITS", std::clamp(lunits, 1, 5));
+}
+
+int angleUnitsType(const Header& h) {
+    return keptVarInt(h, "$AUNITS", 0, 0, 4);
+}
+
+void setAngleUnitsType(Header& h, int aunits) {
+    setKeptVarInt(h, "$AUNITS", std::clamp(aunits, 0, 4));
+}
+
+bool anglesClockwise(const Header& h) {
+    return keptVarInt(h, "$ANGDIR", 0, 0, 1) == 1;
+}
+
+void setAnglesClockwise(Header& h, bool clockwise) {
+    setKeptVarInt(h, "$ANGDIR", clockwise ? 1 : 0);
+}
+
+double angleBase(const Header& h) {
+    auto it = h.custom.find("dxf.hv.$ANGBASE");
+    if (it == h.custom.end() || it->second.rfind("50\t", 0) != 0)
+        return 0;
+    char* end = nullptr;
+    const double v = std::strtod(it->second.c_str() + 3, &end);
+    return end == it->second.c_str() + 3 || !std::isfinite(v) ? 0 : v;
+}
+
+void setAngleBase(Header& h, double radians) {
+    h.custom["dxf.hv.$ANGBASE"] = "50\t" + formatDouble(radians) + "\n";
 }
 
 int anglePrecision(const Header& h) {

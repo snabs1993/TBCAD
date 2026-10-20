@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <span>
 #include <string>
@@ -34,7 +35,29 @@ struct PurgeCounts {
 // contents or a sub-layer may be the last user of another row). Built-in rows, the current layer
 // and styles, and anonymous blocks stay.
 PurgeCounts purgeUnused(const Document& doc, Transaction& tx,
-                        unsigned kinds = static_cast<unsigned>(PurgeKind::All));
+                        unsigned kinds = static_cast<unsigned>(PurgeKind::All), bool nested = true);
+
+// ---- the PURGE dialog ----
+// A row PURGE can remove: `id` is the row's id in its table.
+struct PurgeItem {
+    PurgeKind kind = PurgeKind::Layers;
+    std::uint32_t id = 0;
+    std::string name{};
+    bool operator==(const PurgeItem&) const = default;
+};
+// The rows that can go now, by kind then name. `nested` also lists what removing them frees (a
+// layer used only inside an unused block). Worked out in a transaction that is rolled back, so
+// no command may be running.
+std::vector<PurgeItem> purgeableItems(Document& doc, bool nested = true);
+// Removes the given rows (in dependency order: a block that only an earlier one used goes too).
+// Returns how many were removed; rows still in use stay.
+int purgeItems(const Document& doc, Transaction& tx, const std::vector<PurgeItem>& items);
+// Lines, arcs and polylines of length zero, and circles with no radius (model space and blocks).
+std::vector<EntityId> zeroLengthObjects(const Document& doc);
+// TEXT and MTEXT whose text is empty or only spaces.
+std::vector<EntityId> emptyTextObjects(const Document& doc);
+// Data the drawing keeps for layers and objects that are gone (plot style names). Header keys.
+std::vector<std::string> orphanedDataKeys(const Document& doc);
 
 enum class Property {
     Type,

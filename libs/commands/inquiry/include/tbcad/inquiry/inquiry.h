@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "tbcad/cmd/registry.h"
@@ -84,6 +85,8 @@ std::vector<EntityData> buildAreaTable(const Document& doc,
 
 // Unit-aware formatting used for all results.
 std::string formatLengthIn(const Document& doc, double mm, Precision precision);
+// Custom drawing properties (DWGPROPS Custom), name and value, by name.
+std::vector<std::pair<std::string, std::string>> customProperties(const Header& h);
 std::string formatAreaIn(const Document& doc, double mm2, Precision precision);
 
 }  // namespace tbcad::inquiry

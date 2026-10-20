@@ -1,7 +1,9 @@
 #include <cmath>
+#include <fstream>
 #include <memory>
 
 #include "extra.h"
+#include "tbcad/platform/paths.h"
 
 namespace tbcad::inquiry {
 
@@ -84,6 +86,13 @@ public:
             }
         }
         Document& doc = ctx.doc();
+        // Every line goes to the command line and to the report AUDITCTL writes.
+        std::vector<std::string> report;
+        auto note = [&](const std::string& line) {
+            ctx.message(line);
+            report.push_back(line);
+        };
+        std::size_t found = 0, fixed = 0;
         std::vector<EntityId> bad;
         std::vector<std::string> why;
         doc.forEachEntity([&](const Entity& e) {
@@ -93,16 +102,31 @@ public:
                 why.push_back(std::move(p));
             }
         });
-        // Objects on a layer that no longer exists go to layer 0.
-        std::vector<EntityId> orphans;
+        // Objects on a layer that no longer exists go to layer 0; a linetype or text style that
+        // is gone becomes ByLayer / Standard. These are always repaired: nothing is lost.
+        std::vector<EntityId> orphans, noLinetype, noStyle;
         doc.forEachEntity([&](const Entity& e) {
             if (!doc.layer(e.common.layer))
                 orphans.push_back(e.common.id);
+            const LinetypeId lt = e.common.linetype;
+            if (lt != kLinetypeByLayer && lt != kLinetypeByBlock && lt != kLinetypeByParent &&
+                !doc.linetype(lt))
+                noLinetype.push_back(e.common.id);
+            const TextStyleId* ts = nullptr;
+            if (const auto* t = entityAs<TextData>(e))
+                ts = &t->style;
+            else if (const auto* m = entityAs<MTextData>(e))
+                ts = &m->style;
+            if (ts && ts->value != 0 && !doc.textStyle(*ts))
+                noStyle.push_back(e.common.id);
         });
-        ctx.message("Audit checked " + std::to_string(doc.entityCount()) + " objects.");
+        note("Audit of " +
+             (ctx.host().documentFile().empty() ? std::string("the drawing")
+                                                : ctx.host().documentFile()) +
+             ": checked " + std::to_string(doc.entityCount()) + " objects.");
         if (!orphans.empty()) {
-            ctx.message(std::to_string(orphans.size()) +
-                        " object(s) are on a layer that does not exist.");
+            found += orphans.size();
+            note(std::to_string(orphans.size()) + " object(s) are on a layer that does not exist.");
             cmd::KeywordOptions lo;
             lo.keywords = {"Yes", "No"};
             lo.defaultKeyword = recover_ ? "Yes" : "No";
@@ -116,33 +140,81 @@ public:
             if (answer == "Yes") {
                 for (EntityId id : orphans)
                     (void)ctx.tx().modify(id, [](Entity& e) { e.common.layer = kLayerZero; });
-                ctx.message("Moved " + std::to_string(orphans.size()) + " object(s) to layer 0.");
+                fixed += orphans.size();
+                note("Moved " + std::to_string(orphans.size()) + " object(s) to layer 0.");
             }
         }
-        if (bad.empty()) {
-            ctx.message("No problems found.");
-            co_return;
+        if (!noLinetype.empty()) {
+            found += noLinetype.size();
+            for (EntityId id : noLinetype)
+                (void)ctx.tx().modify(id, [](Entity& e) { e.common.linetype = kLinetypeByLayer; });
+            fixed += noLinetype.size();
+            note(std::to_string(noLinetype.size()) +
+                 " object(s) used a linetype that does not exist. Fixed: set to ByLayer.");
         }
-        constexpr std::size_t kShown = 10;
-        for (std::size_t i = 0; i < bad.size() && i < kShown; ++i)
-            ctx.message("  " + std::to_string(bad[i].value) + ": " + why[i]);
-        if (bad.size() > kShown)
-            ctx.message("  ... and " + std::to_string(bad.size() - kShown) + " more");
-        ctx.message(std::to_string(bad.size()) + " broken object(s) found.");
+        if (!noStyle.empty()) {
+            found += noStyle.size();
+            for (EntityId id : noStyle)
+                (void)ctx.tx().modify(id, [](Entity& e) {
+                    if (auto* t = entityAs<TextData>(e))
+                        t->style = kTextStyleStandard;
+                    else if (auto* m = entityAs<MTextData>(e))
+                        m->style = kTextStyleStandard;
+                });
+            fixed += noStyle.size();
+            note(std::to_string(noStyle.size()) +
+                 " text object(s) used a text style that does not exist. Fixed: set to Standard.");
+        }
+        if (!bad.empty()) {
+            found += bad.size();
+            constexpr std::size_t kShown = 10;
+            for (std::size_t i = 0; i < bad.size(); ++i) {
+                const std::string line = "  " + std::to_string(bad[i].value) + ": " + why[i];
+                report.push_back(line);  // the report lists every one
+                if (i < kShown)
+                    ctx.message(line);
+            }
+            if (bad.size() > kShown)
+                ctx.message("  ... and " + std::to_string(bad.size() - kShown) + " more");
+            note(std::to_string(bad.size()) + " broken object(s) found.");
 
-        cmd::KeywordOptions ko;
-        ko.keywords = {"Yes", "No"};
-        ko.defaultKeyword = "No";
-        if (!recover_) {
-            auto fix = co_await ctx.getKeyword("Remove the broken objects?", ko);
-            if (!fix.ok() || fix.keyword != "Yes")
-                co_return;
+            cmd::KeywordOptions ko;
+            ko.keywords = {"Yes", "No"};
+            ko.defaultKeyword = "No";
+            bool remove = true;
+            if (!recover_) {
+                auto fix = co_await ctx.getKeyword("Remove the broken objects?", ko);
+                if (fix.status == cmd::Status::Cancel)
+                    co_return;
+                remove = fix.ok() && fix.keyword == "Yes";
+            }
+            if (remove) {
+                std::size_t removed = 0;
+                for (EntityId id : bad)
+                    if (ctx.tx().erase(id))
+                        ++removed;
+                fixed += removed;
+                note("Removed " + std::to_string(removed) + " object(s).");
+            }
         }
-        std::size_t removed = 0;
-        for (EntityId id : bad)
-            if (ctx.tx().erase(id))
-                ++removed;
-        ctx.message("Removed " + std::to_string(removed) + " object(s).");
+        if (found == 0)
+            note("No problems found.");
+        else
+            note("Total errors found " + std::to_string(found) + ", fixed " +
+                 std::to_string(fixed) + ".");
+        // AUDITCTL 1: the report also goes to <drawing>.adt next to a saved drawing.
+        const std::string file = ctx.host().documentFile().empty()
+                                     ? ctx.host().setting("document.file").value_or("")
+                                     : ctx.host().documentFile();
+        if (ctx.host().setting("audit.report").value_or("0") == "1" && !file.empty()) {
+            auto adt = platform::pathFromUtf8(file);
+            adt.replace_extension(".adt");
+            std::ofstream out(adt, std::ios::binary | std::ios::trunc);
+            for (const std::string& line : report)
+                out << line << "\n";
+            if (out)
+                ctx.message("Report written to " + platform::pathToUtf8(adt) + ".");
+        }
         co_return;
     }
 
@@ -150,7 +222,26 @@ private:
     bool recover_;
 };
 
+// DRAWINGRECOVERY [DRM]: the Drawing Recovery Manager window (autosaves left by a session that
+// did not close normally, and the .bak copies of recent drawings).
+class DrawingRecovery final : public cmd::Command {
+public:
+    std::string_view name() const override { return "DRAWINGRECOVERY"; }
+    std::vector<std::string> defaultAliases() const override { return {"DRM"}; }
+    std::string_view description() const override {
+        return "Open the Drawing Recovery Manager: autosaves and backup files to open";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().requestUi("drawingrecovery");
+        co_return;
+    }
+};
+
 }  // namespace
+
+std::unique_ptr<cmd::Command> makeDrawingRecovery() {
+    return std::make_unique<DrawingRecovery>();
+}
 
 std::unique_ptr<cmd::Command> makeAudit() {
     return std::make_unique<Audit>();

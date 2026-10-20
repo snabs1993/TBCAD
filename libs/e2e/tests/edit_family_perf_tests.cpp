@@ -224,7 +224,7 @@ TEST_CASE("perf: editing commands cost about the same on a real mix as on plain 
         {"SCALE", {"SCALE", "0,0", "1.5"}},
         {"STRETCH", {"STRETCH", "-100000,-100000", "100000,100000", "0,0", "5,0"}},
         {"ERASE", {"ERASE"}},
-        {"PURGE", {"PURGE", "", "Yes"}},
+        {"PURGE", {"-PURGE", "", "Yes"}},
         {"AUDIT", {"AUDIT", "Yes"}},
     };
     // TBCAD_BENCH_ONLY=LABEL runs one command on the real mix only (to attach a profiler).

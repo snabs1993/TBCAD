@@ -1,5 +1,7 @@
 // COLOR, LWEIGHT, LTSCALE, UNITS, STATUS, REGEN and REDRAW. The first three set what new objects
 // get (the "current" properties); every change is one undo step.
+#include <algorithm>
+#include <cctype>
 #include <ctime>
 #include <string>
 
@@ -137,24 +139,102 @@ const char* unitName(LengthUnit u) {
     return "Millimeters";
 }
 
-class UnitsCommand final : public cmd::Command {
+// UNITS opens the Drawing Units dialog; -UNITS is the typed form.
+class UnitsDialogCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "UNITS"; }
-    std::vector<std::string> defaultAliases() const override { return {"UN", "DWGUNITS"}; }
+    std::vector<std::string> defaultAliases() const override { return {"UN"}; }
     std::string_view description() const override {
-        return "Choose the length unit of the drawing (objects are not scaled)";
+        return "Open the Drawing Units dialog: length and angle format, precision, direction";
+    }
+    Task run(CommandContext& ctx) override {
+        ctx.host().openPanel("units");
+        co_return;
+    }
+};
+
+std::string lowerFirst(std::string s) {
+    for (char& c : s)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return s;
+}
+
+class UnitsCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "-UNITS"; }
+    std::vector<std::string> defaultAliases() const override { return {"DWGUNITS"}; }
+    std::string_view description() const override {
+        return "Choose the unit, length and angle format, precision and angle direction";
     }
     Task run(CommandContext& ctx) override {
         cmd::KeywordOptions ko;
-        ko.keywords = {"Millimeters", "Centimeters", "Meters", "Inches", "Feet", "Precision"};
+        ko.keywords = {"Millimeters", "Centimeters", "Meters", "Inches",    "Feet",
+                       "Precision",   "Type",        "Angles", "Direction", "Base"};
         ko.defaultKeyword = unitName(ctx.doc().header().units);
         auto k = co_await ctx.getKeyword(
             "Length unit [Millimeters/Centimeters/Meters/Inches/Feet/"
-            "Precision] <" +
+            "Precision/Type/Angles/Direction/Base] <" +
                 *ko.defaultKeyword + ">",
             ko);
         if (!k.ok())
             co_return;
+        if (k.keyword == "Type" || k.keyword == "Angles") {
+            const bool lengths = k.keyword == "Type";
+            static const std::vector<std::string> kLength = {"Scientific", "Decimal", "Engineering",
+                                                             "Architectural", "Fractional"};
+            static const std::vector<std::string> kAngle = {"Degrees", "DMS", "Grads", "Radians",
+                                                            "Surveyor"};
+            const Header& h = ctx.doc().header();
+            cmd::KeywordOptions to;
+            to.keywords = lengths ? kLength : kAngle;
+            to.defaultKeyword = lengths ? kLength[std::size_t(lengthUnitsType(h) - 1)]
+                                        : kAngle[std::size_t(angleUnitsType(h))];
+            const std::string prompt = lengths ? "Length type [Scientific/Decimal/Engineering/"
+                                                 "Architectural/Fractional]"
+                                               : "Angle type [Degrees/DMS/Grads/Radians/Surveyor]";
+            auto t = co_await ctx.getKeyword(prompt, to);
+            if (!t.ok())
+                co_return;
+            const auto& list = lengths ? kLength : kAngle;
+            const int index =
+                static_cast<int>(std::find(list.begin(), list.end(), t.keyword) - list.begin());
+            ctx.setUndoLabel("Units");
+            (void)ctx.tx().modifyHeader([&](Header& hh) {
+                if (lengths)
+                    setLengthUnitsType(hh, index + 1);
+                else
+                    setAngleUnitsType(hh, index);
+            });
+            ctx.message((lengths ? "Lengths are shown as " : "Angles are shown as ") + t.keyword +
+                        ".");
+            co_return;
+        }
+        if (k.keyword == "Direction") {
+            cmd::KeywordOptions dk;
+            dk.keywords = {"Counterclockwise", "Clockwise"};
+            dk.defaultKeyword =
+                anglesClockwise(ctx.doc().header()) ? "Clockwise" : "Counterclockwise";
+            auto d = co_await ctx.getKeyword("Measure angles [Counterclockwise/Clockwise]", dk);
+            if (!d.ok())
+                co_return;
+            ctx.setUndoLabel("Units");
+            (void)ctx.tx().modifyHeader(
+                [&](Header& hh) { setAnglesClockwise(hh, d.keyword == "Clockwise"); });
+            ctx.message("Angles are measured " + lowerFirst(d.keyword) + ".");
+            co_return;
+        }
+        if (k.keyword == "Base") {
+            cmd::RealOptions ro;
+            ro.defaultValue = angleBase(ctx.doc().header()) * 180.0 / kPi;
+            auto b = co_await ctx.getReal("Direction of angle 0, degrees from east", ro);
+            if (!b.ok())
+                co_return;
+            ctx.setUndoLabel("Units");
+            (void)ctx.tx().modifyHeader(
+                [&](Header& hh) { setAngleBase(hh, b.value * kPi / 180.0); });
+            ctx.message("Angle 0 points " + formatDouble(b.value) + " degrees from east.");
+            co_return;
+        }
         if (k.keyword == "Precision") {
             // Decimal places of lengths and angles in measurements and lists (LUPREC, AUPREC).
             const Header& h = ctx.doc().header();
@@ -461,6 +541,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<TransparencyDefaultCommand>());
     (void)registry.add(std::make_unique<LtscaleCommand>());
     (void)registry.add(std::make_unique<UnitsCommand>());
+    (void)registry.add(std::make_unique<UnitsDialogCommand>());
     (void)registry.add(std::make_unique<StatusCommand>());
     (void)registry.add(std::make_unique<TimeCommand>());
     (void)registry.add(std::make_unique<FlattenCommand>());
@@ -501,9 +582,9 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeLwDisplayCommand());
     (void)registry.add(makeQpModeCommand());
     (void)registry.add(makeRolloverTipsCommand());
-    for (const char* n :
-         {"PICKBOX", "APERTURE", "CURSORSIZE", "GRIPSIZE", "GRIPCOLOR", "GRIPHOVER", "GRIPHOT",
-          "LAYLOCKFADECTL", "SAVETIME", "ISAVEBAK", "APBOX", "SHORTCUTMENU", "TEXTEDITMODE"})
+    for (const char* n : {"PICKBOX", "APERTURE", "CURSORSIZE", "GRIPSIZE", "GRIPCOLOR", "GRIPHOVER",
+                          "GRIPHOT", "LAYLOCKFADECTL", "SAVETIME", "ISAVEBAK", "APBOX",
+                          "SHORTCUTMENU", "TEXTEDITMODE", "AUDITCTL"})
         (void)registry.add(makeOptionVarCommand(n));
     (void)registry.add(makeViewCommand());
     (void)registry.add(makeAddSelectedCommand());

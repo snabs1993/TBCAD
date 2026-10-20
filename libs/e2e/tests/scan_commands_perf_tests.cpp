@@ -155,7 +155,9 @@ struct Site {
             const double x = (i % 500) * 30.0, y = -1000.0 - (i / 500) * 30.0;
             PolylineData r;
             r.closed = true;
-            r.v = {{{x, y}, 0, 0, 0}, {{x + 20, y}, 0, 0, 0}, {{x + 20, y + 20}, 0, 0, 0},
+            r.v = {{{x, y}, 0, 0, 0},
+                   {{x + 20, y}, 0, 0, 0},
+                   {{x + 20, y + 20}, 0, 0, 0},
                    {{x, y + 20}, 0, 0, 0}};
             Entity e;
             e.data = std::move(r);
@@ -393,7 +395,7 @@ TEST_CASE("perf: table commands with thousands of layers and blocks stay fast") 
         {"LAYER-FREEZE", {"-LAYER", "Freeze", "*", ""}},
         {"LAYER-LOCK", {"-LAYER", "Lock", "*", ""}},
         {"LAYISO", {"LAYISO"}},
-        {"PURGE", {"PURGE", "", "Yes"}},
+        {"PURGE", {"-PURGE", "", "Yes"}},
         {"BLOCKCOUNT", {"BLOCKCOUNT"}},
         {"EXPLODE", {"EXPLODE"}},
         {"QSELECT-layer", {"QSELECT", "Layer", "LAYER7", "Equals", "Replace"}},
@@ -488,7 +490,8 @@ TEST_CASE("perf: trim, extend, offset, fillet and hatch on a big drawing stay fa
 TEST_CASE("perf: edits of one polyline of 100k vertices stay quick") {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     Site s(100);
-    const int count = std::getenv("TBCAD_BENCH_N") ? std::atoi(std::getenv("TBCAD_BENCH_N")) : 100000;
+    const int count =
+        std::getenv("TBCAD_BENCH_N") ? std::atoi(std::getenv("TBCAD_BENCH_N")) : 100000;
     s.addLongPolyline(count);
     const double mid = count * 1.0, y = -300000;
     const std::string midx = std::to_string(mid);
@@ -500,11 +503,15 @@ TEST_CASE("perf: edits of one polyline of 100k vertices stay quick") {
         {"BREAK-contour", {"BREAK", "@click0,-300000", "100,-300000"}},
         {"FILLET-contour", {"FILLET", "R", "0.2", "Polyline", "@click0,-300000"}},
         {"EXPLODE-contour", {"EXPLODE", "@click0,-300000", ""}},
-        {"CHAMFER-contour", {"CHAMFER", "Distance", "0.2", "0.2", "Polyline", "@click0,-300000"}, 3000},
+        {"CHAMFER-contour",
+         {"CHAMFER", "Distance", "0.2", "0.2", "Polyline", "@click0,-300000"},
+         3000},
         {"REVERSE-contour", {"REVERSE", "@click0,-300000", ""}, 3000},
         {"SCALE-contour", {"SCALE", "@click0,-300000", "", "0,-300000", "2"}, 3000},
         {"ROTATE-contour", {"ROTATE", "@click0,-300000", "", "0,-300000", "30"}, 3000},
-        {"MIRROR-contour", {"MIRROR", "@click0,-300000", "", "0,-300000", "100,-300000", "No"}, 3000},
+        {"MIRROR-contour",
+         {"MIRROR", "@click0,-300000", "", "0,-300000", "100,-300000", "No"},
+         3000},
         {"COPY-contour", {"COPY", "@click0,-300000", "", "0,0", "5,5"}, 3000},
         {"DIVIDE-contour", {"DIVIDE", "@click0,-300000", "30000"}, 3000},
         {"MEASURE-contour", {"MEASURE", "@click0,-300000", "40"}, 3000},
@@ -515,7 +522,8 @@ TEST_CASE("perf: edits of one polyline of 100k vertices stay quick") {
     };
     (void)y;
     for (const Case& c : cases) {
-        if (const char* only = std::getenv("TBCAD_BENCH_ONLY"); only && std::string(only) != c.label)
+        if (const char* only = std::getenv("TBCAD_BENCH_ONLY");
+            only && std::string(only) != c.label)
             continue;
         const Timing t = s.bench(c.lines, false);
         std::printf("%-20s %8.0f %8.0f %8.0f   %s\n", c.label, t.runMs, t.undoMs, t.redoMs,
@@ -604,9 +612,7 @@ TEST_CASE("perf: everyday interactions on a drawing of 100k objects") {
     CHECK(pickMs < 100);
     CHECK(hover[20] < 20);
 #endif
-    step("window select", [&] {
-        c.dragSelect({100, 100}, {700, 500}, {});
-    });
+    step("window select", [&] { c.dragSelect({100, 100}, {700, 500}, {}); });
     step("clear selection", [&] { c.clearSelection(); });
     // A grip drag: select a polyline, press on its first grip, move, release.
     c.click(on);

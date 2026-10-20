@@ -610,6 +610,38 @@ TEST_CASE("autosave covers every open drawing and recovery reopens them all") {
     CHECK(second.pendingRecoveries().empty());
 }
 
+TEST_CASE("the Drawing Recovery Manager lists leftover autosaves and backups and opens them") {
+    Fixture f("recovery_manager");
+    f.line("0,0", "100,0");
+    REQUIRE(f.core->saveAs(f.dir / "kept.tbcad").ok());
+    f.line("0,0", "0,50");
+    REQUIRE(f.core->save().ok());  // the first save becomes kept.tbcad.bak
+    f.core->newDocument();
+    f.line("5,5", "6,6");
+    CHECK(f.core->autosaveNow());
+    // Open drawings have their own autosaves: nothing is left over yet.
+    CHECK(f.core->leftoverRecoveries().empty());
+    const auto backups = f.core->backupFiles();
+    REQUIRE(backups.size() == 1);
+    CHECK(backups[0].autosaveFile.filename() == "kept.tbcad.bak");
+
+    // A new session (the first did not close normally) sees the autosaves as left over.
+    auto registry2 = makeRegistry();
+    AppCore second(*registry2, platform::AppPaths{f.dir / "cfg", f.dir / "data"});
+    const auto left = second.leftoverRecoveries();
+    REQUIRE_FALSE(left.empty());
+    REQUIRE(second.openRecovered(left[0], true).ok());
+    CHECK(second.documentCount() == 1);    // took the place of the untouched drawing
+    CHECK(second.documentFile().empty());  // unsaved: saving asks for a name
+    CHECK_FALSE(fs::exists(left[0].autosaveFile));
+
+    // The .bak opens as a new drawing with the first save's single line.
+    REQUIRE(second.openRecovered(backups[0], false).ok());
+    CHECK(second.documentCount() == 2);
+    CHECK(second.document().modelSpaceCount() == 1);
+    CHECK(fs::exists(backups[0].autosaveFile));
+}
+
 TEST_CASE("a clean save or shutdown removes the autosave") {
     Fixture f("autosave2");
     f.line("0,0", "100,0");

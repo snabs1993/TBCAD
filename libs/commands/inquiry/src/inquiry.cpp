@@ -1,5 +1,6 @@
 #include "tbcad/inquiry/inquiry.h"
 
+#include <cmath>
 #include <cstdio>
 #include <memory>
 
@@ -36,8 +37,22 @@ Precision anglePrecisionOf(cmd::CommandContext& ctx) {
     return anglePrecision(ctx.doc().header());
 }
 
-std::string ang(double rad, Precision p) {
-    return formatAngle(rad, p, AngleUnit::Degrees, true);
+// An angle as UNITS says (angle type); a direction (DIST) also counts from the base angle in the
+// chosen sense.
+std::string ang(const Document& doc, double rad, Precision p, bool direction = false) {
+    const Header& h = doc.header();
+    if (direction && (angleBase(h) != 0 || anglesClockwise(h))) {
+        rad -= angleBase(h);
+        if (anglesClockwise(h))
+            rad = -rad;
+        rad = std::fmod(rad, 2 * kPi);
+        if (rad < 0)
+            rad += 2 * kPi;
+    }
+    const int aunits = angleUnitsType(h);
+    if (aunits == 0)
+        return formatAngle(rad, p, AngleUnit::Degrees, true);
+    return formatAngleType(rad, aunits, p);
 }
 
 DisplayList outlineOf(const Document& doc, const Entity& e) {
@@ -90,10 +105,11 @@ public:
         const Precision p = precisionOf(ctx);
         const Vec2 d = second.point - first.point;
         const double angle = length(d) < tol::kLinear ? 0 : normalizeAngle(std::atan2(d.y, d.x));
-        report(ctx, "Distance = " + formatLengthIn(ctx.doc(), length(d), p) +
-                        ", Angle in XY plane = " + ang(angle, anglePrecisionOf(ctx)) +
-                        ", Delta X = " + formatLengthIn(ctx.doc(), d.x, p) +
-                        ", Delta Y = " + formatLengthIn(ctx.doc(), d.y, p));
+        report(ctx,
+               "Distance = " + formatLengthIn(ctx.doc(), length(d), p) +
+                   ", Angle in XY plane = " + ang(ctx.doc(), angle, anglePrecisionOf(ctx), true) +
+                   ", Delta X = " + formatLengthIn(ctx.doc(), d.x, p) +
+                   ", Delta Y = " + formatLengthIn(ctx.doc(), d.y, p));
     }
 };
 
@@ -279,7 +295,7 @@ public:
             auto p2 = co_await ctx.getPoint("Specify second angle endpoint", po);
             if (!p2.ok())
                 co_return;
-            report(ctx, "Angle = " + ang(angleAtVertex(vertex.point, p1.point, p2.point),
+            report(ctx, "Angle = " + ang(ctx.doc(), angleAtVertex(vertex.point, p1.point, p2.point),
                                          anglePrecisionOf(ctx)));
             co_return;
         }
@@ -297,7 +313,8 @@ public:
             co_return;
         }
         report(ctx, "Angle = " +
-                        ang(angleBetweenLines(a0, a1, first.pickPoint, b0, b1, second.pickPoint),
+                        ang(ctx.doc(),
+                            angleBetweenLines(a0, a1, first.pickPoint, b0, b1, second.pickPoint),
                             anglePrecisionOf(ctx)));
     }
 };
@@ -506,6 +523,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeRecover());
     (void)registry.add(makeMassProp());
     (void)registry.add(makeDwgProps());
+    (void)registry.add(makeDwgPropsDialog());
+    (void)registry.add(makeDrawingRecovery());
     (void)registry.add(makeFindStray());
     (void)registry.add(makePickTrace());
     (void)registry.add(makeCal());
