@@ -228,8 +228,12 @@ stays on the dimension line when the line is moved (a grip, DIMSPACE).
 
 - **DIMARC** (DAR) dimensions the length of a picked arc. The dimension arc follows the cursor; **Text** overrides the
   text. In DXF it is written as plain lines, arcs and text (a warning says so); `.tbcad` keeps it as a dimension.
+  The arc symbol goes where the style's DIMARCSYM says (DIMSTYLE key `ArcSymbol`): **Before** the text (the
+  default), **Above** it, or **None**.
 - **DIMJOGGED** (DJO) is a radius dimension for arcs whose centre is far away: pick the arc, a centre override point, the
   dimension line location and the jog position (Enter = midpoint). DXF export writes it as plain lines, arcs and text.
+  The line runs from the arc toward the true centre and from the override parallel to it; the jog joins the two at
+  the style's DIMJOGANG (DIMSTYLE key `JogAngle`, degrees from 5 to 90, 45 by default).
 - **DIMCENTER** is another name for CENTERMARK.
 - **DIMORDINATE** (DOR) dimensions the X or Y distance of a point from the origin (0,0). Pick the feature, then the
   leader end: moving mostly up or down measures X, mostly sideways measures Y; **Xdatum** / **Ydatum** force the axis.

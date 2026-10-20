@@ -93,7 +93,7 @@ const std::vector<std::string> kProps = {
     "TextFrame",      "LengthFormat",    "TolHeight",     "TextVertPos", "FixedExt",
     "FixedExtLength", "LeaderArrow",     "LineWeight",    "ExtWeight",   "Linetype",
     "ExtLinetype1",   "ExtLinetype2",    "AngleZeros",    "TolZeros",    "AltZeros",
-    "AltRoundOff",    "TolJustify",      "ArrowType2"};
+    "AltRoundOff",    "TolJustify",      "ArrowType2",    "ArcSymbol",   "JogAngle"};
 
 // DIMAZIN / DIMTZIN / DIMALTZ as text.
 const char* const kZeros[] = {"Show", "Leading", "Trailing", "Both"};
@@ -219,6 +219,10 @@ std::vector<std::pair<std::string, std::string>> describe(const Document& doc, c
         {"TolJustify", s.tolJustify == 0   ? "Bottom"
                        : s.tolJustify == 2 ? "Top"
                                            : "Middle"},
+        {"ArcSymbol", s.arcSymbol == 1   ? "Above"
+                      : s.arcSymbol == 2 ? "None"
+                                         : "Before"},
+        {"JogAngle", num(s.jogAngle * 180 / kPi)},
     };
 }
 
@@ -466,6 +470,24 @@ std::string applyProperty(const Document& doc, DimStyle& s, std::string_view key
         if (!parseReal(value, v) || std::abs(v) > 100)
             return "TextVertPos is a number of text heights, from -100 to 100.";
         s.textVertPos = v;
+        return {};
+    }
+    if (same(key, "ArcSymbol")) {  // DIMARCSYM
+        if (same(value, "Before"))
+            s.arcSymbol = 0;
+        else if (same(value, "Above"))
+            s.arcSymbol = 1;
+        else if (same(value, "None"))
+            s.arcSymbol = 2;
+        else
+            return "ArcSymbol is Before, Above or None.";
+        return {};
+    }
+    if (same(key, "JogAngle")) {  // DIMJOGANG, in degrees
+        double v = 0;
+        if (!parseReal(value, v) || v < 5 || v > 90)
+            return "JogAngle is an angle in degrees, from 5 to 90.";
+        s.jogAngle = v * kPi / 180;
         return {};
     }
     if (same(key, "CenterMark")) {

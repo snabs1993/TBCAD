@@ -15,7 +15,7 @@ namespace {
 
 constexpr std::uint8_t kDeltaMagic[4] = {'T', 'B', 'D', 'L'};
 // 3: text style rows carry the fixed height. Version 2 records are still read.
-constexpr std::uint8_t kDeltaVersion = 20;
+constexpr std::uint8_t kDeltaVersion = 21;
 
 [[noreturn]] void bad(const char* msg) {
     throw FormatError(msg);
@@ -155,6 +155,9 @@ void putRow(ByteWriter& w, StringTable& st, const DimStyle& r) {
     w.u8(static_cast<std::uint8_t>(std::clamp(r.tolJustify, 0, 2)));
     // (version 20) the second arrow plus one (0: the same as the first)
     w.u8(r.arrowType2 ? static_cast<std::uint8_t>(static_cast<int>(*r.arrowType2) + 1) : 0);
+    // (version 21) DIMARCSYM, DIMJOGANG
+    w.u8(static_cast<std::uint8_t>(std::clamp(r.arcSymbol, 0, 2)));
+    w.f64(r.jogAngle);
 }
 
 void putRow(ByteWriter& w, StringTable& st, const BlockDef& r) {
@@ -411,6 +414,14 @@ struct Reader {
                 bad("invalid second arrow");
             d.arrowType2 =
                 a == 0 ? std::nullopt : std::optional<ArrowType>(static_cast<ArrowType>(a - 1));
+        }
+        if (version >= 21) {
+            d.arcSymbol = r.u8();
+            if (d.arcSymbol > 2)
+                bad("invalid arc symbol");
+            d.jogAngle = r.f64();
+            if (!std::isfinite(d.jogAngle))
+                bad("invalid jog angle");
         }
     }
     void row(BlockDef& b) {

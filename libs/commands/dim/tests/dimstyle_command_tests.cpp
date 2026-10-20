@@ -553,3 +553,17 @@ TEST_CASE("DIMSTYLE AngleZeros, TolZeros and AltZeros set DIMAZIN, DIMTZIN and D
     CHECK(dim::formatNumber(*s, 12.5, false) == "12.5");
     CHECK(dim::formatNumber(*s, kPi / 2, true) == "90.00\xC2\xB0");
 }
+
+TEST_CASE("DIMSTYLE ArcSymbol and JogAngle set DIMARCSYM and DIMJOGANG") {
+    Fixture f;
+    f.host->run("DIMSTYLE", {"New", "A", "Edit", "A", "ArcSymbol", "Above", "JogAngle", "30",
+                             "JogAngle", "2", "Done", "Done"});
+    const DimStyle* s = f.doc.dimStyleByName("A");
+    REQUIRE(s);
+    CHECK(s->arcSymbol == 1);
+    CHECK(s->jogAngle == doctest::Approx(kPi / 6));  // 2 degrees is refused
+    bool listed = false;
+    for (const auto& [k, v] : dimcmd::describeStyle(f.doc, *s))
+        listed |= k == "JogAngle" && v == "30";
+    CHECK(listed);
+}

@@ -543,6 +543,10 @@ std::string canonicalDump(const Document& doc) {
             o << " ldrarrow" << static_cast<int>(r.leaderArrow);
         if (r.arrowType2)
             o << " arrow2:" << static_cast<int>(*r.arrowType2);
+        if (r.arcSymbol != 0)
+            o << " arcsym" << r.arcSymbol;
+        if (r.jogAngle != kDimJogAngleDefault)
+            o << " jogang" << r.jogAngle;
         if (r.altRoundOff != 0 || r.tolJustify != 1)
             o << " altrnd" << r.altRoundOff << " tolj" << r.tolJustify;
         if (r.angularZeros >= 0 || r.tolZeros >= 0 || r.altZeros >= 0)

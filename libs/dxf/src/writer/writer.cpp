@@ -740,6 +740,10 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
             o.d(146, ds.tolHeightFactor);  // DIMTFAC
         if (ds.altRoundOff > 0 && !r12_)
             o.d(148, ds.altRoundOff);  // DIMALTRND
+        if (!r12_ && ds.arcSymbol != 0)
+            o.i(90, ds.arcSymbol);  // DIMARCSYM
+        if (!r12_ && ds.jogAngle != kDimJogAngleDefault)
+            o.d(50, ds.jogAngle * 180 / kPi);  // DIMJOGANG, in degrees
         if (!r12_)
             o.i(283, ds.tolJustify);                                       // DIMTOLJ
         o.i(73, ds.textAlign == DimTextAlign::Horizontal ? 1 : 0);         // DIMTIH

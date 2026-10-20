@@ -1,6 +1,7 @@
 // Internal: the DXF -> Document importer. Public entry point is importDxf() in reader.h.
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -30,6 +31,14 @@ inline std::string upperHandle(std::string_view h) {
         if (c >= 'a' && c <= 'f')
             c = static_cast<char>(c - 'a' + 'A');
     return s;
+}
+
+// DIMJOGANG (group 50 of a DIMSTYLE, or its override) in radians. AutoCAD writes degrees; a value
+// below 5, which no valid angle in degrees is, is taken as radians already.
+inline double dimJogAngle(double v) {
+    constexpr double kDeg = 3.14159265358979323846 / 180;
+    const double a = v < 5 ? v : v * kDeg;
+    return std::clamp(a, 5 * kDeg, 90 * kDeg);
 }
 
 // ACI (AutoCAD colour index) to the nearest entry of the TBCAD palette. 1..7 map to themselves.

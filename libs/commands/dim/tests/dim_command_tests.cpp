@@ -305,7 +305,8 @@ TEST_CASE("DIMJOGGED dimensions the radius with a jog in the line") {
     CHECK(d->measurement == doctest::Approx(40));
     auto L = dim::layoutDimension(f.doc, *d);
     REQUIRE(!L.lines.empty());
-    CHECK(L.lines[0].pts.size() == 6);  // line, four points of the jog, arc end
+    // From the override parallel to the radius, the jog, then on to the arc.
+    CHECK(L.lines[0].pts.size() == 4);
     CHECK(L.text.utf8 == "R40.00");
 }
 

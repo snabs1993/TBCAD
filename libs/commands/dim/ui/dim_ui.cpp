@@ -262,6 +262,16 @@ void drawEditor(ui::PanelContext& pc, const DimStyle s) {  // by value: fields r
         realField(pc, s, "Center mark", "CenterMark", s.centerMark,
                   "DIMCEN: size of the centre mark of radius and diameter dimensions; negative "
                   "draws centre lines, 0 none.");
+        ImGui::SeparatorText("Arc length symbol");
+        enumCombo(pc, s, "Arc symbol", "ArcSymbol", std::clamp(s.arcSymbol, 0, 2),
+                  {{"Preceding dimension text", "Before"},
+                   {"Above dimension text", "Above"},
+                   {"None", "None"}},
+                  "DIMARCSYM: where an arc length dimension shows the arc symbol.");
+        ImGui::SeparatorText("Radius jog dimension");
+        realField(pc, s, "Jog angle", "JogAngle", s.jogAngle * 180 / kPi,
+                  "DIMJOGANG: the angle of the jog's middle segment against the dimension line, "
+                  "in degrees (5 to 90).");
         ImGui::EndTabItem();
     }
     if (ImGui::BeginTabItem("Text")) {

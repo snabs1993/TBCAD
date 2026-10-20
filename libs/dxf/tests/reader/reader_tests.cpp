@@ -1473,6 +1473,29 @@ TEST_CASE("dimension style: DIMSAH with a different DIMBLK2 gives the second arr
     CHECK_FALSE(ds->arrowType2.has_value());
 }
 
+TEST_CASE("dimension style: DIMARCSYM and DIMJOGANG, also as overrides") {
+    Pairs p;
+    p.section("TABLES").g(0, "TABLE").g(2, "DIMSTYLE");
+    p.g(0, "DIMSTYLE").g(2, "Arc").g(90, 1).g(50, 30.0).g(140, 2.5).g(41, 2.5);
+    p.g(0, "ENDTAB").end();
+    p.section("ENTITIES");
+    p.g(0, "DIMENSION").g(8, "0").g(3, "Arc").g(10, 5.0).g(20, 5.0).g(70, 1);
+    p.g(13, 0.0).g(23, 0.0).g(14, 10.0).g(24, 0.0);
+    p.g(1001, "ACAD").g(1000, "DSTYLE").g(1002, "{").g(1070, 90).g(1070, 2);
+    p.g(1070, 50).g(1040, 60.0).g(1002, "}");
+    p.end().g(0, "EOF");
+    Loaded l = load(p.text);
+    const DimStyle* arc = l.doc().dimStyleByName("Arc");
+    REQUIRE(arc != nullptr);
+    CHECK(arc->arcSymbol == 1);
+    CHECK(arc->jogAngle == doctest::Approx(kPi / 6));
+    auto dims = modelEntities<DimensionData>(l.doc());
+    REQUIRE(dims.size() == 1);
+    const DimStyle* ds = l.doc().dimStyle(dims[0]->style);
+    CHECK(ds->arcSymbol == 2);
+    CHECK(ds->jogAngle == doctest::Approx(kPi / 3));
+}
+
 TEST_CASE("dimension style: a text style with a fixed height decides the text height") {
     Pairs p;
     p.section("TABLES").g(0, "TABLE").g(2, "STYLE");

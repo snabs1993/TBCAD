@@ -110,6 +110,9 @@ enum class DimLinearFormat : std::uint8_t { Decimal, Architectural, Fractional }
 // DIMAUNIT: how an angular dimension writes its measurement.
 enum class DimAngleFormat : std::uint8_t { Degrees, Dms, Gradians, Radians };
 
+// DIMJOGANG's default, 45 degrees.
+inline constexpr double kDimJogAngleDefault = 0.78539816339744831;
+
 struct DimStyle {
     DimStyleId id{};
     std::string name{};
@@ -216,6 +219,12 @@ struct DimStyle {
     // heights above (or below, negative) the dimension line; the line breaks round it only below
     // 0.7.
     double textVertPos = 0;
+    // DIMARCSYM: where an arc length dimension shows the arc symbol (0 before the text, 1 above
+    // it, 2 none).
+    int arcSymbol = 0;
+    // DIMJOGANG: the angle between the dimension line of a jogged radius dimension and the
+    // transverse segment of its jog, in radians (5 to 90 degrees; 45 by default).
+    double jogAngle = kDimJogAngleDefault;
     bool hasFixedExt() const { return fixedExtLines || fixedExtLength != 1; }
     bool hasTextBox() const { return textFill != 0 || textFrame; }
     bool hasLinearFormat() const {

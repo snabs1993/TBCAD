@@ -380,6 +380,12 @@ DimStyleId Importer::dimStyleWithOverrides(const Record& r, DimStyleId base) {
             case 283:  // DIMTOLJ
                 ds.tolJustify = whole >= 0 && whole <= 2 ? static_cast<int>(whole) : 1;
                 break;
+            case 90:  // DIMARCSYM
+                ds.arcSymbol = whole >= 0 && whole <= 2 ? static_cast<int>(whole) : 0;
+                break;
+            case 50:  // DIMJOGANG
+                ds.jogAngle = dimJogAngle(v);
+                break;
             case 79:  // DIMAZIN
                 ds.angularZeros = static_cast<int>(whole & 3);
                 break;

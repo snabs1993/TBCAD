@@ -1649,7 +1649,11 @@ void Importer::readDimStyle(const Record& r) {
         ds.tolJustify = static_cast<int>(g->integer());  // DIMTOLJ
     if (const Group* g = r.find(145); g && std::isfinite(g->number()))
         ds.textVertPos = std::clamp(g->number(), -100.0, 100.0);  // DIMTVP
-    if (const Group* g = r.find(279)) {                           // DIMTMOVE
+    if (const Group* g = r.find(90); g && g->integer() >= 0 && g->integer() <= 2)
+        ds.arcSymbol = static_cast<int>(g->integer());  // DIMARCSYM
+    if (const Group* g = r.find(50); g && std::isfinite(g->number()))
+        ds.jogAngle = dimJogAngle(g->number());  // DIMJOGANG
+    if (const Group* g = r.find(279)) {          // DIMTMOVE
         const std::int64_t t = g->integer();
         ds.textMove = t == 1   ? DimTextMove::Leader
                       : t == 2 ? DimTextMove::Free

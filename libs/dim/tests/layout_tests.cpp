@@ -686,3 +686,73 @@ TEST_CASE("text moved by hand keeps the arrows where the fit rules put them") {
     Layout shortText = withStyle([](DimStyle&) {}, d);
     CHECK(tailOfArrowAt0(shortText) > 0);
 }
+
+TEST_CASE("DIMARCSYM: the arc symbol before the text, above it, or none") {
+    DimensionData d;
+    d.kind = DimKind::ArcLength;
+    d.defPts = {Vec2{0, 0}, Vec2{30, 0}, Vec2{0, 30}, Vec2{25, 25}};
+    auto dirOf = [](double a) { return Vec2{std::cos(a), std::sin(a)}; };
+    auto symbols = [](const Layout& L) {
+        std::vector<Layout::Arc> v;
+        for (const auto& a : L.arcs)
+            if (a.role == Role::Text)
+                v.push_back(a);
+        return v;
+    };
+    const Layout none = withStyle([](DimStyle& s) { s.arcSymbol = 2; }, d);
+    const Layout before = withStyle([](DimStyle& s) { s.arcSymbol = 0; }, d);
+    const Layout above = withStyle([](DimStyle& s) { s.arcSymbol = 1; }, d);
+    CHECK(symbols(none).empty());
+    REQUIRE(symbols(before).size() == 1);
+    REQUIRE(symbols(above).size() == 1);
+    // Before: the text moves along its baseline by half the symbol's room; the symbol's middle is
+    // on the far side of the text's middle from where it went.
+    const Vec2 ux = dirOf(before.text.rotation), uy = perp(ux);
+    const double th = before.text.height;
+    CHECK(before.text.width == doctest::Approx(none.text.width));
+    const double moved = dot(before.text.center - none.text.center, ux);
+    CHECK(moved > 0.5 * th);
+    const auto sb = symbols(before)[0];
+    const Vec2 top =
+        sb.center +
+        dirOf(sb.startAngle + normalizeAngle(sb.endAngle - sb.startAngle) / 2) * sb.radius;
+    CHECK(dot(top - before.text.center, ux) < -before.text.width / 2);
+    // The symbol bulges up the text, a chord as wide as the text is high.
+    const Vec2 e0 = sb.center + dirOf(sb.startAngle) * sb.radius;
+    const Vec2 e1 = sb.center + dirOf(sb.endAngle) * sb.radius;
+    CHECK(distance(e0, e1) == doctest::Approx(th));
+    CHECK(dot(top - (e0 + e1) / 2, uy) == doctest::Approx(0.35 * th));
+    // Above: the text stays; the symbol sits over its middle.
+    CHECK(near(above.text.center, none.text.center));
+    const auto sa = symbols(above)[0];
+    const Vec2 a0 = sa.center + dirOf(sa.startAngle) * sa.radius;
+    const Vec2 a1 = sa.center + dirOf(sa.endAngle) * sa.radius;
+    CHECK(dot((a0 + a1) / 2 - above.text.center, ux) == doctest::Approx(0).epsilon(1e-9));
+    CHECK(dot((a0 + a1) / 2 - above.text.center, uy) > th / 2);
+}
+
+TEST_CASE("DIMJOGANG: the jog of a jogged radius dimension joins two parallel lines at its angle") {
+    DimensionData d;
+    d.kind = DimKind::Jogged;
+    // True centre far to the left; the override sits 10 above the radius through (100, 0).
+    d.defPts = {Vec2{-1000, 0}, Vec2{100, 0}, Vec2{40, 10}, Vec2{70, 5}};
+    d.textPos = {50, 15};
+    d.textPosUser = true;
+    for (double deg : {45.0, 30.0, 90.0}) {
+        CAPTURE(deg);
+        const Layout L = withStyle([&](DimStyle& s) { s.jogAngle = deg * kPi / 180; }, d);
+        const Layout::Line* line = nullptr;
+        for (const auto& l : L.lines)
+            if (l.role == Role::DimLine && l.pts.size() == 4)
+                line = &l;
+        REQUIRE(line);
+        CHECK(near(line->pts[0], {40, 10}));
+        CHECK(near(line->pts[3], {100, 0}));
+        // Both ends run along the radius; the middle crosses at the jog angle, centred at x 70.
+        CHECK(line->pts[1].y == doctest::Approx(10));
+        CHECK(line->pts[2].y == doctest::Approx(0));
+        const Vec2 jog = line->pts[1] - line->pts[2];
+        CHECK(std::atan2(std::abs(jog.y), std::abs(jog.x)) == doctest::Approx(deg * kPi / 180));
+        CHECK((line->pts[1].x + line->pts[2].x) / 2 == doctest::Approx(70));
+    }
+}

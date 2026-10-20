@@ -530,6 +530,8 @@ private:
             double altRnd = 0;
             int tolj = 1;
             std::optional<ArrowType> arrow2;
+            int arcsym = 0;
+            double jogang = kDimJogAngleDefault;
             for (std::size_t k = 0; k < values; ++k) {
                 const std::uint64_t tag = r.varint();
                 const double v = r.f64();
@@ -565,6 +567,12 @@ private:
                     if (v < 0 || v > static_cast<double>(ArrowType::None) || v != std::floor(v))
                         bad("invalid second arrow");
                     arrow2 = static_cast<ArrowType>(static_cast<int>(v));
+                } else if (tag == 14) {
+                    if (v < 0 || v > 2 || v != std::floor(v))
+                        bad("invalid arc symbol");
+                    arcsym = static_cast<int>(v);
+                } else if (tag == 15) {
+                    jogang = v;
                 }
             }
             if (!doc_->dimStyle(id))
@@ -584,6 +592,8 @@ private:
                                         d.altRoundOff = altRnd;
                                         d.tolJustify = tolj;
                                         d.arrowType2 = arrow2;
+                                        d.arcSymbol = arcsym;
+                                        d.jogAngle = jogang;
                                     }),
                   "dimension style");
         }

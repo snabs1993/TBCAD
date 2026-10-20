@@ -581,6 +581,39 @@ void layoutAngular(const Ctx& c, const DimensionData& d, const std::string& txt,
 
 // ---- arc length --------------------------------------------------------------------------------
 
+// The arc symbol of an arc length dimension: as wide as the text is high, a third of that high.
+constexpr double kArcSymbolWidth = 1.0, kArcSymbolRise = 0.35, kArcSymbolSpace = 0.2;
+
+// Width the symbol takes before the text (DIMARCSYM 0), symbol and space; 0 otherwise.
+double arcSymbolRoom(const DimStyle& st, double th) {
+    return st.arcSymbol == 0 ? (kArcSymbolWidth + kArcSymbolSpace) * th : 0;
+}
+
+// Draws the arc symbol (DIMARCSYM 0 before the text, 1 above it) round the text that
+// layoutArcLength placed; with 0, the text box held the symbol too and the text moves right.
+void addArcSymbol(const DimStyle& st, Layout& L) {
+    if (st.arcSymbol == 2 || !L.text.valid())
+        return;
+    const double th = L.text.height;
+    const Vec2 ux = unit(L.text.rotation), uy = perp(ux);
+    const double a = kArcSymbolWidth * th / 2, h = kArcSymbolRise * th;
+    Vec2 base;  // middle of the symbol's chord
+    if (st.arcSymbol == 0) {
+        const double room = arcSymbolRoom(st, th);
+        const Vec2 box = L.text.center;
+        const double full = L.text.width;
+        L.text.width = std::max(full - room, 0.0);
+        L.text.center = box + ux * (room / 2);
+        base = box - ux * (full / 2 - a) - uy * (h / 2);
+    } else {
+        base = L.text.center + uy * (th / 2 + 0.25 * th);
+    }
+    const double R = (a * a + h * h) / (2 * h);
+    const Vec2 o = base + uy * (h - R);
+    L.arcs.push_back({o, R, normalizeAngle(angleOf(base + ux * a - o)),
+                      normalizeAngle(angleOf(base - ux * a - o)), Role::Text});
+}
+
 void layoutArcLength(const Ctx& c, const DimensionData& d, const std::string& txt, Layout& L) {
     ArcSpan g = arcSpan(d);
     if (!g.ok)
@@ -599,7 +632,8 @@ void layoutArcLength(const Ctx& c, const DimensionData& d, const std::string& tx
                    static_cast<std::uint8_t>(i + 1));
     }
 
-    const double tw = textWidth(c, txt);
+    // DIMARCSYM 0: the arc symbol goes before the text, in the same box.
+    const double tw = textWidth(c, txt) + (txt.empty() ? 0 : arcSymbolRoom(c.st, c.th));
     const double arcLen = r * g.sweep;
     const bool arrowsIn = arcLen >= 2 * c.arrow;
     const double stub = 2 * c.arrow;
@@ -678,24 +712,43 @@ void layoutOrdinate(const Ctx& c, const DimensionData& d, const std::string& txt
 
 // ---- jogged radius -----------------------------------------------------------------------------
 
+// The line runs from the point on the arc toward the true centre, and from the centre override
+// parallel to it; the jog joins the two at DIMJOGANG to the line, its middle at the jog point.
+// With the override on the radius itself, the jog is a Z of twice the arrow size.
 void layoutJogged(const Ctx& c, const DimensionData& d, const std::string& txt, Layout& L) {
-    const Vec2 A = d.defPts[1], C = d.defPts[2], J = d.defPts[3];
-    const Vec2 u = normalized(A - C);
+    const Vec2 O = d.defPts[0], A = d.defPts[1], C = d.defPts[2], J = d.defPts[3];
+    Vec2 u = normalized(A - O);
+    if (tol::isZeroLength(u))
+        u = normalized(A - C);
     if (tol::isZeroLength(u))
         return;
     const Vec2 n = perp(u);
-    const double w = 2 * c.arrow;  // length of the jog along the dimension line
-    const Vec2 s0 = J - u * (w / 2), s3 = J + u * (w / 2);
+    const double ang = std::clamp(c.st.jogAngle, 5 * kPi / 180, kPi / 2);
+    const double h = dot(C - A, n);  // offset of the override's line from the radius
+    const double t = dot(J - A, u);  // the jog's place along the line (negative: toward C)
     Layout::Line line;
-    line.pts = {C, s0, s0 + u * (w * 0.25) + n * (w / 2), s3 - u * (w * 0.25) - n * (w / 2), s3, A};
     line.role = Role::DimLine;
+    Vec2 tail;  // end of the jog on the override's side, where the line goes on to C
+    if (std::abs(h) > c.tol) {
+        const double run = std::abs(h) / std::tan(ang);
+        const Vec2 p1 = A + u * (t + run / 2), p2 = A + u * (t - run / 2) + n * h;
+        line.pts = {C, p2, p1, A};
+        tail = p2;
+    } else {
+        const double w = 2 * c.arrow;  // height of the Z
+        const double run = w / std::tan(ang);
+        const Vec2 m = A + u * t;
+        const Vec2 s0 = m - u * (run / 2 + w / 4), s3 = m + u * (run / 2 + w / 4);
+        line.pts = {C, s0, m - u * (run / 2) + n * (w / 2), m + u * (run / 2) - n * (w / 2), s3, A};
+        tail = s0;
+    }
     L.lines.push_back(std::move(line));
     addArrow(L, c, A, -u);
     if (txt.empty())
         return;
     const double tw = textWidth(c, txt);
     const double rot = c.st.textAlign == DimTextAlign::Horizontal ? 0 : readable(angleOf(u));
-    Vec2 center = (C + s0) / 2 + perp(unit(rot)) * (c.gap + c.th / 2);
+    Vec2 center = (C + tail) / 2 + perp(unit(rot)) * (c.gap + c.th / 2);
     if (d.textPosUser)
         center = d.textPos;
     L.text = {txt, center, rot, c.th, false, false, tw};
@@ -1049,6 +1102,8 @@ Layout layoutDimension(const Document& doc, const DimensionData& d, double toler
     // already lay their text out at it.
     if (d.textRotated && d.kind != DimKind::Linear && d.kind != DimKind::Aligned)
         L.text.rotation = d.textRotation;
+    if (d.kind == DimKind::ArcLength)
+        addArcSymbol(st, L);
     if (stacked && L.text.utf8 == txt) {
         L.text.utf8 = stacked->markup;
         L.text.stacked = true;

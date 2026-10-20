@@ -669,6 +669,10 @@ Result<void> checkRow(const Document& doc, DimStyle& r, const DimStyle* old) {
     if (r.arrowType2 && (static_cast<int>(*r.arrowType2) < 0 ||
                          static_cast<int>(*r.arrowType2) > static_cast<int>(ArrowType::None)))
         return invalid("unknown second arrow");
+    if (!std::isfinite(r.jogAngle))
+        return invalid("jog angle must be a number");
+    r.jogAngle = std::clamp(r.jogAngle, 5 * kPi / 180, kPi / 2);
+    r.arcSymbol = std::clamp(r.arcSymbol, 0, 2);
     r.textVertPos = std::clamp(r.textVertPos, -100.0, 100.0);
     r.textJustify = std::clamp(r.textJustify, 0, 2);
     r.angularPrecision = std::clamp(r.angularPrecision, -1, 8);
