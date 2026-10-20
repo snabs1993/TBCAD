@@ -263,6 +263,8 @@ TEST_CASE("perf: WBLOCK of nested blocks and INSERT of the file") {
     // A fresh drawing takes the file in as a block and places it.
     ui::AppCore other(big.registry, platform::AppPaths{big.dir / "cfg2", big.dir / "data2"});
     other.setViewportSize(1400, 900);
+    // A new drawing may already hold blocks (the layouts of its template).
+    const std::size_t blocksBefore = other.document().blocks().size();
     t = std::chrono::steady_clock::now();
     const std::string fileText = file.string();
     for (const char* l : {"INSERT", fileText.c_str(), "10,10"})
@@ -276,7 +278,7 @@ TEST_CASE("perf: WBLOCK of nested blocks and INSERT of the file") {
     CHECK(other.document().modelSpaceCount() == 1);
     CHECK(other.document().blockByName("part") != nullptr);
     // 20,000 lines + 500 references, each pulling in the five nested blocks once
-    CHECK(other.document().blocks().size() == 1 + 5);
+    CHECK(other.document().blocks().size() == blocksBefore + 1 + 5);
     CHECK(insMs < 30000 * kSlack);
 }
 

@@ -307,6 +307,14 @@ private:
     void writeMline(const Props& p, const MlineData& d, const Entity& e, std::uint64_t owner);
     void writeAnnotativeData(const Entity& e);
     void mleaderNote(const MLeaderData& m, std::vector<DataItem>& items);
+    // MULTILEADER (DXF 2007), false when it cannot be written so (pieces are written instead).
+    bool writeMLeader(const Props& p, const Entity& e, const MLeaderData& m, std::uint64_t owner);
+    std::uint64_t mleaderStyleHandle(DimStyleId style);
+    std::uint64_t textStyleHandle(TextStyleId id);
+    std::uint64_t byBlockLinetypeHandle();
+    std::uint64_t mleaderStdStyle_ = 0;                       // "Standard" MLEADERSTYLE
+    std::map<std::uint32_t, std::uint64_t> mleaderStyles_{};  // dim style -> MLEADERSTYLE
+    std::uint64_t byBlockLt_ = 0;  // the ByBlock LTYPE record, when named before the table
     void writeExtXdata(const EntityCommon& c);
     void writeTbcadFlags(const Entity& e);
     void writeProxy(const Props& p, const ProxyData& d, std::uint64_t owner);

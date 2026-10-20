@@ -949,6 +949,103 @@ TEST_CASE("a multileader's block keeps its attribute values through DXF") {
     CHECK(m->attribs[0].value == "B12");
 }
 
+TEST_CASE("DXF 2007 writes a multileader as MULTILEADER with its style, and reads it back") {
+    Document doc;
+    BlockId tagBlock;
+    DimStyleId named;
+    {
+        Transaction tx = doc.begin("mleaders");
+        tagBlock = tx.addBlock(BlockDef{.name = "TagCircle", .base = {0, 0}}).value();
+        TextData t;
+        t.utf8 = "NO";
+        t.attdef = AttDefInfo{"NO", "", "1", false, false, false, false};
+        REQUIRE(tx.add(make(Indirect<TextData>(std::move(t))), tagBlock).ok());
+        DimStyle ds;
+        ds.name = "MLEADER-Notes";
+        ds.textHeight = 3.5;
+        named = tx.addDimStyle(std::move(ds)).value();
+        MLeaderData m;
+        m.lines = {{{0, 0}, {20, 10}}, {{0, 20}, {20, 10}}};
+        m.landing = {20, 10};
+        m.contentPos = {25, 10};
+        m.style = named;
+        m.utf8 = "Steel {\\C1;beam}";
+        REQUIRE(tx.add(make(Indirect<MLeaderData>(m))).ok());
+        MLeaderData b;
+        b.lines = {{{0, 50}, {20, 60}}};
+        b.landing = {20, 60};
+        b.contentPos = {25, 60};
+        b.content = MLeaderData::Content::Block;
+        b.block = tagBlock;
+        b.blockScale = 2;
+        b.attribs = {AttribValue{"NO", "A3", {}}};
+        REQUIRE(tx.add(make(Indirect<MLeaderData>(b))).ok());
+        tx.commit();
+    }
+    ExportOptions opt;
+    opt.version = DxfVersion::R2007;
+    Report exportReport;
+    Result<ExportResult> out = exportDxf(doc, opt, exportReport);
+    REQUIRE(out.ok());
+    const std::string& text = out.value().bytes;
+    CHECK(text.find("MULTILEADER") != std::string::npos);
+    CHECK(text.find("ACAD_MLEADERSTYLE") != std::string::npos);
+    CHECK(text.find("AcDbMLeaderStyle") != std::string::npos);
+    CHECK(text.find("\r\nLEADER\r\n") == std::string::npos);  // no pieces
+
+    Report report;
+    Result<ImportResult> in = importDxf(testing::bytesOf(text), ImportOptions{}, report);
+    REQUIRE(in.ok());
+    const Document& back = *in.value().document;
+    std::vector<const MLeaderData*> ms;
+    back.forEachEntity([&](const Entity& e) {
+        if (const auto* x = entityAs<MLeaderData>(e))
+            ms.push_back(x);
+    });
+    REQUIRE(ms.size() == 2);
+    const MLeaderData* note = ms[0]->content == MLeaderData::Content::Text ? ms[0] : ms[1];
+    const MLeaderData* tag = note == ms[0] ? ms[1] : ms[0];
+    CHECK(note->utf8 == "Steel {\\C1;beam}");
+    CHECK(note->lines.size() == 2);
+    REQUIRE(back.dimStyle(note->style));
+    CHECK(back.dimStyle(note->style)->name == "MLEADER-Notes");
+    CHECK(tag->content == MLeaderData::Content::Block);
+    REQUIRE(back.block(tag->block));
+    CHECK(back.block(tag->block)->name == "TagCircle");
+    CHECK(tag->blockScale == doctest::Approx(2));
+    REQUIRE(tag->attribs.size() == 1);
+    CHECK(tag->attribs[0].value == "A3");
+    CHECK(tag->contentPos.x == doctest::Approx(25));
+
+    // Without our note (another program's file), the record alone still gives the multileaders.
+    std::string plain = text;
+    const std::string app = "1001\r\nTBCAD_MLEADER\r\n";
+    for (std::size_t at; (at = plain.find(app)) != std::string::npos;) {
+        const std::size_t zero = plain.find("\r\n0\r\n", at);
+        const std::size_t next = plain.find("\r\n1001\r\n", at + app.size());
+        REQUIRE(zero != std::string::npos);
+        plain.erase(at, std::min(zero, next) + 2 - at);
+    }
+    Report r2;
+    Result<ImportResult> in2 = importDxf(testing::bytesOf(plain), ImportOptions{}, r2);
+    REQUIRE(in2.ok());
+    std::size_t blocks = 0, notes = 0;
+    in2.value().document->forEachEntity([&](const Entity& e) {
+        if (const auto* x = entityAs<MLeaderData>(e)) {
+            if (x->content == MLeaderData::Content::Block) {
+                ++blocks;
+                REQUIRE(x->attribs.size() == 1);
+                CHECK(x->attribs[0].value == "A3");
+            } else if (x->utf8.find("beam") != std::string::npos) {
+                ++notes;
+                CHECK(x->lines.size() == 2);
+            }
+        }
+    });
+    CHECK(blocks == 1);
+    CHECK(notes == 1);
+}
+
 TEST_CASE("multileaders in a block, with a Thai note, and pieces lost in another program") {
     Document doc;
     BlockId b;
