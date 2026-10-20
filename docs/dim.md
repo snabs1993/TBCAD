@@ -198,7 +198,9 @@ children. `FixedExt` (On/Off) and `FixedExtLength` give extension lines a fixed 
 | Arc | Radius | Text, Diameter |
 | Line, then **Angular**, then a second line | Angular between the lines | Text |
 
-The preview follows the cursor while the location is chosen. All dimensions of one DIM run are one undo step.
+The preview follows the cursor while the location is chosen. At the object prompt, Baseline and
+Continue run DIMBASELINE or DIMCONTINUE from the last dimension (Enter there comes back to DIM).
+All dimensions of one DIM run are one undo step.
 
 **MLEADER** (alias MLD) takes an arrowhead point and a landing point, then asks for the note straight away. Text
 typed at either point prompt is the note itself. As in AutoCAD the first prompt also offers **leader Landing first**

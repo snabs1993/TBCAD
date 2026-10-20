@@ -202,3 +202,22 @@ TEST_CASE("MLEADER: arrow, landing, then the note, text typed at the landing pro
     CHECK(ms[0]->utf8 == "Beam B1");
     CHECK(ms[1]->utf8 == "Column C2");
 }
+
+TEST_CASE("DIM Continue and Baseline chain from the dimension just made, then DIM goes on") {
+    Fix f;
+    EntityId h = f.add(LineData{{0, 0}, {100, 0}});
+    auto r = f.host->run(
+        "DIM", {ScriptItem::pick(h, {50, 0}), "50,-30", "Continue", "250,0", ScriptItem::enter(),
+                "Baseline", "400,0", ScriptItem::enter(), ScriptItem::enter()});
+    CHECK(r.finished);
+    auto dims = f.all<DimensionData>();
+    REQUIRE(dims.size() == 3);
+    CHECK(dims[1]->defPts[0].x == doctest::Approx(100));
+    CHECK(dims[1]->measurement == doctest::Approx(150));
+    CHECK(dims[1]->defPts[2].y == doctest::Approx(-30));
+    // Baseline from the continued dimension: its first extension line, one spacing further out.
+    CHECK(dims[2]->defPts[0].x == doctest::Approx(100));
+    CHECK(dims[2]->measurement == doctest::Approx(300));
+    CHECK(f.host->undo());
+    CHECK(f.all<DimensionData>().empty());  // one command, one undo step
+}
