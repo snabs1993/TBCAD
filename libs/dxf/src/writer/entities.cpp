@@ -308,6 +308,76 @@ void Writer::loadSourceHandles() {
     }
 }
 
+// Objects a dimension or leader names (associative points, DIMBREAK Auto) take their handle now,
+// so TBCAD_DIM can name them whether they are written before or after it.
+void Writer::reserveNamedHandles() {
+    if (r12_)
+        return;
+    const auto reserve = [&](EntityId id) {
+        if (!id || srcHandle_.count(id.value) || !doc_.find(id))
+            return;
+        const std::uint64_t h = newHandle();
+        srcHandleReserved_.insert(h);
+        srcHandle_[id.value] = h;
+    };
+    doc_.forEachEntity([&](const Entity& e) {
+        if (const auto* d = entityAs<DimensionData>(e)) {
+            for (const DimAssoc& a : d->assoc)
+                if (a.kind != DimAssoc::Kind::None)
+                    reserve(a.target);
+            for (EntityId id : d->breakWith)
+                reserve(id);
+        } else if (const auto* l = entityAs<LeaderData>(e)) {
+            for (EntityId id : l->breakWith)
+                reserve(id);
+        }
+    });
+}
+
+std::string Writer::handleRef(EntityId id) const {
+    const auto it = srcHandle_.find(id.value);
+    if (it == srcHandle_.end())
+        return "0";
+    char buf[24];
+    std::snprintf(buf, sizeof buf, "%llX", static_cast<unsigned long long>(it->second));
+    return buf;
+}
+
+void Writer::writeDimExtras(const std::vector<DimBreak>& breaks, const std::vector<EntityId>& with,
+                            std::uint32_t autoBreaks, const DimensionData* dim) {
+    std::vector<std::string> items;
+    const auto num = [](double v) {
+        char buf[32];
+        std::snprintf(buf, sizeof buf, "%.17g", std::isfinite(v) ? v : 0.0);
+        return std::string(buf);
+    };
+    const auto pt = [&](Vec2 p) { return num(p.x) + "," + num(p.y); };
+    for (const DimBreak& b : breaks)
+        items.push_back("b=" + pt(b.a) + "," + pt(b.b));
+    if (!with.empty() && !r12_) {
+        items.push_back("auto=" + std::to_string(autoBreaks));
+        for (EntityId id : with)
+            items.push_back("w=" + handleRef(id));
+    }
+    if (dim) {
+        for (const Vec2& j : dim->jogs)
+            items.push_back("j=" + pt(j));
+        if (dim->flipArrow1 || dim->flipArrow2)
+            items.push_back(std::string("flip=") + (dim->flipArrow1 ? "1" : "0") +
+                            (dim->flipArrow2 ? "1" : "0"));
+        for (std::size_t k = 0; k < dim->assoc.size() && !r12_; ++k)
+            if (const DimAssoc& a = dim->assoc[k]; a.kind != DimAssoc::Kind::None)
+                items.push_back("as" + std::to_string(k) + "=" +
+                                std::to_string(static_cast<int>(a.kind)) + ":" +
+                                handleRef(a.target) + ":" + std::to_string(a.index));
+    }
+    if (items.empty())
+        return;
+    L().o->raw(1001, "TBCAD_DIM");
+    for (const std::string& it : items)
+        L().o->raw(1000, it);
+}
+
 void Writer::pickEntityHandle(EntityId id) {
     L().entHandle = 0;
     auto it = srcHandle_.find(id.value);
@@ -691,6 +761,8 @@ void Writer::mleaderNote(const MLeaderData& m, std::vector<DataItem>& items) {
 // turns it back into the flag. Written after the last group of the record.
 void Writer::writeAnnotativeData(const Entity& e) {
     writeTbcadFlags(e);
+    if (const auto* d = entityAs<DimensionData>(e))
+        writeDimExtras(d->breaks, d->breakWith, d->autoBreaks, d);
     writeExtXdata(e.common);
 }
 
@@ -1580,6 +1652,7 @@ void Writer::writeLeader(const Props& p, const LeaderData& d, std::uint64_t owne
         o.pt(211, {1, 0});
         o.pt(212, {0, 0});
         o.pt(213, {0, 0});
+        writeDimExtras(d.breaks, d.breakWith, d.autoBreaks, nullptr);
         count("LEADER");
     }
     if (!d.utf8.empty()) {

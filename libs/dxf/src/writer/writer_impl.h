@@ -228,6 +228,13 @@ private:
     void openTbcadXdata();
     // TBCAD XDATA flags every kind of object can carry: wipeout, annotative and its scales.
     void writeCommonFlags(const EntityCommon& c);
+    // TBCAD_DIM XDATA: what a dimension or leader has beyond its DXF record (DIMBREAK gaps and
+    // the objects that make them, jogs, flipped arrows, associative points); the objects named
+    // are given handles before any is written (see loadSourceHandles).
+    void writeDimExtras(const std::vector<DimBreak>& breaks, const std::vector<EntityId>& with,
+                        std::uint32_t autoBreaks, const DimensionData* dim);
+    std::string handleRef(EntityId id) const;
+    void reserveNamedHandles();
     void setLevelTag(const EntityCommon& c);
     void levelsXdata(Out& o);
     void skipEntity(std::string_view what, const std::string& why);

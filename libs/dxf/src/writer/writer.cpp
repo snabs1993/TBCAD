@@ -961,6 +961,16 @@ std::string Writer::tablesSection() {
                 extApps.insert("TBCAD_ARRAY");
             if (kind(e) == EntityKind::MLeader)
                 extApps.insert("TBCAD_MLEADER");
+            if (const auto* d = entityAs<DimensionData>(e)) {
+                bool assoc = false;
+                for (const DimAssoc& a : d->assoc)
+                    assoc = assoc || a.kind != DimAssoc::Kind::None;
+                if (assoc || !d->breaks.empty() || !d->jogs.empty() || d->flipArrow1 ||
+                    d->flipArrow2)
+                    extApps.insert("TBCAD_DIM");
+            } else if (const auto* l = entityAs<LeaderData>(e); l && !l->breaks.empty()) {
+                extApps.insert("TBCAD_DIM");
+            }
         });
         bool layerNotes = false;
         for (const auto& [lid, layer] : doc_.layers())
@@ -1849,6 +1859,7 @@ Result<ExportResult> Writer::run() {
     }
 
     loadSourceHandles();
+    reserveNamedHandles();
     if (!r12_) {
         for (const tbcad::Group& g : readGroups(doc_))
             for (EntityId m : g.members)
