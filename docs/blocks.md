@@ -236,14 +236,32 @@ An xref is a block whose content is a snapshot of another drawing; see `docs/xre
 
 ## Block palette, library and block count
 
-The `Blocks` panel is a palette with two tabs.
+`BLOCKSPALETTE` (aliases `BLOCKS`, `BP`; Insert > Blocks Palette) opens the `Blocks` panel, a
+palette with four tabs. `BLOCKSPALETTECLOSE` closes it.
 
-* **Drawing**: one tile per named block with a line thumbnail (`thumbnailOfBlock`), the number of
-  uses (or `xref`), a filter box and a `Count` button. Double-click inserts; right-click offers
-  Insert and, for xrefs, Reload / Bind / Detach.
+* **Current Drawing**: one tile per named block with a line thumbnail (`thumbnailOfBlock`), the
+  number of uses (or `xref`), a filter box and a `Count` button. Right-click offers Insert, Edit
+  block and, for xrefs, Reload / Bind / Detach.
+* **Recent**: the blocks placed lately with `INSERT` (setting `block.recent`, newest first, at most
+  24; `parseRecent` / `pushRecent`). A block copied from another drawing remembers that drawing,
+  so it can be placed again in a drawing that does not have it yet; a whole file inserted as a
+  block remembers the file.
+* **Other Drawing**: type the path of another drawing (or pick one from `Recent`, the drawing
+  history shared with the content browser in setting `content.history`) to see its blocks as
+  tiles. Placing one copies it in first (`CONTENTIMPORT`).
 * **Library**: a folder of `.tbcad` and `.dxf` files (setting `block.library`, three levels deep,
   at most 2,000 files). Thumbnails load one file per frame. Double-click inserts the file as a
-  block; right-click can attach it as an xref instead.
+  block; right-click can attach it as an xref instead, or show the blocks inside the file in the
+  Other Drawing tab.
+
+Double-click a tile to insert it, or drag it onto the drawing: it lands where it is dropped. Drag
+it onto the "Drop blocks here" bar of a tool palette to make it a tool. The **Options** section
+above the tabs sets how the palette inserts (`paletteInsertLines`): a scale and a rotation, or
+**On screen** for either to ask for it after the insertion point (with a live preview of the
+rotation), **Repeat placement** to keep placing copies until Enter, and **Explode** to place the
+parts instead of the block. The options are kept in the `block.palette.*` settings. A typed
+`INSERT` is not affected: the palette passes its on-screen choice in `tmp.insert.ask` for one run
+only.
 
 `INSERT` accepts the name of a library file in place of a block name (absolute path, or relative
 to the drawing's folder or the library folder; `.tbcad` may be left out). The file becomes an

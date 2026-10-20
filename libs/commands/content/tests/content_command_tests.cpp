@@ -106,5 +106,9 @@ TEST_CASE("the content commands are registered") {
     Fixture f;
     CHECK(f.reg.find("CONTENT"));
     CHECK(f.reg.find("ADC"));
+    // DesignCenter names open the same browser.
+    for (const char* name : {"ADCENTER", "DC", "DCENTER"})
+        CHECK(f.reg.find(name) == f.reg.find("CONTENT"));
+    CHECK(f.reg.find("ADCCLOSE"));
     CHECK(f.reg.find("CONTENTIMPORT"));
 }

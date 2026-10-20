@@ -17,14 +17,20 @@ Every tool can also name a **layer**; it becomes the current layer before the to
 
 ## Editing
 - `+ Add tool` at the bottom of a tab makes a new tool.
-- Right-click a tool to move it left or right, or to remove it.
+- `+ Selected objects` makes tools from the objects selected in the drawing: an inserted block
+  gives a block tool (with its scale and rotation), a hatch a hatch tool (pattern, scale, angle),
+  any other object a tool that starts the command that draws it (a line gives `LINE`, a linear
+  dimension `DIMLINEAR`). Each tool sets the object's layer.
+- Right-click a tool for **Properties...** (change any of its values), to move it left or right,
+  or to remove it.
 - Right-click a tab to rename or delete the palette; the `+` tab makes a new palette.
 - In the content browser, select blocks and press **Add to palette** to turn them into tools.
 
 Palettes are saved in `palettes.json` in the settings folder. The first start offers a Draw and a
 Hatches palette. `-PALETTE` edits them from the command line (New, Rename, Delete, AddBlock,
-AddHatch, AddCommand, Remove, List).
+AddHatch, AddCommand, AddSelected, Remove, List). The file belongs to the user, not to a drawing,
+so the same palettes are there in every drawing.
 
 ## Drag and drop
 
-Drag a tool onto the drawing area to run it, exactly like a click. Drag a tool onto another tool of the same palette to move it there. Blocks dragged from the content browser onto the "Drop blocks here" bar are added as tools.
+Drag a tool onto the drawing area to run it, exactly like a click. Drag a tool onto another tool of the same palette to move it there. Blocks dragged from the content browser or the Blocks palette onto the "Drop blocks here" bar are added as tools. A block of the open drawing remembers the drawing's file, so its tool also works in other drawings once that drawing is saved. A block tool dropped on the drawing is placed where it is dropped.

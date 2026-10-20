@@ -60,6 +60,42 @@ std::filesystem::path libraryFileFor(const std::string& typed,
                                      const std::filesystem::path& drawingFile,
                                      const std::filesystem::path& libraryFolder);
 
+// ---- placing from the palette -----------------------------------------------------------------
+
+// The Options section of the block palette.
+struct InsertOptions {
+    double scale = 1;
+    double rotationDeg = 0;
+    bool repeat = false;   // keep placing copies until Enter
+    bool explode = false;  // place the parts, not the block
+};
+
+// The INSERT script the palette runs for a block (or a drawing file): the name, then Scale and
+// Rotate only when they differ from 1 and 0, then Multiple and Explode when asked for. The point
+// is left to the user.
+std::vector<std::string> paletteInsertLines(const std::string& name, const InsertOptions& o);
+
+// ---- recently inserted blocks ------------------------------------------------------------------
+
+// A block placed with INSERT, for the Recent tab. `file` is the drawing it came from (empty for
+// the drawing it was placed in); `whole` is set when the whole file was inserted as a block.
+struct RecentBlock {
+    std::string name{};
+    std::string file{};
+    bool whole = false;
+    bool operator==(const RecentBlock&) const = default;
+};
+
+constexpr std::size_t kMaxRecentBlocks = 24;
+
+// The list kept in the "block.recent" setting, newest first: one record per block, fields split
+// by \x1f and records by \x1e. Broken records are skipped.
+std::vector<RecentBlock> parseRecent(const std::string& setting);
+std::string formatRecent(const std::vector<RecentBlock>& list);
+// Puts `b` first, drops an older entry for the same block and file, and keeps at most
+// kMaxRecentBlocks.
+std::string pushRecent(const std::string& setting, const RecentBlock& b);
+
 // ---- block count -------------------------------------------------------------------------------
 
 struct BlockCountRow {

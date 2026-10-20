@@ -6,10 +6,11 @@ namespace tbcad::content_cmds {
 void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeContentImportCommand());
     (void)registry.add(makeContentPanelCommand());
+    (void)registry.add(makeContentCloseCommand());
 }
 
 void registerUi(ui::UiRegistry& ui) {
-    ui.addMenuItem("Tools/Content Browser", "CONTENT", "tools.content");
+    ui.addMenuItem("Tools/Content Browser (DesignCenter)", "CONTENT", "tools.content");
 #ifdef TBCAD_CONTENT_IMGUI
     registerContentPanel(ui);
 #endif

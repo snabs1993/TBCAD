@@ -1,11 +1,14 @@
 # Content browser
 
-Tools > Content Browser (command `CONTENT`, alias `ADC`) opens a panel that looks inside other drawings
+Tools > Content Browser (command `CONTENT`, aliases `ADC`, `ADCENTER`, `DC`, `DCENTER`, the
+DesignCenter names; `ADCCLOSE` closes it) opens a panel that looks inside other drawings
 and copies single items into the one you are working on: blocks, layers (with their sub-layers),
 linetypes, text styles and dimension styles.
 
 1. Pick a folder with the path box (type a path and press Enter; double-click a folder to enter it).
-   Drawings (`.tbcad`, `.dxf`, `.tbt`) are listed below.
+   Drawings (`.tbcad`, `.dxf`, `.tbt`) are listed below. A drawing's full path typed in the box
+   opens it at once, and **History** lists the drawings browsed lately (here or in the Other
+   Drawing tab of the Blocks palette).
 2. Click a drawing. Its contents appear in tabs on the right; blocks show a small preview.
 3. Select items (Ctrl+click for several) and press **Copy to drawing**. **Copy and insert** copies
    a block and starts `INSERT` with it.
@@ -27,4 +30,4 @@ Choose `List` instead of a kind to see what the file offers.
 
 ## Drag and drop
 
-Drag a block, layer, linetype or style from the list onto the drawing area to copy it into the drawing; a dragged block is also started as an INSERT. Drag blocks onto the "Drop blocks here" bar of a palette tab to add them as tools. If several rows are selected, dragging one of them takes all of them.
+Drag a block, layer, linetype or style from the list onto the drawing area to copy it into the drawing; a dragged block is also inserted where it is dropped. Drag blocks onto the "Drop blocks here" bar of a palette tab to add them as tools. If several rows are selected, dragging one of them takes all of them.

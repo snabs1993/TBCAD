@@ -26,6 +26,7 @@ struct State {
     Tool draft;
     int kind = 0;
     std::string draftPalette;
+    std::string editing;  // the tool whose Properties are open; empty = adding a new tool
     bool openAdd = false;
     // Palette rename / new.
     std::string nameInput;
@@ -70,6 +71,7 @@ void runTool(ui::PanelContext& pc, const Tool& tool) {
         pc.runCommand(line);
 }
 
+// The Add tool form, also the Properties of an existing tool (st.editing).
 void drawAddPopup(ui::PanelContext& pc, State& st) {
     if (st.openAdd) {
         ImGui::OpenPopup("Add tool");
@@ -77,6 +79,8 @@ void drawAddPopup(ui::PanelContext& pc, State& st) {
     }
     if (!ImGui::BeginPopupModal("Add tool", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         return;
+    if (!st.editing.empty())
+        ImGui::TextDisabled("Properties of %s", st.editing.c_str());
     Tool& t = st.draft;
     ImGui::RadioButton("Block", &st.kind, 0);
     ImGui::SameLine();
@@ -119,8 +123,9 @@ void drawAddPopup(ui::PanelContext& pc, State& st) {
     }
     if (!st.message.empty())
         ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.2f, 1.0f), "%s", st.message.c_str());
-    if (ImGui::Button("Add", ImVec2(100, 0))) {
-        st.message = st.store->addTool(st.draftPalette, t);
+    if (ImGui::Button(st.editing.empty() ? "Add" : "OK", ImVec2(100, 0))) {
+        st.message = st.editing.empty() ? st.store->addTool(st.draftPalette, t)
+                                        : st.store->replaceTool(st.draftPalette, st.editing, t);
         if (st.message.empty()) {
             persist(st);
             ImGui::CloseCurrentPopup();
@@ -160,8 +165,10 @@ void drawNamePopup(State& st, const char* title, bool& open, bool rename) {
     ImGui::EndPopup();
 }
 
-// Blocks dragged from the content browser land here and become tools of the palette.
-void drawDropZone(State& st, const std::string& palette) {
+// Blocks dragged from the content browser or the Blocks palette land here and become tools of the
+// palette. A block of the open drawing remembers the drawing's file, so the tool works in other
+// drawings too once that drawing is saved.
+void drawDropZone(ui::PanelContext& pc, State& st, const std::string& palette) {
     ImGui::Spacing();
     ImGui::Button("Drop blocks here to add them", ImVec2(-1, 28));
     if (!ImGui::BeginDragDropTarget())
@@ -175,6 +182,8 @@ void drawDropZone(State& st, const std::string& palette) {
                 t.kind = ToolKind::Block;
                 t.block = n;
                 t.file = drag.file;
+                if (t.file.empty() && pc.host)
+                    t.file = pc.host->documentFile();
                 (void)st.store->addTool(palette, std::move(t));  // a name already there is skipped
             }
             persist(st);
@@ -266,6 +275,14 @@ void drawPanel(ui::PanelContext& pc) {
                         moveTool = t.name;
                         moveBy = 1;
                     }
+                    if (ImGui::MenuItem("Properties...")) {
+                        st.draft = t;
+                        st.kind = t.kind == ToolKind::Block ? 0 : t.kind == ToolKind::Hatch ? 1 : 2;
+                        st.draftPalette = name;
+                        st.editing = t.name;
+                        st.openAdd = true;
+                        st.message.clear();
+                    }
                     if (ImGui::MenuItem("Remove"))
                         removeTool = t.name;
                     ImGui::EndPopup();
@@ -289,16 +306,31 @@ void drawPanel(ui::PanelContext& pc) {
                     persist(st);
                 }
             }
-            drawDropZone(st, name);
+            drawDropZone(pc, st, name);
             ImGui::Spacing();
             if (ImGui::SmallButton("+ Add tool")) {
                 st.draft = Tool{};
                 st.draft.scale = 1;
                 st.kind = 0;
                 st.draftPalette = name;
+                st.editing.clear();
                 st.openAdd = true;
                 st.message.clear();
             }
+            // Tools that draw more objects like the selected ones (block, hatch, or the command
+            // that makes them), on their layer.
+            const bool haveSelection = pc.selection && !pc.selection->empty();
+            ImGui::SameLine();
+            ImGui::BeginDisabled(!haveSelection);
+            if (ImGui::SmallButton("+ Selected objects") && haveSelection) {
+                for (Tool& t : toolsFromObjects(*pc.doc, *pc.selection,
+                                                pc.host ? pc.host->documentFile() : std::string()))
+                    (void)st.store->addTool(name, std::move(t));  // a name already there is skipped
+                persist(st);
+            }
+            ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip("Add tools that make objects like the selected ones");
             ImGui::EndTabItem();
         }
         if (ImGui::TabItemButton("+", ImGuiTabItemFlags_Trailing | ImGuiTabItemFlags_NoTooltip)) {

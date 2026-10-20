@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
@@ -243,6 +244,28 @@ std::string PaletteStore::addTool(const std::string& palette, Tool tool) {
     return {};
 }
 
+std::string PaletteStore::replaceTool(const std::string& palette, const std::string& tool,
+                                      Tool with) {
+    Palette* p = find(palette);
+    if (!p)
+        return "No palette named \"" + palette + "\".";
+    auto it = std::find_if(p->tools.begin(), p->tools.end(),
+                           [&](const Tool& t) { return lower(t.name) == lower(trimmed(tool)); });
+    if (it == p->tools.end())
+        return "No tool named \"" + tool + "\".";
+    // Check the new values as a new tool of a palette without the old one.
+    Palette rest{p->name, {}};
+    for (const Tool& t : p->tools)
+        if (&t != &*it)
+            rest.tools.push_back(t);
+    PaletteStore check({});
+    check.palettes_ = {std::move(rest)};
+    if (std::string err = check.addTool(palette, with); !err.empty())
+        return err;
+    *it = std::move(check.palettes_[0].tools.back());
+    return {};
+}
+
 std::string PaletteStore::removeTool(const std::string& palette, const std::string& tool) {
     Palette* p = find(palette);
     if (!p)
@@ -314,6 +337,115 @@ std::vector<std::string> toolLines(const Tool& tool, const Document& doc) {
             }
             break;
         }
+    }
+    return out;
+}
+
+namespace {
+
+std::string layerPathOf(const Document& doc, LayerId id) {
+    std::string out;
+    for (const Layer* l = doc.layer(id); l; l = l->parent ? doc.layer(l->parent) : nullptr)
+        out = out.empty() ? l->name : l->name + "~" + out;  // the -LAYER path separator
+    return out;
+}
+
+const char* commandFor(const Entity& e) {
+    switch (kind(e)) {
+        case EntityKind::Line:
+            return "LINE";
+        case EntityKind::Circle:
+            return "CIRCLE";
+        case EntityKind::Arc:
+            return "ARC";
+        case EntityKind::Polyline:
+            return "PLINE";
+        case EntityKind::Point:
+            return "POINT";
+        case EntityKind::Ellipse:
+            return "ELLIPSE";
+        case EntityKind::Spline:
+            return "SPLINE";
+        case EntityKind::Text:
+            return "TEXT";
+        case EntityKind::MText:
+            return "MTEXT";
+        case EntityKind::Leader:
+            return "QLEADER";
+        case EntityKind::Table:
+            return "TABLE";
+        case EntityKind::Ray:
+            return "XLINE";
+        case EntityKind::MLine:
+            return "MLINE";
+        case EntityKind::MLeader:
+            return "MLEADER";
+        case EntityKind::Dimension:
+            switch (entityAs<DimensionData>(e)->kind) {
+                case DimKind::Aligned:
+                    return "DIMALIGNED";
+                case DimKind::Radius:
+                    return "DIMRADIUS";
+                case DimKind::Diameter:
+                    return "DIMDIAMETER";
+                case DimKind::Angular2Line:
+                case DimKind::Angular3Point:
+                    return "DIMANGULAR";
+                case DimKind::ArcLength:
+                    return "DIMARC";
+                case DimKind::Ordinate:
+                    return "DIMORDINATE";
+                default:
+                    return "DIMLINEAR";
+            }
+        default:
+            return nullptr;
+    }
+}
+
+}  // namespace
+
+std::vector<Tool> toolsFromObjects(const Document& doc, const std::vector<EntityId>& ids,
+                                   const std::string& drawingFile) {
+    std::vector<Tool> out;
+    auto addUnique = [&](Tool t) {
+        for (const Tool& o : out)
+            if (lower(o.name) == lower(t.name))
+                return;
+        out.push_back(std::move(t));
+    };
+    for (EntityId id : ids) {
+        const Entity* e = doc.find(id);
+        if (!e)
+            continue;
+        Tool t;
+        t.layer = layerPathOf(doc, e->common.layer);
+        if (const auto* ins = entityAs<InsertData>(*e)) {
+            const BlockDef* def = doc.block(ins->block);
+            if (!def || def->anonymous || !def->xrefPath.empty())
+                continue;
+            t.kind = ToolKind::Block;
+            t.name = t.block = def->name;
+            t.file = drawingFile;
+            t.scale = ins->scale.x;
+            t.angle = ins->rotation * 180.0 / 3.14159265358979323846;
+        } else if (const auto* h = entityAs<HatchData>(*e)) {
+            t.kind = ToolKind::Hatch;
+            t.pattern = h->solid ? std::string("SOLID") : h->pattern;
+            if (t.pattern.empty())
+                continue;
+            t.name = t.pattern;
+            t.scale = h->solid ? 1 : h->patternScale;
+            t.angle = h->solid ? 0 : h->patternAngle * 180.0 / 3.14159265358979323846;
+        } else if (const char* c = commandFor(*e)) {
+            t.kind = ToolKind::Command;
+            t.name = t.command = c;
+        } else {
+            continue;
+        }
+        if (std::abs(t.angle) < 1e-9)
+            t.angle = 0;
+        addUnique(std::move(t));
     }
     return out;
 }
