@@ -189,6 +189,12 @@ private:
     std::map<std::string, DimStyleId> dimOverrideStyles_{};
     // Each dimension style's arrow (DIMBLK) and first separate arrow (DIMBLK1, used with DIMSAH).
     std::map<std::string, std::pair<ArrowType, ArrowType>> dimArrows_{};
+    // BLOCK_RECORD names by handle: DIMBLK and the arrow overrides of a dimension name their
+    // block by handle. The table comes after DIMSTYLE, so dimension styles wait for it.
+    std::map<std::string, std::string> blockNameByHandle_{};
+    std::vector<Record> pendingDimStyles_{};
+    // The arrow kind of a DIMBLK value: a block name, or the handle of its block record.
+    ArrowType arrowKindOf(std::string_view raw, ArrowType none) const;
     // ImportOptions::dimensionCompare: the size the writing program measured each MTEXT at (DXF
     // 42 / 43), by its insertion point.
     std::map<std::pair<double, double>, Vec2> mtextExtents_{};
