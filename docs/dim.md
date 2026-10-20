@@ -60,6 +60,11 @@ older programs skip; DXF writes DIMTOL/DIMLIM/DIMTP/DIMTM/DIMTDEC and DIMALT/DIM
 them (also in a dimension's own DSTYLE overrides). DXF cannot say "inches" for the alternate value, so it comes
 back as millimetres times a factor with the same text.
 
+`TextVertPos` (DIMTVP, default 0) moves text centred on the dimension line (DIMTAD 0) that many text
+heights above it (negative: below), as in AutoCAD; the line breaks round the text only when the move is
+less than 0.7. It is read from DXF and DWG (also from a dimension's own overrides), written to DXF, and
+kept in `.tbcad` in the DSTV chunk.
+
 ### Other style variables
 
 `LinearFactor` (DIMLFAC, DXF 144) multiplies the measurement of every length dimension before it is

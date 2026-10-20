@@ -2,7 +2,6 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
-#include <cstdlib>
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
@@ -224,8 +223,7 @@ void Importer::parseHeader(const Record& rec) {
             insunits = static_cast<int>(g.integer());
             haveUnits = true;
         } else if (var.compare(0, 6, "$USERI") == 0 && var.size() == 7 && g.code == 70 &&
-                   g.integer() > 8100 &&
-                   g.integer() <= 8106) {
+                   g.integer() > 8100 && g.integer() <= 8106) {
             // TBCAD's own note of the unit it shows lengths in (all lengths are mm in the file)
             unitMarker = static_cast<int>(g.integer()) - 8100;
             markerVar = var;
@@ -378,8 +376,8 @@ void Importer::processClasses(RecordReader& rr) {
         if (r.type != "CLASS")
             continue;
         const std::string_view cls = r.raw(1);
-        if (cls == "IMAGE" || cls == "IMAGEDEF" || cls == "IMAGEDEF_REACTOR" || cls == "PDFUNDERLAY" ||
-            cls == "PDFDEFINITION")
+        if (cls == "IMAGE" || cls == "IMAGEDEF" || cls == "IMAGEDEF_REACTOR" ||
+            cls == "PDFUNDERLAY" || cls == "PDFDEFINITION")
             continue;
         packGroup(kept, 0, "CLASS");
         for (const Group& g : r.g) {
@@ -988,13 +986,13 @@ void Importer::keepObjects() {
     // Names the writer writes itself, and objects that only make sense next to entities or
     // layouts of the source file.
     static const std::set<std::string> ownedNames = {
-        "ACAD_GROUP",      "ACAD_IMAGE_DICT",    "ACAD_PDFDEFINITIONS",    "ACAD_IMAGE_VARS",  "ACAD_LAYOUT",
-        "ACAD_MLINESTYLE", "ACAD_PLOTSTYLENAME", "ACAD_SCALELIST",   "TBCAD_ANNOSCALE",
-        "ACAD_SORTENTS",   "TBCAD_CONSTRAINTS",  "TBCAD_PARAMETERS", "ACAD_WIPEOUT_VARS",
-        "TBCAD_SETTINGS"};
+        "ACAD_GROUP",        "ACAD_IMAGE_DICT", "ACAD_PDFDEFINITIONS", "ACAD_IMAGE_VARS",
+        "ACAD_LAYOUT",       "ACAD_MLINESTYLE", "ACAD_PLOTSTYLENAME",  "ACAD_SCALELIST",
+        "TBCAD_ANNOSCALE",   "ACAD_SORTENTS",   "TBCAD_CONSTRAINTS",   "TBCAD_PARAMETERS",
+        "ACAD_WIPEOUT_VARS", "TBCAD_SETTINGS"};
     static const std::set<std::string> neverKept = {
-        "LAYOUT",   "IMAGEDEF",        "IMAGEDEF_REACTOR", "PDFDEFINITION", "SORTENTSTABLE", "GROUP",
-        "DIMASSOC", "IMAGEDEFREACTOR", "ACDBPLACEHOLDER",  "MLINESTYLE"};
+        "LAYOUT", "IMAGEDEF", "IMAGEDEF_REACTOR", "PDFDEFINITION",   "SORTENTSTABLE",
+        "GROUP",  "DIMASSOC", "IMAGEDEFREACTOR",  "ACDBPLACEHOLDER", "MLINESTYLE"};
 
     const ObjRec& root = objStore_.at(objRoot_);
     std::vector<std::pair<std::string, std::string>> entries;  // (name, handle)
@@ -1626,7 +1624,9 @@ void Importer::readDimStyle(const Record& r) {
         ds.linearFactor = g->number();  // DIMLFAC
     if (const Group* g = r.find(146); g && std::isfinite(g->number()) && g->number() > 0)
         ds.tolHeightFactor = std::min(g->number(), 10.0);  // DIMTFAC
-    if (const Group* g = r.find(279)) {  // DIMTMOVE
+    if (const Group* g = r.find(145); g && std::isfinite(g->number()))
+        ds.textVertPos = std::clamp(g->number(), -100.0, 100.0);  // DIMTVP
+    if (const Group* g = r.find(279)) {                           // DIMTMOVE
         const std::int64_t t = g->integer();
         ds.textMove = t == 1   ? DimTextMove::Leader
                       : t == 2 ? DimTextMove::Free
@@ -1712,14 +1712,14 @@ void Importer::readDimStyle(const Record& r) {
             break;
         }
     }
-    nonNegative(42, k_, ds.extLineOffset);                              // DIMEXO
-    nonNegative(44, k_, ds.extLineExtension);                           // DIMEXE
-    nonNegative(46, k_, ds.dimLineExtension);                           // DIMDLE
-    nonNegative(43, k_, ds.baselineSpacing);                            // DIMDLI
+    nonNegative(42, k_, ds.extLineOffset);     // DIMEXO
+    nonNegative(44, k_, ds.extLineExtension);  // DIMEXE
+    nonNegative(46, k_, ds.dimLineExtension);  // DIMDLE
+    nonNegative(43, k_, ds.baselineSpacing);   // DIMDLI
     // Fixed length extension lines: groups 290 and 49 (as the DWG reader writes them), or the
     // extended data AutoCAD writes them as in a DXF file.
-    flag(290, ds.fixedExtLines);                // DIMFXLON
-    nonNegative(49, k_, ds.fixedExtLength);     // DIMFXL
+    flag(290, ds.fixedExtLines);             // DIMFXLON
+    nonNegative(49, k_, ds.fixedExtLength);  // DIMFXL
     {
         std::string app;
         bool var = false;
@@ -2107,8 +2107,8 @@ void Importer::processBlocks(RecordReader& rr) {
             }
             // The drawn dimension (*D<n>) is regenerated from the definition points; its parts
             // are kept only when the caller asks for the graphics.
-            if (!opts_.dimensionGraphics && !opts_.dimensionCompare && f.size() > 2 && f[0] == '*' &&
-                f[1] == 'd')
+            if (!opts_.dimensionGraphics && !opts_.dimensionCompare && f.size() > 2 &&
+                f[0] == '*' && f[1] == 'd')
                 skipBlock_ = true;
             // Table graphics of ours (*TB<n>) are regenerated from the table kept in extended
             // data. An AutoCAD table's block (*T<n>) is kept, for its TABLE to insert; those left
@@ -2779,8 +2779,7 @@ Result<ImportResult> Importer::run() {
             for (auto& [gid, g] : groups) {
                 std::sort(g.items.begin(), g.items.end(),
                           [](const Item& a, const Item& b) { return a.index < b.index; });
-                const bool whole =
-                    g.hasInfo && static_cast<long long>(g.items.size()) == g.count;
+                const bool whole = g.hasInfo && static_cast<long long>(g.items.size()) == g.count;
                 auto info = whole ? blocks::arrayFromText(g.info, k_) : std::nullopt;
                 if (info) {
                     // Every item that is not removed must be there, once; replaced items take
@@ -2865,8 +2864,7 @@ Result<ImportResult> Importer::run() {
                 if (!isNote(app) || app.items.empty() || app.items[0].code != 1000)
                     continue;
                 long long id = -1, n = 0, i = -1;
-                (void)std::sscanf(app.items[0].text.c_str(), "a=%lld;n=%lld;i=%lld", &id, &n,
-                                  &i);
+                (void)std::sscanf(app.items[0].text.c_str(), "a=%lld;n=%lld;i=%lld", &id, &n, &i);
                 if (id < 0 || n < 1 || i < 0 || i >= n)
                     continue;
                 Group& g = groups[id];

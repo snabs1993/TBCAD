@@ -90,7 +90,7 @@ const std::vector<std::string> kProps = {
     "TextInside",   "ArrowsOutside",   "LineInside",    "ExtLine1",    "ExtLine2",
     "DimLine1",     "DimLine2",        "Justify",       "AngleFormat", "AngularPrecision",
     "DecimalMark",  "BaselineSpacing", "CenterMark",    "TextFill",    "TextFillColor",
-    "TextFrame",    "LengthFormat",    "TolHeight"};
+    "TextFrame",    "LengthFormat",    "TolHeight",     "TextVertPos"};
 
 std::string num(double v) {
     char buf[40];
@@ -129,9 +129,9 @@ std::vector<std::pair<std::string, std::string>> describe(const Document& doc, c
         {"ExtOffset", num(s.extLineOffset)},
         {"ExtExtension", num(s.extLineExtension)},
         {"LineExtension", num(s.dimLineExtension)},
-        {"Placement", s.textPlacement == DimTextPlacement::AboveLine  ? "Above"
-                      : s.textPlacement == DimTextPlacement::Below ? "Below"
-                                                                   : "Centered"},
+        {"Placement", s.textPlacement == DimTextPlacement::AboveLine ? "Above"
+                      : s.textPlacement == DimTextPlacement::Below   ? "Below"
+                                                                     : "Centered"},
         {"Alignment", s.textAlign == DimTextAlign::WithDimLine ? "WithLine" : "Horizontal"},
         {"Units", unit[static_cast<int>(s.units)]},
         {"Precision", std::to_string(s.precision)},
@@ -183,6 +183,7 @@ std::vector<std::pair<std::string, std::string>> describe(const Document& doc, c
                                        : "None"},
         {"TextFillColor", std::to_string(s.textFillColor)},
         {"TextFrame", s.textFrame ? "Yes" : "No"},
+        {"TextVertPos", num(s.textVertPos)},
     };
 }
 
@@ -382,6 +383,13 @@ std::string applyProperty(const Document& doc, DimStyle& s, std::string_view key
             s.textFrame = false;
         else
             return "TextFrame is Yes or No.";
+        return {};
+    }
+    if (same(key, "TextVertPos")) {  // DIMTVP, in text heights
+        double v = 0;
+        if (!parseReal(value, v) || std::abs(v) > 100)
+            return "TextVertPos is a number of text heights, from -100 to 100.";
+        s.textVertPos = v;
         return {};
     }
     if (same(key, "CenterMark")) {

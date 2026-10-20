@@ -512,6 +512,8 @@ std::string canonicalDump(const Document& doc) {
             o << " linfmt" << static_cast<int>(r.linearFormat) << "/" << r.tolHeightFactor;
         if (r.hasFixedExt())
             o << " fixedext" << (r.fixedExtLines ? 1 : 0) << "/" << r.fixedExtLength;
+        if (r.textVertPos != 0)
+            o << " tvp" << r.textVertPos;
         if (r.hasNumberFormat())
             o << " numfmt" << static_cast<int>(r.angleFormat) << "/" << r.angularPrecision << "/"
               << (r.commaDecimal ? 1 : 0) << "/" << r.baselineSpacing << "/" << r.centerMark;
