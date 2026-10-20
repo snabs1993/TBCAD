@@ -1,5 +1,6 @@
 #include <filesystem>
 #include <fstream>
+#include <unordered_map>
 
 #include "support.h"
 #include "tbcad/block_cmds/palette.h"
@@ -170,6 +171,40 @@ TEST_CASE("block count: direct and nested inserts, CSV, table") {
     Fixture none;
     none.host->run("BLOCKCOUNT", {});
     CHECK(none.host->logContains("No blocks are inserted"));
+}
+
+TEST_CASE("block count: blocks that hold each other many times over, and cycles") {
+    Document doc;
+    std::vector<BlockId> chain;
+    BlockId self, ping, pong;
+    {
+        auto tx = doc.begin("blocks");
+        // L0 holds L1 twice, L1 holds L2 twice, ... 40 levels: 2^39 L39 in one L0.
+        for (int i = 0; i < 40; ++i)
+            chain.push_back(tx.addBlock(BlockDef{.name = "L" + std::to_string(i)}).value());
+        for (int i = 0; i + 1 < 40; ++i)
+            for (double y : {0.0, 1.0})
+                (void)tx.add(Entity{{}, Indirect<InsertData>(InsertData{chain[i + 1], {0, y}})},
+                             chain[i]);
+        self = tx.addBlock(BlockDef{.name = "SELF"}).value();
+        (void)tx.add(Entity{{}, Indirect<InsertData>(InsertData{self})}, self);
+        ping = tx.addBlock(BlockDef{.name = "PING"}).value();
+        pong = tx.addBlock(BlockDef{.name = "PONG"}).value();
+        (void)tx.add(Entity{{}, Indirect<InsertData>(InsertData{pong})}, ping);
+        (void)tx.add(Entity{{}, Indirect<InsertData>(InsertData{ping})}, pong);
+        for (BlockId b : {chain[0], chain[0], self, ping})
+            (void)tx.add(Entity{{}, Indirect<InsertData>(InsertData{b})});
+        tx.commit();
+    }
+    std::unordered_map<std::string, BlockCountRow> by;
+    for (const BlockCountRow& r : blockCount(doc))
+        by[r.name] = r;
+    CHECK(by.at("L0").direct == 2);
+    CHECK(by.at("L0").total == 2);
+    CHECK(by.at("L1").total == 4);
+    CHECK(by.at("L39").total == (std::size_t{1} << 40));
+    CHECK(by.at("SELF").total >= 1);
+    CHECK(by.count("PING") == 1);
 }
 
 TEST_CASE("INSERT in a drawing with no blocks still takes a typed drawing file") {
