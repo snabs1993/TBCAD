@@ -1,4 +1,5 @@
-// libFuzzer target: commands run on the Thai house sample with input made from the fuzzer's bytes.
+// libFuzzer target: commands run on the Thai house sample (or one of a few reader corpus
+// drawings, picked by the first byte) with input made from the fuzzer's bytes.
 // Each input is a few commands in a row, each with its clicks, picks and typed answers; then
 // everything is undone. A command may refuse, cancel or report an error, but it must not crash,
 // and the drawing must still save and load as it was.
@@ -13,6 +14,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <vector>
@@ -21,6 +24,7 @@
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/cmd/script_host.h"
 #include "tbcad/core/dump.h"
+#include "tbcad/dxf/reader.h"
 #include "tbcad/io/tbcad.h"
 
 using namespace tbcad;
@@ -39,12 +43,35 @@ bool skipped(const std::string& name) {
     return false;
 }
 
+// A drawing to start from, kept as .tbcad bytes, with its dump as loaded.
+struct Drawing {
+    std::vector<std::uint8_t> bytes;
+    std::string dump;
+};
+
 struct World {
     cmd::Registry registry;
     std::vector<std::string> names;
-    std::vector<std::uint8_t> sample;
-    std::string sampleDump;
+    std::vector<Drawing> drawings;  // the Thai house first, then some reader corpus files
 };
+
+// Adds the drawing when it saves and loads unchanged by itself (else every input would fail).
+void addDrawing(World& w, const Document& doc) {
+    auto bytes = io::writeTbcadToMemory(doc);
+    if (!bytes.ok())
+        return;
+    io::IoReport report;
+    auto a = io::readTbcad(std::span<const std::uint8_t>(bytes.value()), report);
+    if (!a.ok())
+        return;
+    auto again = io::writeTbcadToMemory(*a.value());
+    if (!again.ok())
+        return;
+    auto b = io::readTbcad(std::span<const std::uint8_t>(again.value()), report);
+    if (!b.ok() || canonicalDump(*a.value()) != canonicalDump(*b.value()))
+        return;
+    w.drawings.push_back({std::move(bytes).value(), canonicalDump(*a.value())});
+}
 
 World& world() {
     static World* w = [] {
@@ -59,11 +86,25 @@ World& world() {
             io::readTbcad(std::filesystem::path(TBCAD_SAMPLES_DIR) / "thai-house.tbcad", report);
         if (!doc.ok())
             std::abort();
-        auto bytes = io::writeTbcadToMemory(*doc.value());
-        if (!bytes.ok())
+        addDrawing(*out, *doc.value());
+        if (out->drawings.empty())
             std::abort();
-        out->sample = std::move(bytes).value();
-        out->sampleDump = canonicalDump(*doc.value());
+        // Dimensions, blocks with attributes, hatches, MTEXT markup, proxies, far coordinates.
+        for (const char* name : {"r2000_dimensions.dxf", "r2000_entities.dxf", "r2013_blocks.dxf",
+                                 "hatch_variants.dxf", "mtext_markup.dxf", "r2004_layers.dxf",
+                                 "proxy_graphics.dxf", "far_coordinates.dxf", "cycles.dxf"}) {
+            std::ifstream f(std::filesystem::path(TBCAD_CORPUS_DIR) / "reader" / name,
+                            std::ios::binary);
+            const std::string text((std::istreambuf_iterator<char>(f)),
+                                   std::istreambuf_iterator<char>());
+            dxf::Report dxfReport;
+            auto imported = dxf::importDxf(
+                std::as_bytes(std::span<const char>(text.data(), text.size())), {}, dxfReport);
+            if (imported.ok())
+                addDrawing(*out, *imported.value().document);
+            if (std::getenv("TBCAD_FUZZ_ECHO"))
+                std::fprintf(stderr, "drawing %zu: %s\n", out->drawings.size() - 1, name);
+        }
         const auto dir = std::filesystem::temp_directory_path() / "tbcad_cmd_fuzz";
         std::filesystem::create_directories(dir);
         std::filesystem::current_path(dir);
@@ -142,8 +183,12 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
             std::filesystem::remove_all(f.path(), ec);
     }
     Reader in{data, size};
+    const std::size_t which = in.byte() % w.drawings.size();
+    const Drawing& start = w.drawings[which];
+    if (std::getenv("TBCAD_FUZZ_ECHO"))
+        std::fprintf(stderr, "drawing %zu of %zu\n", which, w.drawings.size());
     io::IoReport report;
-    auto read = io::readTbcad(std::span<const std::uint8_t>(w.sample), report);
+    auto read = io::readTbcad(std::span<const std::uint8_t>(start.bytes), report);
     if (!read.ok())
         std::abort();
     std::unique_ptr<Document> doc = std::move(read).value();
@@ -191,12 +236,12 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
     }
     while (host.undo()) {
     }
-    // With TBCAD_FUZZ_UNDO_CHECK, undoing everything must give back the sample exactly.
+    // With TBCAD_FUZZ_UNDO_CHECK, undoing everything must give back the drawing exactly.
     if (std::getenv("TBCAD_FUZZ_UNDO_CHECK")) {
-        if (const std::string now = canonicalDump(*doc); now != w.sampleDump) {
+        if (const std::string now = canonicalDump(*doc); now != start.dump) {
             if (std::getenv("TBCAD_FUZZ_ECHO")) {
                 std::FILE* f = std::fopen("undo_expected.txt", "wb");
-                std::fwrite(w.sampleDump.data(), 1, w.sampleDump.size(), f);
+                std::fwrite(start.dump.data(), 1, start.dump.size(), f);
                 std::fclose(f);
                 f = std::fopen("undo_got.txt", "wb");
                 std::fwrite(now.data(), 1, now.size(), f);

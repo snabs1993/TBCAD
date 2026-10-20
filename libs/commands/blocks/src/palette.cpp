@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <system_error>
 #include <unordered_map>
 
@@ -217,32 +218,60 @@ std::filesystem::path libraryFileFor(const std::string& typed,
     return {};
 }
 
-namespace {
-
-void countInto(const Document& doc, BlockId block, std::size_t mult, int depth,
-               std::unordered_map<BlockId, std::size_t>& total) {
-    if (depth > 64)
-        return;
-    total[block] += mult;
-    const BlockDef* def = doc.block(block);
-    if (!def)
-        return;
-    for (EntityId id : def->entities)
-        if (const Entity* e = doc.find(id))
-            if (const auto* ins = entityAs<InsertData>(*e))
-                countInto(doc, ins->block, mult, depth + 1, total);
-}
-
-}  // namespace
-
 std::vector<BlockCountRow> blockCount(const Document& doc) {
     std::unordered_map<BlockId, std::size_t> direct, total;
     for (EntityId id : doc.modelSpace())
         if (const Entity* e = doc.find(id))
-            if (const auto* ins = entityAs<InsertData>(*e)) {
+            if (const auto* ins = entityAs<InsertData>(*e))
                 ++direct[ins->block];
-                countInto(doc, ins->block, 1, 0, total);
+    // How many times each block holds each other block, for the blocks reachable from model
+    // space. The totals then flow from parents to children in topological order: one pass,
+    // where following every path took forever on blocks that hold each other many times over.
+    std::unordered_map<BlockId, std::unordered_map<BlockId, std::size_t>> holds;
+    std::unordered_map<BlockId, std::size_t> parents;  // edges into the block
+    std::vector<BlockId> todo;
+    for (const auto& [id, n] : direct) {
+        total[id] = 0;
+        todo.push_back(id);
+    }
+    while (!todo.empty()) {
+        const BlockId b = todo.back();
+        todo.pop_back();
+        if (holds.count(b))
+            continue;
+        auto& mine = holds[b];
+        if (const BlockDef* def = doc.block(b))
+            for (EntityId id : def->entities)
+                if (const Entity* e = doc.find(id))
+                    if (const auto* ins = entityAs<InsertData>(*e))
+                        ++mine[ins->block];
+        for (const auto& [child, n] : mine) {
+            ++parents[child];
+            if (!total.count(child)) {
+                total[child] = 0;
+                todo.push_back(child);
             }
+        }
+    }
+    auto add = [](std::size_t& to, std::size_t v) { to = to > SIZE_MAX - v ? SIZE_MAX : to + v; };
+    for (const auto& [id, n] : direct)
+        add(total[id], n);
+    std::vector<BlockId> ready;
+    for (const auto& [id, n] : total)
+        if (!parents.count(id))
+            ready.push_back(id);
+    while (!ready.empty()) {
+        const BlockId b = ready.back();
+        ready.pop_back();
+        for (const auto& [child, times] : holds[b]) {
+            const std::size_t more =
+                total[b] > SIZE_MAX / times ? SIZE_MAX : total[b] * times;  // (times >= 1)
+            add(total[child], more);
+            if (--parents[child] == 0)
+                ready.push_back(child);
+        }
+    }
+    // (blocks that hold themselves, directly or not, keep what reached them from outside)
     std::vector<BlockCountRow> rows;
     for (const auto& [id, n] : total) {
         const BlockDef* def = doc.block(id);

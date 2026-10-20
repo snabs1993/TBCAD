@@ -1,7 +1,9 @@
 #include <doctest/doctest.h>
 
+#include <chrono>
 #include <cmath>
 
+#include "tbcad/blocks/display.h"
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/inquiry/inquiry.h"
@@ -271,6 +273,31 @@ TEST_CASE("FINDSTRAY leaves ordinary objects alone") {
     cmd::ScriptHost host(f.doc, f.reg);
     host.run("FINDSTRAY", {});
     CHECK(host.logContains("No stray lines found"));
+}
+
+TEST_CASE("FINDSTRAY is quick on blocks that hold each other many times over") {
+    // L0 holds L1 twice, L1 holds L2 twice, ... : 2^20 lines in one reference of L0.
+    blocks::registerInsertDisplay();
+    Fixture f;
+    constexpr int kLevels = 21;
+    std::vector<BlockId> ids;
+    {
+        auto tx = f.doc.begin("blocks");
+        for (int i = 0; i < kLevels; ++i)
+            ids.push_back(tx.addBlock(BlockDef{.name = "L" + std::to_string(i)}).value());
+        (void)tx.add(line({0, 0}, {1, 0}), ids.back());
+        for (int i = 0; i + 1 < kLevels; ++i)
+            for (double y : {0.0, 2.0})
+                (void)tx.add(Entity{{}, Indirect<InsertData>(InsertData{ids[i + 1], {0, y}})},
+                             ids[i]);
+        tx.commit();
+    }
+    cmd::ScriptHost host(f.doc, f.reg);
+    const auto t = std::chrono::steady_clock::now();
+    host.run("FINDSTRAY", {});
+    const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t).count();
+    CHECK(host.logContains("No stray lines found"));
+    CHECK(secs < 1);  // (several seconds when every reference inside a block was drawn)
 }
 
 TEST_CASE("PICKTRACE lists the objects drawn near a point") {

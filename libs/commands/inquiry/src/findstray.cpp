@@ -7,6 +7,7 @@
 #include <variant>
 
 #include "extra.h"
+#include "tbcad/blocks/display.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/layout/layout.h"
 
@@ -122,11 +123,18 @@ public:
                     scales.insert(vp.scaleN);
         std::vector<Hit> hits;
         std::size_t inBlocks = 0;
+        // Each block is drawn once per scale, not again for every reference to it (blocks nested
+        // a dozen deep took minutes).
+        blocks::BlockDisplayCache cache;
+        blocks::BlockDisplayScope scope(cache);
         ctx.doc().forEachEntity([&](const Entity& e) {
             const EntityKind k = kind(e);
             if (k == EntityKind::Ray || k == EntityKind::Proxy || e.common.annotative)
                 return;
             const bool owned = ctx.doc().ownerBlock(e.common.id) != BlockId{};
+            // A reference inside a block: what it draws is checked as the members of its block.
+            if (owned && k == EntityKind::Insert)
+                return;
             const std::size_t before = hits.size();
             for (double s : scales)
                 check(ctx.doc(), e, s, hits);
