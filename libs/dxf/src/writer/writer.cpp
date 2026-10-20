@@ -753,6 +753,8 @@ void Writer::writeDimStyles(Out& o, std::uint64_t table) {
         o.i(177, clr(ds.extLineColor));
         o.i(178, clr(ds.textColor));
         if (!r12_) {
+            o.i(371, ds.dimLineWeight.v);  // DIMLWD
+            o.i(372, ds.extLineWeight.v);  // DIMLWE
             o.i(271, std::clamp(ds.precision, 0, 16));
             o.i(280, ds.textJustify);                    // DIMJUST
             o.i(275, static_cast<int>(ds.angleFormat));  // DIMAUNIT (same numbering)

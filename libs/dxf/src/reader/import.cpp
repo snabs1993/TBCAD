@@ -1680,6 +1680,12 @@ void Importer::readDimStyle(const Record& r) {
                 out = Color::index(static_cast<std::uint8_t>(c));
         }
     };
+    auto dimWeight = [&](int code, LineWeight& out) {  // DIMLWD, DIMLWE
+        if (const Group* g = r.find(code); g && g->integer() >= -3 && g->integer() <= 211)
+            out = LineWeight{static_cast<std::int16_t>(g->integer())};
+    };
+    dimWeight(371, ds.dimLineWeight);
+    dimWeight(372, ds.extLineWeight);
     dimColor(176, ds.dimLineColor);
     dimColor(177, ds.extLineColor);
     dimColor(178, ds.textColor);

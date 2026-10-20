@@ -531,6 +531,8 @@ std::string canonicalDump(const Document& doc) {
             o << " fixedext" << (r.fixedExtLines ? 1 : 0) << "/" << r.fixedExtLength;
         if (r.textVertPos != 0)
             o << " tvp" << r.textVertPos;
+        if (r.dimLineWeight != LineWeight::byBlock() || r.extLineWeight != LineWeight::byBlock())
+            o << " lw" << r.dimLineWeight.v << "/" << r.extLineWeight.v;
         if (r.leaderArrow != ArrowType::ClosedFilled)
             o << " ldrarrow" << static_cast<int>(r.leaderArrow);
         if (r.hasNumberFormat())

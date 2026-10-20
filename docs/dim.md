@@ -81,6 +81,10 @@ Leaders (LEADER) draw their arrow with the style's `leaderArrow` (DIMLDRBLK, the
 leader child (`name$7`) sets it as its arrow instead. Multileaders keep the arrow of their
 multileader style.
 
+DIMLWD and DIMLWE (`dimLineWeight`, `extLineWeight`, DIMSTYLE keys `LineWeight` and
+`ExtWeight`) give the dimension line (with its arrows) and the extension lines their own
+lineweight; ByBlock, the default, keeps the dimension's lineweight.
+
 Tick marks (`ArrowType::ArchTick`, DXF `_ARCHTICK` or `_OBLIQUE`, or a DIMTSZ above 0, which
 sets the arrow size to DIMTSZ) are drawn as AutoCAD's block: a stroke at 45 degrees from
 (-a/2,-a/2) to (a/2,a/2) round the tip, so `a·√2` long.

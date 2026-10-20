@@ -524,6 +524,7 @@ private:
             const std::size_t values = r.count(9);
             double tvp = 0;
             ArrowType leader = ArrowType::ClosedFilled;
+            LineWeight lwd = LineWeight::byBlock(), lwe = LineWeight::byBlock();
             for (std::size_t k = 0; k < values; ++k) {
                 const std::uint64_t tag = r.varint();
                 const double v = r.f64();
@@ -535,6 +536,10 @@ private:
                     if (v < 0 || v > static_cast<double>(ArrowType::None) || v != std::floor(v))
                         bad("invalid leader arrow");
                     leader = static_cast<ArrowType>(static_cast<int>(v));
+                } else if (tag == 3 || tag == 4) {
+                    if (v < -3 || v > 211 || v != std::floor(v))
+                        bad("invalid dimension lineweight");
+                    (tag == 3 ? lwd : lwe) = LineWeight{static_cast<std::int16_t>(v)};
                 }
             }
             if (!doc_->dimStyle(id))
@@ -543,6 +548,8 @@ private:
                                     [&](DimStyle& d) {
                                         d.textVertPos = tvp;
                                         d.leaderArrow = leader;
+                                        d.dimLineWeight = lwd;
+                                        d.extLineWeight = lwe;
                                     }),
                   "dimension style");
         }

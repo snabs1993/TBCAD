@@ -134,6 +134,10 @@ struct DimStyle {
     bool suppressTrailingZeros = false;
     Color dimLineColor = Color::byBlock();
     Color extLineColor = Color::byBlock();
+    // DIMLWD / DIMLWE: the lineweights of dimension and extension lines (ByBlock: the
+    // dimension's own lineweight).
+    LineWeight dimLineWeight = LineWeight::byBlock();
+    LineWeight extLineWeight = LineWeight::byBlock();
     Color textColor = Color::byBlock();
     // Alternate units: the measurement a second time, in brackets after the first
     // ("100.00 [3.94]"). `altScale` multiplies the millimetres before they are shown in

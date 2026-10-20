@@ -505,3 +505,17 @@ TEST_CASE("DIMSTYLE LeaderArrow sets the arrow leaders draw with") {
     const dim::Layout L = dim::layoutLeader(f.doc, l);
     CHECK(L.arrows.size() == 1);
 }
+
+TEST_CASE("DIMSTYLE LineWeight and ExtWeight set DIMLWD and DIMLWE") {
+    Fixture f;
+    f.host->run("DIMSTYLE", {"New", "Lw", "Edit", "Lw", "LineWeight", "0.35", "ExtWeight",
+                             "ByLayer", "Done", "Done"});
+    const DimStyle* s = f.doc.dimStyleByName("Lw");
+    REQUIRE(s);
+    CHECK(s->dimLineWeight == LineWeight::hundredths(35));
+    CHECK(s->extLineWeight == LineWeight::byLayer());
+    bool listed = false;
+    for (const auto& [k, v] : dimcmd::describeStyle(f.doc, *s))
+        listed |= k == "LineWeight" && v == "0.35";
+    CHECK(listed);
+}
