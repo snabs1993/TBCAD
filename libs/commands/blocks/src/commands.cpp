@@ -28,6 +28,13 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeBSaveCommand(false));
     (void)registry.add(makeBSaveCommand(true));
     (void)registry.add(makeRefSetCommand());
+    (void)registry.add(makeBSaveAsCommand());
+    (void)registry.add(makeBvStateCommand());
+    (void)registry.add(makeBvHideShowCommand(false));
+    (void)registry.add(makeBvHideShowCommand(true));
+    (void)registry.add(makeBLookupTableCommand());
+    (void)registry.add(makeBTestBlockCommand());
+    (void)registry.add(makeBAttOrderCommand());
     (void)registry.add(makeInsertCommand());
     (void)registry.add(makeMinsertCommand());
     (void)registry.add(makeExplodeCommand());
@@ -82,6 +89,7 @@ void registerCommands(cmd::Registry& registry) {
 
 void registerUi(ui::UiRegistry& ui) {
     registerBlockPanel(ui);
+    registerBlockAuthoringPanel(ui);
     registerXrefPanel(ui);
     ui.addMenuItem("Insert/External References Palette", "EXTERNALREFERENCES", "block.xrefpanel");
     ui.addMenuItem("Draw/Block/Make Block...", "BLOCK", "block.make", "B");
@@ -90,6 +98,13 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Modify/Edit Block in Place", "BEDIT", "block.bedit");
     ui.addMenuItem("Modify/Save Block Edit", "BSAVE", "block.bsave");
     ui.addMenuItem("Modify/Close Block Edit", "BCLOSE", "block.bclose");
+    ui.addMenuItem("Modify/Block Editor/Save Block As...", "BSAVEAS", "block.bsaveas");
+    ui.addMenuItem("Modify/Block Editor/Test Block", "BTESTBLOCK", "block.btestblock");
+    ui.addMenuItem("Modify/Block Editor/Visibility States...", "BVSTATE", "block.bvstate");
+    ui.addMenuItem("Modify/Block Editor/Hide in Visibility State", "BVHIDE", "block.bvhide");
+    ui.addMenuItem("Modify/Block Editor/Show in Visibility State", "BVSHOW", "block.bvshow");
+    ui.addMenuItem("Modify/Block Editor/Lookup Table...", "BLOOKUPTABLE", "block.blookuptable");
+    ui.addMenuItem("Modify/Block Editor/Attribute Order...", "BATTORDER", "block.battorder");
     ui.addMenuItem("Modify/Edit Attributes...", "ATTEDIT", "block.attedit");
     ui.addMenuItem("Tools/Extract Attributes to CSV...", "ATTEXT", "block.attext");
     ui.addMenuItem("Insert/External Reference...", "XATTACH", "block.xattach");
@@ -109,17 +124,17 @@ void registerUi(ui::UiRegistry& ui) {
 
     // Ctrl+click on an item of an associative array takes that item out (ARRAYREMOVE, which then
     // waits for more items; Enter ends).
-    ui.addIdleClickHook([](ui::PanelContext& ctx, Vec2 world, double aperture, bool shift,
-                           bool ctrl) {
-        if (!ctrl || shift || ctx.commandActive || !ctx.doc || !ctx.runCommand)
-            return false;
-        if (!detail::arrayItemNear(*ctx.doc, world, aperture))
-            return false;
-        char buf[96];
-        std::snprintf(buf, sizeof buf, "ARRAYREMOVE %.17g,%.17g", world.x, world.y);
-        ctx.runCommand(buf);
-        return true;
-    });
+    ui.addIdleClickHook(
+        [](ui::PanelContext& ctx, Vec2 world, double aperture, bool shift, bool ctrl) {
+            if (!ctrl || shift || ctx.commandActive || !ctx.doc || !ctx.runCommand)
+                return false;
+            if (!detail::arrayItemNear(*ctx.doc, world, aperture))
+                return false;
+            char buf[96];
+            std::snprintf(buf, sizeof buf, "ARRAYREMOVE %.17g,%.17g", world.x, world.y);
+            ctx.runCommand(buf);
+            return true;
+        });
 }
 
 namespace detail {

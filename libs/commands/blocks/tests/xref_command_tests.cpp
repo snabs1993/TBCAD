@@ -542,3 +542,65 @@ TEST_CASE("ETRANSMIT needs a saved drawing") {
     f.host->run("ETRANSMIT", {"nowhere"});
     CHECK(f.host->logContains("Save the drawing first"));
 }
+
+TEST_CASE("REFEDIT on a .tbcad xref edits it in place and REFCLOSE saves its file") {
+    Dir dir;
+    fs::path file = writeSource(dir.path, "plan.tbcad", 3);
+    Fixture f;
+    f.host->run("XATTACH", {file.string(), "", "", "", "100,0"});
+    REQUIRE(f.modelSpace().size() == 1);
+    const EntityId ins = f.modelSpace()[0];
+    f.host->run("REFEDIT", {cmd::ScriptItem::pick(ins)});
+    REQUIRE(f.modelSpace().size() == 4);  // the insert and three working copies
+    // Erase one line, move another, and draw a new one on a host layer.
+    std::vector<EntityId> lines;
+    for (EntityId id : f.modelSpace())
+        if (kind(*f.doc.find(id)) == EntityKind::Line)
+            lines.push_back(id);
+    REQUIRE(lines.size() == 3);
+    {
+        Transaction tx = f.doc.begin("edit");
+        Layer l;
+        l.name = "notes";
+        const LayerId notes = tx.addLayer(l).value();
+        REQUIRE(tx.erase(lines[0]).ok());
+        REQUIRE(tx.modify(lines[1], [](Entity& e) { entityAs<LineData>(e)->b.y = 20; }).ok());
+        Entity e;
+        e.data = LineData{{100, 0}, {150, 0}};
+        e.common.layer = notes;
+        REQUIRE(tx.add(std::move(e)).ok());
+        tx.commit();
+    }
+    f.host->run("BVSTATE", {});  // the block editor's own commands do not apply to a reference
+    CHECK(f.host->logContains("external reference is being edited"));
+    f.host->run("REFCLOSE", {cmd::ScriptItem::enter()});
+    CHECK(f.modelSpace().size() == 1);
+    CHECK(f.host->logContains("saved to its file"));
+    CHECK(f.doc.blockByName("plan")->entities.size() == 3);
+
+    // The file has the edit, on the source's own layer and a new "notes" layer.
+    io::IoReport report;
+    auto back = io::readTbcad(file, report);
+    REQUIRE(back.ok());
+    const Document& src = *back.value();
+    REQUIRE(src.modelSpace().size() == 3);
+    const Layer* walls = src.layerByName("walls");
+    const Layer* notes = src.layerByName("notes");
+    REQUIRE(walls);
+    REQUIRE(notes);
+    int onWalls = 0, onNotes = 0;
+    double longest = 0;
+    for (EntityId id : src.modelSpace()) {
+        const Entity* e = src.find(id);
+        onWalls += e->common.layer == walls->id;
+        onNotes += e->common.layer == notes->id;
+        const auto* l = entityAs<LineData>(*e);
+        REQUIRE(l);
+        longest = std::max(longest, distance(l->a, l->b));
+        CHECK(l->a.x < 60);  // back in the file's own coordinates
+    }
+    CHECK(onWalls == 2);
+    CHECK(onNotes == 1);
+    CHECK(longest == doctest::Approx(50));
+    CHECK(fs::exists(fs::path(file.string() + ".bak")));
+}

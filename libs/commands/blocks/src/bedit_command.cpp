@@ -1,5 +1,7 @@
 #include <algorithm>
 #include <cstdlib>
+#include <filesystem>
+#include <optional>
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
@@ -8,6 +10,7 @@
 #include "tbcad/blocks/blocks.h"
 #include "tbcad/blocks/tbcad_blocks.h"
 #include "tbcad/geom/geom.h"
+#include "tbcad/xref/xref.h"
 
 namespace tbcad::block_cmds {
 
@@ -23,6 +26,15 @@ constexpr const char* kIdsKey = "tmp.bedit.ids";
 constexpr const char* kXformKey = "tmp.bedit.xform";
 constexpr const char* kMarkKey = "tmp.bedit.mark";  // highest object id before BEDIT
 constexpr const char* kExclKey = "tmp.bedit.excl";  // drawn since BEDIT but taken out by REFSET
+// Working copy -> the block entity it stands for ("copy:block,..."). Set by BEDIT for the copies
+// it makes and by every save for the whole working set, so the parameters, actions and
+// visibility states of a dynamic block (which name block entities) follow the edit.
+constexpr const char* kPairsKey = "tmp.bedit.pairs";
+constexpr const char* kHiddenKey = "tmp.bedit.hidden";  // copies hidden by the visibility state
+constexpr const char* kTestKey = "tmp.bedit.test";      // BTESTBLOCK references
+constexpr const char* kStateKey = "tmp.bedit.vstate";   // visibility state shown in the editor
+constexpr const char* kSavedKey = "tmp.bedit.saved";    // the block was written during the edit
+constexpr const char* kPanelId = "block_authoring";
 
 std::string encodeXform(const Transform2& t) {
     std::ostringstream os;
@@ -55,6 +67,53 @@ std::vector<EntityId> decodeIds(const std::string& s) {
     return ids;
 }
 
+std::unordered_map<EntityId, EntityId> decodePairs(const std::string& s) {
+    std::unordered_map<EntityId, EntityId> pairs;
+    std::istringstream is(s);
+    std::string tok;
+    while (std::getline(is, tok, ',')) {
+        const std::size_t colon = tok.find(':');
+        if (colon == std::string::npos)
+            continue;
+        pairs[EntityId{std::strtoull(tok.c_str(), nullptr, 10)}] =
+            EntityId{std::strtoull(tok.c_str() + colon + 1, nullptr, 10)};
+    }
+    return pairs;
+}
+
+std::string encodePairs(const std::vector<std::pair<EntityId, EntityId>>& pairs) {
+    std::string s;
+    for (const auto& [copy, block] : pairs)
+        s +=
+            (s.empty() ? "" : ",") + std::to_string(copy.value) + ":" + std::to_string(block.value);
+    return s;
+}
+
+// Block entity ids named by a dynamic block or an assembly, renamed through `map`; ids that are
+// not in it (objects deleted in the editor) are dropped.
+void remapBlockIds(BlockDef& d, const std::unordered_map<EntityId, EntityId>& map) {
+    auto remap = [&](std::vector<EntityId>& ids) {
+        std::vector<EntityId> out;
+        for (EntityId id : ids)
+            if (auto it = map.find(id); it != map.end())
+                out.push_back(it->second);
+        ids = std::move(out);
+    };
+    if (d.dynamic) {
+        for (DynParam& p : d.dynamic->params)
+            for (auto& objs : p.stateObjects)
+                remap(objs);
+        for (DynAction& a : d.dynamic->actions)
+            remap(a.objects);
+    }
+    if (d.assembly)
+        for (AsmBinding& b : d.assembly->bindings)
+            if (b.entity) {
+                auto it = map.find(b.entity);
+                b.entity = it == map.end() ? EntityId{} : it->second;
+            }
+}
+
 std::string editedBlock(const cmd::IHost& host) {
     return host.setting(kBlockKey).value_or("");
 }
@@ -65,7 +124,9 @@ std::vector<EntityId> editedIds(const Document& doc, const cmd::IHost& host) {
     const std::uint64_t mark =
         std::strtoull(host.setting(kMarkKey).value_or("0").c_str(), nullptr, 10);
     std::unordered_set<EntityId> have(ids.begin(), ids.end());
-    const std::vector<EntityId> excl = decodeIds(host.setting(kExclKey).value_or(""));
+    std::vector<EntityId> excl = decodeIds(host.setting(kExclKey).value_or(""));
+    for (EntityId id : decodeIds(host.setting(kTestKey).value_or("")))
+        excl.push_back(id);
     const std::unordered_set<EntityId> out(excl.begin(), excl.end());
     const std::vector<EntityId> drawn = doc.modelSpace();
     for (EntityId id : drawn)
@@ -87,17 +148,25 @@ std::vector<EntityId> editedIds(const Document& doc, const cmd::IHost& host) {
 }
 
 void forget(cmd::IHost& host) {
-    host.setSetting(kBlockKey, "");
-    host.setSetting(kIdsKey, "");
-    host.setSetting(kXformKey, "");
-    host.setSetting(kMarkKey, "");
-    host.setSetting(kExclKey, "");
+    for (const char* k : {kBlockKey, kIdsKey, kXformKey, kMarkKey, kExclKey, kPairsKey, kHiddenKey,
+                          kTestKey, kStateKey, kSavedKey})
+        host.setSetting(k, "");
+    host.closePanel(kPanelId);
+}
+
+// Erases the BTESTBLOCK references.
+void eraseTests(cmd::CommandContext& ctx) {
+    for (EntityId id : decodeIds(ctx.host().setting(kTestKey).value_or("")))
+        if (ctx.doc().find(id))
+            (void)ctx.tx().erase(id);
+    ctx.host().setSetting(kTestKey, "");
 }
 
 // Writes the copies back into the definition. Returns false (with a message) when it cannot.
-bool saveBack(cmd::CommandContext& ctx, bool removeCopies) {
+// `into` (another block, made by BSAVEAS with a copy of the definition) receives them instead.
+bool saveBack(cmd::CommandContext& ctx, bool removeCopies, BlockId into = {}) {
     Document& doc = ctx.doc();
-    const BlockDef* def = doc.blockByName(editedBlock(ctx.host()));
+    const BlockDef* def = into ? doc.block(into) : doc.blockByName(editedBlock(ctx.host()));
     if (!def) {
         ctx.message("The block being edited no longer exists.");
         forget(ctx.host());
@@ -109,6 +178,8 @@ bool saveBack(cmd::CommandContext& ctx, bool removeCopies) {
         ctx.message("Cannot write the block back: its reference cannot be undone (zero scale).");
         return false;
     }
+    const std::vector<EntityId> hiddenList = decodeIds(ctx.host().setting(kHiddenKey).value_or(""));
+    const std::unordered_set<EntityId> hidden(hiddenList.begin(), hiddenList.end());
     std::vector<Entity> content;
     std::vector<EntityId> live;
     for (EntityId id : editedIds(doc, ctx.host())) {
@@ -123,6 +194,8 @@ bool saveBack(cmd::CommandContext& ctx, bool removeCopies) {
         }
         Entity copy = std::move(back.value());
         copy.common.id = {};
+        if (hidden.count(id))
+            copy.common.visible = true;  // hidden only by the state shown in the editor
         content.push_back(std::move(copy));
     }
     for (const Entity& e : content)
@@ -133,22 +206,71 @@ bool saveBack(cmd::CommandContext& ctx, bool removeCopies) {
             }
 
     Transaction& tx = ctx.tx();
+    if (!def->xrefPath.empty()) {
+        // REFEDIT on an external reference: the edit goes into its file, then the reference is
+        // reloaded from it.
+        const auto hf = ctx.host().setting("document.file");
+        const std::filesystem::path hostFile =
+            hf ? std::filesystem::path(std::u8string(hf->begin(), hf->end()))
+               : std::filesystem::path{};
+        const std::size_t n = content.size();
+        if (auto w = xref::writeBack(doc, block, content, hostFile); !w) {
+            ctx.message(w.error().message);
+            return false;
+        }
+        auto loaded = xref::loadStored(def->xrefPath, hostFile);
+        if (!loaded) {
+            ctx.message(loaded.error().message);
+            return false;
+        }
+        const std::string name = def->name;
+        // Copies go first, so that the reload can replace the nested blocks they insert.
+        if (removeCopies)
+            for (EntityId id : live)
+                (void)tx.erase(id);
+        if (auto r = xref::reload(tx, doc, block, loaded.value()); !r) {
+            ctx.message(r.error().message);
+            return false;
+        }
+        ctx.host().setSetting(kPairsKey, "");
+        if (removeCopies) {
+            forget(ctx.host());
+        } else {
+            ctx.host().setSetting(kSavedKey, "1");
+        }
+        ctx.message("Reference \"" + name + "\" saved to its file from " + std::to_string(n) +
+                    " objects.");
+        return true;
+    }
     (void)tx.eraseAllIn(block);
-    for (Entity& e : content) {
-        auto r = tx.add(std::move(e), block);
+    const auto pairs = decodePairs(ctx.host().setting(kPairsKey).value_or(""));
+    std::unordered_map<EntityId, EntityId> renamed;  // old block entity -> new one
+    std::vector<std::pair<EntityId, EntityId>> newPairs;
+    for (std::size_t i = 0; i < content.size(); ++i) {
+        auto r = tx.add(std::move(content[i]), block);
         if (!r) {
             ctx.message(r.error().message);
             return false;
         }
+        if (auto it = pairs.find(live[i]); it != pairs.end())
+            renamed[it->second] = r.value();
+        newPairs.emplace_back(live[i], r.value());
     }
+    if (def->dynamic || def->assembly)
+        (void)tx.modifyBlock(block, [&](BlockDef& d) { remapBlockIds(d, renamed); });
     (void)blocks::syncInserts(tx, doc, block);
+    const std::size_t n = content.size();
     if (removeCopies) {
         for (EntityId id : live)
             (void)tx.erase(id);
+        eraseTests(ctx);
         forget(ctx.host());
+    } else {
+        ctx.host().setSetting(kPairsKey, encodePairs(newPairs));
+        ctx.host().setSetting(kSavedKey, "1");
     }
-    ctx.message("Block \"" + doc.block(block)->name + "\" updated from " +
-                std::to_string(content.size()) + " objects.");
+    ctx.message("Block \"" + doc.block(block)->name + "\" updated from " + std::to_string(n) +
+                " objects.");
     return true;
 }
 
@@ -163,8 +285,8 @@ bool startBlockEdit(cmd::CommandContext& ctx, const BlockDef& def, const Transfo
                     "\" is already being edited. Use BSAVE or BCLOSE first.");
         return false;
     }
-    if (!def.xrefPath.empty()) {
-        ctx.message("An external reference cannot be edited here.");
+    if (!def.xrefPath.empty() && xref::isUnderlay(doc, def.id)) {
+        ctx.message("A PDF or image underlay cannot be edited here.");
         return false;
     }
     ctx.commitOnCancel();
@@ -173,6 +295,7 @@ bool startBlockEdit(cmd::CommandContext& ctx, const BlockDef& def, const Transfo
         mark = std::max(mark, id.value);
     ctx.host().setSetting(kMarkKey, std::to_string(mark));
     std::vector<EntityId> made;
+    std::vector<std::pair<EntityId, EntityId>> pairs;
     const std::vector<EntityId> source = def.entities;
     for (EntityId id : source) {
         const Entity* e = doc.find(id);
@@ -186,9 +309,12 @@ bool startBlockEdit(cmd::CommandContext& ctx, const BlockDef& def, const Transfo
         Entity copy = std::move(moved.value());
         copy.common.id = {};
         auto added = ctx.tx().add(std::move(copy));
-        if (added)
+        if (added) {
             made.push_back(added.value());
+            pairs.emplace_back(added.value(), id);
+        }
     }
+    ctx.host().setSetting(kPairsKey, encodePairs(pairs));
     ctx.host().setSetting(kBlockKey, def.name);
     ctx.host().setSetting(kIdsKey, encodeIds(made));
     ctx.host().setSetting(kXformKey, encodeXform(xf));
@@ -196,7 +322,105 @@ bool startBlockEdit(cmd::CommandContext& ctx, const BlockDef& def, const Transfo
     ctx.setUndoLabel("Edit block " + def.name);
     ctx.message("Editing block \"" + def.name + "\" (" + std::to_string(made.size()) +
                 " objects). Edit them, then BSAVE to update the block or BCLOSE to finish.");
+    ctx.host().openPanel(kPanelId);
     return true;
+}
+
+std::optional<BlockEdit> blockEdit(const Document& doc, const cmd::IHost& host) {
+    const BlockDef* def = doc.blockByName(editedBlock(host));
+    if (!def)
+        return std::nullopt;
+    BlockEdit e;
+    e.block = def->id;
+    e.xf = decodeXform(host.setting(kXformKey).value_or(""));
+    e.working = editedIds(doc, host);
+    e.state = host.setting(kStateKey).value_or("");
+    e.xref = !def->xrefPath.empty();
+    return e;
+}
+
+bool saveBlockEdit(cmd::CommandContext& ctx, BlockId into) {
+    if (!saveBack(ctx, false, into))
+        return false;
+    if (into)
+        ctx.host().setSetting(kBlockKey, ctx.doc().block(into)->name);
+    return true;
+}
+
+std::vector<EntityId> blockIdsOf(const cmd::IHost& host, const std::vector<EntityId>& copies) {
+    const auto pairs = decodePairs(host.setting(kPairsKey).value_or(""));
+    std::vector<EntityId> out;
+    for (EntityId c : copies)
+        if (auto it = pairs.find(c); it != pairs.end())
+            out.push_back(it->second);
+    return out;
+}
+
+std::vector<EntityId> copiesOf(const cmd::IHost& host, const std::vector<EntityId>& blockIds) {
+    std::unordered_map<EntityId, EntityId> back;
+    for (const auto& [copy, block] : decodePairs(host.setting(kPairsKey).value_or("")))
+        back[block] = copy;
+    std::vector<EntityId> out;
+    for (EntityId b : blockIds)
+        if (auto it = back.find(b); it != back.end())
+            out.push_back(it->second);
+    return out;
+}
+
+void showEditState(cmd::CommandContext& ctx, const std::string& state) {
+    Document& doc = ctx.doc();
+    const auto edit = blockEdit(doc, ctx.host());
+    if (!edit)
+        return;
+    ctx.host().setSetting(kStateKey, state);
+    // What the state hides: objects named by some state but not by this one.
+    std::unordered_set<EntityId> hideBlock;
+    const BlockDef* def = doc.block(edit->block);
+    if (def && def->dynamic)
+        for (const DynParam& p : def->dynamic->params) {
+            if (p.kind != DynParam::Kind::Visibility)
+                continue;
+            std::size_t at = p.states.size();
+            for (std::size_t i = 0; i < p.states.size(); ++i)
+                if (p.states[i] == state)
+                    at = i;
+            if (at == p.states.size())
+                break;
+            std::unordered_set<EntityId> shown(p.stateObjects[at].begin(),
+                                               p.stateObjects[at].end());
+            for (const auto& objs : p.stateObjects)
+                for (EntityId id : objs)
+                    if (!shown.count(id))
+                        hideBlock.insert(id);
+        }
+    const auto pairs = decodePairs(ctx.host().setting(kPairsKey).value_or(""));
+    std::vector<EntityId> hidden;
+    for (EntityId copy : edit->working) {
+        auto it = pairs.find(copy);
+        const bool hide = it != pairs.end() && hideBlock.count(it->second);
+        const Entity* e = doc.find(copy);
+        if (!e)
+            continue;
+        if (e->common.visible == hide)
+            (void)ctx.tx().modify(copy, [hide](Entity& en) { en.common.visible = !hide; });
+        if (hide)
+            hidden.push_back(copy);
+    }
+    ctx.host().setSetting(kHiddenKey, encodeIds(hidden));
+}
+
+void addTestReference(cmd::CommandContext& ctx, EntityId id) {
+    std::vector<EntityId> ids = decodeIds(ctx.host().setting(kTestKey).value_or(""));
+    ids.push_back(id);
+    ctx.host().setSetting(kTestKey, encodeIds(ids));
+}
+
+std::vector<EntityId> testReferences(const cmd::IHost& host) {
+    return decodeIds(host.setting(kTestKey).value_or(""));
+}
+
+void closeTestReferences(cmd::CommandContext& ctx) {
+    eraseTests(ctx);
 }
 
 }  // namespace detail
@@ -294,13 +518,18 @@ public:
             (void)saveBack(ctx, close_);
             co_return;
         }
+        const bool savedBefore = ctx.host().setting(kSavedKey).value_or("") == "1";
         for (EntityId id : decodeIds(ctx.host().setting(kIdsKey).value_or("")))
             if (ctx.doc().find(id))
                 (void)ctx.tx().erase(id);
+        eraseTests(ctx);
         ctx.host().setSelection({});
         forget(ctx.host());
         ctx.setUndoLabel("Discard block edit");
-        ctx.message("Block edit discarded.");
+        ctx.message(savedBefore ? "Block edit discarded. What was already saved into the block "
+                                  "(BSAVE, parameters, visibility states) stays; UNDO takes it "
+                                  "back."
+                                : "Block edit discarded.");
     }
 
 private:
