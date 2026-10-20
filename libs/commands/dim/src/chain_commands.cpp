@@ -875,6 +875,88 @@ public:
     }
 };
 
+// What a dimension is broken at: an object's own curves, or for objects without curve geometry
+// what they draw (text as the box round it), as in AutoCAD. A drawn line only breaks where it
+// crosses, not where it ends on the dimension (a chained dimension's extension line).
+struct BreakShape {
+    EntityId source{};
+    Entity shape{};
+    BBox2 box{};           // empty: no quick test (rays and xlines)
+    std::size_t ends = 0;  // segments of an open drawn line, whose ends do not break; 0 = curve
+    bool area = false;     // a text box: the gap takes the whole part of the line inside it
+};
+
+void breakShapes(const Document& doc, const Entity& e, std::vector<BreakShape>& out) {
+    switch (kind(e)) {
+        case EntityKind::Point:
+        case EntityKind::Hatch:
+            return;
+        case EntityKind::Line:
+        case EntityKind::Circle:
+        case EntityKind::Arc:
+        case EntityKind::Polyline:
+        case EntityKind::Ellipse:
+        case EntityKind::Spline:
+            out.push_back({e.common.id, e, geom::bounds(e), 0});
+            return;
+        case EntityKind::Ray:
+            out.push_back({e.common.id, e, BBox2{}, 0});
+            return;
+        default:
+            break;
+    }
+    geom::DisplayContext dc;
+    dc.chordTolMm = 0.01;
+    dc.quickText = kind(e) == EntityKind::Text || kind(e) == EntityKind::MText;
+    DisplayList list;
+    geom::buildDisplay(doc, e, dc, list);
+    for (const DisplayItem& item : list.items) {
+        const auto* pl = std::get_if<DisplayPolyline>(&item);
+        if (!pl || pl->pts.size() < 2)
+            continue;
+        PolylineData data;
+        for (Vec2 p : pl->pts)
+            data.v.push_back({p});
+        data.closed = pl->closed;
+        BreakShape b;
+        b.source = e.common.id;
+        b.shape.data = std::move(data);
+        for (Vec2 p : pl->pts)
+            b.box.expand(p);
+        b.ends = pl->closed ? 0 : pl->pts.size() - 1;
+        b.area = dc.quickText && pl->closed;
+        out.push_back(std::move(b));
+    }
+}
+
+// Where the shapes cross `curve` (a line or arc of dimension `self`), as spans of its parameter:
+// one point where a line crosses, from where the curve goes into a text box to where it comes out.
+std::vector<std::pair<double, double>> breakHits(const Entity& curve, EntityId self,
+                                                 const std::vector<BreakShape>& shapes) {
+    std::vector<std::pair<double, double>> spans;
+    const BBox2 box = geom::bounds(curve);
+    std::vector<geom::EntityIntersection> hits;
+    for (const BreakShape& s : shapes) {
+        if (s.source == self || (!s.box.empty() && !s.box.intersects(box)))
+            continue;
+        hits.clear();
+        if (!geom::intersectEntities(curve, s.shape, hits))
+            continue;
+        if (s.area && hits.size() >= 2) {
+            auto [lo, hi] = std::minmax_element(
+                hits.begin(), hits.end(), [](const auto& a, const auto& b) { return a.tA < b.tA; });
+            spans.emplace_back(lo->tA, hi->tA);
+            continue;
+        }
+        for (const geom::EntityIntersection& h : hits) {
+            if (s.ends && (h.tB < 1e-6 || h.tB > static_cast<double>(s.ends) - 1e-6))
+                continue;
+            spans.emplace_back(h.tA, h.tA);
+        }
+    }
+    return spans;
+}
+
 // DIMBREAK [DBR]: opens gaps in the dimension and extension lines where other objects cross them,
 // or closes the gaps again. The gaps are stored with the dimension (DimensionData::breaks).
 class BreakCommand final : public cmd::Command {
@@ -966,7 +1048,7 @@ public:
             co_return;
         }
 
-        std::vector<EntityId> cutters;
+        std::vector<BreakShape> shapes;
         if (mode.keyword == "Auto") {
             cmd::SelectionOptions co;
             co.allowPreselection = false;
@@ -975,11 +1057,15 @@ public:
                 "Select objects to break dimensions with or [All] <All>", co);
             if (picked.status == Status::Cancel)
                 co_return;
+            std::vector<EntityId> cutters;
             if (picked.ok() && !picked.ids.empty())
                 cutters = picked.ids;
             else
                 cutters =
                     ctx.doc().modelSpace();  // by value: begin() and end() of two calls differ
+            for (EntityId cid : cutters)
+                if (const Entity* c = ctx.doc().find(cid))
+                    breakShapes(ctx.doc(), *c, shapes);
         }
 
         ctx.setUndoLabel("DIMBREAK");
@@ -993,9 +1079,14 @@ public:
             if (mode.keyword == "Auto") {
                 DimensionData bare = *d0;
                 bare.breaks.clear();
+                bare.jogs.clear();
                 const dim::Layout L = dim::layoutDimension(ctx.doc(), bare);
                 const DimStyle& st = dim::styleOf(ctx.doc(), d0->style);
                 const double gap = 1.5 * st.arrowSize * (st.overallScale > 0 ? st.overallScale : 1);
+                auto add = [&](const DimBreak& b) {
+                    if (std::find(found.begin(), found.end(), b) == found.end())
+                        found.push_back(b);
+                };
                 for (const dim::Layout::Line& line : L.lines) {
                     if (line.pts.size() != 2 || line.role == dim::Role::Text)
                         continue;
@@ -1005,24 +1096,38 @@ public:
                         continue;
                     Entity seg;
                     seg.data = LineData{line.pts[0], line.pts[1]};
-                    for (EntityId cid : cutters) {
-                        const Entity* c = ctx.doc().find(cid);
-                        if (!c || cid == id || kind(*c) == EntityKind::Dimension)
+                    for (auto [t0, t1] : breakHits(seg, id, shapes)) {
+                        if (t1 < 1e-6 || t0 > 1 - 1e-6)
                             continue;
-                        std::vector<geom::EntityIntersection> hits;
-                        if (!geom::intersectEntities(seg, *c, hits))
+                        const double half = gap / 2 / len;
+                        add({a + dir * std::max(0.0, t0 - half),
+                             a + dir * std::min(1.0, t1 + half)});
+                    }
+                }
+                // The arcs of angular and arc length dimensions break the same way.
+                for (const dim::Layout::Arc& arc : L.arcs) {
+                    if (arc.role == dim::Role::Text || !(arc.radius > 1e-9))
+                        continue;
+                    double sweep = normalizeAngle(arc.endAngle - arc.startAngle);
+                    if (sweep < 1e-12)
+                        sweep = kTwoPi;
+                    Entity curve;
+                    curve.data = ArcData{arc.center, arc.radius, normalizeAngle(arc.startAngle),
+                                         normalizeAngle(arc.endAngle)};
+                    if (sweep >= kTwoPi)
+                        curve.data = CircleData{arc.center, arc.radius};
+                    for (auto [t0, t1] : breakHits(curve, id, shapes)) {
+                        double u0 = normalizeAngle(t0 - arc.startAngle);
+                        double u1 = normalizeAngle(t1 - arc.startAngle);
+                        if (u0 > u1)
+                            std::swap(u0, u1);
+                        if (u1 < 1e-6 || u0 > sweep - 1e-6)
                             continue;
-                        for (const geom::EntityIntersection& h : hits) {
-                            const double t = h.tA;
-                            if (t < 1e-6 || t > 1 - 1e-6)
-                                continue;
-                            const double half = gap / 2 / len;
-                            DimBreak b;
-                            b.a = a + dir * std::max(0.0, t - half);
-                            b.b = a + dir * std::min(1.0, t + half);
-                            if (std::find(found.begin(), found.end(), b) == found.end())
-                                found.push_back(b);
-                        }
+                        const double half = gap / 2 / arc.radius;
+                        add({arc.center +
+                                 unitAt(arc.startAngle + std::max(0.0, u0 - half)) * arc.radius,
+                             arc.center +
+                                 unitAt(arc.startAngle + std::min(sweep, u1 + half)) * arc.radius});
                     }
                 }
             }
