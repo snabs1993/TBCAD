@@ -1862,7 +1862,7 @@ bool Importer::convLeader(const Record& r, std::vector<Entity>& out) {
 // content and the leader style's look are not read.
 bool Importer::convMLeader(const Record& r, std::vector<Entity>& out) {
     struct Branch {
-        std::vector<Vec2> pts{};
+        std::vector<std::vector<Vec2>> lines{};  // LEADER_LINE vertices
         Vec2 last{};
         Vec2 dir{};
         double dogLen = 0;
@@ -1909,15 +1909,18 @@ bool Importer::convMLeader(const Record& r, std::vector<Entity>& out) {
             inLeader = false;
         } else if (g.code == 304 && s == "LEADER_LINE{") {
             inLine = true;
+            if (!branches.empty())
+                branches.back().lines.emplace_back();
         } else if (g.code == 305) {
             inLine = false;
         } else if (g.code == 304 && inCtx && !inLeader) {
             rawText += g.str();
-        } else if (inLine && !branches.empty()) {
+        } else if (inLine && !branches.empty() && !branches.back().lines.empty()) {
+            std::vector<Vec2>& pts = branches.back().lines.back();
             if (g.code == 10)
-                branches.back().pts.push_back({g.number() * k_, 0});
-            else if (g.code == 20 && !branches.back().pts.empty())
-                branches.back().pts.back().y = g.number() * k_;
+                pts.push_back({g.number() * k_, 0});
+            else if (g.code == 20 && !pts.empty())
+                pts.back().y = g.number() * k_;
         } else if (inLeader && !branches.empty()) {
             Branch& b = branches.back();
             if (g.code == 10) {
@@ -1967,26 +1970,29 @@ bool Importer::convMLeader(const Record& r, std::vector<Entity>& out) {
     m.style = style;
     bool haveLanding = false, haveDog = false;
     for (Branch& b : branches) {
-        if (b.pts.empty())
-            continue;
-        // The vertices run from one end to the other: the end nearer the text is the landing.
-        const Vec2 near = b.hasLast ? b.last : anchor;
-        if (distance(b.pts.front(), near) < distance(b.pts.back(), near))
-            std::reverse(b.pts.begin(), b.pts.end());
-        std::vector<Vec2> line = b.pts;  // arrowhead first
-        if (b.hasLast && distance(line.back(), b.last) > tol::kLinear)
-            line.push_back(b.last);
-        if (line.size() < 2)
-            continue;
-        if (!haveLanding) {
-            m.landing = line.back();
-            haveLanding = true;
+        for (std::vector<Vec2>& line : b.lines) {
+            if (line.empty())
+                continue;
+            // The vertices run from one end to the other: the end nearer the text is the
+            // landing.
+            const Vec2 near = b.hasLast ? b.last : anchor;
+            if (distance(line.front(), near) < distance(line.back(), near))
+                std::reverse(line.begin(), line.end());
+            // arrowhead first
+            if (b.hasLast && distance(line.back(), b.last) > tol::kLinear)
+                line.push_back(b.last);
+            if (line.size() < 2)
+                continue;
+            if (!haveLanding) {
+                m.landing = line.back();
+                haveLanding = true;
+            }
+            if (!haveDog && b.hasDir && b.dogLen > 0 && !tol::isZeroLength(b.dir)) {
+                m.contentPos = m.landing + normalized(b.dir) * b.dogLen;
+                haveDog = true;
+            }
+            m.lines.push_back(std::move(line));
         }
-        if (!haveDog && b.hasDir && b.dogLen > 0 && !tol::isZeroLength(b.dir)) {
-            m.contentPos = m.landing + normalized(b.dir) * b.dogLen;
-            haveDog = true;
-        }
-        m.lines.push_back(std::move(line));
     }
     if (!m.lines.empty()) {
         if (!haveDog)

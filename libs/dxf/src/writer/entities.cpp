@@ -333,6 +333,14 @@ void Writer::reserveNamedHandles() {
         } else if (const auto* h = entityAs<HatchData>(e)) {
             for (EntityId id : h->sourceBoundary)
                 reserve(id);
+        } else if (const auto* m = entityAs<MLeaderData>(e);
+                   m && opt_.version == DxfVersion::R2007 && !m->attribs.empty()) {
+            // A MULTILEADER names the ATTDEFs of its block.
+            if (const BlockDef* b = doc_.block(m->block))
+                for (EntityId id : b->entities)
+                    if (const Entity* ad = doc_.find(id))
+                        if (const auto* t = entityAs<TextData>(*ad); t && t->attdef)
+                            reserve(id);
         }
     });
 }
@@ -678,6 +686,10 @@ void Writer::writeEntity(const Entity& e, std::uint64_t owner) {
             writeLeader(p, *entityAs<LeaderData>(e), owner);
             break;
         case EntityKind::MLeader: {
+            // DXF 2007 and later have MULTILEADER; older versions get its pieces.
+            if (opt_.version == DxfVersion::R2007 &&
+                writeMLeader(p, e, *entityAs<MLeaderData>(e), owner))
+                break;
             downgrade("MULTILEADER",
                       "is written as leaders, a line for the dogleg, and the note or block");
             if (auto parts = dim::mleaderAsLeaders(doc_, e)) {
@@ -761,6 +773,222 @@ void Writer::mleaderNote(const MLeaderData& m, std::vector<DataItem>& items) {
         }
         items.push_back(noteText(hex));
     }
+}
+
+// The multileader style a multileader names: one MLEADERSTYLE per dimension style used, written
+// with the OBJECTS section ("Standard" always exists).
+std::uint64_t Writer::mleaderStyleHandle(DimStyleId style) {
+    if (!mleaderStdStyle_)
+        mleaderStdStyle_ = newHandle();
+    if (!style || style == kDimStyleStandard)
+        return mleaderStdStyle_;
+    auto [it, fresh] = mleaderStyles_.try_emplace(style.value, 0);
+    if (fresh)
+        it->second = newHandle();
+    return it->second;
+}
+
+std::uint64_t Writer::textStyleHandle(TextStyleId id) {
+    if (!id || !doc_.textStyle(id))
+        id = kTextStyleStandard;
+    std::uint64_t& h = tsHandle_[id.value];
+    if (h == 0)
+        h = newHandle();
+    return h;
+}
+
+std::uint64_t Writer::byBlockLinetypeHandle() {
+    if (!byBlockLt_)
+        byBlockLt_ = newHandle();
+    return byBlockLt_;
+}
+
+// A MULTILEADER as AutoCAD 2007 and later write it: the context data (scale, note or block, the
+// leader with its lines), then the entity's own copy of the style properties, all marked as
+// overridden so the record shows the same whatever its style says. A TBCAD_MLEADER note carries
+// the multileader exactly for our importer (as on the pieces older versions get).
+bool Writer::writeMLeader(const Props& p, const Entity& e, const MLeaderData& m,
+                          std::uint64_t owner) {
+    std::vector<std::vector<Vec2>> lines;
+    for (const auto& l : m.lines)
+        if (l.size() >= 2)
+            lines.push_back(l);
+    if (lines.empty())
+        return false;
+    const BlockDef* block =
+        m.content == MLeaderData::Content::Block ? doc_.block(m.block) : nullptr;
+    if (block && (blockNameOf(m.block).empty() || !blockRec_.count(m.block.value)))
+        return false;
+    const DimStyle& st = dim::styleOf(doc_, m.style);
+    const double f = annotationFactor(doc_.header(), e.common);
+    const double k = (st.overallScale > 0 ? st.overallScale : 1.0) * f;
+    const dim::Layout lay = dim::layoutMLeader(doc_, m, 0.01, f);
+    const double th =
+        lay.text.valid() ? lay.text.height : (m.textHeight > 0 ? m.textHeight : st.textHeight) * k;
+    const bool text = m.content == MLeaderData::Content::Text && !m.utf8.empty();
+    const std::uint64_t textStyle = textStyleHandle(st.textStyle);
+    constexpr long long kByBlock = -1056964608;  // colour ByBlock, as raw true colour
+    const Vec2 dogleg = m.dogleg ? m.contentPos - m.landing : Vec2{};
+    const double doglegLen = length(dogleg);
+    Vec2 dir = doglegLen > 1e-12 ? dogleg / doglegLen : Vec2{1, 0};
+    if (doglegLen <= 1e-12 && lines.front().size() >= 2) {
+        const Vec2 from = lines.front()[lines.front().size() - 2];
+        dir = {m.landing.x >= from.x ? 1.0 : -1.0, 0};
+    }
+    const Vec2 base = m.dogleg ? m.contentPos : m.landing;
+
+    head("MULTILEADER", p, owner, "AcDbMLeader");
+    Out& o = *L().o;
+    o.i(270, 2);
+    o.raw(300, "CONTEXT_DATA{");
+    o.d(40, k);
+    o.pt(10, base);
+    o.d(41, th);
+    o.d(140, st.arrowSize * k);
+    o.d(145, st.textGap * k);
+    o.i(174, 1);
+    o.i(175, 1);
+    o.i(176, 0);
+    o.i(177, 0);
+    o.i(290, text ? 1 : 0);
+    if (text) {
+        // The note's top line is centred on the end of the dogleg ("middle of top line").
+        const bool left = lay.text.valid() && lay.text.attachRight;
+        const Vec2 at = lay.text.valid() ? lay.text.center + Vec2{0, th / 2}
+                                         : base + Vec2{st.textGap * k, th / 2};
+        o.raw(304, encodeText(toDxfMarkup(text::expandFields(doc_, m.utf8)), utf8_));
+        o.pt(11, {0, 0}, 1);
+        o.h(340, textStyle);
+        o.pt(12, at);
+        o.pt(13, {1, 0});
+        o.d(42, 0);
+        o.d(43, 0);
+        o.d(44, 0);
+        o.d(45, 1);
+        o.i(170, 1);
+        o.i(90, kByBlock);
+        o.i(171, left ? 3 : 1);
+        o.i(172, 1);
+        o.i(91, -939524096);
+        o.d(141, 1.5);
+        o.i(92, 0);
+        o.i(291, 0);
+        o.i(292, 0);
+        o.i(173, 0);
+        o.i(293, 0);
+        o.d(142, 0);
+        o.d(143, 0);
+        o.i(294, 0);
+        o.i(295, 1);
+    }
+    o.i(296, block ? 1 : 0);
+    const double bs = m.blockScale * f;
+    if (block) {
+        // The block's insertion point is the end of the dogleg (connection by insertion point).
+        o.h(341, blockRec_[m.block.value]);
+        o.pt(14, {0, 0}, 1);
+        o.pt(15, m.contentPos);
+        o.d(16, bs);
+        o.d(26, bs);
+        o.d(36, 1);
+        o.d(46, m.blockRotation);
+        o.i(93, kByBlock);
+        const double c = std::cos(m.blockRotation), s = std::sin(m.blockRotation);
+        for (double v : {bs * c, -bs * s, 0.0, m.contentPos.x, bs * s, bs * c, 0.0, m.contentPos.y,
+                         0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0})
+            o.d(47, v);
+    }
+    o.pt(110, {0, 0});
+    o.pt(111, {1, 0});
+    o.pt(112, {0, 1});
+    o.i(297, 0);
+    // One leader: every line ends at the landing, which is the leader's last point.
+    o.raw(302, "LEADER{");
+    o.i(290, 1);
+    o.i(291, 1);
+    o.pt(10, m.landing);
+    o.pt(11, dir);
+    o.i(90, 0);
+    o.d(40, doglegLen);
+    int index = 0;
+    for (const auto& l : lines) {
+        o.raw(304, "LEADER_LINE{");
+        for (std::size_t i = 0; i + 1 < l.size(); ++i)
+            o.pt(10, l[i]);
+        o.i(91, index++);
+        o.i(92, kByBlock);
+        o.raw(305, "}");
+    }
+    o.raw(303, "}");
+    o.raw(301, "}");
+
+    o.h(340, mleaderStyleHandle(m.style));
+    o.i(90, 2147483647);  // every property below overrides the style
+    o.i(170, 1);
+    o.i(91, kByBlock);
+    o.h(341, byBlockLinetypeHandle());
+    o.i(171, -2);
+    o.i(290, 1);
+    o.i(291, m.dogleg ? 1 : 0);
+    o.d(41, doglegLen);
+    o.d(42, st.arrowSize * k);
+    o.i(172, block ? 1 : text ? 2 : 0);
+    o.h(343, textStyle);
+    o.i(173, 1);
+    o.i(95, 1);
+    o.i(174, 1);
+    o.i(175, 0);
+    o.i(92, kByBlock);
+    o.i(292, 0);
+    if (block)
+        o.h(344, blockRec_[m.block.value]);
+    o.i(93, kByBlock);
+    o.pt(10, {m.blockScale, m.blockScale}, 1);
+    o.d(43, m.blockRotation);
+    o.i(176, 1);
+    o.i(293, e.common.annotative ? 1 : 0);
+    if (block) {
+        // The attribute values, by the handle of their ATTDEF in the block.
+        int at = 0;
+        for (EntityId id : block->entities) {
+            const Entity* ad = doc_.find(id);
+            const auto* t = ad ? entityAs<TextData>(*ad) : nullptr;
+            if (!t || !t->attdef || t->attdef->constant)
+                continue;
+            const AttDefInfo& info = *t->attdef;
+            const std::string handle = handleRef(id);
+            const int idx = at++;
+            if (handle == "0")
+                continue;
+            std::string value = info.defaultValue;
+            for (const AttribValue& a : m.attribs)
+                if (a.tag == info.tag)
+                    value = a.value;
+            o.raw(330, handle);
+            o.i(177, idx);
+            o.d(44, 1);
+            o.str(302, value);
+        }
+    }
+    o.i(294, 0);
+    o.i(178, 0);
+    o.i(179, 1);
+    o.d(45, k);
+
+    XdataApp note{"TBCAD_MLEADER",
+                  {noteText("a=" + std::to_string(nextMleaderId_++) + ";n=1;i=0")}};
+    mleaderNote(m, note.items);
+    o.raw(1001, note.app);
+    for (const DataItem& it : note.items) {
+        if (it.code == 1040)
+            o.d(it.code, it.real);
+        else if (it.code == 1071)
+            o.i(it.code, it.integer);
+        else
+            o.str(it.code, it.text);
+    }
+    count("MULTILEADER");
+    return true;
 }
 
 // Annotative objects carry a TBCAD extended-data note; other programs ignore it and our importer

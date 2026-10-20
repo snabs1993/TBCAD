@@ -981,10 +981,11 @@ void Importer::keepObjects() {
         "ACAD_GROUP",        "ACAD_IMAGE_DICT", "ACAD_PDFDEFINITIONS", "ACAD_IMAGE_VARS",
         "ACAD_LAYOUT",       "ACAD_MLINESTYLE", "ACAD_PLOTSTYLENAME",  "ACAD_SCALELIST",
         "TBCAD_ANNOSCALE",   "ACAD_SORTENTS",   "TBCAD_CONSTRAINTS",   "TBCAD_PARAMETERS",
-        "ACAD_WIPEOUT_VARS", "TBCAD_SETTINGS"};
+        "ACAD_WIPEOUT_VARS", "TBCAD_SETTINGS",  "ACAD_MLEADERSTYLE"};
     static const std::set<std::string> neverKept = {
-        "LAYOUT", "IMAGEDEF", "IMAGEDEF_REACTOR", "PDFDEFINITION",   "SORTENTSTABLE",
-        "GROUP",  "DIMASSOC", "IMAGEDEFREACTOR",  "ACDBPLACEHOLDER", "MLINESTYLE"};
+        "LAYOUT",          "IMAGEDEF",   "IMAGEDEF_REACTOR", "PDFDEFINITION",
+        "SORTENTSTABLE",   "GROUP",      "DIMASSOC",         "IMAGEDEFREACTOR",
+        "ACDBPLACEHOLDER", "MLINESTYLE", "MLEADERSTYLE"};
 
     const ObjRec& root = objStore_.at(objRoot_);
     std::vector<std::pair<std::string, std::string>> entries;  // (name, handle)
@@ -3037,6 +3038,12 @@ Result<ImportResult> Importer::run() {
                     if (const auto* ins = entityAs<InsertData>(*e)) {
                         m.block = ins->block;
                         m.attribs = ins->attribs;
+                    }
+                    // A MULTILEADER (DXF 2007) is its own one piece: its block comes with it.
+                    if (const auto* ml = entityAs<MLeaderData>(*e);
+                        ml && m.content == MLeaderData::Content::Block) {
+                        m.block = ml->block;
+                        m.attribs = ml->attribs;
                     }
                 }
                 if (!m.style)

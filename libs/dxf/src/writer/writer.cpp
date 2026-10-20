@@ -485,7 +485,9 @@ void Writer::writeLinetypes(Out& o, std::uint64_t table) {
         const char* desc;
     };
     for (const Std& s : {Std{"ByBlock", ""}, Std{"ByLayer", ""}, Std{"Continuous", "Solid line"}}) {
-        const std::uint64_t h = newHandle();
+        // ByBlock may have been given its handle already (a MULTILEADER names it).
+        const std::uint64_t h =
+            byBlockLt_ && std::string_view(s.name) == "ByBlock" ? byBlockLt_ : newHandle();
         ltHandle_[NameSet::fold(s.name)] = h;
         tableRecord(o, "LTYPE", h, table, "AcDbLinetypeTableRecord", s.name, 0);
         o.str(3, s.desc);
@@ -1237,6 +1239,12 @@ std::string Writer::objectsSection() {
     }
     o.raw(3, "ACAD_LAYOUT");
     o.h(350, layoutDict);
+    // Multileader styles, when a MULTILEADER was written (see Writer::writeMLeader).
+    const std::uint64_t mleaderDict = mleaderStdStyle_ ? newHandle() : 0;
+    if (mleaderDict) {
+        o.raw(3, "ACAD_MLEADERSTYLE");
+        o.h(350, mleaderDict);
+    }
     o.raw(3, "ACAD_MLINESTYLE");
     o.h(350, mlineDict);
     o.raw(3, "ACAD_PLOTSTYLENAME");
@@ -1244,6 +1252,8 @@ std::string Writer::objectsSection() {
     for (const auto& [unused, entry] : keptRootEntries) {
         if (entry.rfind("%LAYERTABLE%", 0) == 0)
             continue;
+        if (mleaderDict && entry.rfind("ACAD_MLEADERSTYLE\t", 0) == 0)
+            continue;  // written above (drawings kept from before it was rebuilt)
         const std::size_t tab = entry.find('\t');
         o.str(3, entry.substr(0, tab));
         o.h(350, handleOfToken(entry.substr(tab + 1)));
@@ -1509,6 +1519,84 @@ std::string Writer::objectsSection() {
     for (const StyleOut& e : extraStyles) {
         o.str(3, e.style.name);
         o.h(350, e.handle);
+    }
+
+    if (mleaderDict) {
+        // "Standard", then one style per dimension style the multileaders use, named after it
+        // (without the "MLEADER-" of a multileader style's companion).
+        struct MlsOut {
+            std::string name;
+            std::uint64_t handle;
+            const DimStyle* ds;
+        };
+        std::vector<MlsOut> mls{{"Standard", mleaderStdStyle_, doc_.dimStyle(kDimStyleStandard)}};
+        NameSet used;
+        used.add("Standard");
+        for (const auto& [id, handle] : mleaderStyles_) {
+            const DimStyle* ds = doc_.dimStyle(DimStyleId{id});
+            std::string name = ds ? ds->name : "Style";
+            if (name.rfind("MLEADER-", 0) == 0 && name.size() > 8)
+                name = name.substr(8);
+            mls.push_back(
+                {uniqueName(used, cleanName(name, "multileader style"), "multileader style"),
+                 handle, ds});
+        }
+        ownedDict(mleaderDict);
+        for (const MlsOut& m : mls) {
+            o.str(3, m.name);
+            o.h(350, m.handle);
+        }
+        const DimStyle fallback{};
+        for (const MlsOut& m : mls) {
+            const DimStyle& ds = m.ds ? *m.ds : fallback;
+            const double k = ds.overallScale > 0 ? ds.overallScale : 1.0;
+            o.zero("MLEADERSTYLE");
+            o.h(5, m.handle);
+            o.raw(102, "{ACAD_REACTORS");
+            o.h(330, mleaderDict);
+            o.raw(102, "}");
+            o.h(330, mleaderDict);
+            o.raw(100, "AcDbMLeaderStyle");
+            o.i(179, 2);
+            o.i(170, 2);
+            o.i(171, 1);
+            o.i(172, 0);
+            o.i(90, 2);
+            o.d(40, 0);
+            o.d(41, 0);
+            o.i(173, 1);
+            o.i(91, -1056964608);
+            o.h(340, byBlockLinetypeHandle());
+            o.i(92, -2);
+            o.i(290, 1);
+            o.d(42, ds.textGap);
+            o.i(291, 1);
+            o.d(43, ds.arrowSize);
+            o.str(3, m.name);
+            o.d(44, ds.arrowSize);
+            o.raw(300, "");
+            o.h(342, textStyleHandle(ds.textStyle));
+            o.i(174, 1);
+            o.i(175, 1);
+            o.i(176, 0);
+            o.i(178, 1);
+            o.i(93, -1056964608);
+            o.d(45, ds.textHeight);
+            o.i(292, 0);
+            o.i(297, 0);
+            o.d(46, ds.arrowSize);
+            o.i(94, -1056964608);
+            o.d(47, 1);
+            o.d(49, 1);
+            o.d(140, 1);
+            o.i(294, 1);
+            o.d(141, 0);
+            o.i(177, 1);
+            o.d(142, k);
+            o.i(295, 0);
+            o.i(296, 0);
+            o.d(143, 3.75);
+        }
     }
 
     o.zero("ACDBDICTIONARYWDFLT");
@@ -2057,6 +2145,14 @@ Result<ExportResult> Writer::run() {
                 "  0\r\nCLASS\r\n  1\r\nPDFDEFINITION\r\n  2\r\nAcDbUnderlayDefinition\r\n"
                 "  3\r\nObjectDBX Classes\r\n 90\r\n0\r\n280\r\n0\r\n281\r\n0\r\n";
         }
+        if (mleaderStdStyle_) {
+            out +=
+                "  0\r\nCLASS\r\n  1\r\nMULTILEADER\r\n  2\r\nAcDbMLeader\r\n"
+                "  3\r\nACDB_MLEADER_CLASS\r\n 90\r\n3071\r\n280\r\n0\r\n281\r\n1\r\n";
+            out +=
+                "  0\r\nCLASS\r\n  1\r\nMLEADERSTYLE\r\n  2\r\nAcDbMLeaderStyle\r\n"
+                "  3\r\nACDB_MLEADERSTYLE_CLASS\r\n 90\r\n4095\r\n280\r\n0\r\n281\r\n0\r\n";
+        }
         if (wipeouts_)
             out +=
                 "  0\r\nCLASS\r\n  1\r\nWIPEOUT\r\n  2\r\nAcDbWipeout\r\n"
@@ -2068,8 +2164,19 @@ Result<ExportResult> Writer::run() {
         if (auto it = doc_.header().custom.find(kKeptClassesKey);
             it != doc_.header().custom.end()) {
             Out c(utf8_, false);
-            for (const auto& [code, value] : unpackGroups(it->second))
-                c.str(code, value);
+            // The multileader classes are written above when a MULTILEADER was.
+            const auto groups = unpackGroups(it->second);
+            for (std::size_t g = 0; g < groups.size(); ++g) {
+                if (mleaderStdStyle_ && groups[g].first == 0 && g + 1 < groups.size() &&
+                    groups[g + 1].first == 1 &&
+                    (groups[g + 1].second == "MULTILEADER" ||
+                     groups[g + 1].second == "MLEADERSTYLE")) {
+                    while (g + 1 < groups.size() && groups[g + 1].first != 0)
+                        ++g;
+                    continue;
+                }
+                c.str(groups[g].first, groups[g].second);
+            }
             out += c.buf;
         }
         out += "  0\r\nENDSEC\r\n";
