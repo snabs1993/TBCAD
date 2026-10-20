@@ -277,4 +277,7 @@ one whose arrowhead is nearest to a pick (**Remove**); one leader line always st
 the styles, Set current, New (from the current one), Rename, Delete, and the content type, text
 style, text height, arrowhead, arrow size and landing gap of the selected style. Each change runs
 `-MLEADERSTYLE` (`Current`, `New`, `Rename`, `Delete`, `Edit`, `List`; Edit takes Content,
-TextStyle, TextHeight, Arrow, ArrowSize, Gap), one undo step.
+TextStyle, TextHeight, Arrow, ArrowSize, Gap, Block, Annotative, MaxPoints, Dogleg,
+DoglegLength), one undo step. MLEADER starts from the current style: its block is offered first
+for block content, its maximum leader points and dogleg (DoglegLength 0 = the arrow size) are the
+defaults of Options, and an Annotative style makes new multileaders annotative.
