@@ -35,19 +35,37 @@ at 1:1 on its paper; leave it empty to plot model space (the setting is `plot.la
 
 A layout can have a named page setup (paper plus plot options), see [page setups](pagesetup.md).
 
-## Sheet lists (`libs/sheets`)
+## Sheet lists and PUBLISH (`libs/sheets`)
 
-`PLOTSET` (aliases `BATCHPLOT`, `PUBLISH`) reads a text file and writes one multi-page PDF, one page per line:
+`PUBLISH` (alias `SHEETLIST`, menu File > Publish...) opens the Publish dialog: a list of sheets
+from several drawings that is plotted into one multi-page PDF.
+
+- **Add current drawing's sheets** adds model space and every layout of the open (saved) drawing;
+  **Add drawing** does the same for a `.tbcad` or `.dxf` file typed in the box.
+- Each row has a **Page setup** drop-down: the layout's own setup (default) or one of the page
+  setups of the open drawing, which then overrides it for that sheet only.
+- **Remove**, **Move up**, **Move down** and **Clear** edit the list; **Save list** / **Load list**
+  write and read it as a `.tbdsd` text file (below), like AutoCAD's `.dsd`.
+- **Layer information** and **Plot stamp** are the same switches as in the Plot panel.
+- **Publish to PDF** writes the list and runs `-PUBLISH` with it, so the result shows on the command line.
+
+`-PUBLISH` (aliases `PLOTSET`, `BATCHPLOT`) is the typed form: it asks for the list file and the
+output PDF (or `Printer` / `Dialog`, see [printing](print.md)). The list file:
 
 ```
 # comment
 plans/ground.tbcad | A1 Plan
 plans/roof.tbcad
+plans/roof.tbcad | Model | A3 mono
 ```
 
-A line is `file` or `file | layout`. Relative paths are relative to the list file. A line without a
-layout plots model space with the current plot settings. If any sheet fails (missing file, unknown
-layout) nothing is written and the message names the entry.
+A line is `file`, `file | layout` or `file | layout | page setup`. Relative paths are relative to the
+list file. `Model` (or an empty layout) is model space, plotted with the current plot settings unless
+it has a page setup. A page setup named on the line is looked up in that sheet's drawing, then in
+the open drawing. Sheets of the open drawing are plotted as it is now, unsaved changes included;
+other drawings are read from their files (`.tbcad` or `.dxf`). Each sheet gets the plot stamp with
+its own file and layout name. If any sheet fails (missing file, unknown layout or page setup)
+nothing is written and the message names the entry.
 
 ## Clipped viewports
 

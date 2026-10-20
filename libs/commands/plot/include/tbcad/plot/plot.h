@@ -67,6 +67,8 @@ std::vector<std::filesystem::path> styleSearchFolders(const cmd::IHost& host);
 bool styleTableMissing(const cmd::IHost& host);
 Result<std::shared_ptr<const plotstyle::PlotStyleTable>> resolveStyleTable(const cmd::IHost& host,
                                                                            const std::string& name);
+// The file a named table is read from; empty for built-in tables, "none" and tables not found.
+std::filesystem::path styleTableFile(const cmd::IHost& host, const std::string& name);
 // Built-in names, then the files of the user folder.
 std::vector<std::string> listStyleTables(const cmd::IHost& host);
 
@@ -115,9 +117,45 @@ std::string plotStampText(const cmd::IHost& host);
 void setPlotStampText(cmd::IHost& host, const std::string& text);
 std::string expandStamp(const std::string& tmpl, const cmd::IHost& host,
                         const exportlib::PlotSheet& sheet, const exportlib::PlotSettings& settings);
+// The same for a sheet of another drawing (PUBLISH): %file% and %layout% come from the arguments.
+std::string expandStamp(const std::string& tmpl, const std::string& drawingFile,
+                        const std::string& layoutName, const exportlib::PlotSheet& sheet,
+                        const exportlib::PlotSettings& settings);
 // Adds the stamp to the sheet when it is switched on.
 void addPlotStamp(exportlib::PlotSheet& sheet, const cmd::IHost& host,
                   const exportlib::PlotSettings& settings);
+void addPlotStamp(exportlib::PlotSheet& sheet, const cmd::IHost& host,
+                  const exportlib::PlotSettings& settings, const std::string& drawingFile,
+                  const std::string& layoutName);
+
+// Reads a .tbcad or .dxf drawing (sheet lists, the PUBLISH dialog).
+Result<std::unique_ptr<Document>> readDrawingFile(const std::filesystem::path& file);
+
+// ETRANSMIT: the files to send with a saved drawing. `target` is the path inside the package
+// ('/'-separated): xrefs and underlays keep their path relative to the drawing that refers to them
+// (nested xrefs included), files from elsewhere go to "refs/"; fonts the text styles name go to
+// "fonts/", plot style tables of the plot settings and page setups to "plotstyles/".
+struct TransmitFile {
+    std::filesystem::path source{};
+    std::string target{};
+    std::string kind{};  // "drawing", "xref", "image", "pdf", "font", "plot style"
+    std::string note{};  // what uses it; "moved" notes for files that need a new path
+    bool moved = false;
+};
+struct TransmitSet {
+    std::vector<TransmitFile> files{};
+    std::vector<std::string> missing{};
+    std::vector<std::string> notes{};
+};
+TransmitSet transmittalSet(const Document& doc, const std::filesystem::path& drawingFile,
+                           const cmd::IHost& host);
+// The transmittal.txt text.
+std::string transmittalReport(const TransmitSet& set, const std::filesystem::path& drawingFile);
+
+// PDF layers: with "plot.pdfLayers" on (the default) a PDF lists the drawing's layers so a viewer
+// can switch them; off writes a flat PDF.
+bool pdfLayersOn(const cmd::IHost& host);
+void setPdfLayers(cmd::IHost& host, bool on);
 
 // Builds the sheet from the settings (Display area is resolved from the host's view) and writes the
 // file. The returned text is the one-line summary for the command line.

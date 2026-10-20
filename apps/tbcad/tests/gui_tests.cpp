@@ -2428,3 +2428,22 @@ TEST_CASE("Clean Screen from the command line and Ctrl+0, workspaces with WSSAVE
     h.frame(2);
     CHECK(h.core().setting("workspace.current").value_or("") == "Drafting");
 }
+
+TEST_CASE("Publish dialog: the drawing's sheets, save the list, publish one PDF") {
+    const fs::path dir = scratchDir("publish");
+    Harness h(1920, 1080);
+    h.core().submitText("LINE");
+    h.core().submitText("0,0");
+    h.core().submitText("100,50");
+    h.core().submitText("");
+    REQUIRE(h.core().saveAs(dir / "pub.tbcad").ok());
+    h.core().submitText("PUBLISH");
+    h.frame(3);
+    REQUIRE(h.windowOpen("Publish"));
+    REQUIRE(h.click("Save list", "Publish"));
+    h.frame(2);
+    CHECK(slurp(dir / "pub.tbdsd").find("pub.tbcad") != std::string::npos);
+    REQUIRE(h.click("Publish to PDF", "Publish"));
+    h.frame(3);
+    CHECK(fs::exists(dir / "pub.pdf"));
+}

@@ -164,6 +164,10 @@ struct PlotSheet {
 // mode is applied.
 Rgba plotColor(Rgba c, ColorMode mode);
 
+// Forgets the layers of a built sheet, so a PDF of it has no layer list (EXPORTPDF and PUBLISH
+// with "include layer information" off).
+void dropLayers(PlotSheet& sheet);
+
 // Builds the paper-space primitives, in draw order. Entities on layers with plot off, frozen /
 // off layers and invisible entities are skipped. Display lists are generated at the plot
 // resolution (chordTolMm on paper).

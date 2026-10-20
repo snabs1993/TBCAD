@@ -21,7 +21,6 @@ void registerCommands(cmd::Registry& registry) {
         });
     registerSnapProvider(drafting::SnapGeometryRegistry::instance());
     (void)registry.add(makeBlockCommand());
-    (void)registry.add(makeETransmitCommand());
     (void)registry.add(makeAttredefCommand());
     (void)registry.add(makeBaseCommand());
     (void)registry.add(makeBEditCommand());

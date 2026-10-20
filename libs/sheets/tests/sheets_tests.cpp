@@ -123,3 +123,71 @@ TEST_CASE("a layout with a page setup is plotted with that setup, others with th
     CHECK(firstColor(set.value().sheets[1]) == Rgba{255, 0, 0, 255});
     fs::remove_all(dir);
 }
+
+TEST_CASE("sheet list: a page setup column, Model, and writing the list back") {
+    auto r = parseSheetList("a.tbcad | Plan | Half\nb.tbcad | | Site\nc.tbcad | Model\n", "/proj");
+    REQUIRE(r.ok());
+    REQUIRE(r.value().size() == 3);
+    CHECK(r.value()[0] == SheetEntry{"/proj/a.tbcad", "Plan", "Half"});
+    CHECK(r.value()[1] == SheetEntry{"/proj/b.tbcad", "", "Site"});
+    CHECK(r.value()[2] == SheetEntry{"/proj/c.tbcad", "", ""});
+    const std::vector<SheetEntry> list{{"/proj/a.tbcad", "Plan", "Half"},
+                                       {"/proj/sub/b.tbcad", "", ""},
+                                       {"/elsewhere/c.tbcad", "", "Site"}};
+    const std::string text = formatSheetList(list, "/proj");
+    CHECK(text.find("a.tbcad | Plan | Half\n") != std::string::npos);
+    CHECK(text.find("\nsub/b.tbcad\n") != std::string::npos);
+    CHECK(text.find("/elsewhere/c.tbcad |  | Site\n") != std::string::npos);
+    auto back = parseSheetList(text, "/proj");
+    REQUIRE(back.ok());
+    CHECK(back.value() == list);
+}
+
+TEST_CASE("sheet list: page setup override, the open drawing, and a decorate hook") {
+    const fs::path dir = fs::temp_directory_path() / "tbcad_sheets_override";
+    fs::create_directories(dir);
+    save(dir / "a.tbcad", true);
+    Document source;  // the publishing drawing holds the setup
+    {
+        auto tx = source.begin("setup");
+        layout::PageSetup mono;
+        mono.name = "Mono";
+        mono.settings.color = exportlib::ColorMode::Monochrome;
+        REQUIRE(layout::savePageSetup(tx, mono).ok());
+        tx.commit();
+    }
+    std::vector<SheetEntry> entries{{dir / "a.tbcad", "Plan", "Mono"}};
+    exportlib::PlotSettings base;
+    CHECK_FALSE(buildSheetList(entries, base).ok());  // not in the sheet's drawing
+    BuildOptions opts;
+    opts.setupSource = &source;
+    int decorated = 0;
+    opts.decorate = [&](exportlib::PlotSheet&, const SheetEntry& e,
+                        const exportlib::PlotSettings& s) {
+        ++decorated;
+        CHECK(e.layout == "Plan");
+        CHECK(s.color == exportlib::ColorMode::Monochrome);
+    };
+    REQUIRE(buildSheetList(entries, base, {}, opts).ok());
+    CHECK(decorated == 1);
+
+    // The open drawing is used as it is (here: a layout the saved file does not have).
+    Document open;
+    {
+        auto tx = open.begin("open");
+        REQUIRE(tx.add(line({0, 0}, {10, 10})).ok());
+        REQUIRE(layout::createLayout(tx, "Fresh", "A4").ok());
+        tx.commit();
+    }
+    BuildOptions cur;
+    cur.current = &open;
+    cur.currentFile = dir / "a.tbcad";
+    const std::vector<SheetEntry> fresh{{dir / "a.tbcad", "Fresh", ""}};
+    CHECK_FALSE(buildSheetList(fresh, base).ok());
+    CHECK(buildSheetList(fresh, base, {}, cur).ok());
+    const auto all = sheetsOf(open, dir / "a.tbcad");
+    REQUIRE(all.size() == 2);
+    CHECK(all[0].layout.empty());
+    CHECK(all[1].layout == "Fresh");
+    fs::remove_all(dir);
+}

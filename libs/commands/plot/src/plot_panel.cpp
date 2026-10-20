@@ -325,6 +325,11 @@ void draw(ui::PanelContext& pc) {
                 setPlotStampText(*pc.host, text);
         }
     }
+    {
+        bool layers = pdfLayersOn(*pc.host);
+        if (ImGui::Checkbox("Include layer information (PDF)", &layers))
+            setPdfLayers(*pc.host, layers);
+    }
     static const char* colorNames[] = {"As displayed", "Monochrome (black)", "Greyscale"};
     int color = int(s.color);
     if (ImGui::Combo("Colour", &color, colorNames, 3)) {
@@ -531,18 +536,18 @@ void drawPageSetups(ui::PanelContext& pc) {
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
             const std::string label = (ps.name == inUse ? "* " : "  ") + ps.name;
-            if (ImGui::Selectable(label.c_str(), st.selected == ps.name,
-                                  ImGuiSelectableFlags_SpanAllColumns |
-                                      ImGuiSelectableFlags_AllowDoubleClick)) {
+            if (ImGui::Selectable(
+                    label.c_str(), st.selected == ps.name,
+                    ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick)) {
                 st.selected = ps.name;
                 if (ImGui::IsMouseDoubleClicked(0))  // double click: make it current
-                    runLines(pc, {"PAGESETUP", "Assign", ps.name, where, "PAGESETUP", "Apply",
-                                  ps.name});
+                    runLines(
+                        pc, {"PAGESETUP", "Assign", ps.name, where, "PAGESETUP", "Apply", ps.name});
             }
             ImGui::TableNextColumn();
-            ImGui::TextUnformatted((ps.settings.paperName +
-                                    (ps.settings.landscape ? " landscape" : " portrait"))
-                                       .c_str());
+            ImGui::TextUnformatted(
+                (ps.settings.paperName + (ps.settings.landscape ? " landscape" : " portrait"))
+                    .c_str());
             ImGui::TableNextColumn();
             ImGui::TextUnformatted(scaleText(ps.settings).c_str());
             ImGui::TableNextColumn();
@@ -562,8 +567,8 @@ void drawPageSetups(ui::PanelContext& pc) {
     const bool have = !st.selected.empty();
     ImGui::BeginDisabled(!have);
     if (ImGui::Button("Set current"))
-        runLines(pc, {"PAGESETUP", "Assign", st.selected, where, "PAGESETUP", "Apply",
-                      st.selected});
+        runLines(pc,
+                 {"PAGESETUP", "Assign", st.selected, where, "PAGESETUP", "Apply", st.selected});
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("Use this page setup for %s", where.c_str());
     ImGui::EndDisabled();
@@ -596,8 +601,9 @@ void drawPageSetups(ui::PanelContext& pc) {
 
     if (st.ask == SetupState::Ask::New || st.ask == SetupState::Ask::Rename) {
         ImGui::SetNextItemWidth(220);
-        const bool enter = ImGui::InputText(st.ask == SetupState::Ask::New ? "New name" : "Rename to",
-                                            &st.nameInput, ImGuiInputTextFlags_EnterReturnsTrue);
+        const bool enter =
+            ImGui::InputText(st.ask == SetupState::Ask::New ? "New name" : "Rename to",
+                             &st.nameInput, ImGuiInputTextFlags_EnterReturnsTrue);
         ImGui::SameLine();
         if ((ImGui::Button("OK") || enter) && !st.nameInput.empty()) {
             if (st.ask == SetupState::Ask::New)
@@ -612,9 +618,9 @@ void drawPageSetups(ui::PanelContext& pc) {
             st.ask = SetupState::Ask::None;
     } else if (st.ask == SetupState::Ask::Import) {
         ImGui::SetNextItemWidth(-140);
-        const bool enter = ImGui::InputTextWithHint("##importfile", "Drawing (.tbcad or .dxf)",
-                                                    &st.importInput,
-                                                    ImGuiInputTextFlags_EnterReturnsTrue);
+        const bool enter =
+            ImGui::InputTextWithHint("##importfile", "Drawing (.tbcad or .dxf)", &st.importInput,
+                                     ImGuiInputTextFlags_EnterReturnsTrue);
         ImGui::SameLine();
         if ((ImGui::Button("Import") || enter) && !st.importInput.empty()) {
             std::string f = st.importInput;
@@ -650,7 +656,8 @@ void drawPlotPreview(ui::PanelContext& pc) {
     const BBox2 view = s.area == PlotArea::Display ? viewWindow(*pc.host) : BBox2{};
     if (s.area == PlotArea::Display)
         s.window = view;
-    const std::string key = keyOf(s, view) + "|" + plotLayout(*pc.host) + "|" + plotStyleName(*pc.host);
+    const std::string key =
+        keyOf(s, view) + "|" + plotLayout(*pc.host) + "|" + plotStyleName(*pc.host);
     bool build = key != builtKey || pc.doc->revision() != builtRevision;
     // A big drawing takes seconds to build: only on request, as in the Plot panel.
     if (build && pc.doc->entityCount() > kBigDrawing && !refresh) {
@@ -695,6 +702,7 @@ void registerPlotPanel(ui::UiRegistry& registry) {
     registry.addPanel("pagesetup", "Page Setup Manager", drawPageSetups, false);
     registry.addPanel("plotpreview", "Plot Preview", drawPlotPreview, false);
     registerStylePanel(registry);
+    registerPublishPanel(registry);
 }
 
 }  // namespace tbcad::plot

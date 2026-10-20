@@ -19,10 +19,10 @@ struct PhaseTimer {
     std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
     ~PhaseTimer() {
         if (on)
-            std::fprintf(stderr, "plot timing: %s %.1f ms\n", name,
-                         std::chrono::duration<double, std::milli>(
-                             std::chrono::steady_clock::now() - start)
-                             .count());
+            std::fprintf(
+                stderr, "plot timing: %s %.1f ms\n", name,
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
+                    .count());
     }
 };
 }  // namespace
@@ -58,6 +58,8 @@ Result<std::string> exportFile(const Document& doc, const cmd::IHost& host,
     auto sheet = buildPlotSheet(doc, host, settings);
     if (!sheet)
         return sheet.error();
+    if (!pdfLayersOn(host))
+        exportlib::dropLayers(sheet.value());
     const std::string file = withExtension(path, format);
     // The default folder (Documents/TBCAD plots) may not exist yet.
     if (auto parent = platform::pathFromUtf8(file).parent_path(); !parent.empty())

@@ -35,8 +35,22 @@ void setPlotStampText(cmd::IHost& host, const std::string& text) {
     host.setSetting("plot.stampText", text);
 }
 
+bool pdfLayersOn(const cmd::IHost& host) {
+    return host.setting("plot.pdfLayers").value_or("1") != "0";
+}
+
+void setPdfLayers(cmd::IHost& host, bool on) {
+    host.setSetting("plot.pdfLayers", on ? "1" : "0");
+}
+
 std::string expandStamp(const std::string& tmpl, const cmd::IHost& host,
                         const exportlib::PlotSheet& sheet,
+                        const exportlib::PlotSettings& settings) {
+    return expandStamp(tmpl, host.documentFile(), plotLayout(host), sheet, settings);
+}
+
+std::string expandStamp(const std::string& tmpl, const std::string& drawingFile,
+                        const std::string& layoutName, const exportlib::PlotSheet& sheet,
                         const exportlib::PlotSettings& settings) {
     std::string out = tmpl;
     std::time_t now = std::time(nullptr);
@@ -50,10 +64,9 @@ std::string expandStamp(const std::string& tmpl, const cmd::IHost& host,
     std::strftime(date, sizeof date, "%Y-%m-%d", &tmv);
     std::strftime(clock, sizeof clock, "%H:%M", &tmv);
     std::snprintf(scale, sizeof scale, "1:%.4g", 1.0 / sheet.layout.paperPerUnit);
-    std::string file = baseName(host.documentFile());
+    std::string file = baseName(drawingFile);
     if (file.empty())
         file = "Untitled";
-    const std::string layoutName = plotLayout(host);
     replaceAll(out, "%file%", file);
     replaceAll(out, "%layout%", layoutName.empty() ? "Model" : layoutName);
     replaceAll(out, "%date%", date);
@@ -65,9 +78,16 @@ std::string expandStamp(const std::string& tmpl, const cmd::IHost& host,
 
 void addPlotStamp(exportlib::PlotSheet& sheet, const cmd::IHost& host,
                   const exportlib::PlotSettings& settings) {
+    addPlotStamp(sheet, host, settings, host.documentFile(), plotLayout(host));
+}
+
+void addPlotStamp(exportlib::PlotSheet& sheet, const cmd::IHost& host,
+                  const exportlib::PlotSettings& settings, const std::string& drawingFile,
+                  const std::string& layoutName) {
     if (!plotStampOn(host))
         return;
-    const std::string text = expandStamp(plotStampText(host), host, sheet, settings);
+    const std::string text =
+        expandStamp(plotStampText(host), drawingFile, layoutName, sheet, settings);
     if (text.empty())
         return;
     // The stamp is a TEXT object in a scratch drawing, plotted 1:1 so it goes through the same

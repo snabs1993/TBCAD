@@ -7,6 +7,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -279,6 +280,21 @@ struct Builder {
 };
 
 }  // namespace
+
+void dropLayers(PlotSheet& sheet) {
+    sheet.layerNames.clear();
+    for (PlotPrimitive& prim : sheet.prims) {
+        std::visit(
+            [](auto& p) {
+                using T = std::decay_t<decltype(p)>;
+                if constexpr (std::is_same_v<T, PlotFill>)
+                    p.layer = 0;
+                else if constexpr (requires { p.style.layer; })
+                    p.style.layer = 0;
+            },
+            prim);
+    }
+}
 
 Rgba plotColor(Rgba c, ColorMode mode) {
     if (isBackgroundColor(c))
