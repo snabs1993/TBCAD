@@ -2,6 +2,8 @@
 
 #include <atomic>
 #include <chrono>
+#include <filesystem>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -107,6 +109,12 @@ private:
     render::Renderer renderer_;
     ViewportTarget target_;
     ViewportTarget captureTarget_;
+    // Pictures of recent drawings for the start page: taken when a drawing is opened or saved,
+    // shown as textures by path (0 = no picture).
+    void takeThumbnail();
+    unsigned thumbnailTexture(const std::filesystem::path& png);
+    ViewportTarget thumbTarget_;
+    std::map<std::filesystem::path, unsigned> thumbTextures_;
     // The model tiled viewports (VPORTS) other than the active one, by tile index.
     std::vector<std::unique_ptr<ViewportTarget>> tileTargets_;
     std::atomic<bool> windowReady_{false};  // glfwPostEmptyEvent is only legal after glfwInit

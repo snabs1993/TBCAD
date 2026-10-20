@@ -1,7 +1,7 @@
 tbcad_add_library(template
   SOURCES
     src/template.cpp
-  DEPENDS tbcad::core tbcad::io)
+  DEPENDS tbcad::core tbcad::io tbcad::layout)
 
 tbcad_add_tests(template
   SOURCES

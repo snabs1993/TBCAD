@@ -38,9 +38,10 @@ TEST_CASE("SAVEASTEMPLATE, TEMPLATEDEFAULT and NEWFROMTEMPLATE") {
     f.core->submitText("Plan A");
     CHECK(fs::exists(f.core->templateFolder() / "Plan A.tbt"));
     auto names = f.core->templateNames();
-    REQUIRE(names.size() == 2);
+    REQUIRE(names.size() == 3);
     CHECK(names[0] == "Built-in");
-    CHECK(names[1] == "Plan A");
+    CHECK(names[1] == "Built-in (inch)");
+    CHECK(names[2] == "Plan A");
 
     CHECK(f.core->newFromTemplate("Plan A").empty());
     CHECK(f.core->document().modelSpaceCount() == 1);
@@ -94,4 +95,26 @@ TEST_CASE("SAVE, QSAVE, SAVEAS, OPEN, NEW and CLOSE ask the window - SAVE is not
                                                "action:file.new",    "action:file.close"};
     CHECK(asked == expected);
     CHECK_FALSE(f.core->runner().active());  // nothing is waiting for a template name
+}
+
+TEST_CASE("saving a drawing asks the window for its picture for the start page") {
+    Fixture f("tmpl-thumb");
+    CHECK(f.core->pendingThumbnail().empty());
+    const fs::path file = f.dir / "plan.tbcad";
+    REQUIRE(f.core->saveAs(file).ok());
+    for (int i = 0; i < 5 && f.core->sceneBuilding(); ++i)
+        f.core->updateFrame();
+    CHECK(f.core->pendingThumbnail() == platform::pathToUtf8(file));
+    // One picture per drawing path, in the data folder.
+    const fs::path png = f.core->thumbnailFile(platform::pathToUtf8(file));
+    CHECK(png.parent_path() == f.dir / "data" / "thumbnails");
+    CHECK(png.extension() == ".png");
+    CHECK(png == f.core->thumbnailFile(platform::pathToUtf8(file)));
+    CHECK(png != f.core->thumbnailFile(platform::pathToUtf8(f.dir / "other.tbcad")));
+    f.core->thumbnailTaken();
+    CHECK(f.core->pendingThumbnail().empty());
+    // Another drawing in front: the picture waits for its own drawing.
+    REQUIRE(f.core->saveAs(file).ok());
+    f.core->newDocument();
+    CHECK(f.core->pendingThumbnail().empty());
 }

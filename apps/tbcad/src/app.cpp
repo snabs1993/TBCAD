@@ -34,6 +34,7 @@
 #include "tbcad/platform/paths.h"
 #include "tbcad/render/camera.h"
 #include "tbcad/ui/selection.h"
+#include "tbcad/underlay/image.h"
 
 namespace tbcad::app {
 
@@ -1488,6 +1489,107 @@ void App::renderDrawingOnce(bool finish) {
         glFinish();
 }
 
+void App::takeThumbnail() {
+    const std::string file = core_->pendingThumbnail();
+    if (file.empty())
+        return;
+    core_->thumbnailTaken();
+    // The drawing as the view shows it, without grips, cursor or snap marks.
+    const render::Camera2D& cam = core_->camera();
+    if (cam.viewportW < 8 || cam.viewportH < 8)
+        return;
+    thumbTarget_.resize(cam.viewportW, cam.viewportH);
+    thumbTarget_.bind();
+    renderer_.setBackground(gui_->viewportBackground());
+    renderer_.setCamera(cam);
+    renderer_.beginFrame();
+    renderer_.draw(core_->underlayImages());
+    renderer_.draw(core_->renderScene());
+    renderer_.endFrame();
+    const int w = thumbTarget_.width(), h = thumbTarget_.height();
+    std::vector<std::uint8_t> px(static_cast<std::size_t>(w) * static_cast<std::size_t>(h) * 4);
+    const bool read = thumbTarget_.read(px.data());
+    thumbTarget_.release();  // a window-sized texture, needed once per open or save
+    if (!read)
+        return;
+    // The middle of the view at the card's shape (16:11), averaged down to 320 x 220.
+    constexpr int kW = 320, kH = 220;
+    int cw = w, ch = h;
+    if (cw * kH > ch * kW)
+        cw = ch * kW / kH;
+    else
+        ch = cw * kH / kW;
+    const int x0 = (w - cw) / 2, y0 = (h - ch) / 2;
+    std::vector<std::uint8_t> out(static_cast<std::size_t>(kW) * kH * 4);
+    for (int ty = 0; ty < kH; ++ty) {
+        // Rows top first; the target's rows are bottom first.
+        const int sy0 = y0 + (kH - 1 - ty) * ch / kH,
+                  sy1 = std::max(sy0 + 1, y0 + (kH - ty) * ch / kH);
+        for (int tx = 0; tx < kW; ++tx) {
+            const int sx0 = x0 + tx * cw / kW, sx1 = std::max(sx0 + 1, x0 + (tx + 1) * cw / kW);
+            unsigned sum[3] = {0, 0, 0};
+            unsigned n = 0;
+            for (int y = sy0; y < sy1; ++y)
+                for (int x = sx0; x < sx1; ++x) {
+                    const std::uint8_t* p =
+                        &px[(static_cast<std::size_t>(y) * static_cast<std::size_t>(w) +
+                             static_cast<std::size_t>(x)) *
+                            4];
+                    sum[0] += p[0];
+                    sum[1] += p[1];
+                    sum[2] += p[2];
+                    ++n;
+                }
+            std::uint8_t* q =
+                &out[(static_cast<std::size_t>(ty) * kW + static_cast<std::size_t>(tx)) * 4];
+            for (int c = 0; c < 3; ++c)
+                q[c] = static_cast<std::uint8_t>(sum[c] / n);
+            q[3] = 255;
+        }
+    }
+    const std::vector<std::uint8_t> png = mcp::encodePng(out, kW, kH);
+    const std::filesystem::path dest = core_->thumbnailFile(file);
+    std::error_code ec;
+    std::filesystem::create_directories(dest.parent_path(), ec);
+    std::ofstream f(dest, std::ios::binary);
+    if (png.empty() || !f)
+        return;
+    f.write(reinterpret_cast<const char*>(png.data()), static_cast<std::streamsize>(png.size()));
+    f.close();
+    // Shown again from the new file.
+    if (auto it = thumbTextures_.find(dest); it != thumbTextures_.end()) {
+        if (it->second) {
+            const GLuint t = it->second;
+            glDeleteTextures(1, &t);
+        }
+        thumbTextures_.erase(it);
+    }
+}
+
+unsigned App::thumbnailTexture(const std::filesystem::path& png) {
+    if (auto it = thumbTextures_.find(png); it != thumbTextures_.end())
+        return it->second;
+    unsigned& tex = thumbTextures_[png];
+    std::error_code ec;
+    if (!std::filesystem::exists(png, ec))
+        return tex = 0;
+    auto img = underlay::loadImage(png);
+    if (!img || img.value()->width <= 0 || img.value()->height <= 0)
+        return tex = 0;
+    GLuint t = 0;
+    glGenTextures(1, &t);
+    glBindTexture(GL_TEXTURE_2D, t);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, img.value()->width, img.value()->height, 0, GL_RGBA,
+                 GL_UNSIGNED_BYTE, img.value()->rgba.data());
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return tex = t;
+}
+
 void App::frame() {
     PhaseTimer pt;
     core_->updateFrame();
@@ -1523,6 +1625,7 @@ void App::frame() {
 
     drawScene();
     drawTiles();
+    takeThumbnail();
     if (PhaseTimer::enabled())
         pt.lap();
 
@@ -1741,6 +1844,8 @@ int App::run() {
         return options_.selfTest && !required ? 77 : 1;
     }
     gui_ = std::make_unique<Gui>(*core_, *uiRegistry_, window_);
+    gui_->setThumbnailLoader(
+        [this](const std::filesystem::path& png) { return thumbnailTexture(png); });
     {
         const float total =
             gui_->dpiScale() * static_cast<float>(core_->settings().getNumber("ui.scale", 1.0));

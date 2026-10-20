@@ -1050,7 +1050,9 @@ void AppCore::tickAutosave(std::chrono::steady_clock::time_point now) {
 
 std::unique_ptr<Document> AppCore::defaultDocument(std::string* problem) {
     const std::string name = settings_.getString("template.default", "");
-    if (!name.empty() && name != tmpl::kBuiltinTemplate) {
+    if (tmpl::isBuiltinTemplate(name))
+        return tmpl::builtinTemplate(name);
+    if (!name.empty()) {
         const fs::path file =
             templateFolder() /
             platform::pathFromUtf8(tmpl::sanitizeTemplateName(name) + tmpl::kTemplateExtension);
@@ -1093,15 +1095,15 @@ std::string AppCore::importKeybindings(const fs::path& file) {
 }
 
 std::vector<std::string> AppCore::templateNames() const {
-    std::vector<std::string> out{tmpl::kBuiltinTemplate};
+    std::vector<std::string> out{tmpl::kBuiltinTemplate, tmpl::kBuiltinInchTemplate};
     for (const auto& t : tmpl::listTemplates(templateFolder()))
         out.push_back(t.name);
     return out;
 }
 
 std::string AppCore::newFromTemplate(std::string_view name) {
-    if (name.empty() || name == tmpl::kBuiltinTemplate) {
-        addSession(tmpl::builtinTemplate(), {});
+    if (name.empty() || tmpl::isBuiltinTemplate(name)) {
+        addSession(name.empty() ? tmpl::builtinTemplate() : tmpl::builtinTemplate(name), {});
         return {};
     }
     const fs::path file =
@@ -1119,8 +1121,8 @@ std::string AppCore::newFromTemplate(std::string_view name) {
 
 std::string AppCore::saveAsTemplate(std::string_view name) {
     const std::string clean = tmpl::sanitizeTemplateName(std::string(name));
-    if (clean == tmpl::kBuiltinTemplate)
-        return "\"Built-in\" is reserved; choose another name.";
+    if (tmpl::isBuiltinTemplate(name) || tmpl::isBuiltinTemplate(clean))
+        return "\"" + std::string(name) + "\" is reserved; choose another name.";
     auto r = tmpl::saveTemplate(document(), templateFolder() / platform::pathFromUtf8(clean));
     if (!r)
         return r.error().message;
@@ -1214,6 +1216,7 @@ Result<void> AppCore::openDxf(const fs::path& path) {
     if (imported.summary.unitsAssumed)
         print("DXF: the file has no units; millimetres assumed.");
     settings_.addRecentFile(platform::pathToUtf8(path));
+    wantThumbnail(path);
     (void)settings_.save(paths_.settingsFile());
     // The status bar counts model space; the rest of the file's objects are inside blocks,
     // layouts or other spaces.
@@ -1320,6 +1323,7 @@ Result<void> AppCore::finishForeignOpen(const fs::path& path, const std::string&
         print(m);
     openStep("  print messages");
     settings_.addRecentFile(platform::pathToUtf8(path));
+    wantThumbnail(path);
     (void)settings_.save(paths_.settingsFile());
     openStep("  save recent files");
     print("Opened " + path.string() + (r.format.empty() ? "" : " (" + r.format + ")") +
@@ -1465,6 +1469,7 @@ Result<void> AppCore::openFile(const fs::path& path) {
     if (salvaged)
         return {};
     settings_.addRecentFile(platform::pathToUtf8(path));
+    wantThumbnail(path);
     (void)settings_.save(paths_.settingsFile());
     print("Opened " + path.string() + " (" + std::to_string(report.entityCount) + " objects)");
     return {};
@@ -1569,6 +1574,7 @@ Result<void> AppCore::saveAs(const fs::path& requested) {
     if (!anyDocumentModified())
         removeAutosaveFiles();
     settings_.addRecentFile(platform::pathToUtf8(path));
+    wantThumbnail(path);
     (void)settings_.save(paths_.settingsFile());
     print("Saved " + path.string());
     return {};
@@ -2530,6 +2536,28 @@ void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
         if (scene_.entityCount() >= 100000)
             scene_.trimMemory();
     }
+}
+
+fs::path AppCore::thumbnailFile(const std::string& drawingPath) const {
+    std::uint64_t h = 1469598103934665603ull;  // FNV-1a
+    for (unsigned char c : drawingPath) {
+        h ^= c;
+        h *= 1099511628211ull;
+    }
+    char name[24];
+    std::snprintf(name, sizeof name, "%016llx.png", static_cast<unsigned long long>(h));
+    return paths_.dataDir / "thumbnails" / name;
+}
+
+void AppCore::wantThumbnail(const fs::path& path) {
+    thumbnailFor_ = platform::pathToUtf8(path);
+    thumbnailDoc_ = document().uid();
+}
+
+std::string AppCore::pendingThumbnail() const {
+    if (thumbnailFor_.empty() || document().uid() != thumbnailDoc_ || sceneBuilding())
+        return {};
+    return thumbnailFor_;
 }
 
 bool AppCore::sceneBuilding() const {

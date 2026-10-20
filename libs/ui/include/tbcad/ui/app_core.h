@@ -188,6 +188,13 @@ public:
     // "drawing.tbcad* - TBCAD"
     std::string windowTitle() const;
     std::vector<std::string> recentFiles() const { return settings_.recentFiles(); }
+    // The picture of a drawing that the start page shows next to its name (the file may not
+    // exist): <data folder>/thumbnails/<hash of the path>.png.
+    std::filesystem::path thumbnailFile(const std::string& drawingPath) const;
+    // The drawing the window should take a picture of now: the one just opened or saved, once it
+    // is the active drawing and its geometry is built. Empty when there is none.
+    std::string pendingThumbnail() const;
+    void thumbnailTaken() { thumbnailFor_.clear(); }
 
     // ---- undo / redo -------------------------------------------------------------------------
     bool undo();
@@ -419,6 +426,7 @@ private:
     struct DocSlot;
     class AppObserver;
 
+    void wantThumbnail(const std::filesystem::path& path);
     std::unique_ptr<Session> makeSession(std::unique_ptr<Document> doc, std::filesystem::path file);
     Result<void> openDxf(const std::filesystem::path& path);
     void storeCurrentUcs();
@@ -476,6 +484,8 @@ private:
     // and the built-in drawing was used instead.
     std::unique_ptr<Document> defaultDocument(std::string* problem = nullptr);
     platform::AppPaths paths_;
+    std::string thumbnailFor_;  // pendingThumbnail()
+    std::uint64_t thumbnailDoc_ = 0;
     std::vector<std::string> panelRequests_{};
     std::uint64_t selectionRevision_ = 1;
     std::vector<std::string> panelCloses_{};
