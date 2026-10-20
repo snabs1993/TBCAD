@@ -359,6 +359,21 @@ public:
                 pts.push_back(pt->p);
             }
         }
+        // seTtings Intersection: the points where the selected objects cross count too.
+        auto addIntersections = [&] {
+            std::vector<geom::EntityIntersection> hits;
+            for (std::size_t i = 0; i < sel.ids.size(); ++i)
+                for (std::size_t j = i + 1; j < sel.ids.size(); ++j) {
+                    const Entity* a = ctx.doc().find(sel.ids[i]);
+                    const Entity* b = ctx.doc().find(sel.ids[j]);
+                    if (!a || !b)
+                        continue;
+                    hits.clear();
+                    if (geom::intersectEntities(*a, *b, hits))
+                        for (const auto& h : hits)
+                            pts.push_back(h.p);
+                }
+        };
         // Horizontal and vertical are the UCS axes: work in the UCS frame for the box and the keys.
         const double ucs = ctx.host().ucsAngle();
         const double uc = std::cos(-ucs), us = std::sin(-ucs);
@@ -372,21 +387,82 @@ public:
         }
         enum class Mode { Continuous, Staggered, Baseline, Ordinate };
         Mode mode = Mode::Continuous;
+        bool intersections = false;
         std::optional<Vec2> datum;  // datumPoint: where Baseline starts and Ordinate measures from
         cmd::PointResult at;
         for (;;) {
             static constexpr const char* kModeNames[] = {"Continuous", "Staggered", "Baseline",
                                                          "Ordinate"};
             cmd::PointOptions po;
-            po.keywords = {"Continuous", "Staggered", "Baseline",  "Ordinate",
-                           "Radius",     "Diameter",  "datumPoint"};
+            po.keywords = {"Continuous", "Staggered",  "Baseline", "Ordinate", "Radius",
+                           "Diameter",   "datumPoint", "Edit",     "seTtings"};
             at = co_await ctx.getPoint(
                 std::string("Specify dimension line position or [Continuous/Staggered/Baseline/"
-                            "Ordinate/Radius/Diameter/datumPoint] <") +
+                            "Ordinate/Radius/Diameter/datumPoint/Edit/seTtings] <") +
                     kModeNames[static_cast<int>(mode)] + ">",
                 po);
             if (at.status != cmd::Status::Keyword)
                 break;
+            if (at.keyword == "seTtings") {
+                cmd::KeywordOptions ko;
+                ko.keywords = {"Endpoint", "Intersection"};
+                auto pr = co_await ctx.getKeyword(
+                    "Associative dimension priority [Endpoint/Intersection] <Endpoint>", ko);
+                if (pr.status == cmd::Status::Keyword && pr.keyword == "Intersection" &&
+                    !intersections) {
+                    intersections = true;
+                    addIntersections();
+                }
+                continue;
+            }
+            if (at.keyword == "Edit") {
+                // Remove key points by picking them, or Add new ones, until eXit or Enter.
+                bool adding = false;
+                const double px = ctx.host().view().scale;
+                for (;;) {
+                    cmd::PointOptions eo;
+                    eo.keywords = {adding ? "Remove" : "Add", "eXit"};
+                    auto ep = co_await ctx.getPoint(
+                        adding ? "Indicate dimension point to add, or [Remove/eXit] <eXit>"
+                               : "Indicate dimension point to remove, or [Add/eXit] <eXit>",
+                        eo);
+                    if (ep.status == cmd::Status::Keyword) {
+                        if (ep.keyword == "eXit")
+                            break;
+                        adding = ep.keyword == "Add";
+                        continue;
+                    }
+                    if (!ep.ok())
+                        break;
+                    if (adding) {
+                        pts.push_back(ep.point);
+                        ctx.message("One dimension point added.");
+                        continue;
+                    }
+                    // The nearest key point within a few pixels (or a little of the drawing).
+                    BBox2 all;
+                    for (const Vec2& p : pts)
+                        all.expand(p);
+                    const double reach =
+                        px > 0 ? 10 * px : 0.02 * std::max(all.width(), all.height());
+                    std::size_t best = pts.size();
+                    double bestD = reach;
+                    for (std::size_t i = 0; i < pts.size(); ++i)
+                        if (const double dd = distance(pts[i], ep.point); dd <= bestD) {
+                            bestD = dd;
+                            best = i;
+                        }
+                    if (best == pts.size()) {
+                        ctx.message("No dimension point there.");
+                        continue;
+                    }
+                    // Every copy of that point goes (objects meeting there each gave one).
+                    const Vec2 gone = pts[best];
+                    std::erase_if(pts, [&](Vec2 q) { return distance(q, gone) <= tol::kLinear; });
+                    ctx.message("One dimension point removed.");
+                }
+                continue;
+            }
             if (at.keyword == "datumPoint") {
                 auto dp = co_await ctx.getPoint("Select new datum point");
                 if (!dp.ok())
@@ -437,6 +513,14 @@ public:
         }
         if (!at.ok())
             co_return;
+        // Edit may have changed the key points.
+        box = BBox2{};
+        for (const Vec2& p : pts)
+            box.expand(inUcs(p));
+        if (pts.size() < 2 || box.empty()) {
+            ctx.message("Nothing to dimension.");
+            co_return;
+        }
         // Outside the box vertically: horizontal dimensions; otherwise vertical ones.
         const Vec2 atU = inUcs(at.point);
         const bool horizontal = atU.y > box.max.y || atU.y < box.min.y;
