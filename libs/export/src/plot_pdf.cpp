@@ -128,7 +128,8 @@ private:
         const FontKey key{g.fontData, g.faceIndex};
         if (auto it = fonts_.find(key); it != fonts_.end())
             return it->second;
-        auto file = std::make_shared<std::vector<unsigned char>>(g.fontData, g.fontData + g.fontSize);
+        auto file =
+            std::make_shared<std::vector<unsigned char>>(g.fontData, g.fontData + g.fontSize);
         int font = -1;
         if (g.glyphId <= 0xFFFF && pdf::canEmbedTrueType(*file, static_cast<int>(g.faceIndex)))
             font = doc_.addFont({file, static_cast<int>(g.faceIndex), {}});
@@ -210,8 +211,8 @@ void paint(const PlotSheet& sheet, pdf::PdfDocument& doc, std::map<std::string, 
                 page.save();
                 if (c->poly.size() >= 3) {
                     std::vector<std::pair<double, double>> pts;
-                    for (const Vec2& p : c->poly)
-                        pts.emplace_back(p.x, p.y);
+                    for (const Vec2& pt : c->poly)
+                        pts.emplace_back(pt.x, pt.y);
                     page.clipPolygon(pts);
                 } else {
                     page.clipRect(c->rect.min.x, c->rect.min.y, c->rect.width(), c->rect.height());

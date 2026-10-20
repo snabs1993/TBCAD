@@ -406,9 +406,9 @@ public:
                             std::to_string(style.offsets.size()) + " lines.");
                 co_return;
             }
-            for (const std::string& n : names)
-                if (!n.empty() && !ctx.doc().linetypeByName(n)) {
-                    ctx.message("No linetype named \"" + n + "\" is loaded.");
+            for (const std::string& lt : names)
+                if (!lt.empty() && !ctx.doc().linetypeByName(lt)) {
+                    ctx.message("No linetype named \"" + lt + "\" is loaded.");
                     co_return;
                 }
             style.linetypes = std::all_of(names.begin(), names.end(),

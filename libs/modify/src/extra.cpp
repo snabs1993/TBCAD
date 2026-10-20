@@ -791,7 +791,7 @@ OverkillResult overkill(const std::vector<const Entity*>& entities, const Overki
             double ang = angOf[a];
             std::vector<std::size_t> group{a};
             const std::vector<std::size_t>& cl = clusters[clusterOf[a]];
-            double window = windows[clusterOf[a]];
+            double win = windows[clusterOf[a]];
             auto consider = [&](std::size_t b) {
                 if (b == a || used[b] || std::abs(angOf[b] - ang) > 1e-4)
                     return;
@@ -802,9 +802,9 @@ OverkillResult overkill(const std::vector<const Entity*>& entities, const Overki
                 if (off(lines[b].a) <= o.tolerance && off(lines[b].b) <= o.tolerance)
                     group.push_back(b);
             };
-            for (std::size_t q = slot[a] + 1; q < cl.size() && key[cl[q]] - key[a] <= window; ++q)
+            for (std::size_t q = slot[a] + 1; q < cl.size() && key[cl[q]] - key[a] <= win; ++q)
                 consider(cl[q]);
-            for (std::size_t q = slot[a]; q-- > 0 && key[a] - key[cl[q]] <= window;)
+            for (std::size_t q = slot[a]; q-- > 0 && key[a] - key[cl[q]] <= win;)
                 consider(cl[q]);
             if (group.size() < 2)
                 continue;
@@ -1858,20 +1858,20 @@ Result<EntityEdit> editSplineCv(const Entity& e, SplineCvOp op, Vec2 a, Vec2 b, 
                 return err("The spline could not be split into pieces.");
             std::vector<H> out;
             for (std::size_t s = 0; s < pieces; ++s) {
-                std::vector<H> b(P.begin() + static_cast<std::ptrdiff_t>(s * p),
-                                 P.begin() + static_cast<std::ptrdiff_t>(s * p + p + 1));
+                std::vector<H> seg(P.begin() + static_cast<std::ptrdiff_t>(s * p),
+                                   P.begin() + static_cast<std::ptrdiff_t>(s * p + p + 1));
                 for (std::size_t deg = p; deg < static_cast<std::size_t>(q); ++deg) {
                     std::vector<H> e2(deg + 2);
-                    e2[0] = b[0];
-                    e2[deg + 1] = b[deg];
+                    e2[0] = seg[0];
+                    e2[deg + 1] = seg[deg];
                     for (std::size_t i = 1; i <= deg; ++i) {
                         const double t = static_cast<double>(i) / static_cast<double>(deg + 1);
                         for (std::size_t c = 0; c < 3; ++c)
-                            e2[i][c] = t * b[i - 1][c] + (1 - t) * b[i][c];
+                            e2[i][c] = t * seg[i - 1][c] + (1 - t) * seg[i][c];
                     }
-                    b = std::move(e2);
+                    seg = std::move(e2);
                 }
-                out.insert(out.end(), b.begin() + (s == 0 ? 0 : 1), b.end());
+                out.insert(out.end(), seg.begin() + (s == 0 ? 0 : 1), seg.end());
             }
             // 3. Knots: clamped ends, every interior knot q times.
             const std::size_t qq = static_cast<std::size_t>(q);

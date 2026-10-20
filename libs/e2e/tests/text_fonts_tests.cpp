@@ -35,9 +35,9 @@ std::vector<unsigned char> tinyShx() {
     std::vector<unsigned char> out;
     const std::string head = "AutoCAD-86 shapes 1.0\r\n\x1a";
     out.insert(out.end(), head.begin(), head.end());
-    auto u16 = [&](unsigned x) {
-        out.push_back(x & 255);
-        out.push_back(x >> 8);
+    auto u16 = [&](std::size_t x) {
+        out.push_back(static_cast<unsigned char>(x & 255));
+        out.push_back(static_cast<unsigned char>(x >> 8));
     };
     const std::vector<unsigned char> info = {'T', 0, 10, 3, 0, 0};
     const std::vector<unsigned char> el = {'L',  0, 2, 8, 0, 10, 1, 8, 0,

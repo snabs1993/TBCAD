@@ -877,8 +877,8 @@ public:
                     co_return;
                 }
                 bool failed = false;
-                for (const Entity& e : objs) {
-                    auto moved = geom::transformed(e, toBlock);
+                for (const Entity& obj : objs) {
+                    auto moved = geom::transformed(obj, toBlock);
                     if (!moved) {
                         ctx.message(moved.error().message);
                         failed = true;

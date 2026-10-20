@@ -944,8 +944,8 @@ TEST_CASE("a table that keeps grey object colours leaves a layer of index colour
         }
     CHECK(found);
     std::string colourLine, layerLine;
-    for (const std::string& t : sheet.value().trace)
-        (t.rfind("layer '", 0) == 0 ? layerLine : colourLine) = t;
+    for (const std::string& line : sheet.value().trace)
+        (line.rfind("layer '", 0) == 0 ? layerLine : colourLine) = line;
     CHECK(colourLine.find("ACI 253") != std::string::npos);
     CHECK(colourLine.find("186,186,186, 1 uses") != std::string::npos);
     CHECK(layerLine.find("1 parts") != std::string::npos);
@@ -1167,7 +1167,8 @@ TEST_CASE("text plots as real text in the embedded font, also inside a rotated b
             std::ofstream out(file, std::ios::binary);
             out << bytes;
         }
-        REQUIRE(std::system(("pdftotext -raw \"" + file.string() + "\" \"" + txt.string() + "\"").c_str()) == 0);
+        REQUIRE(std::system(("pdftotext -raw \"" + file.string() + "\" \"" + txt.string() + "\"")
+                                .c_str()) == 0);
         std::ifstream in(txt, std::ios::binary);
         std::string out((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
         CHECK(out.find("Plan") != std::string::npos);

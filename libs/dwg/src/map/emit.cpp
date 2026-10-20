@@ -355,14 +355,14 @@ dxf::GroupBuffer emitGroups(const Drawing& d) {
             const auto b = d.blocks.find(handle);
             return b == d.blocks.end() ? std::string{} : b->second.name;
         };
-        if (const std::string n = arrowName(ds.arrow); !n.empty())
-            o.group(342, n);
-        if (const std::string n = arrowName(ds.arrow1); !n.empty())
-            o.group(343, n);
-        if (const std::string n = arrowName(ds.arrow2); !n.empty())
-            o.group(344, n);
-        if (const std::string n = arrowName(ds.leaderArrow); !n.empty())
-            o.group(341, n);
+        if (const std::string blk = arrowName(ds.arrow); !blk.empty())
+            o.group(342, blk);
+        if (const std::string blk = arrowName(ds.arrow1); !blk.empty())
+            o.group(343, blk);
+        if (const std::string blk = arrowName(ds.arrow2); !blk.empty())
+            o.group(344, blk);
+        if (const std::string blk = arrowName(ds.leaderArrow); !blk.empty())
+            o.group(341, blk);
         for (const Group& g : ds.groups)
             emitGroup(o, g);
     }

@@ -1079,22 +1079,22 @@ BreakPaths breakPaths(const Document& doc, const Entity& e) {
             if (arc.role != dim::Role::Text && arc.radius > 1e-9)
                 p.arcs.push_back(arc);
         p.gap = 1.5 * arrowOf(doc, d->style);
-    } else if (const auto* d = entityAs<LeaderData>(e)) {
-        const double a = arrowOf(doc, d->style);
-        if (d->vertices.size() >= 2) {
-            p.lines.push_back(d->vertices);
-            const Vec2 last = d->vertices.back();
-            if (!d->utf8.empty())
-                p.lines.push_back({last, last + Vec2{d->textPos.x >= last.x ? a : -a, 0}});
+    } else if (const auto* ld = entityAs<LeaderData>(e)) {
+        const double a = arrowOf(doc, ld->style);
+        if (ld->vertices.size() >= 2) {
+            p.lines.push_back(ld->vertices);
+            const Vec2 last = ld->vertices.back();
+            if (!ld->utf8.empty())
+                p.lines.push_back({last, last + Vec2{ld->textPos.x >= last.x ? a : -a, 0}});
         }
         p.gap = 1.5 * a;
-    } else if (const auto* d = entityAs<MLeaderData>(e)) {
-        for (const auto& pts : d->lines)
+    } else if (const auto* ml = entityAs<MLeaderData>(e)) {
+        for (const auto& pts : ml->lines)
             if (pts.size() >= 2)
                 p.lines.push_back(pts);
-        if (d->dogleg)
-            p.lines.push_back({d->landing, d->contentPos});
-        p.gap = 1.5 * arrowOf(doc, d->style);
+        if (ml->dogleg)
+            p.lines.push_back({ml->landing, ml->contentPos});
+        p.gap = 1.5 * arrowOf(doc, ml->style);
     }
     return p;
 }

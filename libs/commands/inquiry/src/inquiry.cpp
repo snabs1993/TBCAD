@@ -322,7 +322,6 @@ public:
     }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
-        const Precision p = precisionOf(ctx);
         cmd::EntityOptions eo;
         eo.keywords = {"3points"};
         eo.filter = [](const Entity& e) {

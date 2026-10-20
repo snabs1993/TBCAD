@@ -446,9 +446,9 @@ namespace {
 std::vector<unsigned char> tinyShx(bool unicode) {
     std::vector<unsigned char> out;
     auto put = [&](const std::string& s) { out.insert(out.end(), s.begin(), s.end()); };
-    auto u16 = [&](std::vector<unsigned char>& v, unsigned x) {
-        v.push_back(x & 255);
-        v.push_back(x >> 8);
+    auto u16 = [&](std::vector<unsigned char>& v, std::size_t x) {
+        v.push_back(static_cast<unsigned char>(x & 255));
+        v.push_back(static_cast<unsigned char>(x >> 8));
     };
     struct Shape {
         unsigned num;
@@ -604,9 +604,9 @@ TEST_CASE("many font files are read in parallel and listed once each") {
     fs::remove_all(dir);
     fs::create_directories(dir);
     for (int i = 0; i < 24; ++i)
-        fs::copy_file(fs::path(TBCAD_FONT_TEST_ASSETS) /
-                          (i % 2 ? "Lato-Regular.ttf" : "Sarabun-Regular.ttf"),
-                      dir / ("f" + std::to_string(i) + ".ttf"));
+        fs::copy_file(
+            fs::path(TBCAD_FONT_TEST_ASSETS) / (i % 2 ? "Lato-Regular.ttf" : "Sarabun-Regular.ttf"),
+            dir / ("f" + std::to_string(i) + ".ttf"));
     const auto faces = FontLibrary::scanFontFolders({dir}, {});
     REQUIRE(faces.size() == 24);
     int lato = 0;

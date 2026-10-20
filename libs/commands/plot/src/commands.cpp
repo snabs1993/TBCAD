@@ -276,7 +276,7 @@ public:
                 io.max = 100;
                 auto r = co_await ctx.getInteger("Screening % (100 = full tone)", io);
                 if (r.ok())
-                    s.screening = r.value;
+                    s.screening = static_cast<int>(r.value);
             } else if (kw == "Transparency") {
                 KeywordOptions ko;
                 ko.keywords = {"On", "Off"};

@@ -308,11 +308,11 @@ void drawDrawingTab(ui::PanelContext& ctx) {
                     ctx.runCommand("Insert");
                 }
                 if (ImGui::BeginMenu("Path type")) {
-                    for (const char* t : {"Relative", "Absolute", "None"})
-                        if (ImGui::MenuItem(t)) {
+                    for (const char* mode : {"Relative", "Absolute", "None"})
+                        if (ImGui::MenuItem(mode)) {
                             ctx.runCommand("XPATH");
                             ctx.runCommand(r.name);
-                            ctx.runCommand(t);
+                            ctx.runCommand(mode);
                         }
                     ImGui::EndMenu();
                 }
@@ -783,8 +783,8 @@ void drawAttDefPanel(ui::PanelContext& ctx) {
         ok = true;
     if (ok) {
         const std::string tag = blocks::normalizeTag(f.tag);
-        if (auto ok = blocks::validateTag(tag); !ok.ok()) {
-            f.error = ok.error().message;
+        if (auto valid = blocks::validateTag(tag); !valid.ok()) {
+            f.error = valid.error().message;
         } else if (!(f.height > 0)) {
             f.error = "The text height must be above zero.";
         } else {

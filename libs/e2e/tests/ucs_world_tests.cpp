@@ -142,95 +142,96 @@ Diff compare(const Rig& a, const Rig& b) {
                 d.fail(at + "line " + std::to_string(x->a.x) + "," + std::to_string(x->a.y) +
                        " -> " + std::to_string(y->a.x) + "," + std::to_string(y->a.y) + " wanted " +
                        std::to_string(u.toWorld(x->a).x) + "," + std::to_string(u.toWorld(x->a).y));
-        } else if (const auto* x = entityAs<CircleData>(ea)) {
+        } else if (const auto* ci = entityAs<CircleData>(ea)) {
             const auto* y = entityAs<CircleData>(eb);
-            if (!close(u.toWorld(x->center), y->center) || std::abs(x->radius - y->radius) > 1e-6)
+            if (!close(u.toWorld(ci->center), y->center) || std::abs(ci->radius - y->radius) > 1e-6)
                 d.fail(at + "circle");
-        } else if (const auto* x = entityAs<ArcData>(ea)) {
+        } else if (const auto* arc = entityAs<ArcData>(ea)) {
             const auto* y = entityAs<ArcData>(eb);
-            if (!close(u.toWorld(x->center), y->center) || std::abs(x->radius - y->radius) > 1e-6 ||
-                std::abs(wrap(x->startAngle + u.angle - y->startAngle + kPi) - kPi) > 1e-6 ||
-                std::abs(wrap(x->endAngle + u.angle - y->endAngle + kPi) - kPi) > 1e-6)
+            if (!close(u.toWorld(arc->center), y->center) ||
+                std::abs(arc->radius - y->radius) > 1e-6 ||
+                std::abs(wrap(arc->startAngle + u.angle - y->startAngle + kPi) - kPi) > 1e-6 ||
+                std::abs(wrap(arc->endAngle + u.angle - y->endAngle + kPi) - kPi) > 1e-6)
                 d.fail(at + "arc");
-        } else if (const auto* x = entityAs<PolylineData>(ea)) {
+        } else if (const auto* pl = entityAs<PolylineData>(ea)) {
             const auto* y = entityAs<PolylineData>(eb);
-            if (x->v.size() != y->v.size() || x->closed != y->closed) {
+            if (pl->v.size() != y->v.size() || pl->closed != y->closed) {
                 d.fail(at + "polyline shape");
                 break;
             }
-            for (std::size_t k = 0; k < x->v.size(); ++k)
-                if (!close(u.toWorld(x->v[k].p), y->v[k].p) ||
-                    std::abs(x->v[k].bulge - y->v[k].bulge) > 1e-6)
+            for (std::size_t k = 0; k < pl->v.size(); ++k)
+                if (!close(u.toWorld(pl->v[k].p), y->v[k].p) ||
+                    std::abs(pl->v[k].bulge - y->v[k].bulge) > 1e-6)
                     d.fail(at + "polyline vertex " + std::to_string(k));
-        } else if (const auto* x = entityAs<EllipseData>(ea)) {
+        } else if (const auto* el = entityAs<EllipseData>(ea)) {
             const auto* y = entityAs<EllipseData>(eb);
-            if (!close(u.toWorld(x->center), y->center) ||
-                !close(u.dirToWorld(x->majorAxis), y->majorAxis) ||
-                std::abs(x->ratio - y->ratio) > 1e-6)
+            if (!close(u.toWorld(el->center), y->center) ||
+                !close(u.dirToWorld(el->majorAxis), y->majorAxis) ||
+                std::abs(el->ratio - y->ratio) > 1e-6)
                 d.fail(at + "ellipse");
-        } else if (const auto* x = entityAs<TextData>(ea)) {
+        } else if (const auto* tx = entityAs<TextData>(ea)) {
             const auto* y = entityAs<TextData>(eb);
-            if (!close(u.toWorld(x->position), y->position) || x->utf8 != y->utf8 ||
-                std::abs(x->height - y->height) > 1e-9 ||
-                std::abs(wrap(x->rotation + u.angle - y->rotation + kPi) - kPi) > 1e-6)
-                d.fail(at + "text (rotation " + std::to_string(x->rotation) + " -> " +
+            if (!close(u.toWorld(tx->position), y->position) || tx->utf8 != y->utf8 ||
+                std::abs(tx->height - y->height) > 1e-9 ||
+                std::abs(wrap(tx->rotation + u.angle - y->rotation + kPi) - kPi) > 1e-6)
+                d.fail(at + "text (rotation " + std::to_string(tx->rotation) + " -> " +
                        std::to_string(y->rotation) + ")");
-        } else if (const auto* x = entityAs<MTextData>(ea)) {
+        } else if (const auto* mt = entityAs<MTextData>(ea)) {
             const auto* y = entityAs<MTextData>(eb);
-            if (!close(u.toWorld(x->position), y->position) || x->utf8 != y->utf8 ||
-                std::abs(wrap(x->rotation + u.angle - y->rotation + kPi) - kPi) > 1e-6)
+            if (!close(u.toWorld(mt->position), y->position) || mt->utf8 != y->utf8 ||
+                std::abs(wrap(mt->rotation + u.angle - y->rotation + kPi) - kPi) > 1e-6)
                 d.fail(at + "mtext");
-        } else if (const auto* x = entityAs<PointData>(ea)) {
-            if (!close(u.toWorld(x->p), entityAs<PointData>(eb)->p))
+        } else if (const auto* pt = entityAs<PointData>(ea)) {
+            if (!close(u.toWorld(pt->p), entityAs<PointData>(eb)->p))
                 d.fail(at + "point");
-        } else if (const auto* x = entityAs<RayData>(ea)) {
+        } else if (const auto* ray = entityAs<RayData>(ea)) {
             const auto* y = entityAs<RayData>(eb);
-            if (!close(u.toWorld(x->origin), y->origin) || !close(u.dirToWorld(x->dir), y->dir))
+            if (!close(u.toWorld(ray->origin), y->origin) || !close(u.dirToWorld(ray->dir), y->dir))
                 d.fail(at + "ray");
-        } else if (const auto* x = entityAs<InsertData>(ea)) {
+        } else if (const auto* ins = entityAs<InsertData>(ea)) {
             const auto* y = entityAs<InsertData>(eb);
             // (an array is placed at the corner of the box of its source, which differs when the
             // source is turned; its grid is what matters)
-            const bool arr = x->array.has_value() && y->array.has_value();
-            if (x->array.has_value() != y->array.has_value() ||
+            const bool arr = ins->array.has_value() && y->array.has_value();
+            if (ins->array.has_value() != y->array.has_value() ||
                 (arr &&
-                 (x->array->rows != y->array->rows || x->array->columns != y->array->columns ||
-                  std::abs(x->array->rowSpacing - y->array->rowSpacing) > 1e-6 ||
-                  std::abs(x->array->columnSpacing - y->array->columnSpacing) > 1e-6)) ||
-                (!arr && !close(u.toWorld(x->position), y->position)) ||
-                std::abs(x->scale.x - y->scale.x) > 1e-6 ||
-                std::abs(x->scale.y - y->scale.y) > 1e-6 ||
-                std::abs(wrap(x->rotation + (x->array ? x->array->angle : 0) + u.angle -
+                 (ins->array->rows != y->array->rows || ins->array->columns != y->array->columns ||
+                  std::abs(ins->array->rowSpacing - y->array->rowSpacing) > 1e-6 ||
+                  std::abs(ins->array->columnSpacing - y->array->columnSpacing) > 1e-6)) ||
+                (!arr && !close(u.toWorld(ins->position), y->position)) ||
+                std::abs(ins->scale.x - y->scale.x) > 1e-6 ||
+                std::abs(ins->scale.y - y->scale.y) > 1e-6 ||
+                std::abs(wrap(ins->rotation + (ins->array ? ins->array->angle : 0) + u.angle -
                               y->rotation - (y->array ? y->array->angle : 0) + kPi) -
                          kPi) > 1e-6)
-                d.fail(at + "insert (rotation " + std::to_string(x->rotation) + " -> " +
+                d.fail(at + "insert (rotation " + std::to_string(ins->rotation) + " -> " +
                        std::to_string(y->rotation) + ", array angle " +
-                       std::to_string(x->array ? x->array->angle : -9) + " -> " +
+                       std::to_string(ins->array ? ins->array->angle : -9) + " -> " +
                        std::to_string(y->array ? y->array->angle : -9) + ")");
-        } else if (const auto* x = entityAs<DimensionData>(ea)) {
+        } else if (const auto* dm = entityAs<DimensionData>(ea)) {
             const auto* y = entityAs<DimensionData>(eb);
-            if (x->kind != y->kind) {
+            if (dm->kind != y->kind) {
                 d.fail(at + "dimension kind");
                 break;
             }
-            if (x->kind == DimKind::Linear || x->kind == DimKind::Aligned)
+            if (dm->kind == DimKind::Linear || dm->kind == DimKind::Aligned)
                 for (std::size_t k = 0; k < 3; ++k)
-                    if (!close(u.toWorld(x->defPts[k]), y->defPts[k]))
+                    if (!close(u.toWorld(dm->defPts[k]), y->defPts[k]))
                         d.fail(at + "dimension point " + std::to_string(k));
-            const DimStyle& sa = dim::styleOf(a.core->document(), x->style);
+            const DimStyle& sa = dim::styleOf(a.core->document(), dm->style);
             const DimStyle& sb = dim::styleOf(b.core->document(), y->style);
-            if (dim::dimensionText(sa, *x) != dim::dimensionText(sb, *y))
-                d.fail(at + "dimension text '" + dim::dimensionText(sa, *x) + "' vs '" +
+            if (dim::dimensionText(sa, *dm) != dim::dimensionText(sb, *y))
+                d.fail(at + "dimension text '" + dim::dimensionText(sa, *dm) + "' vs '" +
                        dim::dimensionText(sb, *y) + "'");
-            else if (x->kind == DimKind::Linear &&
-                     std::abs(wrap(x->rotation + u.angle - y->rotation + kPi) - kPi) > 1e-6)
+            else if (dm->kind == DimKind::Linear &&
+                     std::abs(wrap(dm->rotation + u.angle - y->rotation + kPi) - kPi) > 1e-6)
                 d.fail(at + "linear dimension direction");
-        } else if (const auto* x = entityAs<HatchData>(ea)) {
+        } else if (const auto* ht = entityAs<HatchData>(ea)) {
             const auto* y = entityAs<HatchData>(eb);
-            if (x->loops.size() != y->loops.size() ||
-                std::abs(x->patternScale - y->patternScale) > 1e-6 ||
-                (!x->solid &&
-                 std::abs(wrap(x->patternAngle + u.angle - y->patternAngle + kPi) - kPi) > 1e-6))
+            if (ht->loops.size() != y->loops.size() ||
+                std::abs(ht->patternScale - y->patternScale) > 1e-6 ||
+                (!ht->solid &&
+                 std::abs(wrap(ht->patternAngle + u.angle - y->patternAngle + kPi) - kPi) > 1e-6))
                 d.fail(at + "hatch");
         }
     }

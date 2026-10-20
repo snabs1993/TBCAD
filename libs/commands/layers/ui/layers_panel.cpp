@@ -490,10 +490,10 @@ void drawNameCell(tbcad::ui::PanelContext& ctx, const Row& row, bool dimmed, boo
                 for (LayerId target : layerTreeOrder(*ctx.doc)) {
                     if (st.multi.count(target.value))
                         continue;
-                    std::string label(static_cast<std::size_t>(layerDepth(*ctx.doc, target)) * 2,
+                    std::string entry(static_cast<std::size_t>(layerDepth(*ctx.doc, target)) * 2,
                                       ' ');
-                    label += ctx.doc->layer(target)->name;
-                    if (ImGui::MenuItem(label.c_str()))
+                    entry += ctx.doc->layer(target)->name;
+                    if (ImGui::MenuItem(entry.c_str()))
                         exec(ctx, {"-LAYER Merge " + selectedRefs(st), idRef(target)});
                 }
                 ImGui::EndMenu();

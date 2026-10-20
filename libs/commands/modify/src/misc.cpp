@@ -594,13 +594,7 @@ MatchCats readMatchCats(const cmd::IHost& host) {
     return c;
 }
 
-MatchCats allMatchCats() {
-    MatchCats c{};
-    c.fill(true);
-    return c;
-}
-
-void matchProps(const Entity& src, Entity& dst, const MatchCats& cats = allMatchCats()) {
+void matchProps(const Entity& src, Entity& dst, const MatchCats& cats) {
     if (cats[kMLayer]) {
         dst.common.layer = src.common.layer;
         dst.common.level = src.common.level;

@@ -11,11 +11,20 @@
 function(tbcad_set_warnings target)
   if(MSVC)
     target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8)
+    # getenv, fopen, sscanf, strdup and friends are standard or POSIX; MSVC's "use the _s
+    # version" advice (C4996) is not portable, so it is turned off rather than worked around.
+    target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS
+                                                 _CRT_NONSTDC_NO_DEPRECATE)
     if(TBCAD_WARNINGS_AS_ERRORS)
       target_compile_options(${target} PRIVATE /WX)
     endif()
   else()
     target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+    # Clang's -Wshadow matches MSVC's /W4 C4456-C4459 (a declaration hides another), which break
+    # the Windows build with /WX. (GCC's -Wshadow also flags constructor parameters; not used.)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+      target_compile_options(${target} PRIVATE -Wshadow)
+    endif()
     if(TBCAD_WARNINGS_AS_ERRORS)
       target_compile_options(${target} PRIVATE -Werror)
     endif()
