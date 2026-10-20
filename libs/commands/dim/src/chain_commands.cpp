@@ -385,11 +385,24 @@ public:
         if (!sel.ok())
             co_return;
         std::vector<Vec2> pts;
+        // Linear, aligned and ordinate dimensions in the selection give their extension line
+        // origins and are replaced by the new ones, as in AutoCAD (QDIM edits existing
+        // dimensions this way).
+        std::vector<EntityId> replaced;
         for (EntityId id : sel.ids) {
             const Entity* e = ctx.doc().find(id);
             if (!e)
                 continue;
-            if (const auto* l = entityAs<LineData>(*e)) {
+            if (const auto* d = entityAs<DimensionData>(*e)) {
+                if (d->kind == DimKind::Linear || d->kind == DimKind::Aligned) {
+                    pts.push_back(d->defPts[0]);
+                    pts.push_back(d->defPts[1]);
+                    replaced.push_back(id);
+                } else if (d->kind == DimKind::Ordinate) {
+                    pts.push_back(d->defPts[0]);
+                    replaced.push_back(id);
+                }
+            } else if (const auto* l = entityAs<LineData>(*e)) {
                 pts.push_back(l->a);
                 pts.push_back(l->b);
             } else if (const auto* p = entityAs<PolylineData>(*e)) {
@@ -410,7 +423,8 @@ public:
                 for (std::size_t j = i + 1; j < sel.ids.size(); ++j) {
                     const Entity* a = ctx.doc().find(sel.ids[i]);
                     const Entity* b = ctx.doc().find(sel.ids[j]);
-                    if (!a || !b)
+                    if (!a || !b || kind(*a) == EntityKind::Dimension ||
+                        kind(*b) == EntityKind::Dimension)
                         continue;
                     hits.clear();
                     if (geom::intersectEntities(*a, *b, hits))
@@ -584,7 +598,12 @@ public:
         const Vec2 normal{-std::sin(rotation), std::cos(rotation)};
         const Vec2 offU = atU - box.center();
         const double side = (horizontal ? offU.y : offU.x) >= 0 ? 1.0 : -1.0;
+        auto retire = [&] {
+            for (EntityId id : replaced)
+                (void)ctx.tx().erase(id);
+        };
         if (mode == Mode::Ordinate) {
+            retire();
             // One ordinate dimension per key point, measured from the datum (the origin unless
             // datumPoint moved it), the leaders ending on the line through the picked point.
             const Vec2 origin = datum ? *datum : Vec2{0, 0};
@@ -604,6 +623,7 @@ public:
             ctx.message("The key points are all at the same place along that direction.");
             co_return;
         }
+        retire();
         if (mode == Mode::Staggered) {
             // Pairs from the outside in: the innermost pair sits at the picked line, each pair
             // further out one step further from the objects.

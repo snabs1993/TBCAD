@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cmath>
 
 #include "tbcad/cmd/cmd.h"
@@ -215,6 +216,48 @@ TEST_CASE("QDIM dimensions every key point in one chain") {
     CHECK(dims[1]->defPts[2].y == doctest::Approx(-20));
     CHECK(f.host->undo());
     CHECK(f.dims().empty());
+}
+
+TEST_CASE("QDIM on existing dimensions replaces them with the new set") {
+    Chain f;
+    auto addLine = [&](Vec2 a, Vec2 b) {
+        Transaction tx = f.doc.begin("setup");
+        Entity e;
+        e.data = LineData{a, b};
+        EntityId id = tx.add(std::move(e)).value();
+        tx.commit();
+        return id;
+    };
+    EntityId l1 = addLine({0, 0}, {40, 0});
+    EntityId l2 = addLine({40, 0}, {100, 0});
+    REQUIRE(f.host->run("QDIM", {ScriptItem::select({l1, l2}), ScriptItem::enter(), "50,-20"})
+                .finished);
+    std::vector<EntityId> old;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (kind(e) == EntityKind::Dimension)
+            old.push_back(e.common.id);
+    });
+    REQUIRE(old.size() == 2);
+    // The two dimensions and one more line, as a baseline set.
+    EntityId l3 = addLine({100, 0}, {130, 0});
+    std::vector<EntityId> picked = old;
+    picked.push_back(l3);
+    REQUIRE(
+        f.host->run("QDIM", {ScriptItem::select(picked), ScriptItem::enter(), "Baseline", "50,-30"})
+            .finished);
+    for (EntityId id : old)
+        CHECK(f.doc.find(id) == nullptr);
+    auto dims = f.dims();
+    REQUIRE(dims.size() == 3);
+    std::vector<double> m;
+    for (const auto* d : dims)
+        m.push_back(d->measurement);
+    std::sort(m.begin(), m.end());
+    CHECK(m[0] == doctest::Approx(40));
+    CHECK(m[1] == doctest::Approx(100));
+    CHECK(m[2] == doctest::Approx(130));
+    CHECK(f.host->undo());
+    CHECK(f.dims().size() == 2);
 }
 
 // QDIM Edit removes key points by picking them and Adds new ones; seTtings Intersection also
