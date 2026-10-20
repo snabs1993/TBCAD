@@ -92,6 +92,11 @@ the layer's, and a name the drawing has no linetype for is ignored. Leaders keep
 linetype. DXF stores them as handles of LTYPE records (groups 345 to 347, also as DSTYLE
 overrides); a style that names a linetype keeps it from PURGE.
 
+DIMAZIN, DIMTZIN and DIMALTZ (`angularZeros`, `tolZeros`, `altZeros`, DIMSTYLE keys
+`AngleZeros`, `TolZeros` and `AltZeros`: Show, Leading, Trailing or Both) say which zeros angles,
+tolerances and alternate units drop, apart from DIMZIN for lengths. A style made in TBCAD starts
+with Same (follow DIMZIN); a DXF style takes AutoCAD's values, where an absent group means none.
+
 Tick marks (`ArrowType::ArchTick`, DXF `_ARCHTICK` or `_OBLIQUE`, or a DIMTSZ above 0, which
 sets the arrow size to DIMTSZ) are drawn as AutoCAD's block: a stroke at 45 degrees from
 (-a/2,-a/2) to (a/2,a/2) round the tip, so `a·√2` long.

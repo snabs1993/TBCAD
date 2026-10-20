@@ -14,16 +14,20 @@ const DimStyle& defaultStyle() {
     return s;
 }
 
-void suppressZeros(std::string& s, const DimStyle& style) {
+// Which zeros a number drops: `zeros` is one of DimStyle's DIMAZIN / DIMTZIN / DIMALTZ fields
+// (-1: the style's length setting).
+void suppressZeros(std::string& s, const DimStyle& style, int zeros = -1) {
     if (s.find('.') == std::string::npos)
         return;
-    if (style.suppressTrailingZeros) {
+    const bool trailing = zeros < 0 ? style.suppressTrailingZeros : (zeros & 2) != 0;
+    const bool leading = zeros < 0 ? style.suppressLeadingZeros : (zeros & 1) != 0;
+    if (trailing) {
         while (!s.empty() && s.back() == '0')
             s.pop_back();
         if (!s.empty() && s.back() == '.')
             s.pop_back();
     }
-    if (style.suppressLeadingZeros) {
+    if (leading) {
         std::size_t at = (!s.empty() && s[0] == '-') ? 1 : 0;
         if (s.compare(at, 2, "0.") == 0)
             s.erase(at, 1);
@@ -238,7 +242,7 @@ std::string formatNumber(const DimStyle& style, double value, bool angular) {
         f.unit = style.units;
         s = formatLength(value, style.precision, f);
     }
-    suppressZeros(s, style);
+    suppressZeros(s, style, angular ? style.angularZeros : -1);
     if (style.commaDecimal)
         for (char& c : s)
             if (c == '.')
@@ -306,7 +310,7 @@ std::string toleranceNumber(const DimStyle& style, double value, bool angular) {
         f.unit = style.units;
         s = formatLength(value, style.tolPrecision, f);
     }
-    suppressZeros(s, style);
+    suppressZeros(s, style, style.tolZeros);
     if (angular)
         s += "\xC2\xB0";
     return s;
@@ -373,7 +377,7 @@ TextParts dimensionParts(const DimStyle& style, const DimensionData& d, bool sta
         UnitFormat f;
         f.unit = style.altUnit;
         std::string alt = formatLength(m * style.altScale, style.altPrecision, f);
-        suppressZeros(alt, style);
+        suppressZeros(alt, style, style.altZeros);
         tail += " [" + style.altPrefix + alt + style.altSuffix + "]";
     }
     t.before = std::move(head);

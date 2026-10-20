@@ -636,6 +636,8 @@ Result<void> checkRow(const Document& doc, DimStyle& r, const DimStyle* old) {
     r.textVertPos = std::clamp(r.textVertPos, -100.0, 100.0);
     r.textJustify = std::clamp(r.textJustify, 0, 2);
     r.angularPrecision = std::clamp(r.angularPrecision, -1, 8);
+    for (int* z : {&r.angularZeros, &r.tolZeros, &r.altZeros})
+        *z = std::clamp(*z, -1, 3);
     r.textFill = std::clamp(r.textFill, 0, 2);
     r.textFillColor = std::clamp(r.textFillColor, 0, 255);
     if (!std::isfinite(r.baselineSpacing) || r.baselineSpacing < 0)

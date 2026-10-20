@@ -280,7 +280,8 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
         // More dimension style variables: per style its id, the count of values, then each value
         // as a tag and a number. Tag 1: DIMTVP; tag 2: the leader arrow (since 1.19); tags 3 and
         // 4: DIMLWD and DIMLWE (since 1.20); tags 5, 6 and 7: DIMLTYPE, DIMLTEX1 and DIMLTEX2 as
-        // the index of the name in the string table (since 1.21).
+        // the index of the name in the string table (since 1.21); tags 8, 9 and 10: DIMAZIN,
+        // DIMTZIN and DIMALTZ (bit 1 leading, bit 2 trailing zeros; since 1.22).
         ByteWriter dstv;
         std::size_t dstvCount = 0;
         for (const auto& [id, r] : doc.dimStyles()) {
@@ -292,10 +293,21 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
             int ltCount = 0;
             for (const std::string* s : lts)
                 ltCount += s->empty() ? 0 : 1;
-            if (!tvp && !ldr && !lwd && !lwe && ltCount == 0)
+            const int zeros[3] = {r.angularZeros, r.tolZeros, r.altZeros};
+            int zeroCount = 0;
+            for (int z : zeros)
+                zeroCount += z >= 0 ? 1 : 0;
+            if (!tvp && !ldr && !lwd && !lwe && ltCount == 0 && zeroCount == 0)
                 continue;
             dstv.varint(id.value);
-            dstv.varint((tvp ? 1 : 0) + (ldr ? 1 : 0) + (lwd ? 1 : 0) + (lwe ? 1 : 0) + ltCount);
+            dstv.varint((tvp ? 1 : 0) + (ldr ? 1 : 0) + (lwd ? 1 : 0) + (lwe ? 1 : 0) + ltCount +
+                        zeroCount);
+            for (int k = 0; k < 3; ++k) {
+                if (zeros[k] < 0)
+                    continue;
+                dstv.varint(8 + k);
+                dstv.f64(zeros[k]);
+            }
             for (int k = 0; k < 3; ++k) {
                 if (lts[k]->empty())
                     continue;

@@ -526,6 +526,7 @@ private:
             ArrowType leader = ArrowType::ClosedFilled;
             LineWeight lwd = LineWeight::byBlock(), lwe = LineWeight::byBlock();
             std::string lts[3];
+            int zeros[3] = {-1, -1, -1};
             for (std::size_t k = 0; k < values; ++k) {
                 const std::uint64_t tag = r.varint();
                 const double v = r.f64();
@@ -545,6 +546,10 @@ private:
                     if (v < 0 || v >= static_cast<double>(strings_.size()) || v != std::floor(v))
                         bad("invalid dimension linetype");
                     lts[tag - 5] = strings_[static_cast<std::size_t>(v)];
+                } else if (tag >= 8 && tag <= 10) {
+                    if (v < 0 || v > 3 || v != std::floor(v))
+                        bad("invalid dimension zero suppression");
+                    zeros[tag - 8] = static_cast<int>(v);
                 }
             }
             if (!doc_->dimStyle(id))
@@ -558,6 +563,9 @@ private:
                                         d.dimLinetype = lts[0];
                                         d.ext1Linetype = lts[1];
                                         d.ext2Linetype = lts[2];
+                                        d.angularZeros = zeros[0];
+                                        d.tolZeros = zeros[1];
+                                        d.altZeros = zeros[2];
                                     }),
                   "dimension style");
         }

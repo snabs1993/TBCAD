@@ -539,3 +539,17 @@ TEST_CASE("DIMSTYLE Linetype and ExtLinetype1/2 set DIMLTYPE and DIMLTEX1/2") {
         listed |= k == "ExtLinetype2" && v == "ByBlock";
     CHECK(listed);
 }
+
+TEST_CASE("DIMSTYLE AngleZeros, TolZeros and AltZeros set DIMAZIN, DIMTZIN and DIMALTZ") {
+    Fixture f;
+    f.host->run("DIMSTYLE", {"New", "Z", "Edit", "Z", "TrailingZeros", "Suppress", "AngleZeros",
+                             "Show", "TolZeros", "Both", "AltZeros", "Bad", "Done", "Done"});
+    const DimStyle* s = f.doc.dimStyleByName("Z");
+    REQUIRE(s);
+    CHECK(s->angularZeros == 0);
+    CHECK(s->tolZeros == 3);
+    CHECK(s->altZeros == -1);
+    // Lengths drop trailing zeros; angles keep theirs.
+    CHECK(dim::formatNumber(*s, 12.5, false) == "12.5");
+    CHECK(dim::formatNumber(*s, kPi / 2, true) == "90.00\xC2\xB0");
+}

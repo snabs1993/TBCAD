@@ -57,6 +57,8 @@ std::unique_ptr<Document> makeRichDocument() {
         arch.extLineWeight = LineWeight::byLayer();
         arch.dimLinetype = "ByLayer";
         arch.ext2Linetype = "CENTER";
+        arch.angularZeros = 2;
+        arch.tolZeros = 0;
         arch.units = LengthUnit::Meter;
         arch.precision = 3;
         arch.prefix = "<";

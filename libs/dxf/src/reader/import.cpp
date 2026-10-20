@@ -1671,6 +1671,13 @@ void Importer::readDimStyle(const Record& r) {
         ds.suppressLeadingZeros = (z & 4) != 0;
         ds.suppressTrailingZeros = (z & 8) != 0;
     }
+    // DIMAZIN (bit 1 leading, bit 2 trailing), DIMTZIN and DIMALTZ (as DIMZIN: 4 and 8); absent
+    // is AutoCAD's default, no suppression.
+    ds.angularZeros = static_cast<int>(r.integer(79) & 3);
+    for (const auto& [code, out] : {std::pair<int, int*>{284, &ds.tolZeros}, {285, &ds.altZeros}}) {
+        const std::int64_t z = r.integer(code);
+        *out = ((z & 4) != 0 ? 1 : 0) | ((z & 8) != 0 ? 2 : 0);
+    }
     auto dimColor = [&](int code, Color& out) {
         if (const Group* g = r.find(code)) {
             const std::int64_t c = g->integer();

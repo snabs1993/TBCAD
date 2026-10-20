@@ -183,6 +183,11 @@ struct DimStyle {
     DimAngleFormat angleFormat = DimAngleFormat::Degrees;
     int angularPrecision = -1;
     bool commaDecimal = false;
+    // Zero suppression of angles (DIMAZIN), tolerances (DIMTZIN) and alternate units (DIMALTZ):
+    // bit 1 drops leading zeros, bit 2 trailing ones; -1 = as the length (`suppress...Zeros`).
+    int angularZeros = -1;
+    int tolZeros = -1;
+    int altZeros = -1;
     // DIMDLI: distance between baseline dimension lines (0 = 2.5 times the text height).
     // DIMCEN: size of the centre mark of radius and diameter dimensions (0 none, negative also
     // draws centre lines).

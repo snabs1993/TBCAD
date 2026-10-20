@@ -274,7 +274,8 @@ style `varint dimStyleId`, `varint n`, `n` × (`varint tag`, `f64 value`). Tag 1
 heights); tag 2 (since 1.19) the arrow of leaders (DIMLDRBLK, the `ArrowType` number); tags 3 and 4
 (since 1.20) DIMLWD and DIMLWE (lineweight in hundredths of a mm, -1 ByLayer, -2 ByBlock, -3
 Default); tags 5, 6 and 7 (since 1.21) DIMLTYPE, DIMLTEX1 and DIMLTEX2 (the linetype name, as its
-index in the string table). A reader skips tags it does not know, so later variables need no new
+index in the string table); tags 8, 9 and 10 (since 1.22) DIMAZIN, DIMTZIN and DIMALTZ (bit 1
+leading zeros, bit 2 trailing; absent: as the length setting). A reader skips tags it does not know, so later variables need no new
 chunk.
 
 ## Reading safely
