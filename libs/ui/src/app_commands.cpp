@@ -976,6 +976,9 @@ void registerAppCommands(cmd::Registry& registry) {
         "With selection cycling on (SELCYC): 0 = off, 1 = click again for the next object under "
         "the cursor, 2 = a list of the overlapping objects to pick from"));
     (void)registry.add(std::make_unique<PickVarCommand>(
+        "SELECTIONPREVIEW", "selection.preview", 1, 1,
+        "1 = objects a selection box would pick are highlighted while you drag it, 0 = off"));
+    (void)registry.add(std::make_unique<PickVarCommand>(
         "DBLCLKEDIT", "selection.dblclkedit", 1, 1,
         "1 = a double click edits the object (the action is set per type in Settings > "
         "Customize), 0 = it only selects"));
