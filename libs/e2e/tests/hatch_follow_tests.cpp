@@ -95,7 +95,7 @@ void makeShape(Rig& r, int which) {
 
 }  // namespace
 
-TEST_CASE("an associative hatch follows its boundary through MOVE, ROTATE and SCALE") {
+TEST_CASE("an associative hatch follows its boundary through MOVE, ROTATE, and SCALE") {
     struct Edit {
         const char* name;
         std::vector<ScriptItem> in;
@@ -228,4 +228,34 @@ TEST_CASE("trimming or extending a boundary edge keeps the hatch coherent and un
             ++whole;
     });
     CHECK(whole == 1);
+}
+
+TEST_CASE("COPY and MIRROR that keep the source leave the original hatch and its boundary alone") {
+    for (int shape = 0; shape < 4; ++shape) {
+        CAPTURE(shape);
+        Rig r;
+        makeShape(r, shape);
+        r.host.run("HATCH", {"50,30", ScriptItem::enter()});
+        const HatchData* h = r.theHatch();
+        REQUIRE(h != nullptr);
+        const std::vector<EntityId> sources = h->sourceBoundary;
+        const BBox2 hatchBefore = hatch::hatchBounds(*h);
+        r.host.setSelection(sources);
+        r.host.run("MIRROR", {"10,-5", "40,60", "N"});
+        h = r.theHatch();
+        REQUIRE(h != nullptr);
+        CHECK(h->sourceBoundary == sources);
+        const BBox2 hatchAfter = hatch::hatchBounds(*h);
+        CHECK(hatchAfter.min.x == doctest::Approx(hatchBefore.min.x));
+        CHECK(hatchAfter.max.y == doctest::Approx(hatchBefore.max.y));
+        CHECK(r.host.undo());
+        r.host.setSelection(sources);
+        r.host.run("COPY", {"0,0", "200,0", ScriptItem::enter()});
+        h = r.theHatch();
+        REQUIRE(h != nullptr);
+        CHECK(h->sourceBoundary == sources);
+        const BBox2 hb = hatch::hatchBounds(*h);
+        CHECK(hb.min.x == doctest::Approx(hatchBefore.min.x));
+        CHECK(hb.max.x == doctest::Approx(hatchBefore.max.x));
+    }
 }
