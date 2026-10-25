@@ -176,7 +176,8 @@ AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
     keybindings_.declare("edit.deselect", "Escape");
     keybindings_.declare("edit.delete", "Delete");
     keybindings_.declare("view.zoomExtents", "");
-    keybindings_.declare("view.toggleCommandLine", "");
+    keybindings_.declare("view.toggleCommandLine", "Ctrl+9");  // as in AutoCAD
+    keybindings_.declare("view.toggleProperties", "Ctrl+1");     // as in AutoCAD
     keybindings_.declare("view.commandPalette", "Ctrl+Shift+P");
     keybindings_.declare("view.cursorHud", "F12");
     keybindings_.declare("view.expandLog", "Ctrl+L");
