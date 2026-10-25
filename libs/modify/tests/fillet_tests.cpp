@@ -444,3 +444,59 @@ TEST_CASE("polyline with an arc segment: chamfer skips the arc corners, fillet r
     // All four corners are rounded, the two next to the arc through the line-arc solution.
     CHECK(as<PolylineData>(f.value()).v.size() == 8);
 }
+
+namespace {
+// Every segment of the cleaned polyline must start where the previous one ended.
+bool isConnected(const PolylineData& raw) {
+    PolylineData pl = cleanPolyline(raw);
+    auto segs = polylineSegs(pl);
+    for (std::size_t i = 0; i < segs.size(); ++i) {
+        bool last = i + 1 == segs.size();
+        if (last && !pl.closed)
+            break;
+        if (!near(segs[i].p1, segs[(i + 1) % segs.size()].p0, 1e-6))
+            return false;
+    }
+    return true;
+}
+}  // namespace
+
+TEST_CASE("polyline with arcs: fillet and chamfer of all corners keep the path connected") {
+    // A tab shape: straight sides, one bulged side (arc) and a short step.
+    std::vector<PolyVertex> v = pts({{0, 0}, {20, 0}, {20, 10}, {12, 10}, {12, 14}, {0, 14}});
+    v[1].bulge = 0.3;   // arc from (20,0) to (20,10)
+    v[3].bulge = -0.2;  // small arc on the step
+    Entity shape = poly(v, true);
+    const double len0 = geom::length(as<PolylineData>(shape));
+
+    for (double r : {0.5, 1.0, 2.0}) {
+        auto f = filletPolyline(shape, r);
+        REQUIRE(f.ok());
+        const auto& pl = as<PolylineData>(f.value());
+        CHECK(pl.closed);
+        CHECK(isConnected(pl));
+        CHECK(pl.v.size() > as<PolylineData>(shape).v.size());
+        CHECK(geom::length(pl) < len0);  // rounding a corner always shortens the path
+        for (const auto& p : pl.v)
+            CHECK(std::isfinite(p.p.x + p.p.y + p.bulge));
+    }
+
+    ChamferOptions co;
+    co.distance1 = co.distance2 = 1;
+    auto c = chamferPolyline(shape, co);
+    REQUIRE(c.ok());
+    CHECK(isConnected(as<PolylineData>(c.value())));
+    // A corner that touches an arc is skipped, never turned into a bad chord.
+    CHECK(as<PolylineData>(c.value()).v.size() < 2 * as<PolylineData>(shape).v.size());
+    CHECK(geom::length(as<PolylineData>(c.value())) < len0);
+}
+
+TEST_CASE("fillet radius 0 on a polyline with arcs changes nothing and never fails") {
+    std::vector<PolyVertex> v = pts({{0, 0}, {10, 0}, {10, 6}, {0, 6}});
+    v[1].bulge = 0.4;
+    Entity shape = poly(v, false);
+    auto z = filletPolyline(shape, 0);
+    REQUIRE(z.ok());
+    CHECK(near(geom::length(as<PolylineData>(z.value())), geom::length(as<PolylineData>(shape))));
+    CHECK(isConnected(as<PolylineData>(z.value())));
+}
