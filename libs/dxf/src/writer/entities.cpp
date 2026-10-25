@@ -803,6 +803,55 @@ std::uint64_t Writer::textStyleHandle(TextStyleId id) {
     return h;
 }
 
+std::uint64_t Writer::arrowBlockHandle(ArrowType a) {
+    if (a == ArrowType::ClosedFilled)
+        return 0;
+    if (const auto it = arrowRec_.find(static_cast<int>(a)); it != arrowRec_.end())
+        return it->second;
+    DimBlock block;
+    switch (a) {
+        case ArrowType::Open30:
+            block.name = "_OPEN30";
+            break;
+        case ArrowType::ArchTick:
+            block.name = "_ARCHTICK";
+            break;
+        case ArrowType::Dot:
+            block.name = "_DOT";
+            break;
+        default:
+            block.name = "_NONE";
+            break;
+    }
+    if (blockSet_.has(block.name))  // a drawing block of that name: leave the arrow to the style
+        return 0;
+    blockSet_.add(block.name);
+    block.rec = newHandle();
+    {
+        // Unit-size shape, as the built-in blocks have, drawn by the arrow size.
+        Out bo(utf8_, r12_);
+        Out* saved = L().o;
+        L().o = &bo;
+        const Props p;
+        constexpr double kTan15 = 0.2679491924311227;
+        if (a == ArrowType::Open30) {
+            writeLine(p, LineData{{0, 0}, {-1, kTan15}}, block.rec);
+            writeLine(p, LineData{{0, 0}, {-1, -kTan15}}, block.rec);
+            writeLine(p, LineData{{0, 0}, {-1, 0}}, block.rec);
+        } else if (a == ArrowType::ArchTick) {
+            writeLine(p, LineData{{-0.5, -0.5}, {0.5, 0.5}}, block.rec);
+        } else if (a == ArrowType::Dot) {
+            writeCircle(p, CircleData{{0, 0}, 0.5}, block.rec);
+        }
+        L().o = saved;
+        block.body = std::move(bo.buf);
+    }
+    const std::uint64_t rec = block.rec;
+    dimBlocks_.push_back(std::move(block));
+    arrowRec_[static_cast<int>(a)] = rec;
+    return rec;
+}
+
 std::uint64_t Writer::byBlockLinetypeHandle() {
     if (!byBlockLt_)
         byBlockLt_ = newHandle();
@@ -938,6 +987,8 @@ bool Writer::writeMLeader(const Props& p, const Entity& e, const MLeaderData& m,
     o.i(291, m.dogleg ? 1 : 0);
     o.d(41, doglegLen);
     o.d(42, st.arrowSize * k);
+    if (const std::uint64_t arrow = arrowBlockHandle(st.leaderArrow))
+        o.h(342, arrow);  // arrowhead (a null handle is the default closed filled)
     o.i(172, block ? 1 : text ? 2 : 0);
     o.h(343, textStyle);
     o.i(173, 1);

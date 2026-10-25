@@ -1575,6 +1575,9 @@ std::string Writer::objectsSection() {
             o.str(3, m.name);
             o.d(44, ds.arrowSize);
             o.raw(300, "");
+            if (const auto a = arrowRec_.find(static_cast<int>(ds.leaderArrow));
+                a != arrowRec_.end())
+                o.h(341, a->second);
             o.h(342, textStyleHandle(ds.textStyle));
             o.i(174, 1);
             o.i(175, 1);

@@ -2339,4 +2339,45 @@ TEST_CASE("a leader keeps its text: the multiline text written after it comes ba
     CHECK(texts == 1);
 }
 
+TEST_CASE("DXF 2007 names the arrowhead block of a multileader, and reads the style back") {
+    Document doc;
+    DimStyleId dot;
+    {
+        Transaction tx = doc.begin("mleader arrow");
+        DimStyle ds;
+        ds.name = "MLEADER-Dots";
+        ds.leaderArrow = ArrowType::Dot;
+        dot = tx.addDimStyle(std::move(ds)).value();
+        MLeaderData m;
+        m.lines = {{{0, 0}, {20, 10}}};
+        m.landing = {20, 10};
+        m.contentPos = {25, 10};
+        m.style = dot;
+        m.utf8 = "Dot";
+        REQUIRE(tx.add(make(Indirect<MLeaderData>(m))).ok());
+        tx.commit();
+    }
+    ExportOptions opt;
+    opt.version = DxfVersion::R2007;
+    Report exportReport;
+    Result<ExportResult> out = exportDxf(doc, opt, exportReport);
+    REQUIRE(out.ok());
+    const std::string& text = out.value().bytes;
+    CHECK(text.find("_DOT\r\n") != std::string::npos);
+    CHECK(text.find("\r\n342\r\n") != std::string::npos);
+
+    Report report;
+    Result<ImportResult> in = importDxf(testing::bytesOf(text), ImportOptions{}, report);
+    REQUIRE(in.ok());
+    const Document& back = *in.value().document;
+    const MLeaderData* m = nullptr;
+    back.forEachEntity([&](const Entity& e) {
+        if (const auto* x = entityAs<MLeaderData>(e))
+            m = x;
+    });
+    REQUIRE(m);
+    REQUIRE(back.dimStyle(m->style));
+    CHECK(back.dimStyle(m->style)->leaderArrow == ArrowType::Dot);
+}
+
 }  // namespace tbcad::dxf
