@@ -254,3 +254,22 @@ TEST_CASE("save: the backup keeps the old content when a new file replaces it") 
     CHECK(dumpOf(dir.path() / "a.tbcad.bak") == canonicalDump(*two));
     CHECK(dumpOf(file) == canonicalDump(*one));
 }
+
+TEST_CASE("save: a read-only file is not replaced and the message says so") {
+    TempDir dir;
+    fs::path file = dir.path() / "locked.tbcad";
+    auto one = docWith(1);
+    auto two = docWith(2);
+    REQUIRE(io::writeTbcad(*one, file).ok());
+    fs::permissions(file, fs::perms::owner_write | fs::perms::group_write | fs::perms::others_write,
+                    fs::perm_options::remove);
+    auto r = io::writeTbcad(*two, file);
+    REQUIRE_FALSE(r.ok());
+    CHECK(r.error().message.find("read-only") != std::string::npos);
+    CHECK(dumpOf(file) == canonicalDump(*one));
+    CHECK_FALSE(fs::exists(dir.path() / "locked.tbcad.tmp"));
+    CHECK_FALSE(fs::exists(dir.path() / "locked.tbcad.bak"));
+    fs::permissions(file, fs::perms::owner_write, fs::perm_options::add);
+    REQUIRE(io::writeTbcad(*two, file).ok());
+    CHECK(dumpOf(file) == canonicalDump(*two));
+}
