@@ -260,3 +260,72 @@ TEST_CASE("the index follows block edits, undo and redo") {
     }
     CHECK(idx.boxOf(i).max.x == doctest::Approx(80));
 }
+
+TEST_CASE("ByBlock linetype comes from the insert - layer 0 takes the insert's layer linetype") {
+    registerInsertDisplay();
+    Document doc;
+    LayerId walls;
+    LinetypeId hidden, center;
+    {
+        Transaction tx = doc.begin("layer");
+        hidden = tx.addLinetype(Linetype{.name = "HIDDEN", .pattern = {6, -3}}).value();
+        center = tx.addLinetype(Linetype{.name = "CENTER", .pattern = {12, -3, 3, -3}}).value();
+        walls = tx.addLayer(Layer{.name = "Walls", .linetype = hidden}).value();
+        tx.commit();
+    }
+    Entity byBlock = line(0, 0, 1, 0);
+    byBlock.common.layer = kLayerZero;
+    byBlock.common.linetype = kLinetypeByBlock;
+    Entity byLayerOnZero = line(0, 1, 1, 1);
+    byLayerOnZero.common.layer = kLayerZero;
+    Entity fixed = line(0, 2, 1, 2);
+    fixed.common.layer = kLayerZero;
+    fixed.common.linetype = center;
+    BlockId b = addBlock(doc, "B", {byBlock, byLayerOnZero, fixed});
+
+    // The insert has no linetype of its own: ByBlock and layer 0 both end up with its layer's.
+    Entity ins = insertOf(b, {0, 0});
+    ins.common.layer = walls;
+    DisplayList l = displayOf(doc, addEntity(doc, ins));
+    REQUIRE(l.items.size() == 3);
+    CHECK(poly(l, 0).style.pattern == &doc.linetype(hidden)->pattern);
+    CHECK(poly(l, 1).style.pattern == &doc.linetype(hidden)->pattern);
+    CHECK(poly(l, 2).style.pattern == &doc.linetype(center)->pattern);
+
+    // An insert with a linetype of its own gives it to the ByBlock line only.
+    Entity ins2 = insertOf(b, {0, 10});
+    ins2.common.layer = walls;
+    ins2.common.linetype = center;
+    DisplayList l2 = displayOf(doc, addEntity(doc, ins2));
+    REQUIRE(l2.items.size() == 3);
+    CHECK(poly(l2, 0).style.pattern == &doc.linetype(center)->pattern);
+    CHECK(poly(l2, 1).style.pattern == &doc.linetype(hidden)->pattern);
+}
+
+TEST_CASE("block objects on an off or frozen layer are not drawn - layer 0 follows the insert") {
+    registerInsertDisplay();
+    Document doc;
+    LayerId off, frozen, shown;
+    {
+        Transaction tx = doc.begin("layers");
+        off = tx.addLayer(Layer{.name = "Off", .on = false}).value();
+        frozen = tx.addLayer(Layer{.name = "Frozen", .frozen = true}).value();
+        shown = tx.addLayer(Layer{.name = "Shown"}).value();
+        tx.commit();
+    }
+    Entity a = line(0, 0, 1, 0);
+    a.common.layer = off;
+    Entity b = line(0, 1, 1, 1);
+    b.common.layer = frozen;
+    Entity c = line(0, 2, 1, 2);
+    c.common.layer = shown;
+    Entity d = line(0, 3, 1, 3);
+    d.common.layer = kLayerZero;
+    BlockId blk = addBlock(doc, "B", {a, b, c, d});
+    Entity ins = insertOf(blk, {0, 0});
+    ins.common.layer = shown;
+    DisplayList l = displayOf(doc, addEntity(doc, ins));
+    REQUIRE(l.items.size() == 2);
+    CHECK(poly(l, 0).style.layer == shown);
+    CHECK(poly(l, 1).style.layer == shown);
+}
