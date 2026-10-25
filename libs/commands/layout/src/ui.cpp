@@ -56,6 +56,7 @@ int selectedViewport(const cmd::IHost& host, const Document& doc) {
 }
 
 void registerUi(ui::UiRegistry& ui) {
+    registerViewportPanel(ui);
     // A click on a viewport's border selects it. Clicks elsewhere only clear that selection, and
     // are then handled as usual.
     ui.addIdleClickHook([](ui::PanelContext& ctx, Vec2 world, double aperture, bool, bool) {

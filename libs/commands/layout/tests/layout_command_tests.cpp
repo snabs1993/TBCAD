@@ -144,6 +144,24 @@ TEST_CASE("VPLOCK locks a selected viewport without asking") {
     host.setSetting("tmp.layout.viewport", "Plan:1");
     host.run("VPLOCK", {});
     CHECK(layout::findLayout(doc, "Plan")->viewports[0].locked);
+    host.run("VPLOCK", {});  // a second run flips it back, as the Viewport panel's check box does
+    CHECK_FALSE(layout::findLayout(doc, "Plan")->viewports[0].locked);
+    host.undo();
+    CHECK(layout::findLayout(doc, "Plan")->viewports[0].locked);
+}
+
+TEST_CASE("VPSCALE changes a selected viewport without asking which") {
+    Document doc;
+    cmd::Registry reg;
+    layoutcmd::registerCommands(reg);
+    SheetHost host(doc, reg);
+    host.run("LAYOUT", {"New", "Plan", "A3", ""});
+    host.run("MVIEW", {"10,10", "200,200", "1:50", "100,100"});
+    host.setSetting("tmp.layout.viewport", "Plan:1");
+    host.run("VPSCALE", {"1:20"});
+    CHECK(layout::findLayout(doc, "Plan")->viewports[0].scaleN == 20);
+    host.undo();
+    CHECK(layout::findLayout(doc, "Plan")->viewports[0].scaleN == 50);
 }
 
 TEST_CASE("CHSPACE moves objects to the sheet at viewport size and back into model space") {
