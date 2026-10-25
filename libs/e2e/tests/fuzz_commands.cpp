@@ -36,10 +36,10 @@ using cmd::ScriptItem;
 namespace {
 
 bool skipped(const std::string& name) {
-    static const char* const kParts[] = {"EXPORT", "IMPORT",    "SAVE",    "PRINT",    "PLOT",
-                                         "DEVGEN", "NEWFROM",   "ATTACH",  "RELOAD",   "OPEN",
-                                         "QUIT",   "EXIT",      "NEW",     "TEMPLATE", "WBLOCK",
-                                         "SCRIPT", "ETRANSMIT", "ARCHIVE", "XREF",     "IMAGE"};
+    static const char* const kParts[] = {
+        "EXPORT", "IMPORT", "SAVE",      "PRINT",   "PLOT", "DEVGEN", "NEWFROM",
+        "ATTACH", "RELOAD", "OPEN",      "QUIT",    "EXIT", "NEW",    "TEMPLATE",
+        "WBLOCK", "SCRIPT", "ETRANSMIT", "ARCHIVE", "XREF", "IMAGE",  "COMPARE"};
     for (const char* part : kParts)
         if (name.find(part) != std::string::npos)
             return true;

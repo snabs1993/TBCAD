@@ -441,3 +441,11 @@ TEST_CASE(
     CHECK(serialize(grid(2, 2)).find("|1,") == std::string::npos);
     CHECK(parse(serialize(grid(2, 2))));
 }
+
+TEST_CASE("parseCsv reads cells copied from Excel (tab separated)") {
+    auto rows = table::parseCsv("Item\tQty, each\r\nBolt\t4\r\n");
+    REQUIRE(rows.size() == 2);
+    REQUIRE(rows[0].size() == 2);
+    CHECK(rows[0][1] == "Qty, each");
+    CHECK(rows[1][0] == "Bolt");
+}

@@ -662,3 +662,38 @@ TEST_CASE("the PLOT menu sets the lineweight scale and the screening, and keeps 
     CHECK(saved->settings.screening == 40);
     CHECK(saved->settings.lineweightScale == doctest::Approx(2));
 }
+
+TEST_CASE("COMPARE marks added, removed and changed objects") {
+    Fixture f;  // the open drawing holds one line (0,0)-(10000,0)
+    Document old;
+    {
+        auto tx = old.begin("old");
+        Entity same;
+        same.data = LineData{{0, 0}, {10000, 0}};
+        REQUIRE(tx.add(same).ok());
+        Entity moved;
+        moved.data = LineData{{0, 500}, {1000, 500}};
+        REQUIRE(tx.add(moved).ok());
+        Entity gone;
+        gone.data = CircleData{{5000, 5000}, 100};
+        REQUIRE(tx.add(gone).ok());
+        tx.commit();
+    }
+    {
+        auto tx = f.doc.begin("new");
+        Entity moved;
+        moved.data = LineData{{0, 510}, {1000, 510}};
+        REQUIRE(tx.add(moved).ok());
+        Entity added;
+        added.data = LineData{{20000, 0}, {20000, 100}};
+        REQUIRE(tx.add(added).ok());
+        tx.commit();
+    }
+    REQUIRE(io::writeTbcad(old, f.path("old.tbcad")).ok());
+    auto r = f.host->run("COMPARE", {f.path("old.tbcad")});
+    CHECK(r.finished);
+    CHECK(f.host->logContains("1 added (green), 1 removed (red), 1 changed (yellow)"));
+    CHECK(f.doc.layerByName("COMPARE-ADDED") != nullptr);
+    CHECK(f.doc.layerByName("COMPARE-REMOVED") != nullptr);
+    CHECK(f.doc.layerByName("COMPARE-CHANGED") != nullptr);
+}

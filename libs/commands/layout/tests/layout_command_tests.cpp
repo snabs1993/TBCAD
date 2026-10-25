@@ -648,3 +648,22 @@ TEST_CASE("MVIEW Polygonal and Object make clipped viewports - ON, OFF and Lock 
     f.host->run("MVIEW", {"Polygonal", "10,10", "20,20", cmd::ScriptItem::esc()});
     CHECK(layout::findLayout(f.doc, "Plan")->viewports.size() == 1);
 }
+
+TEST_CASE("MVSETUP makes a sheet with a fitted viewport and a title block") {
+    Fixture f;
+    f.host->run("MVSETUP", {"Plan", "A3", "Landscape", "1:50", "Yes", "Tower", "Ground"});
+    auto l = layout::findLayout(f.doc, "Plan");
+    REQUIRE(l.has_value());
+    CHECK(l->widthMm == doctest::Approx(420));
+    REQUIRE(l->viewports.size() == 1);
+    CHECK(l->viewports[0].paper.min.x == doctest::Approx(10));
+    CHECK(f.doc.blockByName("TITLEBLOCK") != nullptr);
+    CHECK(f.host->undo());
+    CHECK_FALSE(layout::findLayout(f.doc, "Plan").has_value());
+}
+
+TEST_CASE("MVSETUP rejects a bad scale without making a layout") {
+    Fixture f;
+    f.host->run("MVSETUP", {"Plan", "A3", "Landscape", "bogus"});
+    CHECK_FALSE(layout::findLayout(f.doc, "Plan").has_value());
+}

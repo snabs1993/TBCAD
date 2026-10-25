@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -23,6 +24,8 @@
 #include "tbcad/core/color.h"
 #include "tbcad/drafting/settings.h"
 #include "tbcad/drafting/ucs.h"
+#include "tbcad/mcp/png.h"
+#include "tbcad/platform/clipboard_picture.h"
 #include "tbcad/platform/crash.h"
 #include "tbcad/platform/external_link.h"
 #include "tbcad/platform/file_dialog.h"
@@ -4073,7 +4076,11 @@ void Gui::viewportMenu() {
                 item("Extend", "EXTEND");
             }
             ImGui::Separator();
+            item("Paste", "PASTECLIP");
+            if (ImGui::MenuItem("Select All"))
+                core_.selectAll();
             item("Select Similar", "SELECTSIMILAR");
+            item("Quick Select...", "QSELECT");
             item("Match Properties", "MATCHPROP");
             item("Properties", "PROPERTIES");
             if (core_.registry().find("LAYISO") && ImGui::MenuItem("Isolate Layer"))
@@ -4085,8 +4092,14 @@ void Gui::viewportMenu() {
                 run("PASTECLIP");
             if (ImGui::MenuItem("Select All"))
                 core_.selectAll();
+            if (core_.registry().find("QSELECT") && ImGui::MenuItem("Quick Select..."))
+                run("QSELECT");
+            if (core_.registry().find("PROPERTIES") && ImGui::MenuItem("Properties"))
+                run("PROPERTIES");
         }
         ImGui::Separator();
+        if (core_.registry().find("PAN") && ImGui::MenuItem("Pan"))
+            run("PAN");
         const std::string undo = core_.undoLabel();
         const std::string redo = core_.redoLabel();
         if (ImGui::MenuItem(undo.empty() ? "Undo" : undo.c_str(), nullptr, false, !undo.empty()))
@@ -4098,6 +4111,39 @@ void Gui::viewportMenu() {
             core_.zoomExtents();
     }
     ImGui::EndPopup();
+}
+
+// PASTESPEC Image: saves the picture on the system clipboard as a PNG in the settings folder and
+// starts IMAGEATTACH on it.
+void Gui::pasteClipboardPicture() {
+    auto pic = platform::readClipboardPicture();
+    if (!pic) {
+        core_.print("The clipboard holds no picture.");
+        return;
+    }
+    const std::vector<std::uint8_t> png = mcp::encodePng(pic->rgba, pic->width, pic->height);
+    if (png.empty()) {
+        core_.print("The clipboard picture could not be converted.");
+        return;
+    }
+    std::error_code ec;
+    const std::filesystem::path dir = core_.settingsFolder() / "pasted";
+    std::filesystem::create_directories(dir, ec);
+    const auto stamp = std::chrono::duration_cast<std::chrono::seconds>(
+                           std::chrono::system_clock::now().time_since_epoch())
+                           .count();
+    const std::filesystem::path file = dir / ("pasted-" + std::to_string(stamp) + ".png");
+    {
+        std::ofstream out(file, std::ios::binary);
+        out.write(reinterpret_cast<const char*>(png.data()),
+                  static_cast<std::streamsize>(png.size()));
+        if (!out) {
+            core_.print("Cannot save the clipboard picture to " + platform::pathToUtf8(file));
+            return;
+        }
+    }
+    core_.submitText("IMAGEATTACH");
+    core_.submitText("\"" + platform::pathToUtf8(file) + "\"");
 }
 
 void Gui::queueDroppedFile(std::string path) {
@@ -4118,6 +4164,15 @@ ViewportRect Gui::frame() {
             settings_.open(what.substr(9));
         else if (what.rfind("action:", 0) == 0)
             runAction(what.substr(7));
+        else if (what == "clipboardsnapshot") {
+            // PASTESPEC Text/Table waits for an answer: hand it the system clipboard text.
+            const char* text = glfwGetClipboardString(window_);
+            if (text && *text && std::string_view(text).rfind("[TBCAD objects", 0) != 0) {
+                core_.setSetting("tmp.clipboard.system", text);
+                core_.submitText("\x01");
+            }
+        } else if (what == "pasteimage")
+            pasteClipboardPicture();
         else if (what.rfind("pickfile:", 0) == 0) {
             const std::string kind = what.substr(9);
             static const std::vector<platform::FileFilter> drawing = {

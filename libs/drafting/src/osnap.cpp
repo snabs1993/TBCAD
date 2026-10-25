@@ -200,7 +200,8 @@ double reach(const Document& doc, const SnapGeometryRegistry& providers, const E
             for (const geom::CurveRef& c : g.curves)
                 best = std::min(best, c.distanceTo(p));
             // The centre of an ellipse and the like snap although they are not on the curve.
-            for (const auto* pts : {&g.endpoints, &g.midpoints, &g.centers, &g.quadrants})
+            for (const auto* pts :
+                 {&g.endpoints, &g.midpoints, &g.centers, &g.quadrants, &g.geometricCenters})
                 for (const Vec2& q : *pts)
                     best = std::min(best, distance(p, q));
             return best < 1e300 ? best : boxDistance;
@@ -375,6 +376,8 @@ std::vector<SnapCandidate> findSnapCandidates(const Document& doc, const index::
             add(out, rq, SnapMode::Center, p, n.id);
         for (Vec2 p : g.quadrants)
             add(out, rq, SnapMode::Quadrant, p, n.id);
+        for (Vec2 p : g.geometricCenters)
+            add(out, rq, SnapMode::GeometricCenter, p, n.id);
         for (Vec2 p : g.nodes)
             add(out, rq, SnapMode::Node, p, n.id);
         for (Vec2 p : g.insertions)

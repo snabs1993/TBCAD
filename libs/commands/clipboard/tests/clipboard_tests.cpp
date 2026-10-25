@@ -526,3 +526,34 @@ TEST_CASE("an xref path relative to the source drawing is rebased when pasted in
     REQUIRE(b != nullptr);
     CHECK(b->xrefPath == "../../lib/site.tbcad");
 }
+
+TEST_CASE("PASTESPEC Table turns tab-separated cells into a TABLE") {
+    Fixture f;
+    f.host.setSetting("tmp.clipboard.system", "Item\tQty\r\nBolt\t4\r\nNut\t\"8\"\r\n");
+    auto r = f.host.run("PASTESPEC", {"Table", "\x01", "5,5"});
+    CHECK(r.finished);
+    CHECK(f.count(EntityKind::Table) == 1);
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* t = entityAs<TableData>(e)) {
+            CHECK(t->rowHeights.size() == 3);
+            CHECK(t->colWidths.size() == 2);
+            CHECK(t->cells[5].utf8 == "8");
+        }
+    });
+    CHECK(f.host.uiRequests().front() == "clipboardsnapshot");
+}
+
+TEST_CASE("PASTESPEC Text takes multi-line clipboard text as one MTEXT") {
+    Fixture f;
+    f.host.setSetting("tmp.clipboard.system", "Line one\r\nLine two");
+    auto r = f.host.run("PASTESPEC", {"Text", "\x01", "0,0"});
+    CHECK(r.finished);
+    CHECK(f.count(EntityKind::MText) == 1);
+}
+
+TEST_CASE("PASTESPEC Image asks the window to paste the clipboard picture") {
+    Fixture f;
+    f.host.run("PASTESPEC", {"Image"});
+    REQUIRE_FALSE(f.host.uiRequests().empty());
+    CHECK(f.host.uiRequests().back() == "pasteimage");
+}

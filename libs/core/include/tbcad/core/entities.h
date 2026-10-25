@@ -704,6 +704,8 @@ struct TableData {
     // when headerRow) and every other row.
     bool headerRow = false;
     TableCellStyle titleStyle{}, headerStyle{}, dataStyle{};
+    // A CSV or XLSX file the cells come from (DATALINK); empty = not linked.
+    std::string linkFile{};
 };
 
 // A line that goes on without end: a ray from `origin` along `dir` (unit vector), or with

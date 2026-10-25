@@ -44,7 +44,7 @@ std::vector<std::vector<std::string>> parseCsv(std::string_view csv) {
     // The separator is the comma, or the semicolon when the first line has more of those.
     char sep = ',';
     {
-        std::size_t commas = 0, semis = 0;
+        std::size_t commas = 0, semis = 0, tabs = 0;
         bool q = false;
         for (char c : csv) {
             if (c == '"')
@@ -55,8 +55,12 @@ std::vector<std::vector<std::string>> parseCsv(std::string_view csv) {
                 ++commas;
             else if (!q && c == ';')
                 ++semis;
+            else if (!q && c == '\t')
+                ++tabs;
         }
-        if (semis > commas)
+        if (tabs > 0 && tabs >= commas && tabs >= semis)  // cells copied from Excel or a web table
+            sep = '\t';
+        else if (semis > commas)
             sep = ';';
     }
     std::vector<std::string> row;

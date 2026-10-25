@@ -12,7 +12,7 @@ namespace {
 
 constexpr std::array<std::string_view, kSnapModeCount> kNames = {
     "endpoint", "intersection", "midpoint",  "center",   "quadrant",  "perpendicular", "tangent",
-    "nearest",  "node",         "insertion", "apparent", "extension", "parallel"};
+    "nearest",  "node",         "insertion", "apparent", "extension", "parallel",      "geometric"};
 constexpr std::array<std::string_view, kSnapModeCount> kLabels = {"Endpoint",
                                                                   "Intersection",
                                                                   "Midpoint",
@@ -25,7 +25,8 @@ constexpr std::array<std::string_view, kSnapModeCount> kLabels = {"Endpoint",
                                                                   "Insertion",
                                                                   "Apparent intersection",
                                                                   "Extension",
-                                                                  "Parallel"};
+                                                                  "Parallel",
+                                                                  "Geometric center"};
 
 std::string lower(std::string_view s) {
     std::string r(s);
@@ -138,6 +139,8 @@ std::optional<SnapMode> parseSnapMode(std::string_view text) {
     std::string t = lower(text);
     if (t.empty())
         return std::nullopt;
+    if (t == "gce" || t == "gcen")
+        return SnapMode::GeometricCenter;
     std::optional<SnapMode> prefix;
     int prefixHits = 0;
     for (int i = 0; i < kSnapModeCount; ++i) {

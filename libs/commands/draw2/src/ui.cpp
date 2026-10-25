@@ -3,8 +3,15 @@
 
 namespace tbcad::draw2 {
 
+#ifdef TBCAD_DRAW2_PANELS
+void registerPointStylePanel(ui::UiRegistry& ui);  // ui/point_style_ui.cpp
+#endif
+
 void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Draw/Point", "POINT", "draw.point", "");
+#ifdef TBCAD_DRAW2_PANELS
+    registerPointStylePanel(ui);
+#endif
     ui.addMenuItem("Draw/Donut", "DONUT", "draw.donut", "");
     ui.addMenuItem("Draw/Revision Cloud", "REVCLOUD", "draw.revcloud", "");
     ui.addMenuItem("Draw/Wipeout", "WIPEOUT", "draw.wipeout", "");
