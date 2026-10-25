@@ -83,7 +83,7 @@ ToolResult layerByObjects(ToolContext& ctx, const Json& a) {
             return ToolResult::fail(ids.error().message);
         in.push_back(selectInput(ids.value()));
         in.emplace_back("");
-        // These four ask for more objects until Enter.
+        // These four ask again after each pick (Enter ends them).
         if (action == "off" || action == "freeze" || action == "lock" || action == "unlock")
             in.emplace_back("");
     }

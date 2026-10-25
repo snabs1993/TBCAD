@@ -125,6 +125,8 @@ bool limitsCheck(const Header& h);
 // their outlines do. ATTDISP (ATTMODE): 0 Normal (each attribute as defined), 1 all shown,
 // 2 all hidden. Both are kept in Header::custom.
 inline constexpr const char* kFillModeKey = "tbcad.fillmode";
+// LWDEFAULT: what a "Default" lineweight draws and plots as, in hundredths of a millimetre.
+inline constexpr const char* kLwDefaultKey = "tbcad.lwdefault";
 inline constexpr const char* kAttDispKey = "tbcad.attdisp";
 // QTEXT (QTEXTMODE): text shows as a box (default off).
 inline constexpr const char* kQTextKey = "tbcad.qtext";
@@ -143,6 +145,8 @@ void setEntityPlotStyle(Header& h, EntityId id, const std::string& name);
 // The style name an object plots with: its own, else its layer's, else "Normal".
 std::string resolvedPlotStyle(const Header& h, EntityId id, LayerId layer);
 bool fillMode(const Header& h);
+// LWDEFAULT in millimetres (0.25 when not set).
+double defaultLineweightMm(const Header& h);
 int attDisplay(const Header& h);
 double ceLtScale(const Header& h);
 // Decimal places used when lengths (LUPREC, default 4) and angles (AUPREC, default 0) are shown,

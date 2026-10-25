@@ -113,6 +113,10 @@ bool setCellAlign(TableData& t, std::size_t row, std::size_t col, std::optional<
 bool isFormula(const std::string& text);
 std::string cellName(std::size_t row, std::size_t col);  // 0,0 -> "A1"
 // What the cell shows: its text, or the value of its formula.
+// Moves the cell names in the formulas after a row (`rows`) or column was inserted (`delta` 1) or
+// deleted (-1) at `at`: =SUM(A1:A3) becomes =SUM(A1:A4) when a row goes in at 3. A name whose
+// cell was deleted becomes #REF!. The insert and delete functions call it.
+void adjustFormulaRefs(TableData& t, bool rows, std::size_t at, int delta);
 std::string displayText(const TableData& t, std::size_t row, std::size_t col);
 
 // ---- text form (kept in DXF extended data so a re-import gets the table back) -----------------
@@ -126,7 +130,8 @@ std::optional<TableData> parse(std::string_view s);
 // The cells as plain text, one CSV row per table row, CRLF line ends; covered (merged-over) cells
 // are empty fields.
 std::string toCsv(const TableData& t);
-// Rows of fields; understands quotes, doubled quotes, CRLF or LF, a UTF-8 byte order mark and the
+// Rows of fields; understands quotes, doubled quotes, CRLF or LF, a UTF-8 byte order mark, Excel's
+// UTF-16 "Unicode Text" and Thai (874) or Western (1252) ANSI files (when not valid UTF-8), and the
 // semicolon as well as the comma (Excel in some locales) and the tab (cells copied from Excel).
 // Blank lines are skipped.
 std::vector<std::vector<std::string>> parseCsv(std::string_view csv);
@@ -163,6 +168,10 @@ void registerDisplay();
 void buildTableDisplay(const Document& doc, const Entity& e, const geom::DisplayContext& ctx,
                        DisplayList& out);
 // Lines for the grid and one MText per non-empty cell, with the table's own properties.
+// Makes a row taller when the text of a cell, wrapped to the cell's width, does not fit (as
+// AutoCAD does when text is typed into a cell). Rows never shrink. True when a row grew.
+bool fitRowHeights(const Document& doc, TableData& t);
+
 Result<std::vector<Entity>> explodeTable(const Document& doc, const Entity& e);
 
 }  // namespace tbcad::table

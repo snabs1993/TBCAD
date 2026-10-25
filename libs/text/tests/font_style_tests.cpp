@@ -196,3 +196,46 @@ TEST_CASE("a font on an unreachable file server costs no wait when the font fold
     setFontFileProbe({});
     setFontSearchPaths({});
 }
+
+TEST_CASE("FONTALT replaces a missing SHX font, FONTMAP replaces a named one") {
+    const auto dir = std::filesystem::temp_directory_path() / "tbcad_shx_alt";
+    std::filesystem::create_directories(dir);
+    {
+        std::ofstream f(dir / "Tiny.SHX", std::ios::binary);
+        const auto b = tinyShx();
+        f.write(reinterpret_cast<const char*>(b.data()), static_cast<std::streamsize>(b.size()));
+    }
+    Document doc;
+    TextStyleId gone, other;
+    {
+        Transaction tx = doc.begin("styles");
+        TextStyle a;
+        a.name = "Gone";
+        a.shxFile = "nowhere.shx";
+        a.fontFamily = "TBCAD Stroke";
+        gone = tx.addTextStyle(a).value();
+        TextStyle b;
+        b.name = "Other";
+        b.shxFile = "elsewhere.shx";
+        b.fontFamily = "TBCAD Stroke";
+        other = tx.addTextStyle(b).value();
+        tx.commit();
+    }
+    setFontSearchPaths({dir});
+    CHECK(resolveStyleFont(*doc.textStyle(gone)).kind == FontResolution::Kind::Substitute);
+
+    setFontSubstitutions("", "tiny.shx");  // FONTALT
+    CHECK(resolveStyleFont(*doc.textStyle(gone)).kind == FontResolution::Kind::Shx);
+    CHECK(resolveStyleFont(*doc.textStyle(other)).kind == FontResolution::Kind::Shx);
+
+    // A mapping file wins over FONTALT for the fonts it names; names match without folder or
+    // extension, in any case.
+    setFontSubstitutions("# comment\nNOWHERE;nothing.shx\nelsewhere.shx; Tiny.shx \n", "");
+    CHECK(resolveStyleFont(*doc.textStyle(gone)).kind == FontResolution::Kind::Substitute);
+    CHECK(resolveStyleFont(*doc.textStyle(other)).kind == FontResolution::Kind::Shx);
+
+    setFontSubstitutions("", "");
+    CHECK(resolveStyleFont(*doc.textStyle(other)).kind == FontResolution::Kind::Substitute);
+    setFontSearchPaths({});
+    std::filesystem::remove_all(dir);
+}

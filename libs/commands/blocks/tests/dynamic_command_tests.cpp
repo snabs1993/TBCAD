@@ -131,3 +131,35 @@ TEST_CASE("RESETBLOCK puts dynamic references back to the block defaults") {
     CHECK(f.host->undo());
     CHECK(entityAs<InsertData>(*f.doc.find(c))->dynValues.size() == 1);
 }
+
+TEST_CASE("BACTION Array repeats the objects every column distance as the parameter grows") {
+    Fixture f;
+    BlockId b = makeFrame(f);
+    f.host->run("BPARAM", {"Frame", "L", "Width", "0,0", "10,0", "0", "0"});
+    // block, parameter, Array, column distance, object corners
+    f.host->run("BACTION", {"Frame", "Width", "Ar", "5", "-1,-1", "11,6"});
+    const BlockDef* def = f.doc.block(b);
+    REQUIRE((def && def->dynamic && def->dynamic->actions.size() == 1));
+    CHECK(def->dynamic->actions[0].kind == DynAction::Kind::Array);
+    CHECK(blocks::evaluateDynamic(f.doc, *def, {10}).size() == 8);   // 2 columns
+    CHECK(blocks::evaluateDynamic(f.doc, *def, {20}).size() == 16);  // 4 columns
+    CHECK(blocks::evaluateDynamic(f.doc, *def, {4}).size() == 4);    // fewer than one: the original
+}
+
+TEST_CASE("BPARAM XY makes a horizontal and a vertical distance - two Array actions make a grid") {
+    Fixture f;
+    BlockId b = makeFrame(f);
+    // block, type, name, base point, opposite corner
+    f.host->run("BPARAM", {"Frame", "XY", "Size", "0,0", "10,5"});
+    const BlockDef* def = f.doc.block(b);
+    REQUIRE((def && def->dynamic && def->dynamic->params.size() == 2));
+    CHECK(def->dynamic->params[0].name == "Size X");
+    CHECK(def->dynamic->params[1].name == "Size Y");
+    f.host->run("BACTION", {"Frame", "Size X", "Ar", "5", "-1,-1", "11,6"});
+    f.host->run("BACTION", {"Frame", "Size Y", "Ar", "2.5", "-1,-1", "11,6"});
+    def = f.doc.block(b);
+    REQUIRE(def->dynamic->actions.size() == 2);
+    // Default 10 x 5: 2 columns by 2 rows of the 4-line frame.
+    CHECK(blocks::evaluateDynamic(f.doc, *def, {10, 5}).size() == 16);
+    CHECK(blocks::evaluateDynamic(f.doc, *def, {15, 5}).size() == 24);  // 3 x 2
+}

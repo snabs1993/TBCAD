@@ -2641,6 +2641,24 @@ std::optional<TableData> Importer::acadTableData(const Record& r, const Frame& f
 
 bool Importer::convAcadTable(const Record& r, RecordReader& rr, const Frame& f,
                              std::vector<Entity>& out) {
+    // Written by TBCAD: the table itself is in extended data, exactly (formulas, styles).
+    {
+        std::string packed;
+        bool ours = false;
+        for (const Group& g : r.g) {
+            if (g.code == 1001)
+                ours = g.str() == "TBCAD";
+            else if (ours && g.code == 1000)
+                packed += dec(g.str());
+        }
+        if (packed.rfind("tbcad-table", 0) == 0) {
+            if (auto t = table::parse(packed)) {
+                out.push_back(makeEntity(std::move(*t)));
+                ++acadTables_;
+                return true;
+            }
+        }
+    }
     if (auto t = acadTableData(r, f)) {
         out.push_back(makeEntity(std::move(*t)));
         ++acadTables_;

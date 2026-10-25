@@ -56,6 +56,30 @@ std::string styleLabel(const PlotSettings& s) {
     return s.styleTable ? (s.styleTable->name.empty() ? "styled" : s.styleTable->name) : "no style";
 }
 
+// The area a named view (VIEW command, header "tbcad.view.<name>" = "cx cy scale [w h]\t...")
+// showed, as a plot window; empty for an unknown view or one saved without its size.
+std::optional<BBox2> namedViewWindow(const Document& doc, const std::string& name) {
+    constexpr std::string_view kPrefix = "tbcad.view.";
+    auto lower = [](std::string t) {
+        for (char& c : t)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return t;
+    };
+    for (const auto& [key, value] : doc.header().custom) {
+        if (key.rfind(kPrefix, 0) != 0 || lower(key.substr(kPrefix.size())) != lower(name))
+            continue;
+        std::istringstream in(value.substr(0, value.find('\t')));
+        double cx = 0, cy = 0, scale = 0, w = 0, h = 0;
+        if (!(in >> cx >> cy >> scale >> w >> h) || !(w > 0) || !(h > 0))
+            return std::nullopt;
+        BBox2 box;
+        box.expand({cx - w / 2, cy - h / 2});
+        box.expand({cx + w / 2, cy + h / 2});
+        return box;
+    }
+    return std::nullopt;
+}
+
 std::string summary(const Document& doc, const cmd::IHost& host, const PlotSettings& s,
                     Format format) {
     std::string t = formatName(format);
@@ -103,7 +127,7 @@ public:
             menu.keywords = {"Paper",   "Orientation", "Area",        "Scale",        "Center",
                              "Offset",  "Margin",      "LineWeights", "Transparency", "Color",
                              "Style",   "Format",      "Resolution",  "Layout",       "Stamp",
-                             "LWScale", "Screening",   "PdfLayers",   "Export"};
+                             "LWScale", "Screening",   "PdfLayers",   "UpsideDown",   "Export"};
             menu.defaultKeyword = "Export";
             std::string prompt;
             timePhase("menu summary",
@@ -191,6 +215,13 @@ public:
                     }
                     s.paperName = found->name;
                 }
+            } else if (kw == "UpsideDown") {
+                KeywordOptions ko;
+                ko.keywords = {"Yes", "No"};
+                ko.defaultKeyword = s.upsideDown ? "Yes" : "No";
+                auto r = co_await ctx.getKeyword("Plot upside down", ko);
+                if (r.ok())
+                    s.upsideDown = r.keyword == "Yes";
             } else if (kw == "Orientation") {
                 KeywordOptions ko;
                 ko.keywords = {"Landscape", "Portrait"};
@@ -200,7 +231,7 @@ public:
                     s.landscape = r.keyword == "Landscape";
             } else if (kw == "Area") {
                 KeywordOptions ko;
-                ko.keywords = {"Extents", "Display", "Window"};
+                ko.keywords = {"Extents", "Display", "Window", "View"};
                 ko.defaultKeyword = s.area == PlotArea::Extents   ? "Extents"
                                     : s.area == PlotArea::Display ? "Display"
                                                                   : "Window";
@@ -220,6 +251,17 @@ public:
                     s.window.expand(a.point);
                     s.window.expand(b.point);
                     s.area = PlotArea::Window;
+                } else if (r.keyword == "View") {
+                    auto n = co_await ctx.getString("Named view");
+                    if (!n.ok())
+                        continue;
+                    if (auto w = namedViewWindow(ctx.doc(), n.text)) {
+                        s.window = *w;
+                        s.area = PlotArea::Window;
+                    } else {
+                        ctx.message("There is no view named \"" + n.text +
+                                    "\" (or it has no saved area).");
+                    }
                 } else {
                     s.area = r.keyword == "Extents" ? PlotArea::Extents : PlotArea::Display;
                 }

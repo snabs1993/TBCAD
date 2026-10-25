@@ -9,6 +9,7 @@
 #include "tbcad/dimcmd/dimcmd.h"
 #include "tbcad/drafting/ucs.h"
 #include "tbcad/geom/geom.h"
+#include "tbcad/layout/layout.h"
 #include "tbcad/text/text.h"
 
 namespace tbcad::dimcmd {
@@ -649,6 +650,26 @@ void registerCommands(cmd::Registry& registry) {
             dim::refresh(doc, *d);
     });
     setDimBreakRefresh(refreshAutoBreaks);
+    // Trans-spatial dimensions: the viewports of the layout whose sheet holds the dimension.
+    setDimViewLookups(
+        [](const Document& doc, BlockId owner, int id) -> std::optional<DimViewMap> {
+            for (const layout::Layout& lay : layout::layouts(doc))
+                if (lay.content == owner)
+                    if (const layout::Viewport* vp = lay.findViewport(id); vp && vp->scaleN > 0)
+                        return DimViewMap{(vp->paper.min + vp->paper.max) * 0.5, vp->center,
+                                          vp->scaleN};
+            return std::nullopt;
+        },
+        [](const Document& doc, BlockId owner, Vec2 sheet) {
+            std::vector<std::pair<int, DimViewMap>> out;
+            for (const layout::Layout& lay : layout::layouts(doc))
+                if (lay.content == owner)
+                    for (const layout::Viewport& vp : lay.viewports)
+                        if (vp.on && vp.scaleN > 0 && layout::viewportContains(vp, sheet))
+                            out.emplace_back(vp.id, DimViewMap{(vp.paper.min + vp.paper.max) * 0.5,
+                                                               vp.center, vp.scaleN});
+            return out;
+        });
     for (EntityKind k : {EntityKind::Dimension, EntityKind::Leader, EntityKind::MLeader}) {
         blocks::ExplodeRegistry::set(
             k, [](const Document& doc, const Entity& e) -> Result<blocks::ExplodeResult> {

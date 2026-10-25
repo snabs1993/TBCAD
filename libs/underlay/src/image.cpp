@@ -9,6 +9,7 @@
 #include <sstream>
 
 #include "stb_image.h"
+#include "tiff.h"
 
 namespace tbcad::underlay {
 
@@ -38,7 +39,8 @@ constexpr long long kMaxPixels = 100'000'000;  // 400 MB of RGBA
 
 bool isImagePath(std::string_view stored) {
     const std::string e = lowerExt(stored);
-    return e == ".png" || e == ".jpg" || e == ".jpeg" || e == ".bmp";
+    return e == ".png" || e == ".jpg" || e == ".jpeg" || e == ".bmp" || e == ".tif" ||
+           e == ".tiff" || e == ".gif" || e == ".tga";
 }
 
 Result<ImageInfo> imageInfo(const std::filesystem::path& file) {
@@ -46,10 +48,16 @@ Result<ImageInfo> imageInfo(const std::filesystem::path& file) {
     if (!raw)
         return raw.error();
     int w = 0, h = 0, comp = 0;
+    if (looksLikeTiff(raw.value().data(), raw.value().size())) {
+        auto tiff = decodeTiff(raw.value().data(), raw.value().size());
+        if (!tiff)
+            return tiff.error();
+        return ImageInfo{tiff.value()->width, tiff.value()->height};
+    }
     if (!stbi_info_from_memory(raw.value().data(), static_cast<int>(raw.value().size()), &w, &h,
                                &comp) ||
         w <= 0 || h <= 0)
-        return makeError(ErrorCode::Parse, "Not a PNG, JPEG or BMP picture: " + file.string());
+        return makeError(ErrorCode::Parse, "Not a supported picture: " + file.string());
     return ImageInfo{w, h};
 }
 
@@ -58,10 +66,12 @@ Result<std::shared_ptr<const ImageData>> loadImage(const std::filesystem::path& 
     if (!raw)
         return raw.error();
     int w = 0, h = 0, comp = 0;
+    if (looksLikeTiff(raw.value().data(), raw.value().size()))
+        return decodeTiff(raw.value().data(), raw.value().size());
     if (!stbi_info_from_memory(raw.value().data(), static_cast<int>(raw.value().size()), &w, &h,
                                &comp) ||
         w <= 0 || h <= 0)
-        return makeError(ErrorCode::Parse, "Not a PNG, JPEG or BMP picture: " + file.string());
+        return makeError(ErrorCode::Parse, "Not a supported picture: " + file.string());
     if (static_cast<long long>(w) * h > kMaxPixels)
         return makeError(ErrorCode::Parse, "The picture is too large: " + file.string());
     unsigned char* px = stbi_load_from_memory(

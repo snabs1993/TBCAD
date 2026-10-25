@@ -210,6 +210,7 @@ public:
                         table::setText(d, cur.row, cur.col, text);
                         if (keepAlign)
                             table::setCellAlign(d, cur.row, cur.col, keepAlign);
+                        table::fitRowHeights(ctx.doc(), d);
                     });
                 }
             } else if (k == "RowBelow" || k == "RowAbove") {
@@ -281,9 +282,10 @@ public:
                 if (v.ok()) {
                     const double val = v.value;
                     edit([&](TableData& d) {
-                        if (k == "Width")
+                        if (k == "Width") {
                             table::setColumnWidth(d, cur.col, val);
-                        else
+                            table::fitRowHeights(ctx.doc(), d);
+                        } else
                             table::setRowHeight(d, cur.row, val);
                     });
                 }

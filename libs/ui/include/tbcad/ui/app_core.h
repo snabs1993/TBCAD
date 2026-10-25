@@ -464,6 +464,8 @@ public:
     std::optional<std::vector<EntityId>> selectShape(SelectShape shape,
                                                      const std::vector<Vec2>& pts) override;
     BlockId drawingOwner() const override;
+    std::string activeLayoutName() const override { return activeLayout_; }
+    const index::SpatialIndex* modelSpatialIndex() const override;
     void setView(const cmd::ViewState& v) override;
     BBox2 viewExtents() const override;
     void setPreview(const DisplayList* list) override;

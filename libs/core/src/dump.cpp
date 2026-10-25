@@ -278,13 +278,16 @@ struct DataDumper {
         for (std::size_t i = 0; i < d.assoc.size(); ++i)
             if (d.assoc[i].kind != DimAssoc::Kind::None)
                 o << " assoc" << i << "=" << d.assoc[i].target.value << ":"
-                  << static_cast<int>(d.assoc[i].kind) << ":" << d.assoc[i].index;
+                  << static_cast<int>(d.assoc[i].kind) << ":" << d.assoc[i].index
+                  << (d.assoc[i].viewport ? ":vp" + std::to_string(d.assoc[i].viewport) : "");
         if (d.oblique != 0)
             o << " oblique" << d.oblique;
         if (d.textRotated)
             o << " textrot" << d.textRotation;
         if (d.flipArrow1 || d.flipArrow2)
             o << " flip" << d.flipArrow1 << d.flipArrow2;
+        if (d.modelScale != 0)
+            o << " mscale" << d.modelScale;
     }
     void operator()(const LeaderData& d) {
         o << "LEADER style" << d.style << " text" << d.textPos << " ";

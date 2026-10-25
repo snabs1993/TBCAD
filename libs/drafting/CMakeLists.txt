@@ -7,12 +7,13 @@ tbcad_add_library(drafting
     src/point_parser.cpp
     src/snap_geometry.cpp
     src/osnap.cpp
+    src/viewport_snap.cpp
     src/dyninput.cpp
     src/filters.cpp
     src/grid.cpp
     src/ucs.cpp
     src/markers.cpp
-  DEPENDS tbcad::core tbcad::geom tbcad::index tbcad::cmd tbcad::render)
+  DEPENDS tbcad::core tbcad::geom tbcad::index tbcad::cmd tbcad::render tbcad::layout)
 
 tbcad_add_tests(drafting
   SOURCES
@@ -29,4 +30,5 @@ tbcad_add_tests(drafting
     tests/dyninput_tests.cpp
     tests/grid_tests.cpp
     tests/ucs_tests.cpp
-    tests/osnap_perf_tests.cpp)
+    tests/osnap_perf_tests.cpp
+    tests/viewport_snap_tests.cpp)

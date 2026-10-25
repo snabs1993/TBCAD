@@ -139,6 +139,48 @@ TEST_CASE("A3 landscape 1:100: a 10,000 mm line is 100.00 mm on the page") {
     checkWithQpdf(sheet.value(), "a3_1_100");
 }
 
+TEST_CASE("rotateSheet180 turns the page: the 100 mm line ends where it started, reversed") {
+    Document doc;
+    addEntity(doc, line({0, 0}, {10000, 0}));
+    PlotSettings s;
+    s.paperName = "A3";
+    s.fitToPaper = false;
+    s.scaleN = 100;
+    auto sheet = buildSheet(doc, s);
+    REQUIRE(sheet.ok());
+    auto* before = std::get_if<PlotPath>(&sheet.value().prims.front());
+    REQUIRE(before);
+    const Vec2 a = before->pts.front(), b = before->pts.back();
+    rotateSheet180(sheet.value());
+    auto* after = std::get_if<PlotPath>(&sheet.value().prims.front());
+    REQUIRE(after);
+    CHECK(after->pts.front().x == doctest::Approx(420 - a.x));
+    CHECK(after->pts.front().y == doctest::Approx(297 - a.y));
+    CHECK(after->pts.back().x == doctest::Approx(420 - b.x));
+    CHECK(after->pts.back().y == doctest::Approx(297 - b.y));
+    CHECK(pdfBytes(sheet.value()).ok());
+}
+
+TEST_CASE("LWDEFAULT sets the pen width of Default lineweights") {
+    auto width = [](const char* lwdefault) {
+        Document doc;
+        addEntity(doc, line({0, 0}, {100, 0}));
+        if (lwdefault) {
+            auto tx = doc.begin("lw");
+            REQUIRE(tx.modifyHeader([&](Header& h) { h.custom[kLwDefaultKey] = lwdefault; }).ok());
+            tx.commit();
+        }
+        auto sheet = buildSheet(doc, PlotSettings{});
+        REQUIRE(sheet.ok());
+        for (const auto& prim : sheet.value().prims)
+            if (const auto* path = std::get_if<PlotPath>(&prim))
+                return path->style.widthMm;
+        return -1.0;
+    };
+    CHECK(width(nullptr) == doctest::Approx(0.25));
+    CHECK(width("50") == doctest::Approx(0.5));
+}
+
 TEST_CASE("the lineweight scale multiplies pen widths but not hairlines") {
     Document doc;
     Entity heavy = line({0, 0}, {100, 0});

@@ -2079,6 +2079,8 @@ void Transaction::followAssociations() {
         std::array<Vec2, 4> pts;
         std::array<DimAssoc, 4> assoc;
         bool moved;
+        double modelScale = 0;  // trans-spatial: the viewport scale now
+        bool scaleChanged = false;
         Vec2 shift{};  // average move of the followed points, for a text placed by hand
         int followed = 0;
         Vec2 first{};         // the move of the first followed point
@@ -2096,14 +2098,24 @@ void Transaction::followAssociations() {
         const auto* dm = entityAs<DimensionData>(e);
         if (!dm)
             return;
-        Plan p{e.common.id, dm->defPts, dm->assoc, false, {}, 0, {}, true};
+        Plan p{e.common.id, dm->defPts, dm->assoc, false, dm->modelScale, false, {}, 0, {}, true};
         bool changed = false;
         for (std::size_t i = 0; i < 4; ++i) {
             DimAssoc& a = p.assoc[i];
             if (a.kind == DimAssoc::Kind::None)
                 continue;
             const Entity* t = d.find(a.target);
-            const auto live = t ? dimAssocPoint(*t, a) : std::nullopt;
+            auto live = t ? dimAssocPoint(*t, a) : std::nullopt;
+            std::optional<DimViewMap> view;
+            if (live && a.viewport != 0) {  // an object of the model seen through a viewport
+                view = dimViewMap(d, d.ownerBlock(e.common.id), a.viewport);
+                live = view ? std::optional<Vec2>(view->toSheet(*live)) : std::nullopt;
+            }
+            if (view && std::abs(p.modelScale - view->scaleN) > 1e-12 * view->scaleN) {
+                p.modelScale = view->scaleN;
+                p.scaleChanged = true;
+                changed = true;
+            }
             if (!live) {
                 a = {};
                 changed = true;
@@ -2112,8 +2124,15 @@ void Transaction::followAssociations() {
             } else {
                 const std::uint32_t at = touched_.find(a.target);
                 std::optional<Vec2> before;
-                if (at != TouchedIndex::kNone)
+                if (at != TouchedIndex::kNone) {
                     before = dimAssocPoint(beforeSnaps_[at], a);
+                    if (before && view)
+                        before = view->toSheet(*before);
+                } else if (view && headerBefore_) {
+                    // The viewport's scale or view moved and the object stayed: the point is
+                    // still the object's, it only shows somewhere else on the sheet now.
+                    before = p.pts[i];
+                }
                 if (before && close(p.pts[i], *before)) {
                     const Vec2 move = *live - p.pts[i];
                     if (p.followed == 0)
@@ -2130,6 +2149,16 @@ void Transaction::followAssociations() {
                 changed = true;
             }
         }
+        if (p.modelScale != 0) {  // no link through a viewport left: the lengths are the sheet's
+            bool through = false;
+            for (const DimAssoc& a : p.assoc)
+                through = through || (a.kind != DimAssoc::Kind::None && a.viewport != 0);
+            if (!through) {
+                p.modelScale = 0;
+                p.scaleChanged = true;
+                changed = true;
+            }
+        }
         if (changed)
             plans.push_back(p);
     });
@@ -2138,6 +2167,7 @@ void Transaction::followAssociations() {
             auto* dm = entityAs<DimensionData>(e);
             dm->defPts = p.pts;
             dm->assoc = p.assoc;
+            dm->modelScale = p.modelScale;
             if (p.moved) {
                 if (dm->textPosUser && p.followed > 0)
                     dm->textPos += p.shift * (1.0 / p.followed);
@@ -2166,9 +2196,10 @@ void Transaction::followAssociations() {
                     else if (!dm->textPosUser)
                         dm->textPos += p.first;
                 }
+            }
+            if (p.moved || p.scaleChanged)
                 if (DimRefreshFn f = dimRefresh())
                     f(*doc_, e);
-            }
         });
     }
 
@@ -2198,7 +2229,7 @@ ChangeSet Transaction::commit() {
     Document& d = doc();
     std::optional<profile::EditTimer> timer;
     timer.emplace("commit '" + name_ + "'", beforeSnaps_.size());
-    if (!touched_.empty() || d.allocCursor() > startNextId_)
+    if (!touched_.empty() || d.allocCursor() > startNextId_ || headerBefore_)
         followAssociations();
     ChangeSet cs;
     cs.name = name_;
@@ -2300,7 +2331,7 @@ ChangeSet Transaction::commitUnrecorded() {
     Document& d = doc();
     if (!d.observers_.empty())
         return commit();
-    if (!touched_.empty() || d.allocCursor() > startNextId_)
+    if (!touched_.empty() || d.allocCursor() > startNextId_ || headerBefore_)
         followAssociations();
     ChangeSet cs;
     cs.name = name_;
@@ -2462,6 +2493,16 @@ std::string resolvedPlotStyle(const Header& h, EntityId id, LayerId layer) {
 
 bool fillMode(const Header& h) {
     return customFlag(h, kFillModeKey, true);
+}
+
+double defaultLineweightMm(const Header& h) {
+    auto it = h.custom.find(kLwDefaultKey);
+    if (it == h.custom.end())
+        return 0.25;
+    char* end = nullptr;
+    const double hundredths = std::strtod(it->second.c_str(), &end);
+    return end != it->second.c_str() && hundredths >= 0 && hundredths <= 211 ? hundredths / 100
+                                                                             : 0.25;
 }
 
 int attDisplay(const Header& h) {

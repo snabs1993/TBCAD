@@ -136,7 +136,16 @@ std::string randomStep(cmd::ScriptHost& host, const Document& doc, std::mt19937&
 
 // Commands that talk to files, printers or the window rather than the drawing, and the undo
 // commands themselves (the session below drives those on purpose).
+const char* const kDrawingEdits[] = {"BSAVE",         "BSAVEAS",     "ANNONEW",     "ATTIMPORT",
+                                     "CONTENTIMPORT", "TABLEIMPORT", "IMAGEATTACH", "PDFATTACH",
+                                     "XATTACH",       "XRELOAD",     "PLOTSTYLE",   "PLOTSTAMP"};
+
 bool skippedCommand(const std::string& name) {
+    // These change the drawing (block editor save, references, scales, imports) and only share a
+    // word with the file commands below; their undo is checked like any other command's.
+    for (const char* edit : kDrawingEdits)
+        if (name == edit)
+            return false;
     static const char* const kParts[] = {
         "EXPORT", "IMPORT", "SAVE", "PRINT", "PLOT",     "DEVGEN", "NEWFROM", "ATTACH",  "RELOAD",
         "OPEN",   "QUIT",   "EXIT", "NEW",   "TEMPLATE", "UNDO",   "REDO",    "ALIASES", "WBLOCK"};
@@ -374,41 +383,51 @@ TEST_CASE("200 random commands of every group, undo grouping and marks: the hist
     }
 }
 
+void checkUndoRoundTrip(cmd::Registry& reg, const std::string& name, std::mt19937& rng) {
+    INFO("command " << name);
+    for (int round = 0; round < 3; ++round) {
+        std::unique_ptr<Document> doc = loadSample();
+        cmd::ScriptHost host(*doc, reg);
+        std::vector<EntityId> ids = someIds(*doc, rng, 30);
+        const std::string before = canonicalDump(*doc);
+        std::vector<ScriptItem> items;
+        if (round == 0)
+            items = {"0,0",
+                     "1000,0",
+                     "1000,1000",
+                     "0,1000",
+                     ScriptItem::enter(),
+                     ScriptItem::enter(),
+                     ScriptItem::esc()};
+        else
+            items = randomItems(rng, ids, 6 + rng() % 14);
+        host.setSelection(someIds(*doc, rng, 1 + rng() % 3));
+        (void)host.run(name, items);
+        (void)host.feed({ScriptItem::esc(), ScriptItem::esc()});
+        const std::string after = canonicalDump(*doc);
+        while (host.undo()) {
+        }
+        CHECK(canonicalDump(*doc) == before);
+        while (host.redo()) {
+        }
+        CHECK(canonicalDump(*doc) == after);
+    }
+}
+
 TEST_CASE("every command: undo gives the original drawing back, redo gives its result") {
     cmd::Registry reg;
     registerAllCommands(reg);
-    const std::vector<std::string> all = editingCommands(reg);
     std::mt19937 rng(20261018);
-    for (const std::string& name : all) {
-        INFO("command " << name);
-        for (int round = 0; round < 3; ++round) {
-            std::unique_ptr<Document> doc = loadSample();
-            cmd::ScriptHost host(*doc, reg);
-            std::vector<EntityId> ids = someIds(*doc, rng, 30);
-            const std::string before = canonicalDump(*doc);
-            std::vector<ScriptItem> items;
-            if (round == 0)
-                items = {"0,0",
-                         "1000,0",
-                         "1000,1000",
-                         "0,1000",
-                         ScriptItem::enter(),
-                         ScriptItem::enter(),
-                         ScriptItem::esc()};
-            else
-                items = randomItems(rng, ids, 6 + rng() % 14);
-            host.setSelection(someIds(*doc, rng, 1 + rng() % 3));
-            (void)host.run(name, items);
-            (void)host.feed({ScriptItem::esc(), ScriptItem::esc()});
-            const std::string after = canonicalDump(*doc);
-            while (host.undo()) {
-            }
-            CHECK(canonicalDump(*doc) == before);
-            while (host.redo()) {
-            }
-            CHECK(canonicalDump(*doc) == after);
-        }
-    }
+    for (const std::string& name : editingCommands(reg))
+        checkUndoRoundTrip(reg, name, rng);
+}
+
+TEST_CASE("block editor save, references, imports and scales undo like any other command") {
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    std::mt19937 rng(20261025);
+    for (const char* name : kDrawingEdits)
+        checkUndoRoundTrip(reg, name, rng);
 }
 
 TEST_CASE("the undo history stays inside its memory limit and what is left still undoes exactly") {
@@ -444,4 +463,39 @@ TEST_CASE("the undo history stays inside its memory limit and what is left still
     while (host.undo()) {
     }
     CHECK(canonicalDump(*doc) == states[states.size() - 1 - left]);
+}
+
+namespace {
+
+// Runs `name` with `items` on `doc` and checks that it changed the drawing, that undo gives the
+// old drawing back exactly and that redo gives the new one.
+void checkEditUndoes(Document& doc, cmd::ScriptHost& host, const std::string& name,
+                     const std::vector<ScriptItem>& items) {
+    INFO("command " << name);
+    const std::string before = canonicalDump(doc);
+    (void)host.run(name, items);
+    (void)host.feed({ScriptItem::esc(), ScriptItem::esc()});
+    const std::string after = canonicalDump(doc);
+    CHECK(after != before);
+    REQUIRE(host.undo());
+    CHECK(canonicalDump(doc) == before);
+    REQUIRE(host.redo());
+    CHECK(canonicalDump(doc) == after);
+}
+
+}  // namespace
+
+TEST_CASE("layer panel edits (colour, freeze, lock, rename, delete) each undo and redo exactly") {
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    std::unique_ptr<Document> doc = loadSample();
+    cmd::ScriptHost host(*doc, reg);
+    (void)host.run("-LAYER", {"New", "UNDOT", ScriptItem::enter()});
+    checkEditUndoes(*doc, host, "-LAYER", {"Color", "red", "UNDOT", ScriptItem::enter()});
+    checkEditUndoes(*doc, host, "-LAYER", {"Freeze", "UNDOT", ScriptItem::enter()});
+    checkEditUndoes(*doc, host, "-LAYER", {"Thaw", "UNDOT", ScriptItem::enter()});
+    checkEditUndoes(*doc, host, "-LAYER", {"Lock", "UNDOT", ScriptItem::enter()});
+    checkEditUndoes(*doc, host, "-LAYER", {"Description", "note", "UNDOT", ScriptItem::enter()});
+    checkEditUndoes(*doc, host, "-LAYER", {"Rename", "UNDOT", "UNDOT2", ScriptItem::enter()});
+    checkEditUndoes(*doc, host, "-LAYER", {"Delete", "UNDOT2", ScriptItem::enter()});
 }

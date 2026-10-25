@@ -832,3 +832,37 @@ TEST_CASE("children lists the xrefs a reference inserts and pathTypeOf reads the
     CHECK(pathTypeOf("/home/a/site.dxf") == PathType::Absolute);
     CHECK(pathTypeOf("\\\\server\\share\\a.dwg") == PathType::Absolute);
 }
+
+TEST_CASE("reload keeps what the host set on the xref's layers (VISRETAIN) and a changed source") {
+    Document host;
+    BlockId b;
+    {
+        Source src = sourceOf(makeSource(), 1);
+        Transaction tx = host.begin("attach");
+        b = attach(tx, host, "site", "site.tbcad", src).value();
+        tx.commit();
+    }
+    const LayerId root = host.layerByName("site")->id;
+    const LayerId walls = host.layerByName(root, "walls")->id;
+    {
+        Transaction tx = host.begin("host settings");
+        REQUIRE(tx.modifyLayer(walls, [](Layer& l) {
+                      l.on = false;
+                      l.color = Color::index(1);
+                      l.locked = true;
+                  }).ok());
+        tx.commit();
+    }
+    {
+        Source src = sourceOf(makeSource(3), 2);
+        Transaction tx = host.begin("reload");
+        REQUIRE(reload(tx, host, b, src, nullptr).ok());
+        tx.commit();
+    }
+    const Layer* after = host.layer(walls);
+    REQUIRE(after);
+    CHECK_FALSE(after->on);
+    CHECK(after->color == Color::index(1));
+    CHECK(after->locked);
+    CHECK(host.layerByName(root, "walls")->id == walls);
+}

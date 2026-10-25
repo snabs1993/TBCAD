@@ -44,6 +44,8 @@ Result<exportlib::PlotSheet> buildPlotSheet(const Document& doc, const cmd::IHos
     });
     if (sheet)
         timePhase("plot stamp", [&] { addPlotStamp(sheet.value(), host, settings); });
+    if (sheet && settings.upsideDown)
+        exportlib::rotateSheet180(sheet.value());
     return sheet;
 }
 

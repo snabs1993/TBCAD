@@ -109,6 +109,16 @@ public:
             return std::nullopt;
         return windowQuery_(window);
     }
+    // Tests: pretend a layout sheet is shown, with `model` as the spatial index of model space.
+    void showLayout(std::string name, const index::SpatialIndex* model) {
+        layoutName_ = std::move(name);
+        modelIndex_ = model;
+    }
+    // Tests: new objects go into this block (a layout sheet's), like a host showing a layout.
+    void setDrawingOwner(BlockId owner) { drawingOwner_ = owner; }
+    BlockId drawingOwner() const override { return drawingOwner_; }
+    std::string activeLayoutName() const override { return layoutName_; }
+    const index::SpatialIndex* modelSpatialIndex() const override { return modelIndex_; }
     // Tests: the box viewExtents() reports (empty by default).
     void setViewExtents(const BBox2& box) { extents_ = box; }
     BBox2 viewExtents() const override { return extents_; }
@@ -133,6 +143,9 @@ private:
     std::filesystem::path settingsFolder_{};
     ViewState view_{};
     WindowQuery windowQuery_{};
+    std::string layoutName_{};
+    BlockId drawingOwner_{};
+    const index::SpatialIndex* modelIndex_ = nullptr;
     DisplayList preview_{};
 };
 

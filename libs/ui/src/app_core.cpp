@@ -169,6 +169,13 @@ AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
     }
     for (auto& w : settings_.repair())
         startupWarnings_.push_back(std::move(w));
+    {
+        // FONTMAP / FONTALT from the last session.
+        const auto file = settings_.getString("text.fontmap.file", "");
+        const auto alt = settings_.getString("text.fontalt", "");
+        if (!file.empty() || !alt.empty())
+            text::setFontSubstitutionsFromFile(file, alt);
+    }
 
     keybindings_.declare("file.new", "Ctrl+N");
     keybindings_.declare("file.open", "Ctrl+O");
@@ -804,6 +811,10 @@ const Document& AppCore::document() const {
 }
 const index::SpatialIndex& AppCore::spatialIndex() const {
     return inPaperSpace() ? paperIndex_ : session_->index;
+}
+
+const index::SpatialIndex* AppCore::modelSpatialIndex() const {
+    return session_ ? &session_->index : nullptr;
 }
 
 BlockId AppCore::drawingOwner() const {
@@ -1457,6 +1468,7 @@ Result<void> AppCore::openDxf(const fs::path& path) {
 
 dxf::ExportOptions AppCore::dxfSaveOptions() const {
     dxf::ExportOptions options;
+    options.nativeTables = settings_.getBool("files.dxfNativeTables", false);
     // files.dxfVersion picks R12 / R2000 / R2007 for every DXF save; "auto" (default) keeps a
     // drawing that came in as AC1021 or later in that version, so its text keeps UTF-8 instead
     // of being narrowed to a code page.
@@ -2651,7 +2663,8 @@ void AppCore::applyZoomXp() {
         print(r.error().message);
         return;
     }
-    (void)tx.commit();
+    if (ChangeSet cs = tx.commit(); !cs.empty())
+        undoStack().push("ZOOM XP", {std::move(cs)});
     char buf[48];
     std::snprintf(buf, sizeof buf, "%.6g", 1.0 / n);
     print("Viewport " + std::to_string(id) + " is now 1:" + buf + " (" + std::to_string(n) +

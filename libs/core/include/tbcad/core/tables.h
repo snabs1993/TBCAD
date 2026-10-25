@@ -287,6 +287,8 @@ struct DynAction {
         Scale,    // linear: `objects` scale about `base` by value / default
         Rotate,   // rotation: `objects` turn about the parameter's base
         Flip,     // flip: `objects` are mirrored in the axis when the value is 1
+        Array,    // linear: copies of `objects` every frameMin.x along the parameter's direction,
+                  // floor(value / spacing) of them in all (the original included)
     };
     Kind kind = Kind::Move;
     int param = 0;  // index into DynamicDef::params

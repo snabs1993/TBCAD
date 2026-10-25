@@ -4466,7 +4466,7 @@ ViewportRect Gui::frame() {
                 {"Drawings and PDF", "*.tbcad;*.dxf;*.dwg;*.pdf"}};
             static const std::vector<platform::FileFilter> pdf = {{"PDF files", "*.pdf"}};
             static const std::vector<platform::FileFilter> image = {
-                {"Pictures", "*.png;*.jpg;*.jpeg;*.bmp"}};
+                {"Pictures", "*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.gif;*.tga"}};
             if (platform::nativeDialogsAvailable()) {
                 if (auto p = platform::showOpenDialog(nativeHandle(),
                                                       kind == "pdf"     ? pdf

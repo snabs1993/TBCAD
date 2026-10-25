@@ -449,3 +449,57 @@ TEST_CASE("parseCsv reads cells copied from Excel (tab separated)") {
     CHECK(rows[0][1] == "Qty, each");
     CHECK(rows[1][0] == "Bolt");
 }
+
+TEST_CASE("parseCsv reads Excel files saved as Thai ANSI (874) or Unicode text (UTF-16)") {
+    // "ก,ข" in code page 874 (Excel on a Thai PC, "CSV (Comma delimited)")
+    const auto ansi = table::parseCsv("\xA1,\xA2\r\n1,2\r\n");
+    REQUIRE(ansi.size() == 2);
+    CHECK(ansi[0][0] == "\xE0\xB8\x81");
+    CHECK(ansi[0][1] == "\xE0\xB8\x82");
+    // Western code page 1252: u umlaut
+    const auto west = table::parseCsv("M\xFCller;1\r\n");
+    REQUIRE(west.size() == 1);
+    CHECK(west[0][0] == "M\xC3\xBCller");
+    // UTF-16 little endian with a byte order mark, tab separated ("Unicode Text")
+    const std::string_view u16(
+        "\xFF\xFE"
+        "a\0\t\0b\0\r\0\n\0"
+        "\x01\x0E\t\0"
+        "2\0",
+        18);
+    const auto wide = table::parseCsv(u16);
+    REQUIRE(wide.size() == 2);
+    CHECK(wide[0][1] == "b");
+    CHECK(wide[1][0] == "\xE0\xB8\x81");
+    CHECK(wide[1][1] == "2");
+    // valid UTF-8 is left alone
+    CHECK(table::parseCsv("\xE0\xB8\x81")[0][0] == "\xE0\xB8\x81");
+}
+
+TEST_CASE("formulas follow their cells when rows and columns are inserted or deleted") {
+    TableData t = grid(6, 3);
+    setText(t, 0, 0, "10");
+    setText(t, 1, 0, "20");
+    setText(t, 2, 0, "30");
+    setText(t, 3, 0, "=SUM(A1:A3)");
+    setText(t, 3, 1, "=A1+A3");
+    CHECK(displayText(t, 3, 0) == "60");
+    // A row inside the range grows it; the formula moves down with its row.
+    REQUIRE(insertRow(t, 1, 0));
+    CHECK(cellAt(t, 4, 0).utf8 == "=SUM(A1:A4)");
+    CHECK(cellAt(t, 4, 1).utf8 == "=A1+A4");
+    CHECK(displayText(t, 4, 0) == "60");
+    // A row above everything moves every name down by one.
+    REQUIRE(insertRow(t, 0, 0));
+    CHECK(cellAt(t, 5, 0).utf8 == "=SUM(A2:A5)");
+    CHECK(displayText(t, 5, 0) == "60");
+    // Deleting a row inside the range shrinks it; deleting a used cell gives #REF!.
+    REQUIRE(deleteRow(t, 3));
+    CHECK(cellAt(t, 4, 0).utf8 == "=SUM(A2:A4)");  // the 20 row is gone
+    REQUIRE(deleteRow(t, 1));
+    CHECK(cellAt(t, 3, 1).utf8 == "=#REF!+A3");
+    // Columns move names sideways.
+    REQUIRE(insertCol(t, 0, 0));
+    CHECK(cellAt(t, 3, 1).utf8 == "=SUM(B2:B3)");
+    CHECK(cellAt(t, 3, 2).utf8 == "=#REF!+B3");
+}
