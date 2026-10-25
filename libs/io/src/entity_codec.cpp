@@ -493,7 +493,7 @@ struct PayloadWriter {
             w.u8(c.covered ? 1 : 0);
         }
         if (d.headerRow || !d.titleStyle.isDefault() || !d.headerStyle.isDefault() ||
-            !d.dataStyle.isDefault()) {  // a tail older readers ignore
+            !d.dataStyle.isDefault() || !d.linkFile.empty()) {  // a tail older readers ignore
             w.u8(d.headerRow ? 1 : 0);
             for (const TableCellStyle* cs : {&d.titleStyle, &d.headerStyle, &d.dataStyle}) {
                 w.f64(cs->textHeight);
@@ -501,6 +501,8 @@ struct PayloadWriter {
                 w.u8(static_cast<std::uint8_t>(cs->fill));
                 w.u8(static_cast<std::uint8_t>(cs->align + 1));
             }
+            if (!d.linkFile.empty())
+                str(d.linkFile);
         }
     }
     void operator()(const ProxyData& d) {
@@ -1106,6 +1108,8 @@ struct PayloadReader {
                         const int a = static_cast<int>(r.u8()) - 1;
                         cs->align = a >= 0 && a <= 2 ? a : -1;
                     }
+                    if (r.remaining() > 0)
+                        d.linkFile = str();
                 }
                 return make(std::move(d));
             }
