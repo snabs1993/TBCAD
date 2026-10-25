@@ -2560,6 +2560,28 @@ void Gui::dynamicFields(const cmd::FilterFeedback& fb) {
     ImGui::PopID();
 }
 
+void Gui::windowCommand(const std::string& what) {
+    if (what == "cmdline:on")
+        showCommandLine_ = true;
+    else if (what == "cmdline:off")
+        showCommandLine_ = false;
+    else if (what == "graphscr")
+        logExpanded_ = false;
+    else if (what == "props:off")
+        panelOpen_["properties"] = false;
+    else if (what == "palettes:hide") {
+        for (auto& [id, on] : panelOpen_)
+            if (on) {
+                hiddenPanels_.push_back(id);
+                on = false;
+            }
+    } else if (what == "palettes:show") {
+        for (const std::string& id : hiddenPanels_)
+            panelOpen_[id] = true;
+        hiddenPanels_.clear();
+    }
+}
+
 void Gui::logWindow() {
     if (!logExpanded_)
         return;
@@ -4382,6 +4404,8 @@ ViewportRect Gui::frame() {
             realtime_ = what == "realtime:pan" ? Realtime::Pan : Realtime::Zoom;
         else if (what == "cleanscreen:on" || what == "cleanscreen:off")
             cleanScreen_ = what == "cleanscreen:on";
+        else if (what.rfind("window:", 0) == 0)
+            windowCommand(what.substr(7));
         else if (what == "drawingrecovery")
             recoveryManagerOpen_ = true;
         else if (what.rfind("keys:", 0) == 0) {

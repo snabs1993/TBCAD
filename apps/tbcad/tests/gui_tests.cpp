@@ -873,13 +873,13 @@ TEST_CASE("every panel survives a click on each of its widgets") {
         const char* id;
         const char* tab;
     };
-    for (const P& p : {P{"textstyles", "Text Styles"}, P{"dimstyles", "Dimension Styles"},
-                       P{"blocks", "Blocks"}, P{"hatch", "Hatch"}, P{"palettes", "Tool Palettes"},
-                       P{"plotstyle", "Plot Styles"}, P{"laywalk", "Layer Walk"},
-                       P{"text_editor", "Text"}, P{"mleaderstyles", "Multileader Style Manager"},
-                       P{"tablestyles", "Table Style"}, P{"mlstyles", "Multiline Style"},
-                       P{"views", "View Manager"}, P{"ucsman", "UCS"}, P{"vports", "Viewports"},
-                       P{"pointstyle", "Point Style"}}) {
+    for (const P& p :
+         {P{"textstyles", "Text Styles"}, P{"dimstyles", "Dimension Styles"}, P{"blocks", "Blocks"},
+          P{"hatch", "Hatch"}, P{"palettes", "Tool Palettes"}, P{"plotstyle", "Plot Styles"},
+          P{"laywalk", "Layer Walk"}, P{"text_editor", "Text"},
+          P{"mleaderstyles", "Multileader Style Manager"}, P{"tablestyles", "Table Style"},
+          P{"mlstyles", "Multiline Style"}, P{"views", "View Manager"}, P{"ucsman", "UCS"},
+          P{"vports", "Viewports"}, P{"pointstyle", "Point Style"}}) {
         CAPTURE(p.id);
         Harness h(1920, 1080);
         h.core().submitText("CIRCLE");
@@ -2470,6 +2470,29 @@ TEST_CASE("status bar: VIS and ISO buttons, items hidden from the customization 
     REQUIRE(h.click("Show all"));
     h.frame(3);
     CHECK(h.has("ISO", "statusbar"));
+}
+
+TEST_CASE("Window commands: COMMANDLINEHIDE, PROPERTIESCLOSE, HIDEPALETTES and SHOWPALETTES") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    REQUIRE(h.windowOpen("Command"));
+    h.core().submitText("COMMANDLINEHIDE");
+    h.frame(3);
+    CHECK_FALSE(h.windowOpen("Command"));
+    h.core().submitText("COMMANDLINE");
+    h.frame(3);
+    CHECK(h.windowOpen("Command"));
+    h.core().submitText("HIDEPALETTES");
+    h.frame(3);
+    CHECK_FALSE(h.windowOpen("Layers"));
+    h.core().submitText("SHOWPALETTES");
+    h.frame(3);
+    CHECK(h.windowOpen("Layers"));
+    h.core().submitText("PROPERTIESCLOSE");
+    h.frame(3);
+    CHECK_FALSE(h.windowOpen("Properties"));
+    h.core().submitText("GRAPHSCR");
+    h.frame(3);
 }
 
 TEST_CASE("Clean Screen from the command line and Ctrl+0, workspaces with WSSAVE and WSCURRENT") {

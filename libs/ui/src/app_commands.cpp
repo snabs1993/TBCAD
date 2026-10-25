@@ -956,6 +956,23 @@ private:
     bool on_;
 };
 
+// COMMANDLINE / COMMANDLINEHIDE / GRAPHSCR / PROPERTIESCLOSE / HIDEPALETTES / SHOWPALETTES:
+// the window toggles of the View menu, typed on the command line.
+class WindowCommand final : public cmd::Command {
+public:
+    WindowCommand(std::string name, std::string description, std::string what)
+        : name_(std::move(name)), description_(std::move(description)), what_(std::move(what)) {}
+    std::string_view name() const override { return name_; }
+    std::string_view description() const override { return description_; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().requestUi("window:" + what_);
+        co_return;
+    }
+
+private:
+    std::string name_, description_, what_;
+};
+
 std::filesystem::path pathOf(const std::string& text) {
     return platform::pathFromUtf8(cmd::trim(text));
 }
@@ -1168,6 +1185,19 @@ void registerAppCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<WsSaveCommand>());
     (void)registry.add(std::make_unique<CleanScreenCommand>(true));
     (void)registry.add(std::make_unique<CleanScreenCommand>(false));
+    (void)registry.add(std::make_unique<WindowCommand>(
+        "COMMANDLINE", "Show the command line window", "cmdline:on"));
+    (void)registry.add(std::make_unique<WindowCommand>(
+        "COMMANDLINEHIDE", "Hide the command line window", "cmdline:off"));
+    (void)registry.add(std::make_unique<WindowCommand>(
+        "GRAPHSCR", "Close the command history window and return to the drawing", "graphscr"));
+    (void)registry.add(std::make_unique<WindowCommand>("PROPERTIESCLOSE",
+                                                       "Close the Properties panel", "props:off"));
+    (void)registry.add(std::make_unique<WindowCommand>(
+        "HIDEPALETTES", "Hide all panels, keeping the menus and the command line",
+        "palettes:hide"));
+    (void)registry.add(std::make_unique<WindowCommand>(
+        "SHOWPALETTES", "Bring back the panels hidden by HIDEPALETTES", "palettes:show"));
     (void)registry.add(std::make_unique<AliasImportCommand>());
     (void)registry.add(std::make_unique<AliasExportCommand>());
     (void)registry.add(std::make_unique<AliasEditCommand>());

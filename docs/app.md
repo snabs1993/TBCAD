@@ -252,6 +252,9 @@ Defaults: Ctrl+N, Ctrl+O, Ctrl+S, Ctrl+Shift+S, Ctrl+Z, Ctrl+Y, Ctrl+A, Esc. Act
   XLINE and PLINE). **F11** (`view.cleanScreen`) or **Ctrl+0** (`view.cleanScreenAlt`, AutoCAD's
   key), or `CLEANSCREENON` / `CLEANSCREENOFF`: hides menus, tool strip, status bar and panels,
   leaving the viewport and the command line. All are rebindable like any other action.
+  Window commands: `COMMANDLINE` / `COMMANDLINEHIDE` show or hide the command line, `GRAPHSCR`
+  closes the command history window, `PROPERTIESCLOSE` closes Properties, and `HIDEPALETTES` /
+  `SHOWPALETTES` hide every panel and bring back the ones that were open.
 - The status bar shows, after the drafting toggles and the layer, workspace, level and annotation
   scale boxes: **VIS** (`ANNOALLVISIBLE`: annotative objects of every scale, or only those of the
   current scale), **AUTO** (`ANNOAUTOSCALE`), and **ISO**, lit while objects are isolated or
