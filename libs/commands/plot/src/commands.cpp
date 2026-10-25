@@ -16,6 +16,7 @@ namespace tbcad::plot {
 
 std::unique_ptr<cmd::Command> makePrinterCommand();
 std::unique_ptr<cmd::Command> makeETransmitCommand();
+std::unique_ptr<cmd::Command> makeCompareCommand();
 
 Result<std::unique_ptr<Document>> readDrawingFile(const std::filesystem::path& file) {
     std::string ext = file.extension().string();
@@ -1053,6 +1054,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<PublishCommand>());
     (void)registry.add(std::make_unique<PlotStampCommand>());
     (void)registry.add(makeETransmitCommand());
+    (void)registry.add(makeCompareCommand());
     (void)registry.add(std::make_unique<PlotStyleCommand>());
     (void)registry.add(std::make_unique<PageSetupCommand>());
     (void)registry.add(std::make_unique<PageSetupPanelCommand>());
