@@ -33,6 +33,20 @@ std::vector<std::string> messagesOf(const dxf::Report& report) {
     return out;
 }
 
+// Every warning, error and skipped-object line, none dropped: what DWGREPORT hands over.
+std::vector<std::string> fullReportOf(const dxf::Report& report) {
+    std::vector<std::string> out;
+    for (const dxf::Diagnostic& d : report.diagnostics()) {
+        if (d.severity == dxf::Severity::Info && d.code != dwg::code::kSkippedObject)
+            continue;
+        out.push_back(std::string(d.severity == dxf::Severity::Error     ? "Error: "
+                                  : d.severity == dxf::Severity::Warning ? "Warning: "
+                                                                         : "") +
+                      d.message);
+    }
+    return out;
+}
+
 std::string productOf(const std::string& code) {
     if (code == "AC1015")
         return "AutoCAD 2000";
@@ -93,6 +107,11 @@ Result<ui::ForeignOpenResult> readDwgFile(const std::filesystem::path& path) {
     ui::ForeignOpenResult out;
     out.format = "DWG " + r.summary.version;
     out.messages = messagesOf(report);
+    out.report = fullReportOf(report);
+    if (!out.report.empty())
+        out.messages.push_back(
+            "Some objects were skipped or changed; type DWGREPORT to copy the "
+            "list so it can be sent for a fix.");
     out.messages.insert(out.messages.begin(), "DWG " + r.summary.version + ": " +
                                                   std::to_string(r.document->modelSpaceCount()) +
                                                   " objects, " + std::to_string(r.summary.layers) +

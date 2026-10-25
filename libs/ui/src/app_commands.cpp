@@ -677,6 +677,30 @@ public:
     }
 };
 
+// DWGREPORT: the unsupported or skipped objects the reader found when the drawing was opened,
+// printed and copied to the clipboard so a tester can send them on.
+class DwgReportCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "DWGREPORT"; }
+    std::string_view description() const override {
+        return "Copy the list of objects skipped when this DWG was opened";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        const std::string body = ctx.host().setting("open.report").value_or("");
+        if (body.empty()) {
+            ctx.message("Nothing was skipped when this drawing was opened.");
+            co_return;
+        }
+        const std::string file = ctx.host().setting("document.file").value_or("");
+        const std::string text = "Open report for " + (file.empty() ? "this drawing" : file) +
+                                 " (" + ctx.host().setting("open.report.format").value_or("") +
+                                 ")\n" + body;
+        ctx.message(text);
+        ctx.host().setSetting("clipboard.text", text);
+        ctx.message("The report was copied to the clipboard.");
+    }
+};
+
 // PICKADD / PICKFIRST: a 0 / 1 / 2 system variable kept in the host settings.
 class PickVarCommand final : public cmd::Command {
 public:
@@ -1069,6 +1093,7 @@ private:
 void registerAppCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<ZoomCommand>());
     (void)registry.add(std::make_unique<FilediaCommand>());
+    (void)registry.add(std::make_unique<DwgReportCommand>());
     (void)registry.add(std::make_unique<ExportCommand>());
     (void)registry.add(std::make_unique<UiRequestCommand>(
         "SAVEALL", std::vector<std::string>{}, "action:file.saveAll",

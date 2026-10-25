@@ -1236,6 +1236,28 @@ TEST_CASE("read-only foreign format: banner, Save refuses, Save As .tbcad, never
     CHECK(content == "original bytes");
 }
 
+TEST_CASE("DWGREPORT copies the reader notices of a foreign file to the clipboard") {
+    Fixture f("dwgreport");
+    fs::path src = f.dir / "plan.dwg";
+    { std::ofstream(src, std::ios::binary) << "original bytes"; }
+    f.core->setForeignReader(
+        ".dwg",
+        [](const fs::path&) -> Result<ForeignOpenResult> {
+            ForeignOpenResult r;
+            r.document = std::make_unique<Document>();
+            r.format = "DWG R2018";
+            r.report = {"Warning: 3 object(s) of unsupported types (WIPEOUT x3)."};
+            return r;
+        },
+        true);
+    REQUIRE(f.core->openFile(src).ok());
+    f.core->submitText("DWGREPORT");
+    auto text = f.core->takeClipboardText();
+    REQUIRE(text.has_value());
+    CHECK(text->find("WIPEOUT x3") != std::string::npos);
+    CHECK(text->find("DWG R2018") != std::string::npos);
+}
+
 TEST_CASE("a foreign file opens on a worker thread and finishes when polled") {
     Fixture f("foreignasync");
     fs::path src = f.dir / "slow.dwg";
