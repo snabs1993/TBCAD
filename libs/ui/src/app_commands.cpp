@@ -715,7 +715,9 @@ public:
     SpaceCommand(const char* name, const char* alias, const char* space, const char* description)
         : name_(name), alias_(alias), space_(space), description_(description) {}
     std::string_view name() const override { return name_; }
-    std::vector<std::string> defaultAliases() const override { return {alias_}; }
+    std::vector<std::string> defaultAliases() const override {
+        return *alias_ ? std::vector<std::string>{alias_} : std::vector<std::string>{};
+    }
     std::string_view description() const override { return description_; }
     cmd::Task run(cmd::CommandContext& ctx) override {
         ctx.host().requestUi(std::string("space:") + space_);
@@ -1105,6 +1107,10 @@ void registerAppCommands(cmd::Registry& registry) {
         "MSPACE", "MS", "model", "Edit the model through the selected viewport of a layout"));
     (void)registry.add(std::make_unique<SpaceCommand>(
         "PSPACE", "PS", "paper", "Go back to the layout sheet from model space"));
+    (void)registry.add(std::make_unique<SpaceCommand>(
+        "VPMAX", "", "model", "Maximise the selected viewport of a layout to the whole window"));
+    (void)registry.add(std::make_unique<SpaceCommand>(
+        "VPMIN", "", "paper", "Restore a maximised viewport and show the layout sheet again"));
     (void)registry.add(std::make_unique<ZoomCommand>("ZE", "Extents"));
     (void)registry.add(std::make_unique<PanCommand>());
     (void)registry.add(std::make_unique<RealtimePanCommand>());
