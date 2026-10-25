@@ -890,7 +890,10 @@ void SettingsDialog::keybindings(ui::AppCore& core) {
             if (!row.chord.empty() && ImGui::SmallButton("Unbind"))
                 keyMessage_ = editor.set(row.action, "").error;
             ImGui::SameLine();
-            if (row.overridden && ImGui::SmallButton("Default"))
+            if (platform::Keybindings::isCommandAction(row.action)) {
+                if (ImGui::SmallButton("Delete"))
+                    keyMessage_ = editor.removeCommand(row.action).error;
+            } else if (row.overridden && ImGui::SmallButton("Default"))
                 keyMessage_ = editor.reset(row.action).error;
             ImGui::PopID();
         }
@@ -915,6 +918,18 @@ void SettingsDialog::keybindings(ui::AppCore& core) {
         }
     } else if (!keyMessage_.empty()) {
         ImGui::TextColored(kWarn, "%s", keyMessage_.c_str());
+    }
+    ImGui::SetNextItemWidth(180);
+    ImGui::InputTextWithHint("##newCmd", "Command, e.g. LAYER", &keyCommand_);
+    ImGui::SameLine();
+    if (ImGui::Button("Add command shortcut")) {
+        auto out = editor.addCommand(keyCommand_, "");
+        keyMessage_ = out.error;
+        if (out.ok) {
+            capturing_ = std::string(platform::Keybindings::kCommandPrefix) + keyCommand_;
+            pendingConflict_.clear();
+            keyCommand_.clear();
+        }
     }
     keyProfile(core);
 }

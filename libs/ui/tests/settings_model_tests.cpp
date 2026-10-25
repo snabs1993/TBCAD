@@ -155,3 +155,37 @@ TEST_CASE("keybinding editor: conflicts, take over, unbind, reset, file") {
     for (const auto& row : ed.rows())
         CHECK(row.conflictWith.empty());
 }
+
+TEST_CASE("keybinding editor: command shortcuts") {
+    platform::Keybindings keys;
+    keys.declare("file.save", "Ctrl+S");
+    fs::path file = test::tempDir("key_editor_cmd") / "keybindings.json";
+    KeybindingEditor ed(keys, file);
+
+    CHECK_FALSE(ed.addCommand("  ", "F4").ok);
+    CHECK(ed.addCommand(" LAYER ", "ctrl+shift+l").ok);
+    CHECK(keys.label("cmd:LAYER") == "Ctrl+Shift+L");
+    CHECK(keys.actionFor(*platform::parseChord("Ctrl+Shift+L")) == "cmd:LAYER");
+
+    auto o = ed.addCommand("ZOOM E", "Ctrl+S");
+    CHECK_FALSE(o.ok);
+    CHECK(o.conflictWith == "file.save");
+    CHECK(keys.label("cmd:ZOOM E").empty());
+    bool leaked = false;
+    for (const auto& a : keys.actions())
+        leaked = leaked || a == "cmd:ZOOM E";
+    CHECK_FALSE(leaked);
+
+    // Saved and read back by a fresh instance without an "unknown action" warning.
+    platform::Keybindings again;
+    again.declare("file.save", "Ctrl+S");
+    auto warn = again.load(file);
+    REQUIRE(warn);
+    CHECK(warn.value().empty());
+    CHECK(again.label("cmd:LAYER") == "Ctrl+Shift+L");
+
+    CHECK_FALSE(ed.removeCommand("file.save").ok);
+    CHECK(ed.removeCommand("cmd:LAYER").ok);
+    CHECK(keys.label("cmd:LAYER").empty());
+    CHECK(slurp(file).find("cmd:LAYER") == std::string::npos);
+}

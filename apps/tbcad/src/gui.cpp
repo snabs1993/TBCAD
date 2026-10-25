@@ -237,6 +237,8 @@ std::string Gui::actionLabel(const std::string& action) const {
         {"view.cleanScreenAlt", "View > Clean Screen (second key)"},
         {"help.quickStart", "Help > Quick Start"},
         {"tools.settings", "Tools > Settings"}};
+    if (platform::Keybindings::isCommandAction(action))
+        return "Run " + action.substr(platform::Keybindings::kCommandPrefix.size());
     if (auto it = builtin.find(action); it != builtin.end())
         return it->second;
     for (const auto& item : registry_.menuItems()) {
@@ -281,6 +283,10 @@ bool Gui::consumeActivity() {
 // ---- actions -----------------------------------------------------------------------------------
 
 void Gui::runAction(const std::string& action) {
+    if (platform::Keybindings::isCommandAction(action)) {
+        core_.submitText(action.substr(platform::Keybindings::kCommandPrefix.size()));
+        return;
+    }
     if (action == "file.new") {
         core_.newDocument();
         startPage_ = false;

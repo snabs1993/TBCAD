@@ -234,6 +234,44 @@ KeybindingEditor::Outcome KeybindingEditor::set(const std::string& action,
     return save();
 }
 
+KeybindingEditor::Outcome KeybindingEditor::addCommand(const std::string& commandLine,
+                                                       const std::string& chordText,
+                                                       bool takeOver) {
+    Outcome o;
+    std::string line = commandLine;
+    while (!line.empty() && std::isspace(static_cast<unsigned char>(line.front())))
+        line.erase(line.begin());
+    while (!line.empty() && std::isspace(static_cast<unsigned char>(line.back())))
+        line.pop_back();
+    if (line.empty()) {
+        o.error = "Type the command to run.";
+        return o;
+    }
+    const std::string action = std::string(platform::Keybindings::kCommandPrefix) + line;
+    const bool existed = [&] {
+        for (const std::string& a : keys_.actions())
+            if (a == action)
+                return true;
+        return false;
+    }();
+    if (!existed)
+        keys_.set(action, "");
+    Outcome r = set(action, chordText, takeOver);
+    if (!r.ok && !existed)
+        keys_.forget(action);
+    return r;
+}
+
+KeybindingEditor::Outcome KeybindingEditor::removeCommand(const std::string& action) {
+    Outcome o;
+    if (!platform::Keybindings::isCommandAction(action)) {
+        o.error = "Only your own command shortcuts can be removed.";
+        return o;
+    }
+    keys_.forget(action);
+    return save();
+}
+
 KeybindingEditor::Outcome KeybindingEditor::reset(const std::string& action) {
     keys_.reset(action);
     return save();

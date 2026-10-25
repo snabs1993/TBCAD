@@ -137,7 +137,7 @@ Result<std::vector<std::string>> Keybindings::load(const std::filesystem::path& 
             warnings.push_back("keybindings.json: '" + value.asString() + "' is not a valid key");
             continue;
         }
-        if (!defaults_.count(action))
+        if (!defaults_.count(action) && !isCommandAction(action))
             warnings.push_back("keybindings.json: unknown action '" + action + "'");
         overrides_[action] = value.asString();
     }
@@ -221,6 +221,15 @@ std::string Keybindings::defaultChordOf(std::string_view actionId) const {
 
 bool Keybindings::overridden(std::string_view actionId) const {
     return overrides_.count(std::string(actionId)) > 0;
+}
+
+bool Keybindings::isCommandAction(std::string_view actionId) {
+    return actionId.size() > kCommandPrefix.size() && actionId.substr(0, kCommandPrefix.size()) == kCommandPrefix;
+}
+
+void Keybindings::forget(std::string_view actionId) {
+    if (!defaults_.count(std::string(actionId)))
+        overrides_.erase(std::string(actionId));
 }
 
 void Keybindings::reset(std::string_view actionId) {

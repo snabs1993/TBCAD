@@ -50,6 +50,13 @@ public:
     void reset(std::string_view actionId);
     std::vector<std::string> actions() const;
 
+    // User shortcuts that run a command line: action id "cmd:LINE". They need no declaration;
+    // keybindings.json creates them.
+    static constexpr std::string_view kCommandPrefix = "cmd:";
+    static bool isCommandAction(std::string_view actionId);
+    // Drops a user command shortcut completely (no effect on declared actions).
+    void forget(std::string_view actionId);
+
 private:
     std::map<std::string, std::string> defaults_{};
     std::map<std::string, std::string> overrides_{};
