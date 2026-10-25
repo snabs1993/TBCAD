@@ -113,6 +113,10 @@ bool setCellAlign(TableData& t, std::size_t row, std::size_t col, std::optional<
 bool isFormula(const std::string& text);
 std::string cellName(std::size_t row, std::size_t col);  // 0,0 -> "A1"
 // What the cell shows: its text, or the value of its formula.
+// Moves the cell names in the formulas after a row (`rows`) or column was inserted (`delta` 1) or
+// deleted (-1) at `at`: =SUM(A1:A3) becomes =SUM(A1:A4) when a row goes in at 3. A name whose
+// cell was deleted becomes #REF!. The insert and delete functions call it.
+void adjustFormulaRefs(TableData& t, bool rows, std::size_t at, int delta);
 std::string displayText(const TableData& t, std::size_t row, std::size_t col);
 
 // ---- text form (kept in DXF extended data so a re-import gets the table back) -----------------

@@ -444,6 +444,106 @@ std::string cellName(std::size_t row, std::size_t col) {
     return letters + std::to_string(row + 1);
 }
 
+namespace {
+
+bool isWordChar(char c) {
+    return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+}
+
+// One cell reference after a row or column was inserted (`delta` +1) or deleted (-1) at `at`.
+// A deleted cell, or a range that shrinks to nothing, gives false.
+bool shiftIndex(std::size_t& i, std::size_t at, int delta) {
+    if (delta > 0) {
+        if (i >= at)
+            ++i;
+        return true;
+    }
+    if (i == at)
+        return false;
+    if (i > at)
+        --i;
+    return true;
+}
+
+std::string shiftedRefs(const std::string& body, bool rows, std::size_t at, int delta) {
+    std::string out;
+    std::size_t i = 0;
+    auto run = [&](std::size_t from) {
+        std::size_t e = from;
+        while (e < body.size() && std::isalnum(static_cast<unsigned char>(body[e])))
+            ++e;
+        return e;
+    };
+    while (i < body.size()) {
+        if (!std::isalpha(static_cast<unsigned char>(body[i])) ||
+            (i > 0 && isWordChar(body[i - 1]))) {
+            out += body[i++];
+            continue;
+        }
+        const std::size_t e1 = run(i);
+        std::size_t r0 = 0, c0 = 0;
+        if ((e1 < body.size() && (body[e1] == '(' || body[e1] == '_')) ||
+            !parseName(std::string_view(body).substr(i, e1 - i), r0, c0)) {
+            out.append(body, i, e1 - i);
+            i = e1;
+            continue;
+        }
+        std::size_t r1 = r0, c1 = c0, end = e1;
+        bool range = false;
+        if (e1 < body.size() && body[e1] == ':') {
+            const std::size_t e2 = run(e1 + 1);
+            if (parseName(std::string_view(body).substr(e1 + 1, e2 - e1 - 1), r1, c1)) {
+                range = true;
+                end = e2;
+            }
+        }
+        std::size_t& a = rows ? r0 : c0;
+        std::size_t& b = rows ? r1 : c1;
+        bool ok;
+        if (!range) {
+            ok = shiftIndex(a, at, delta);
+            b = a;
+        } else {
+            if (a > b)
+                std::swap(a, b);
+            if (delta > 0) {
+                ok = shiftIndex(a, at, delta) && shiftIndex(b, at, delta);
+            } else {
+                const std::size_t na = a > at ? a - 1 : a;
+                const std::size_t nb = b >= at ? b - 1 : b;
+                ok = !(b == at && a == at);
+                a = na;
+                b = nb;
+                ok = ok && a <= b;
+            }
+        }
+        if (!ok) {
+            out += "#REF!";
+        } else {
+            out += cellName(r0, c0);
+            if (range)
+                out += ":" + cellName(r1, c1);
+        }
+        i = end;
+    }
+    return out;
+}
+
+}  // namespace
+
+void adjustFormulaRefs(TableData& t, bool rows, std::size_t at, int delta) {
+    for (TableCell& cell : t.cells) {
+        if (cell.covered)
+            continue;
+        const std::string body = cellBody(cell.utf8);
+        if (!isFormula(body))
+            continue;
+        std::string next = "=" + shiftedRefs(body.substr(1), rows, at, delta);
+        if (next != body)
+            cell.utf8 = cell.utf8.substr(0, cell.utf8.size() - body.size()) + next;
+    }
+}
+
 std::string displayText(const TableData& t, std::size_t row, std::size_t col) {
     const TableCell& cell = cellAt(t, row, col);
     const std::string body = cellBody(cell.utf8);

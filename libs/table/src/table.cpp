@@ -165,6 +165,7 @@ bool insertRow(TableData& t, std::size_t at, double height) {
     const std::size_t cols = colCount(t);
     t.cells.insert(t.cells.begin() + static_cast<std::ptrdiff_t>(at * cols), cols, TableCell{});
     t.rowHeights.insert(t.rowHeights.begin() + static_cast<std::ptrdiff_t>(at), height);
+    adjustFormulaRefs(t, true, at, 1);
     return true;
 }
 
@@ -180,6 +181,7 @@ bool deleteRow(TableData& t, std::size_t at) {
     t.rowHeights.erase(t.rowHeights.begin() + static_cast<std::ptrdiff_t>(at));
     if (at == 0)
         t.titleRow = false;
+    adjustFormulaRefs(t, true, at, -1);
     return true;
 }
 
@@ -204,6 +206,7 @@ bool insertCol(TableData& t, std::size_t at, double width) {
     }
     t.cells = std::move(next);
     t.colWidths.insert(t.colWidths.begin() + static_cast<std::ptrdiff_t>(at), width);
+    adjustFormulaRefs(t, false, at, 1);
     return true;
 }
 
@@ -224,6 +227,7 @@ bool deleteCol(TableData& t, std::size_t at) {
     }
     t.cells = std::move(next);
     t.colWidths.erase(t.colWidths.begin() + static_cast<std::ptrdiff_t>(at));
+    adjustFormulaRefs(t, false, at, -1);
     return true;
 }
 
