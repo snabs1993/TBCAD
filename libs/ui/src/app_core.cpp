@@ -2707,6 +2707,7 @@ void AppCore::updateHover(const PointerState& p) {
     if (inPaperSpace())
         return;  // the sheet draws its own highlight (buildOverlay)
     hover.insert(hover.end(), flashIds_.begin(), flashIds_.end());
+    hover.insert(hover.end(), dragPreview_.begin(), dragPreview_.end());
     scene_.setHighlighted(hover);
 }
 
@@ -3013,11 +3014,30 @@ std::optional<std::size_t> AppCore::dragSelectCount() {
         BBox2 box;
         box.expand(camera_.screenToWorld(a));
         box.expand(camera_.screenToWorld(b));
-        dragCount_ = {
-            a, b, rev,
-            selectInBox(session_->doc, spatialIndex(), box, dragIsCrossing(a.x, b.x)).size()};
+        std::vector<EntityId> ids =
+            selectInBox(session_->doc, spatialIndex(), box, dragIsCrossing(a.x, b.x));
+        dragCount_ = {a, b, rev, ids.size(), std::move(ids)};
     }
     return dragCount_.count;
+}
+
+void AppCore::setSelectionDrag(std::optional<std::pair<Vec2, Vec2>> corners) {
+    drag_ = corners;
+    std::vector<EntityId> preview;
+    if (drag_ && session_ && !inPaperSpace() &&
+        settings_.getString("selection.preview", "1") != "0") {
+        dragSelectCount();
+        preview = dragCount_.ids;
+        constexpr std::size_t kMaxPreview = 5000;  // keeps the highlight cheap on huge drawings
+        if (preview.size() > kMaxPreview)
+            preview.clear();
+    }
+    if (preview.empty() && dragPreview_.empty())
+        return;
+    dragPreview_ = std::move(preview);
+    std::vector<EntityId> all = dragPreview_;
+    all.insert(all.end(), flashIds_.begin(), flashIds_.end());
+    scene_.setHighlighted(all);
 }
 
 void AppCore::dragSelect(Vec2 a, Vec2 b, const PointerState& p) {

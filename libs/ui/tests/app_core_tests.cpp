@@ -1487,6 +1487,30 @@ TEST_CASE("hover names the object under the pointer for the tooltip") {
     CHECK(!f.core->hoveredEntity());
 }
 
+TEST_CASE("SELECTIONPREVIEW highlights what a selection box would pick while dragging") {
+    Fixture f("selpreview");
+    f.line("0,0", "100,0");
+    f.line("0,500", "100,500");  // the one that flashes as new; the box below leaves it out
+    f.core->pointerLeft();
+    auto verts = [&] {
+        std::size_t n = 0;
+        for (const auto& t : f.core->scene().highlightGeometry().tiles)
+            n += t.verts.size();
+        return n;
+    };
+    const std::size_t base = verts();
+    const Vec2 a = f.core->camera().worldToScreen({-10, -10});
+    const Vec2 b = f.core->camera().worldToScreen({110, 10});
+    f.core->setSelectionDrag(std::make_pair(a, b));
+    const std::size_t during = verts();
+    CHECK(during > base);
+    f.core->setSelectionDrag(std::nullopt);
+    CHECK(verts() < during);
+    f.core->setSetting("selection.preview", "0");
+    f.core->setSelectionDrag(std::make_pair(a, b));
+    CHECK(verts() < during);
+}
+
 TEST_CASE("opening or closing a panel resizes the canvas without moving the drawing") {
     Fixture f("panel_resize");
     const Vec2 world{300, 200};
