@@ -273,3 +273,22 @@ TEST_CASE("save: a read-only file is not replaced and the message says so") {
     REQUIRE(io::writeTbcad(*two, file).ok());
     CHECK(dumpOf(file) == canonicalDump(*two));
 }
+
+TEST_CASE("save: Thai names, spaces and a long folder path save, back up and reopen") {
+    TempDir dir;
+    fs::path folder = dir.path() / fs::u8path("งานแบบ บ้าน (แก้ไข) 2569");
+    for (int i = 0; i < 6; ++i)
+        folder /=
+            fs::u8path("โฟลเดอร์ยาวมากๆ ทดสอบ " + std::to_string(i) + " abcdefghijklmnopqrstuvwxyz");
+    REQUIRE(fs::create_directories(folder));
+    fs::path file = folder / fs::u8path("แปลน ชั้น 1 final.tbcad");
+    auto one = docWith(1);
+    auto two = docWith(2);
+    REQUIRE(io::writeTbcad(*one, file).ok());
+    REQUIRE(io::writeTbcad(*two, file).ok());
+    CHECK(dumpOf(file) == canonicalDump(*two));
+    fs::path bak = file;
+    bak += ".bak";
+    CHECK(dumpOf(bak) == canonicalDump(*one));
+    CHECK_FALSE(fs::exists(fs::path(file) += ".tmp"));
+}
