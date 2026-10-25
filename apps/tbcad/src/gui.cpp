@@ -350,8 +350,13 @@ void Gui::runAction(const std::string& action) {
         if (!core_.selection().empty() && !core_.runner().active())
             core_.submitText("ERASE");
     } else if (action == "edit.deselect") {
+        if (!input_
+                 .empty()) {  // first Esc clears the typed text, the next one the command/selection
+            input_.clear();
+            typedWhileUnfocused_.clear();
+            return;
+        }
         core_.pressEscape();
-        input_.clear();
     } else if (action == "view.zoomExtents")
         core_.zoomExtents();
     else if (action == "view.toggleCommandLine")
@@ -1109,6 +1114,12 @@ void Gui::shortcuts() {
         const bool deleteOnEmptyLine = chord->key == "DELETE" && input_.empty();
         if (io.WantTextInput && !chord->ctrl && !chord->alt && chord->key != "ESCAPE" &&
             chord->key[0] != 'F' && !deleteOnEmptyLine)
+            continue;
+        // The focused command line owns Ctrl+Z/Y/C/X/A while it holds text; with an empty line the
+        // chord reaches the drawing.
+        if (io.WantTextInput && !input_.empty() && chord->ctrl && !chord->alt &&
+            (action == "edit.undo" || action == "edit.redo" || action == "edit.copy" ||
+             action == "edit.cut" || action == "edit.selectAll"))
             continue;
         if (ImGui::IsKeyChordPressed(*ic)) {
             // In the focused command line Ctrl+V pastes text. The field does that itself; running
