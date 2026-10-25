@@ -216,6 +216,35 @@ TEST_CASE("MTEXT shows a rectangle preview while picking the second corner") {
     f.host.feed({cmd::ScriptItem::esc()});
 }
 
+TEST_CASE("TEXTEDIT edits the replaced text of a dimension and the note of a multileader") {
+    Fixture f;
+    EntityId dimId, mlId;
+    {
+        auto tx = f.doc.begin("add");
+        DimensionData d;
+        d.defPts = {Vec2{0, 0}, Vec2{100, 0}, Vec2{0, 10}, Vec2{0, 0}};
+        d.textPos = {50, 10};
+        Entity e;
+        e.data = Indirect<DimensionData>(d);
+        dimId = tx.add(std::move(e)).value();
+        MLeaderData m;
+        m.utf8 = "old";
+        Entity l;
+        l.data = Indirect<MLeaderData>(m);
+        mlId = tx.add(std::move(l)).value();
+        tx.commit();
+    }
+    f.host.setSelection({dimId});
+    CHECK(f.host.run("TEXTEDIT", {"%%c50"}).finished);
+    CHECK(entityAs<DimensionData>(*f.doc.find(dimId))->textOverride == "%%c50");
+    f.host.setSelection({dimId});
+    f.host.run("TEXTEDIT", {"<>"});
+    CHECK(entityAs<DimensionData>(*f.doc.find(dimId))->textOverride.empty());
+    f.host.setSelection({mlId});
+    f.host.run("TEXTEDIT", {"new note"});
+    CHECK(entityAs<MLeaderData>(*f.doc.find(mlId))->utf8 == "new note");
+}
+
 TEST_CASE("TEXTEDIT edits TEXT and MTEXT in one undo step") {
     Fixture f;
     f.host.run("TEXT", {"0,0", "5", "0", "before"});
