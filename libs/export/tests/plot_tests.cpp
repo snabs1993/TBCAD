@@ -161,6 +161,26 @@ TEST_CASE("rotateSheet180 turns the page: the 100 mm line ends where it started,
     CHECK(pdfBytes(sheet.value()).ok());
 }
 
+TEST_CASE("LWDEFAULT sets the pen width of Default lineweights") {
+    auto width = [](const char* lwdefault) {
+        Document doc;
+        addEntity(doc, line({0, 0}, {100, 0}));
+        if (lwdefault) {
+            auto tx = doc.begin("lw");
+            REQUIRE(tx.modifyHeader([&](Header& h) { h.custom[kLwDefaultKey] = lwdefault; }).ok());
+            tx.commit();
+        }
+        auto sheet = buildSheet(doc, PlotSettings{});
+        REQUIRE(sheet.ok());
+        for (const auto& prim : sheet.value().prims)
+            if (const auto* path = std::get_if<PlotPath>(&prim))
+                return path->style.widthMm;
+        return -1.0;
+    };
+    CHECK(width(nullptr) == doctest::Approx(0.25));
+    CHECK(width("50") == doctest::Approx(0.5));
+}
+
 TEST_CASE("the lineweight scale multiplies pen widths but not hairlines") {
     Document doc;
     Entity heavy = line({0, 0}, {100, 0});

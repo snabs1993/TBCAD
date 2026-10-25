@@ -52,6 +52,16 @@ font::FontId fontForStyle(const TextStyle* style, bool bold = false, bool italic
 /// Folders searched for .shx font files, besides the bundled assets/fonts/shx, the folders in the
 /// environment variable TBCAD_FONT_PATH and the system font folders.
 void setFontSearchPaths(std::vector<std::filesystem::path> dirs);
+/// FONTMAP / FONTALT. `map` is the text of a font mapping file: one "old;new" pair per line (the
+/// names without a folder or extension decide the match, so "romans;simplex.shx" and
+/// "Arial;Tahoma" both work). A style whose font is in the map uses the new one; `alt` stands in
+/// for a missing .shx font (a name such as "simplex.shx" or a font family, empty = the bundled
+/// stroke font). Forgets the fonts looked up before.
+void setFontSubstitutions(const std::string& map, const std::string& alt);
+/// The same with the mapping read from a file (UTF-8 path, empty = none); `error` gets a message
+/// when the file cannot be read.
+void setFontSubstitutionsFromFile(const std::string& mapFileUtf8, const std::string& alt,
+                                  std::string* error = nullptr);
 /// True for a name ending in .shx (any case).
 bool isShxName(std::string_view name);
 /// The file for a font name such as "romans.shx" or "C:/fonts/thai.shx"; empty when not found.

@@ -5,8 +5,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <future>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -159,6 +161,126 @@ std::string shxNameOf(const TextStyle& st) {
     return st.shxFile;
 }
 }  // namespace
+
+namespace {
+struct Substitutions {
+    std::map<std::string, std::string> map;  // lower-case stem -> replacement
+    std::string alt;
+};
+std::mutex& substMutex() {
+    static std::mutex m;
+    return m;
+}
+Substitutions& substitutions() {
+    static Substitutions s;
+    return s;
+}
+std::string stemOf(std::string_view name) {
+    const auto slash = name.find_last_of("/\\");
+    if (slash != std::string_view::npos)
+        name.remove_prefix(slash + 1);
+    const auto dot = name.find_last_of('.');
+    if (dot != std::string_view::npos && dot > 0)
+        name = name.substr(0, dot);
+    std::string s(name);
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return s;
+}
+std::string trimmed(std::string s) {
+    const auto b = s.find_first_not_of(" \t\r");
+    const auto e = s.find_last_not_of(" \t\r");
+    return b == std::string::npos ? std::string() : s.substr(b, e - b + 1);
+}
+// The style with its font replaced as FONTMAP / FONTALT say; empty when nothing applies.
+std::optional<TextStyle> substituted(const TextStyle& st) {
+    std::string target;
+    {
+        std::lock_guard lock(substMutex());
+        const Substitutions& s = substitutions();
+        if (s.map.empty() && s.alt.empty())
+            return std::nullopt;
+        const std::string shx = shxNameOf(st);
+        const std::string wanted = !shx.empty()             ? shx
+                                   : !st.fontFamily.empty() ? st.fontFamily
+                                                            : st.fontFile;
+        if (wanted.empty())
+            return std::nullopt;
+        if (auto it = s.map.find(stemOf(wanted)); it != s.map.end())
+            target = it->second;
+        else
+            target = s.alt;
+        if (!target.empty() && target == s.alt && s.map.find(stemOf(wanted)) == s.map.end() &&
+            (shx.empty() || !locateFontFile(shx).empty()))
+            return std::nullopt;  // FONTALT is only for a missing .shx font
+    }
+    if (target.empty())
+        return std::nullopt;
+    TextStyle out = st;
+    if (endsWithNoCase(target, ".shx")) {
+        if (endsWithNoCase(out.fontFile, ".shx"))
+            out.fontFile.clear();
+        out.shxFile = target;
+    } else {
+        if (endsWithNoCase(out.fontFile, ".shx"))
+            out.fontFile.clear();
+        out.shxFile.clear();
+        if (isOutlineFontFile(target)) {
+            out.fontFile = target;
+            out.fontFamily.clear();
+        } else {
+            out.fontFamily = target;
+            out.fontFile.clear();
+        }
+    }
+    return out;
+}
+}  // namespace
+
+void setFontSubstitutions(const std::string& map, const std::string& alt) {
+    {
+        std::lock_guard lock(substMutex());
+        Substitutions& s = substitutions();
+        s.map.clear();
+        s.alt = trimmed(alt);
+        std::size_t from = 0;
+        while (from <= map.size()) {
+            auto nl = map.find('\n', from);
+            if (nl == std::string::npos)
+                nl = map.size();
+            const std::string line = map.substr(from, nl - from);
+            from = nl + 1;
+            const auto semi = line.find(';');
+            if (semi == std::string::npos || line.empty() || line[0] == '#')
+                continue;
+            const std::string oldName = stemOf(trimmed(line.substr(0, semi)));
+            const std::string newName = trimmed(line.substr(semi + 1));
+            if (!oldName.empty() && !newName.empty())
+                s.map[oldName] = newName;
+        }
+    }
+    {
+        std::lock_guard lock(shxMutex());
+        shxAnswers().clear();
+    }
+    fontGeneration().fetch_add(1);
+    std::lock_guard lock(cacheMutex());
+    fontCache().clear();
+}
+
+void setFontSubstitutionsFromFile(const std::string& mapFileUtf8, const std::string& alt,
+                                  std::string* error) {
+    std::string text;
+    if (!mapFileUtf8.empty()) {
+        const std::filesystem::path mapFile(std::u8string(mapFileUtf8.begin(), mapFileUtf8.end()));
+        std::ifstream in(mapFile, std::ios::binary);
+        if (in)
+            text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+        else if (error)
+            *error = "Cannot open the font mapping file " + mapFile.string();
+    }
+    setFontSubstitutions(text, alt);
+}
 
 bool isShxName(std::string_view name) {
     return endsWithNoCase(name, ".shx");
@@ -438,7 +560,9 @@ FontResolution resolveShx(const std::string& shx) {
 }
 }  // namespace
 
-FontResolution resolveStyleFont(const TextStyle& st) {
+FontResolution resolveStyleFont(const TextStyle& original) {
+    const std::optional<TextStyle> replaced = substituted(original);
+    const TextStyle& st = replaced ? *replaced : original;
     FontResolution r;
     const std::string shx = shxNameOf(st);
     if (!shx.empty())
@@ -511,6 +635,11 @@ std::vector<std::string> installedFontFamilies() {
 }
 
 font::FontId fontForStyle(const TextStyle* style, bool bold, bool italic) {
+    std::optional<TextStyle> replaced;
+    if (style)
+        replaced = substituted(*style);
+    if (replaced)
+        style = &*replaced;
     std::string family = style ? style->fontFamily : std::string{};
     std::string file = style ? style->fontFile : std::string{};
     Key key{family, file + '\n' + (style ? style->shxFile : std::string{}), bold, italic};
