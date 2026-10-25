@@ -3860,7 +3860,11 @@ void Gui::viewportMenu() {
                 item("Extend", "EXTEND");
             }
             ImGui::Separator();
+            item("Paste", "PASTECLIP");
+            if (ImGui::MenuItem("Select All"))
+                core_.selectAll();
             item("Select Similar", "SELECTSIMILAR");
+            item("Quick Select...", "QSELECT");
             item("Match Properties", "MATCHPROP");
             item("Properties", "PROPERTIES");
             if (core_.registry().find("LAYISO") && ImGui::MenuItem("Isolate Layer"))
@@ -3872,8 +3876,14 @@ void Gui::viewportMenu() {
                 run("PASTECLIP");
             if (ImGui::MenuItem("Select All"))
                 core_.selectAll();
+            if (core_.registry().find("QSELECT") && ImGui::MenuItem("Quick Select..."))
+                run("QSELECT");
+            if (core_.registry().find("PROPERTIES") && ImGui::MenuItem("Properties"))
+                run("PROPERTIES");
         }
         ImGui::Separator();
+        if (core_.registry().find("PAN") && ImGui::MenuItem("Pan"))
+            run("PAN");
         const std::string undo = core_.undoLabel();
         const std::string redo = core_.redoLabel();
         if (ImGui::MenuItem(undo.empty() ? "Undo" : undo.c_str(), nullptr, false, !undo.empty()))
