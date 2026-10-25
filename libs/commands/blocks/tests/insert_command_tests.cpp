@@ -1,4 +1,5 @@
 #include "support.h"
+#include "tbcad/cmd/script_host.h"
 
 using namespace tbcad;
 using namespace tbcad::block_cmds;
@@ -211,4 +212,29 @@ TEST_CASE("MINSERT with one row and one column is a plain insert") {
     f.host->run("MINSERT", {"Door", "0,0", "1", "1"});
     REQUIRE(f.modelSpace().size() == 1);
     CHECK_FALSE(entityAs<InsertData>(*f.doc.find(f.modelSpace()[0]))->array);
+}
+
+namespace {
+
+struct WindowHost : cmd::ScriptHost {
+    using cmd::ScriptHost::ScriptHost;
+    std::vector<std::string> opened;
+    bool dialogsAvailable() const override { return true; }
+    void openPanel(std::string_view id) override { opened.emplace_back(id); }
+};
+
+}  // namespace
+
+TEST_CASE("INSERT in a window opens the Blocks palette when the drawing has blocks") {
+    Fixture f;
+    makeDoorBlock(f);
+    WindowHost host(f.doc, f.reg);
+    CHECK(host.run("INSERT", {"Door", "0,0"}).finished);
+    REQUIRE(host.opened.size() == 1);
+    CHECK(host.opened[0] == "blocks");
+
+    Fixture empty;  // no blocks: nothing to pick from
+    WindowHost bare(empty.doc, empty.reg);
+    bare.run("INSERT", {});
+    CHECK(bare.opened.empty());
 }
