@@ -262,3 +262,30 @@ TEST_CASE("the boundary of a hatch snaps like the objects it was made from") {
     c.add(Entity{{}, std::move(hc)});
     CHECK(near(snapped(c, {0.3, 5.4}, "quadrant"), {0, 5}));
 }
+
+TEST_CASE("geometric center snaps to the centroid of a closed polyline") {
+    Modes w;
+    CHECK(parseSnapMode("gce") == SnapMode::GeometricCenter);
+    CHECK(parseSnapMode("geometric") == SnapMode::GeometricCenter);
+    PolylineData l;  // an L: 30 x 10 bar plus a 10 x 20 foot, area 500, centroid (11, 11)
+    l.closed = true;
+    for (Vec2 p : {Vec2{0, 0}, {30, 0}, {30, 10}, {10, 10}, {10, 30}, {0, 30}})
+        l.v.push_back({p});
+    w.add(Entity{{}, l});
+    cmd::FilterFeedback fb;
+    const Vec2 g = snapped(w, {12, 12}, "geometric", {}, &fb);
+    CHECK(near(g, {11, 11}));
+    CHECK(fb.marker == "geometric");
+}
+
+TEST_CASE("geometric center of a bulged closed polyline is the middle of a half disc") {
+    Modes w;
+    PolylineData d;  // chord (-10,0)->(10,0) with an arc below, then straight back: a half disc
+    d.closed = true;
+    d.v.push_back({{-10, 0}, 1.0});  // positive bulge 1 = half circle, bulging right of the chord
+    d.v.push_back({{10, 0}});
+    d.v.push_back({{0, 0}});
+    w.add(Entity{{}, d});
+    // Half disc of radius 10 below the chord: centroid 4r/(3 pi) = 4.2441 away.
+    CHECK(near(snapped(w, {0, -4}, "geometric"), {0, -40.0 / (3 * 3.14159265358979)}, 1e-3));
+}

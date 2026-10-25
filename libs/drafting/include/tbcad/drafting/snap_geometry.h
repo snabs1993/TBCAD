@@ -16,6 +16,7 @@ struct SnapGeometry {
     std::vector<Vec2> midpoints{};
     std::vector<Vec2> centers{};
     std::vector<Vec2> quadrants{};
+    std::vector<Vec2> geometricCenters{};  // centroids (GCE)
     std::vector<Vec2> nodes{};
     std::vector<Vec2> insertions{};  // insertion points of text, mtext and blocks
     std::vector<geom::CurveRef> curves{};

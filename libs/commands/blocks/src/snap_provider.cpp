@@ -71,6 +71,7 @@ void registerSnapProvider(drafting::SnapGeometryRegistry& registry) {
                          append(out.midpoints, g.midpoints);
                          append(out.centers, g.centers);
                          append(out.quadrants, g.quadrants);
+                         append(out.geometricCenters, g.geometricCenters);
                          append(out.nodes, g.nodes);
                          append(out.insertions, g.insertions);
                          append(out.curves, g.curves);
