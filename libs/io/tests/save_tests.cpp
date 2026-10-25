@@ -134,6 +134,23 @@ TEST_CASE("tbcad-dump prints the chunk list and the canonical dump") {
     fs::resize_file(file, 30);
     CHECK(std::system(cmd.c_str()) != 0);
 }
+
+TEST_CASE("tbcad-dump --salvage reads a file with a cut-off tail") {
+    TempDir dir;
+    fs::path file = dir.path() / "cut.tbcad";
+    REQUIRE(io::writeTbcad(*makeRichDocument(), file).ok());
+    fs::resize_file(file, fs::file_size(file) - 7);
+    auto run = [&](const char* flag) {
+        std::string cmd = std::string("\"") + TBCAD_DUMP_EXE + "\" " + flag + " \"" +
+                          file.string() + "\" > \"" + (dir.path() / "o.txt").string() + "\"";
+#ifdef _WIN32
+        cmd = "\"" + cmd + "\"";
+#endif
+        return std::system(cmd.c_str());
+    };
+    CHECK(run("") != 0);
+    CHECK(run("--salvage") == 0);
+}
 #endif
 
 TEST_CASE("CRC-32: the standard check value, and slices of every length agree with a plain loop") {
