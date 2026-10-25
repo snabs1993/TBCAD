@@ -163,6 +163,20 @@ const std::vector<Var>& variables() {
              h.custom[kFillModeKey] = on ? "1" : "0";
              return {};
          }},
+        {"LWDEFAULT", "lineweight that \"Default\" draws and plots as, in hundredths of a mm",
+         [](const Document& d) {
+             return std::to_string(
+                 static_cast<int>(std::lround(defaultLineweightMm(d.header()) * 100)));
+         },
+         [](const Document&, std::string_view v, Header& h) -> std::string {
+             char* end = nullptr;
+             const std::string text(v);
+             const double n = std::strtod(text.c_str(), &end);
+             if (end == text.c_str() || *end || n < 0 || n > 211)
+                 return "LWDEFAULT is 0 to 211 (hundredths of a millimetre, 25 = 0.25 mm).";
+             h.custom[kLwDefaultKey] = std::to_string(static_cast<int>(std::lround(n)));
+             return {};
+         }},
         {"ATTMODE", "attributes: 0 hidden, 1 as defined, 2 all shown",
          [](const Document& d) {
              const int m = attDisplay(d.header());

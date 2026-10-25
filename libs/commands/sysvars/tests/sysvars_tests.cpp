@@ -434,6 +434,15 @@ TEST_CASE("FILL and ATTDISP set the display modes in the header, with undo") {
     CHECK(fillMode(f.doc.header()));
 }
 
+TEST_CASE("LWDEFAULT is kept in hundredths of a millimetre and refuses nonsense") {
+    Fixture f;
+    CHECK(defaultLineweightMm(f.doc.header()) == doctest::Approx(0.25));
+    f.host.run("SETVAR", {"LWDEFAULT", "50"});
+    CHECK(defaultLineweightMm(f.doc.header()) == doctest::Approx(0.5));
+    f.host.run("SETVAR", {"LWDEFAULT", "999"});
+    CHECK(defaultLineweightMm(f.doc.header()) == doctest::Approx(0.5));
+}
+
 TEST_CASE("QTEXT sets quick text in the header, CONVERTPOLY only reports") {
     Fixture f;
     CHECK_FALSE(quickText(f.doc.header()));
