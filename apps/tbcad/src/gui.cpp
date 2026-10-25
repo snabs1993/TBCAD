@@ -916,6 +916,10 @@ void Gui::doSave() {
         doSaveAs();
         return;
     }
+    if (core_.fileChangedOnDisk()) {
+        openChangedOnDiskPrompt_ = true;
+        return;
+    }
     auto r = core_.save();
     if (!r)
         lastError_ = r.error().message;
@@ -4829,6 +4833,45 @@ void Gui::dialogs() {
     if (openRecoveryPrompt_) {
         ImGui::OpenPopup("Recover drawing?");
         openRecoveryPrompt_ = false;
+    }
+    if (openChangedOnDiskPrompt_) {
+        ImGui::OpenPopup("File changed on disk");
+        openChangedOnDiskPrompt_ = false;
+    }
+    if (ImGui::BeginPopupModal("File changed on disk", nullptr,
+                               ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("%s was changed by another program or window since you opened it.",
+                    core_.displayName().c_str());
+        ImGui::TextUnformatted("What do you want to do?");
+        ImGui::Spacing();
+        if (ImGui::Button("Overwrite", ImVec2(110, 0))) {
+            ImGui::CloseCurrentPopup();
+            auto r = core_.saveOverwrite();
+            if (!r)
+                lastError_ = r.error().message;
+            else
+                toast("Saved " + platform::pathToUtf8(core_.file()));
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Save As...", ImVec2(110, 0))) {
+            ImGui::CloseCurrentPopup();
+            doSaveAs();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Reload", ImVec2(110, 0))) {
+            ImGui::CloseCurrentPopup();
+            const auto file = core_.file();
+            auto r = core_.openFile(file);  // drops my unsaved changes and takes the file as it is
+            if (!r)
+                lastError_ = r.error().message;
+            else
+                toast("Reloaded " + file.filename().string());
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(110, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+            ImGui::CloseCurrentPopup();
+        ImGui::TextDisabled("Reload discards your unsaved changes.");
+        ImGui::EndPopup();
     }
     if (openDxfVersionPrompt_) {
         ImGui::OpenPopup("Save as DXF");

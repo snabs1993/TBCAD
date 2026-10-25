@@ -1742,6 +1742,24 @@ TEST_CASE("a file that changed on disk is not overwritten by the first Save") {
     CHECK(f.core->save().ok());  // and the stamp follows the file again
 }
 
+TEST_CASE("fileChangedOnDisk and saveOverwrite let the window offer Overwrite at once") {
+    Fixture f("savechanged2");
+    const fs::path file = f.dir / "shared2.tbcad";
+    f.core->submitText("TESTLINE");
+    f.core->submitText("0,0");
+    f.core->submitText("10,0");
+    REQUIRE(f.core->saveAs(file).ok());
+    CHECK_FALSE(f.core->fileChangedOnDisk());
+    {
+        Document other;
+        REQUIRE(io::writeTbcad(other, file).ok());
+    }
+    fs::last_write_time(file, fs::last_write_time(file) + std::chrono::seconds(5));
+    CHECK(f.core->fileChangedOnDisk());
+    CHECK(f.core->saveOverwrite().ok());
+    CHECK_FALSE(f.core->fileChangedOnDisk());
+}
+
 TEST_CASE("opening a drawing that another window holds warns about it") {
     Fixture a("lockwarn_a");
     const fs::path file = a.dir / "held.tbcad";
