@@ -37,10 +37,10 @@ std::vector<std::uint8_t> header(int w, int h, int bits, std::uint32_t compressi
 TEST_CASE("a 24-bit bottom-up bitmap comes out top row first, as RGBA") {
     auto v = header(2, 2, 24);
     // bottom row first, each row padded to four bytes: blue, green | red, white
-    for (std::uint8_t b : {255, 0, 0, 0, 255, 0, 0, 0})  // B G R order: blue px, green px, pad
-        v.push_back(b);
-    for (std::uint8_t b : {0, 0, 255, 255, 255, 255, 0, 0})  // red px, white px, pad
-        v.push_back(b);
+    for (int b : {255, 0, 0, 0, 255, 0, 0, 0})  // B G R order: blue px, green px, pad
+        v.push_back(static_cast<std::uint8_t>(b));
+    for (int b : {0, 0, 255, 255, 255, 255, 0, 0})  // red px, white px, pad
+        v.push_back(static_cast<std::uint8_t>(b));
     auto pic = parseDib(v.data(), v.size());
     REQUIRE(pic);
     CHECK(pic->width == 2);
@@ -58,8 +58,8 @@ TEST_CASE("a 24-bit bottom-up bitmap comes out top row first, as RGBA") {
 
 TEST_CASE("a 32-bit bitmap with a zero fourth byte is opaque, a top-down height is honoured") {
     auto v = header(1, -2, 32);
-    for (std::uint8_t b : {10, 20, 30, 0, 40, 50, 60, 0})
-        v.push_back(b);
+    for (int b : {10, 20, 30, 0, 40, 50, 60, 0})
+        v.push_back(static_cast<std::uint8_t>(b));
     auto pic = parseDib(v.data(), v.size());
     REQUIRE(pic);
     CHECK(pic->height == 2);
@@ -72,8 +72,8 @@ TEST_CASE("an 8-bit bitmap uses its colour table") {
     auto v = header(1, 1, 8, 0, 2);
     put32(v, 0x00000000);
     put32(v, 0x00FF8000);  // R=255 G=128 B=0
-    for (std::uint8_t b : {1, 0, 0, 0})
-        v.push_back(b);
+    for (int b : {1, 0, 0, 0})
+        v.push_back(static_cast<std::uint8_t>(b));
     auto pic = parseDib(v.data(), v.size());
     REQUIRE(pic);
     CHECK(pic->rgba[0] == 255);
