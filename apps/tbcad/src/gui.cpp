@@ -108,6 +108,7 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
           [this](const std::string& action) { return actionLabel(action); },
           [this] { cursorHud_ = flag("hud.enabled", true); }}),
       workspaces_(core.settingsFolder() / "workspaces") {
+    core_.print("Welcome to TBCAD. Type a command such as LINE or CIRCLE here and press Enter.");
     {
         std::ifstream in(findBesideExecutable("assets/help/commands.md"), std::ios::binary);
         std::ostringstream buf;
@@ -3308,6 +3309,11 @@ void Gui::startPage(const ViewportRect& rect) {
         ImGui::SameLine();
         if (ImGui::Button("Import DXF", ImVec2(110, 0)))
             doImportDxf();
+        // One click to something worth looking at, for a first run with nothing to open.
+        const std::string sample = findSample("thai-house.tbcad");
+        if (!sample.empty() &&
+            ImGui::Button("Open sample drawing", ImVec2(150 + 110 + 110 + 16, 0)))
+            doOpenPath(sample);
 
         const std::vector<std::string> templates = core_.templateNames();
         if (!templates.empty()) {

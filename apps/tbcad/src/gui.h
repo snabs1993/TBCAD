@@ -45,6 +45,9 @@ void applyTheme(const ui::Theme& theme, float scale);
 bool systemPrefersDark();
 // Where bundled assets live: next to the executable, then ./assets, then the source tree.
 std::string findAsset(const std::string& relative);
+// A drawing from the samples folder (next to the executable, ./samples, or the source tree), or
+// empty.
+std::string findSample(const std::string& name);
 // A file shipped next to the executable (THIRD_PARTY_NOTICES.txt), or empty.
 std::string findBesideExecutable(const std::string& name);
 
