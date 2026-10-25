@@ -15,6 +15,7 @@ tbcad_add_tests(e2e
     tests/stretch_parity_tests.cpp
     tests/hatch_pattern_follow_tests.cpp
     tests/undo_stress_tests.cpp
+    tests/undo_options_tests.cpp
     tests/table_ops_tests.cpp
     tests/dimstyle_tests.cpp
     tests/dimstyle_overrides_tests.cpp
