@@ -425,7 +425,10 @@ Where classify(Vec2 p, const std::vector<Vec2>& ring, double boundaryTol) {
     for (std::size_t i = 0, j = n - 1; i < n; j = i++) {
         const Vec2& a = ring[j];
         const Vec2& b = ring[i];
-        if (distanceToSegment(p, a, b) <= boundaryTol)
+        // Most segments are nowhere near p: reject them by their box before measuring.
+        if (p.x >= std::min(a.x, b.x) - boundaryTol && p.x <= std::max(a.x, b.x) + boundaryTol &&
+            p.y >= std::min(a.y, b.y) - boundaryTol && p.y <= std::max(a.y, b.y) + boundaryTol &&
+            distanceToSegment(p, a, b) <= boundaryTol)
             return Where::Boundary;
         if ((a.y > p.y) != (b.y > p.y)) {
             double x = a.x + (p.y - a.y) / (b.y - a.y) * (b.x - a.x);
