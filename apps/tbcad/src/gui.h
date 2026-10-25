@@ -208,6 +208,7 @@ private:
     bool exitRequested_ = false;
     bool showAbout_ = false;
     bool showNotices_ = false;
+    bool showReport_ = false;
     bool showCommandList_ = false;
     std::string commandFilter_{};
     bool showCommandLine_ = true;
