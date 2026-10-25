@@ -1461,6 +1461,7 @@ Result<void> AppCore::openDxf(const fs::path& path) {
 
 dxf::ExportOptions AppCore::dxfSaveOptions() const {
     dxf::ExportOptions options;
+    options.nativeTables = settings_.getBool("files.dxfNativeTables", false);
     // files.dxfVersion picks R12 / R2000 / R2007 for every DXF save; "auto" (default) keeps a
     // drawing that came in as AC1021 or later in that version, so its text keeps UTF-8 instead
     // of being narrowed to a code page.

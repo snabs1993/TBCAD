@@ -1251,6 +1251,11 @@ std::string Writer::objectsSection() {
         o.raw(3, "ACAD_MLEADERSTYLE");
         o.h(350, mleaderDict);
     }
+    const std::uint64_t tableDict = tableNative_ ? newHandle() : 0;
+    if (tableDict) {
+        o.raw(3, "ACAD_TABLESTYLE");
+        o.h(350, tableDict);
+    }
     o.raw(3, "ACAD_MLINESTYLE");
     o.h(350, mlineDict);
     o.raw(3, "ACAD_PLOTSTYLENAME");
@@ -1605,6 +1610,37 @@ std::string Writer::objectsSection() {
             o.i(295, 0);
             o.i(296, 0);
             o.d(143, 3.75);
+        }
+    }
+
+    if (tableDict) {
+        // The one table style the ACAD_TABLEs name; each cell carries its own text height and
+        // alignment, so the style only has to exist.
+        ownedDict(tableDict);
+        o.raw(3, "Standard");
+        o.h(350, tableStdStyle_);
+        o.zero("TABLESTYLE");
+        o.h(5, tableStdStyle_);
+        o.raw(102, "{ACAD_REACTORS");
+        o.h(330, tableDict);
+        o.raw(102, "}");
+        o.h(330, tableDict);
+        o.raw(100, "AcDbTableStyle");
+        o.i(280, 0);
+        o.raw(3, "");
+        o.i(70, 0);
+        o.i(71, 0);
+        o.d(40, 1.5);
+        o.d(41, 1.5);
+        o.i(280, 0);
+        o.i(281, 0);
+        for (int kind = 0; kind < 3; ++kind) {  // data, title, header
+            o.raw(7, "Standard");
+            o.d(140, 2.5);
+            o.i(170, 4);
+            o.i(62, 0);
+            o.i(63, 7);
+            o.i(283, 0);
         }
     }
 
@@ -2161,6 +2197,14 @@ Result<ExportResult> Writer::run() {
             out +=
                 "  0\r\nCLASS\r\n  1\r\nMLEADERSTYLE\r\n  2\r\nAcDbMLeaderStyle\r\n"
                 "  3\r\nACDB_MLEADERSTYLE_CLASS\r\n 90\r\n4095\r\n280\r\n0\r\n281\r\n0\r\n";
+        }
+        if (tableNative_) {
+            out +=
+                "  0\r\nCLASS\r\n  1\r\nACAD_TABLE\r\n  2\r\nAcDbTable\r\n"
+                "  3\r\nObjectDBX Classes\r\n 90\r\n1185\r\n280\r\n0\r\n281\r\n1\r\n";
+            out +=
+                "  0\r\nCLASS\r\n  1\r\nTABLESTYLE\r\n  2\r\nAcDbTableStyle\r\n"
+                "  3\r\nObjectDBX Classes\r\n 90\r\n4095\r\n280\r\n0\r\n281\r\n0\r\n";
         }
         if (wipeouts_)
             out +=
