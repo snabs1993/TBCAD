@@ -2136,6 +2136,11 @@ void AppCore::showHelp(const std::string& query) {
 
 void AppCore::pressEscape() {
     setSetting("drafting.osnap.once", "");
+    if (windowCorner_) {
+        windowCorner_.reset();
+        setSelectionDrag(std::nullopt);
+        return;
+    }
     if (runner().active())
         runner().submit(cmd::Input::cancel());
     else
@@ -3142,6 +3147,8 @@ void AppCore::pointerMoved(const PointerState& p) {
     if (runner().active())
         runner().pointerMoved(raw);
     updateHover(p);
+    if (windowCorner_)
+        setSelectionDrag(std::make_pair(*windowCorner_, p.screen));
 }
 
 void AppCore::pointerLeft() {
@@ -3410,6 +3417,32 @@ void AppCore::dragSelect(Vec2 a, Vec2 b, const PointerState& p) {
         return;
     }
     applyUserPick(ids, p.shift);
+}
+
+bool AppCore::dragPicksWindow() const {
+    return setting("selection.pickdrag").value_or("1") != "0";
+}
+
+bool AppCore::windowClick(const PointerState& p) {
+    if (dragPicksWindow() || !session_) {
+        windowCorner_.reset();
+        return false;
+    }
+    if (windowCorner_) {
+        const Vec2 first = *windowCorner_;
+        windowCorner_.reset();
+        setSelectionDrag(std::nullopt);
+        dragSelect(first, p.screen, p);
+        return true;
+    }
+    // Only a click that hits no object (and no point prompt) starts a window.
+    if (runner().active() && !(prompt_ && prompt_->kind == cmd::PromptInfo::Kind::Selection &&
+                               !runner().selectShapePending()))
+        return false;
+    if (pickEntity(session_->doc, spatialIndex(), camera_.screenToWorld(p.screen), apertureMm()))
+        return false;
+    windowCorner_ = p.screen;
+    return true;
 }
 
 void AppCore::lassoSelect(const std::vector<Vec2>& screenPath, const PointerState& p) {
