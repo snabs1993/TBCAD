@@ -49,21 +49,25 @@ namespace {
 constexpr ImGuiID kDockId = 0x7BC4D001u;
 
 const std::vector<platform::FileFilter>& openFilters() {
-    static const std::vector<platform::FileFilter> f = {{"All drawings", "*.tbcad;*.dxf;*.dwg"},
-                                                        {"TBCAD drawings", "*.tbcad"},
-                                                        {"DXF drawings", "*.dxf"},
-                                                        {"DWG drawings (read-only)", "*.dwg"}};
+    static const std::vector<platform::FileFilter> f = {
+        {"All drawings", "*.tbcad;*.dxf;*.dwg;*.tbt"},
+        {"TBCAD drawings", "*.tbcad"},
+        {"DXF drawings", "*.dxf"},
+        {"DWG drawings (read-only)", "*.dwg"},
+        {"Drawing Template", "*.tbt;*.dwt"}};
     return f;
 }
 
 const std::vector<platform::FileFilter>& drawingFilters(bool dxfFirst = false) {
     static const std::vector<platform::FileFilter> tbcadFirst = {{"TBCAD drawings", "*.tbcad"},
                                                                  {"DXF drawings", "*.dxf"},
-                                                                 {"All drawings", "*.tbcad;*.dxf"}};
+                                                                 {"All drawings", "*.tbcad;*.dxf"},
+                                                                 {"Drawing Template", "*.tbt"}};
     static const std::vector<platform::FileFilter> dxfFirstList = {
         {"DXF drawings", "*.dxf"},
         {"TBCAD drawings", "*.tbcad"},
-        {"All drawings", "*.tbcad;*.dxf"}};
+        {"All drawings", "*.tbcad;*.dxf"},
+        {"Drawing Template", "*.tbt"}};
     return dxfFirst ? dxfFirstList : tbcadFirst;
 }
 
@@ -107,6 +111,7 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
     glfwGetWindowContentScale(window, &sx, &sy);
     dpiScale_ = std::max(1.0f, sx);
     recoveryCount_ = core_.pendingRecoveries().size();
+    recoveries_ = core_.pendingRecoveries();
     recovery_ = core_.pendingRecovery();
     {
         auto crashes = platform::pendingCrashReports(core_.paths().crashDir());
@@ -4066,6 +4071,10 @@ void Gui::viewportMenu() {
             }
             item("Cut", "CUTCLIP");
             item("Copy", "COPYCLIP");
+            item("Copy with Base Point", "COPYBASE");
+            item("Paste", "PASTECLIP");
+            item("Paste as Block", "PASTEBLOCK");
+            item("Paste to Original Coordinates", "PASTEORIG");
             ImGui::Separator();
             for (const char* c : {"MOVE", "COPY", "ROTATE", "SCALE", "MIRROR", "ERASE"})
                 if (core_.registry().find(c) && ImGui::MenuItem(c))
@@ -4075,8 +4084,30 @@ void Gui::viewportMenu() {
                 item("Trim", "TRIM");
                 item("Extend", "EXTEND");
             }
+            if (core_.registry().find("DRAWORDER") && ImGui::BeginMenu("Draw Order")) {
+                // The selection is taken as picked first; the keyword answers the ordering prompt.
+                if (ImGui::MenuItem("Bring to Front")) {
+                    run("DRAWORDER");
+                    run("Front");
+                }
+                if (ImGui::MenuItem("Send to Back")) {
+                    run("DRAWORDER");
+                    run("Back");
+                }
+                if (ImGui::MenuItem("Bring Above Objects")) {
+                    run("DRAWORDER");
+                    run("Above");
+                }
+                if (ImGui::MenuItem("Send Under Objects")) {
+                    run("DRAWORDER");
+                    run("Below");
+                }
+                ImGui::EndMenu();
+            }
+            if (core_.selection().size() > 1)
+                item("Group", "GROUP");
+            item("Ungroup", "UNGROUP");
             ImGui::Separator();
-            item("Paste", "PASTECLIP");
             if (ImGui::MenuItem("Select All"))
                 core_.selectAll();
             item("Select Similar", "SELECTSIMILAR");
@@ -4695,10 +4726,53 @@ void Gui::dialogs() {
             ImGui::Text("Automatic backups of %zu unsaved drawings were found.", recoveryCount_);
         else if (recovery_)
             ImGui::TextUnformatted("An automatic backup of an unsaved drawing was found.");
-        if (recovery_ && !recovery_->originalPath.empty())
-            ImGui::Text("Original file: %s", recovery_->originalPath.c_str());
-        if (recovery_ && !recovery_->savedAt.empty() && recoveryCount_ <= 1)
-            ImGui::Text("Backup saved: %s", recovery_->savedAt.c_str());
+        if (recovery_ && !recoveries_.empty() &&
+            ImGui::BeginTable("##recoverylist", 4,
+                              ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV)) {
+            ImGui::TableSetupColumn("Drawing", ImGuiTableColumnFlags_WidthFixed, 260);
+            ImGui::TableSetupColumn("Saved", ImGuiTableColumnFlags_WidthFixed, 120);
+            ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, 70);
+            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 60);
+            ImGui::TableHeadersRow();
+            for (std::size_t i = 0; i < recoveries_.size(); ++i) {
+                const ui::Recovery& r = recoveries_[i];
+                ImGui::PushID(static_cast<int>(i));
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                const std::string name =
+                    r.originalPath.empty()
+                        ? std::string("Untitled (never saved)")
+                        : platform::pathToUtf8(platform::pathFromUtf8(r.originalPath).filename());
+                ImGui::TextUnformatted(name.c_str());
+                if (ImGui::IsItemHovered() && !r.originalPath.empty())
+                    ImGui::SetTooltip("%s", r.originalPath.c_str());
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(r.savedAt.c_str());
+                ImGui::TableNextColumn();
+                if (r.sizeBytes >= 1024 * 1024)
+                    ImGui::Text("%.1f MB", static_cast<double>(r.sizeBytes) / (1024.0 * 1024.0));
+                else
+                    ImGui::Text("%.0f KB", static_cast<double>(r.sizeBytes) / 1024.0);
+                ImGui::TableNextColumn();
+                if (ImGui::SmallButton("Open")) {
+                    // Opens in a new tab and removes this autosave; the others stay listed.
+                    if (auto res = core_.openRecovered(r, true); !res)
+                        lastError_ = res.error().message;
+                    recoveries_ = core_.pendingRecoveries();
+                    recoveryCount_ = recoveries_.size();
+                    recovery_ = core_.pendingRecovery();
+                    if (!recovery_) {
+                        platform::acknowledgeCrashReports(core_.paths().crashDir());
+                        crashReport_.clear();
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::PopID();
+                    break;
+                }
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
         // The keyboard works too: a modal that only answers to the mouse is stuck when the
         // window has not been clicked yet. Enter recovers (or says OK), Esc decides later.
         const bool enterKey =
@@ -4718,7 +4792,9 @@ void Gui::dialogs() {
             }
         }
         ImGui::Spacing();
-        if (recovery_ && (ImGui::Button("Recover", ImVec2(110, 0)) || enterKey)) {
+        if (recovery_ &&
+            (ImGui::Button(recoveries_.size() > 1 ? "Recover all" : "Recover", ImVec2(110, 0)) ||
+             enterKey)) {
             platform::acknowledgeCrashReports(core_.paths().crashDir());
             crashReport_.clear();
             if (recovery_) {

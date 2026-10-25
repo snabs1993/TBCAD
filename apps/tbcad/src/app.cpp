@@ -29,6 +29,7 @@
 #include "tbcad/dwgopen/dwgopen.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/layout/layout.h"
+#include "tbcad/lispcmd/lispcmd.h"
 #include "tbcad/mcp/png.h"
 #include "tbcad/platform/crash.h"
 #include "tbcad/platform/paths.h"
@@ -1783,6 +1784,9 @@ int App::run() {
     startupMark("commands");
     core_ = std::make_unique<ui::AppCore>(*registry_, paths_);
     dwgopen::registerForeignFormats(*core_);
+    lispcmd::loadStartup(*registry_, core_->settingsFolder(), [](const std::string& line) {
+        std::fprintf(stderr, "tbcad: %s\n", line.c_str());
+    });
     startupMark("settings and drawing");
     if (!options_.listCommands.empty()) {
         const std::string table = cmd::commandListMarkdown(*registry_);

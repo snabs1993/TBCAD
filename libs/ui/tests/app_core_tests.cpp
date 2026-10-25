@@ -598,6 +598,8 @@ TEST_CASE("autosave covers every open drawing and recovery reopens them all") {
     auto registry2 = makeRegistry();
     AppCore second(*registry2, platform::AppPaths{f.dir / "cfg", f.dir / "data"});
     CHECK(second.pendingRecoveries().size() == 3);
+    for (const auto& r : second.pendingRecoveries())
+        CHECK(r.sizeBytes > 0);
     REQUIRE(second.recoverAll().ok());
     CHECK(second.documentCount() == 3);
     CHECK(second.modified());

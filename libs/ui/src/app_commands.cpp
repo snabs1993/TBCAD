@@ -751,7 +751,7 @@ public:
     std::string_view name() const override { return "NEWFROMTEMPLATE"; }
     std::vector<std::string> defaultAliases() const override { return {"QNEWT"}; }
     std::string_view description() const override {
-        return "Start a new drawing from a template (Built-in, or a .tbt file)";
+        return "Start a new drawing from a template (Built-in, .tbt, .dxf or .dwt file)";
     }
     cmd::Task run(cmd::CommandContext& ctx) override {
         std::string all;
@@ -788,7 +788,10 @@ public:
         if (!n.ok())
             co_return;
         const std::string want = cmd::trim(n.text);
-        if (std::find(names.begin(), names.end(), want) == names.end()) {
+        std::error_code existsEc;
+        const bool isFile =
+            std::filesystem::is_regular_file(platform::pathFromUtf8(want), existsEc);
+        if (!isFile && std::find(names.begin(), names.end(), want) == names.end()) {
             ctx.message("No template named \"" + want + "\".");
             co_return;
         }

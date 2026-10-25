@@ -761,6 +761,10 @@ Recovery readRecovery(const fs::path& tbcadFile) {
     r.autosaveFile = tbcadFile;
     {
         std::error_code ec;
+        const auto sz = fs::file_size(tbcadFile, ec);
+        if (!ec)
+            r.sizeBytes = sz;
+        ec.clear();
         const auto ft = fs::last_write_time(tbcadFile, ec);
         if (!ec) {
             const auto sys = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
@@ -1098,17 +1102,13 @@ std::unique_ptr<Document> AppCore::defaultDocument(std::string* problem) {
     if (tmpl::isBuiltinTemplate(name))
         return tmpl::builtinTemplate(name);
     if (!name.empty()) {
-        const fs::path file =
-            templateFolder() /
-            platform::pathFromUtf8(tmpl::sanitizeTemplateName(name) + tmpl::kTemplateExtension);
-        std::error_code ec;
         std::string why;
+        const fs::path file = templateFile(name);
+        std::error_code ec;
         if (!fs::exists(file, ec)) {
             why = "No template named \"" + name + "\".";
-        } else if (auto doc = tmpl::loadTemplate(file)) {
-            return std::move(doc.value());
-        } else {
-            why = "Cannot read the template: " + doc.error().message;
+        } else if (auto doc = readTemplateFile(file, why)) {
+            return doc;
         }
         if (problem)
             *problem = "Default template \"" + name + "\": " + why + " Using the built-in drawing.";
@@ -1139,11 +1139,82 @@ std::string AppCore::importKeybindings(const fs::path& file) {
     return {};
 }
 
+static std::string lowerExtension(const fs::path& p);
+
 std::vector<std::string> AppCore::templateNames() const {
     std::vector<std::string> out{tmpl::kBuiltinTemplate, tmpl::kBuiltinInchTemplate};
     for (const auto& t : tmpl::listTemplates(templateFolder()))
         out.push_back(t.name);
+    // DXF and DWT files dropped into the template folder are templates too; they keep their
+    // extension in the name so ACME.dxf and ACME.tbt can sit side by side.
+    std::error_code ec;
+    std::vector<std::string> foreign;
+    for (fs::directory_iterator it(templateFolder(), ec), end; !ec && it != end; it.increment(ec)) {
+        const std::string e = lowerExtension(it->path());
+        if ((e == ".dxf" || e == ".dwt") && it->is_regular_file(ec))
+            foreign.push_back(platform::pathToUtf8(it->path().filename()));
+    }
+    std::sort(foreign.begin(), foreign.end());
+    out.insert(out.end(), foreign.begin(), foreign.end());
     return out;
+}
+
+fs::path AppCore::templateFile(std::string_view name) const {
+    const fs::path given = platform::pathFromUtf8(std::string(name));
+    const std::string e = lowerExtension(given);
+    if (e == ".dxf" || e == ".dwt" || e == ".tbt") {
+        // A full path, or a file in the template folder.
+        if (given.is_absolute() || given.has_parent_path())
+            return given;
+        return templateFolder() / given;
+    }
+    return templateFolder() / platform::pathFromUtf8(tmpl::sanitizeTemplateName(std::string(name)) +
+                                                     tmpl::kTemplateExtension);
+}
+
+std::unique_ptr<Document> AppCore::readTemplateFile(const fs::path& file, std::string& why) {
+    const std::string e = lowerExtension(file);
+    if (e == ".dxf") {
+        std::ifstream in(platform::longPath(file), std::ios::binary);
+        if (!in) {
+            why = "Cannot read the template: " + file.string();
+            return nullptr;
+        }
+        in.seekg(0, std::ios::end);
+        std::vector<std::byte> bytes(
+            static_cast<std::size_t>(std::max<std::streamoff>(in.tellg(), 0)));
+        in.seekg(0, std::ios::beg);
+        if (!bytes.empty())
+            in.read(reinterpret_cast<char*>(bytes.data()),
+                    static_cast<std::streamsize>(bytes.size()));
+        dxf::Report report;
+        auto r = dxf::importDxf(bytes, {}, report);
+        if (!r) {
+            why = "Cannot read the template: " + r.error().message;
+            return nullptr;
+        }
+        return std::move(r.value().document);
+    }
+    if (e == ".dwt") {
+        // A DWT is a DWG with another extension.
+        auto it = foreignReaders_.find(".dwg");
+        if (it == foreignReaders_.end()) {
+            why = "DWT templates need the DWG reader, which is not available.";
+            return nullptr;
+        }
+        auto r = it->second.read(file);
+        if (!r) {
+            why = "Cannot read the template: " + r.error().message;
+            return nullptr;
+        }
+        return std::move(r.value().document);
+    }
+    auto doc = tmpl::loadTemplate(file);
+    if (!doc) {
+        why = "Cannot read the template: " + doc.error().message;
+        return nullptr;
+    }
+    return std::move(doc.value());
 }
 
 std::string AppCore::newFromTemplate(std::string_view name) {
@@ -1151,16 +1222,16 @@ std::string AppCore::newFromTemplate(std::string_view name) {
         addSession(name.empty() ? tmpl::builtinTemplate() : tmpl::builtinTemplate(name), {});
         return {};
     }
-    const fs::path file =
-        templateFolder() / platform::pathFromUtf8(tmpl::sanitizeTemplateName(std::string(name)) +
-                                                  tmpl::kTemplateExtension);
+    const fs::path file = templateFile(name);
     std::error_code ec;
     if (!fs::exists(file, ec))
         return "No template named \"" + std::string(name) + "\".";
-    auto doc = tmpl::loadTemplate(file);
+    std::string why;
+    auto doc = readTemplateFile(file, why);
     if (!doc)
-        return "Cannot read the template: " + doc.error().message;
-    addSession(std::move(doc.value()), {});
+        return why;
+    // The template stays as it is: the new drawing is untitled.
+    addSession(std::move(doc), {});
     return {};
 }
 
@@ -1562,6 +1633,17 @@ Result<void> AppCore::saveAs(const fs::path& requested) {
         print("The running command was cancelled to save.");
     }
     const std::string ext = lowerExtension(path);
+    if (ext == ".tbt") {
+        // "Drawing Template" in the Save As dialog: the template is a copy; this drawing keeps
+        // its own name and stays as it is.
+        auto r = tmpl::saveTemplate(document(), path);
+        if (!r) {
+            print("Cannot save template " + path.string() + ": " + r.error().message);
+            return r.error();
+        }
+        print("Template saved: " + platform::pathToUtf8(r.value()));
+        return {};
+    }
     if (ext != ".tbcad" && ext != ".dxf") {
         return makeError(ErrorCode::Unsupported,
                          "TBCAD can save as .tbcad or .dxf; it never writes " + ext + " files.");

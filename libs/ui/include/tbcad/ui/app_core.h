@@ -46,8 +46,9 @@ struct PointerState {
 // An autosave left behind by a session that did not end cleanly.
 struct Recovery {
     std::filesystem::path autosaveFile{};
-    std::string originalPath{};  // empty = the drawing had never been saved
-    std::string savedAt{};       // when the backup was written, local time "2026-10-15 14:32"
+    std::string originalPath{};    // empty = the drawing had never been saved
+    std::string savedAt{};         // when the backup was written, local time "2026-10-15 14:32"
+    std::uintmax_t sizeBytes = 0;  // size of the autosave file
 };
 
 // Shown after a command put geometry outside the working area (non-blocking notice with "Zoom to"
@@ -413,6 +414,8 @@ public:
     std::vector<std::string> templateNames() const override;
     std::string saveAsTemplate(std::string_view name) override;
     std::string newFromTemplate(std::string_view name) override;
+    // The file a template name stands for: a .tbt by name, or a .dxf/.dwt/.tbt file name or path.
+    std::filesystem::path templateFile(std::string_view name) const;
     std::string documentFile() const override { return platform::pathToUtf8(file()); }
     void textEdited(const std::string& text) { runner().textEdited(text); }
     void openPanel(std::string_view panelId) override { panelRequests_.emplace_back(panelId); }
@@ -504,6 +507,8 @@ private:
     PanelContext makePanelContext();
     std::vector<std::string> uiRequests_{};
     const UiRegistry* ui_ = nullptr;
+    // Reads a .tbt, .dxf or .dwt template; null with a sentence in `why` when it cannot be read.
+    std::unique_ptr<Document> readTemplateFile(const std::filesystem::path& file, std::string& why);
     // A copy of the default template; `problem` gets a sentence when the chosen one is unusable
     // and the built-in drawing was used instead.
     std::unique_ptr<Document> defaultDocument(std::string* problem = nullptr);
