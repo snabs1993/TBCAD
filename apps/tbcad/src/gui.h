@@ -141,6 +141,7 @@ private:
     void ucsIcon(const ViewportRect& rect);
     void statusBar();
     void snapModesPopup();
+    void draftingQuickMenu(const std::string& id);
     float layoutTabsHeight() const;
     void layoutTabs(const ViewportRect& rect);
     void dockLayout(ImGuiID dockspace);

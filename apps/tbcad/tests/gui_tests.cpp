@@ -1712,6 +1712,13 @@ TEST_CASE("status bar: toggles flip their setting, ORTHO and POLAR exclude each 
 
     h.key(ImGuiKey_Escape);
     h.frame(2);
+
+    // The same menu also holds the common increments (Q167).
+    REQUIRE(h.rightClick("POLAR", "##statusbar"));
+    h.frame(2);
+    REQUIRE(h.click("30 degrees", "Popup"));
+    h.frame(2);
+    CHECK(h.core().setting("drafting.polar.increment").value_or("") == "30");
 }
 
 TEST_CASE("SELECTIONANNODISPLAY: a selected annotative object shows its other scales") {

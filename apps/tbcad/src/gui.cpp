@@ -1915,6 +1915,54 @@ void Gui::snapModesPopup() {
     }
 }
 
+// Quick choices at the top of the right-click menu of SNAP / GRID / POLAR (as AutoCAD's
+// shortcut menus): spacing and increment presets, so the common values need no dialog.
+void Gui::draftingQuickMenu(const std::string& id) {
+    const drafting::DraftingSettings cur = drafting::DraftingSettings::read(core_);
+    const auto setNumber = [&](const char* key, double v) {
+        char buf[40];
+        std::snprintf(buf, sizeof buf, "%.10g", v);
+        core_.setSetting(key, buf);
+    };
+    const auto spacings = [&](const char* title, const char* key, double now) {
+        if (!ImGui::BeginMenu(title))
+            return;
+        for (double v : {1.0, 5.0, 10.0, 25.0, 50.0, 100.0, 500.0}) {
+            char label[32];
+            std::snprintf(label, sizeof label, "%g", v);
+            if (ImGui::MenuItem(label, nullptr, std::abs(now - v) < 1e-9)) {
+                setNumber(key, v);
+                if (std::string_view(key) == drafting::keys::snapSpacing)
+                    setNumber(drafting::keys::snapSpacingY, v);
+            }
+        }
+        ImGui::EndMenu();
+    };
+    if (id == "snap") {
+        spacings("Snap spacing", drafting::keys::snapSpacing, cur.snapSpacing);
+        if (ImGui::MenuItem("Grid snap", nullptr, !cur.polarSnap))
+            core_.setSetting(drafting::keys::snapType, "grid");
+        if (ImGui::MenuItem("Polar snap", nullptr, cur.polarSnap))
+            core_.setSetting(drafting::keys::snapType, "polar");
+        ImGui::Separator();
+    } else if (id == "grid") {
+        spacings("Grid spacing", drafting::keys::gridSpacing, cur.gridSpacing);
+        if (ImGui::MenuItem("Dots", nullptr, !cur.gridLines))
+            core_.setSetting(drafting::keys::gridStyle, "dots");
+        if (ImGui::MenuItem("Lines", nullptr, cur.gridLines))
+            core_.setSetting(drafting::keys::gridStyle, "lines");
+        ImGui::Separator();
+    } else if (id == "polar") {
+        for (const char* inc : {"90", "45", "30", "22.5", "18", "15", "10", "5"}) {
+            const auto now = drafting::parsePolarIncrements(inc);
+            const bool sel = !now.empty() && now == cur.polarIncrementsDeg;
+            if (ImGui::MenuItem((std::string(inc) + " degrees").c_str(), nullptr, sel))
+                core_.setSetting(drafting::keys::polarIncrement, inc);
+        }
+        ImGui::Separator();
+    }
+}
+
 void Gui::statusBar() {
     ImGuiViewport* vp = ImGui::GetMainViewport();
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
@@ -1995,6 +2043,7 @@ void Gui::statusBar() {
                     ImGui::SetTooltip("Right-click for the drafting settings.");
                 if (ImGui::BeginPopupContextItem(("##ds" + t.id).c_str(),
                                                  ImGuiPopupFlags_MouseButtonRight)) {
+                    draftingQuickMenu(t.id);
                     if (ImGui::MenuItem("Drafting settings..."))
                         settings_.open("Drafting");
                     ImGui::EndPopup();
