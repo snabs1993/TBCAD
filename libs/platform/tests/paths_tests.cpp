@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <fstream>
 #include <map>
 
 #include "tbcad/platform/paths.h"
@@ -68,4 +69,14 @@ TEST_CASE("long paths: only Windows paths of 240 characters or more get the pref
                                          std::wstring(longName.begin(), longName.end()));
     CHECK(longPath(prefixed, true) == prefixed);
 #endif
+}
+
+TEST_CASE("isWritableDirectory creates the folder and rejects a path under a file") {
+    auto base = std::filesystem::temp_directory_path() / "tbcad_writable_test";
+    std::filesystem::remove_all(base);
+    CHECK(isWritableDirectory(base / "a" / "b"));
+    CHECK_FALSE(std::filesystem::exists(base / "a" / "b" / ".tbcad-write-test"));
+    { std::ofstream(base / "file") << "x"; }
+    CHECK_FALSE(isWritableDirectory(base / "file" / "sub"));
+    std::filesystem::remove_all(base);
 }
