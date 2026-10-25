@@ -108,7 +108,7 @@ public:
             cmd::PointOptions o;
             o.base = c1;
             o.allowNone = false;
-            o.keywords = {"Dimensions", "Rotation", "Fillet", "Chamfer", "Width"};
+            o.keywords = {"Area", "Dimensions", "Rotation", "Fillet", "Chamfer", "Width"};
             o.preview = [c, c1, spec](Vec2 cursor, DisplayList& out) {
                 if (auto v = corners(c1, cursor, spec))
                     previewEntity(*c, rectEntity(std::move(*v)), out);
@@ -160,6 +160,30 @@ public:
                         co_return;
                     spec.width = std::max(0.0, w.value);
                     ctx.host().setSetting(kWidthKey, std::to_string(spec.width));
+                } else if (r.keyword == "Area") {
+                    cmd::DistanceOptions ao;
+                    ao.allowZero = false;
+                    auto area =
+                        co_await ctx.getDistance("Enter area of rectangle in current units", ao);
+                    if (!area.ok())
+                        co_return;
+                    cmd::KeywordOptions ko;
+                    ko.keywords = {"Length", "Width"};
+                    ko.defaultKeyword = "Length";
+                    auto basis = co_await ctx.getKeyword(
+                        "Calculate rectangle dimensions based on [Length/Width] <Length>", ko);
+                    if (!basis.ok())
+                        co_return;
+                    const bool byLength = basis.keyword != "Width";
+                    cmd::DistanceOptions so;
+                    so.allowZero = false;
+                    auto side = co_await ctx.getDistance(
+                        byLength ? "Enter rectangle length" : "Enter rectangle width", so);
+                    if (!side.ok())
+                        co_return;
+                    const double other = area.value / side.value;
+                    spec.dims = byLength ? std::make_pair(side.value, other)
+                                         : std::make_pair(other, side.value);
                 } else {
                     cmd::DistanceOptions lo;
                     lo.allowZero = false;
