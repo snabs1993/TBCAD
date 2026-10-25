@@ -7,6 +7,7 @@
 #include "tbcad/core/units.h"
 #include "tbcad/drafting/settings.h"
 #include "tbcad/drafting/ucs.h"
+#include "tbcad/drafting/viewport_snap.h"
 #include "tbcad/index/spatial_index.h"
 
 namespace tbcad::drafting {
@@ -48,6 +49,20 @@ std::optional<Vec2> OsnapFilter::filter(const cmd::PointQuery& query, Vec2 raw,
     rq.modes = s.modes;
     std::vector<SnapCandidate> found =
         findSnapCandidates(*env_->doc, *env_->index, rq, *providers_);
+    // On a layout sheet the model shows through the viewports: snap to it as well.
+    if (const std::string name = env_->host->activeLayoutName(); !name.empty()) {
+        if (const index::SpatialIndex* model = env_->host->modelSpatialIndex())
+            if (const auto lay = layout::findLayout(*env_->doc, name)) {
+                auto extra = findViewportSnapCandidates(*env_->doc, *model, *lay, rq, *providers_);
+                found.insert(found.end(), extra.begin(), extra.end());
+                std::stable_sort(
+                    found.begin(), found.end(), [](const SnapCandidate& a, const SnapCandidate& b) {
+                        return a.distance != b.distance ? a.distance < b.distance : a.mode < b.mode;
+                    });
+                if (found.size() > rq.maxCandidates)
+                    found.resize(rq.maxCandidates);
+            }
+    }
     // A different set of candidates starts the Tab cycle over.
     const bool same = found.size() == candidates_.size() &&
                       std::equal(found.begin(), found.end(), candidates_.begin(),
