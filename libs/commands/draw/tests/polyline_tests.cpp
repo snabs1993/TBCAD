@@ -241,3 +241,11 @@ TEST_CASE("PLINE previews the whole polyline plus the segment to the cursor") {
     CHECK(pl->pts.size() == 3);
     f.host.feed({ScriptItem::esc()});
 }
+
+TEST_CASE("PLINE Length continues in the previous segment direction") {
+    Fixture f;
+    f.host.run("PL", {"0,0", "100,0", "Length", "40", ""});
+    auto es = f.entities();
+    REQUIRE(es.size() == 1);
+    checkVertices(as<PolylineData>(es[0]), {{0, 0}, {100, 0}, {140, 0}});
+}
