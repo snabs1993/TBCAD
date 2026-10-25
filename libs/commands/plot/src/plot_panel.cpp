@@ -258,6 +258,8 @@ void draw(ui::PanelContext& pc) {
     ImGui::SameLine();
     changed |= ImGui::RadioButton("Portrait", &orient, 1);
     s.landscape = orient == 0;
+    ImGui::SameLine();
+    changed |= ImGui::Checkbox("Upside down", &s.upsideDown);
 
     // Area
     static const char* areaNames[] = {"Extents", "Display", "Window"};

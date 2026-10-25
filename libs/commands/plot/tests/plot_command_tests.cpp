@@ -100,6 +100,16 @@ TEST_CASE("EXPORTSVG: orientation, paper and colour options") {
     CHECK(s.color == exportlib::ColorMode::Monochrome);
 }
 
+TEST_CASE("PLOT: the UpsideDown option is stored and turns the SVG") {
+    Fixture f;
+    auto out = f.path("up.svg");
+    auto r = f.host->run("EXPORTSVG", {"UpsideDown", "Yes", "", out});
+    CHECK(r.finished);
+    CHECK(plot::loadSettings(*f.host).upsideDown);
+    r = f.host->run("EXPORTSVG", {"UpsideDown", "No", "", f.path("up2.svg")});
+    CHECK_FALSE(plot::loadSettings(*f.host).upsideDown);
+}
+
 TEST_CASE("an extension is added - Esc leaves nothing behind") {
     Fixture f;
     auto base = f.path("noext");

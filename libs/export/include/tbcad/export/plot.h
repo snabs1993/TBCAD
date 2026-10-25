@@ -40,6 +40,8 @@ struct PlotSettings {
     std::string paperName = "A3";
     double customWidthMm = 297, customHeightMm = 420;  // used when paperName is "Custom"
     bool landscape = true;
+    // Plot upside down: the finished sheet is turned 180 degrees on the paper.
+    bool upsideDown = false;
     PlotArea area = PlotArea::Extents;
     // Window / Display area in drawing units (the caller passes the current view for Display).
     BBox2 window{};
@@ -163,6 +165,9 @@ struct PlotSheet {
 // Plot-time colour: white / near-white becomes black (the sheet is always white), then the colour
 // mode is applied.
 Rgba plotColor(Rgba c, ColorMode mode);
+
+// Turns a built sheet 180 degrees about the centre of the page (PLOT "Plot upside down").
+void rotateSheet180(PlotSheet& sheet);
 
 // Forgets the layers of a built sheet, so a PDF of it has no layer list (EXPORTPDF and PUBLISH
 // with "include layer information" off).
