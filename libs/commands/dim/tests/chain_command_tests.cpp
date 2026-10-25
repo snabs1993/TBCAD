@@ -1139,3 +1139,13 @@ TEST_CASE("DIMBREAK breaks leaders and multileaders, and the gaps follow") {
     CHECK(entityAs<LeaderData>(*f.doc.find(leader))->breaks.empty());
     CHECK(entityAs<MLeaderData>(*f.doc.find(mleader))->breakWith.empty());
 }
+
+TEST_CASE("DIMANGULAR Quadrant puts the arc on the side of the picked point") {
+    Chain f;
+    // the cursor is inside the 90 degree sector, the quadrant point is in the reflex one
+    REQUIRE(f.host->run("DIMANGULAR", {"", "0,0", "50,0", "0,50", "Quadrant", "-10,-10", "30,30"})
+                .finished);
+    auto dims = f.dims();
+    REQUIRE(dims.size() == 1);
+    CHECK(dims[0]->measurement == doctest::Approx(3 * kPi / 2));
+}

@@ -522,12 +522,24 @@ public:
 
         std::string override;
         std::optional<double> textAngle;  // Angle: the text fixed at this angle
+        std::optional<Vec2> quadrant;     // Quadrant: the side of the vertex the arc lies on
+        const Vec2 vertex = [&] {
+            DimensionData t = base;
+            t.textPos = (t.defPts[0] + t.defPts[1] + t.defPts[2] + t.defPts[3]) / 4;
+            return dim::angularGeometry(t).vertex;
+        }();
         for (;;) {
             cmd::PointOptions lo;
-            lo.keywords = {"Mtext", "Text", "Angle"};
+            lo.keywords = {"Mtext", "Text", "Angle", "Quadrant"};
             auto* c = &ctx;
             auto build = [=](Vec2 cursor) {
                 DimensionData d = base;
+                if (quadrant) {
+                    // keep the cursor's distance but put it in the picked quadrant
+                    const Vec2 q = normalized(*quadrant - vertex);
+                    if (!tol::isZeroLength(q))
+                        cursor = vertex + q * std::max(distance(cursor, vertex), 1e-6);
+                }
                 if (d.kind == DimKind::Angular3Point)
                     d.defPts[3] = cursor;
                 else
@@ -547,6 +559,13 @@ public:
                 if (where.keyword == "Angle") {
                     if (auto a = co_await askTextAngle(ctx); a.ok())
                         textAngle = a.value;
+                    continue;
+                }
+                if (where.keyword == "Quadrant") {
+                    cmd::PointOptions qo;
+                    qo.base = vertex;
+                    if (auto q = co_await ctx.getPoint("Specify quadrant", qo); q.ok())
+                        quadrant = q.point;
                     continue;
                 }
                 cmd::StringOptions so;
