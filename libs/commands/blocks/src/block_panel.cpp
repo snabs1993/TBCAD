@@ -848,9 +848,14 @@ void drawAttValuesPanel(ui::PanelContext& ctx) {
         ImGui::PushID(static_cast<int>(i));
         if (i == 0 && ImGui::IsWindowAppearing())
             ImGui::SetKeyboardFocusHere();
-        ImGui::InputText(leftLabel(rows[i][1].c_str()).c_str(), &rows[i][2],
-                         ImGuiInputTextFlags_AutoSelectAll);
-        okKey = enterPressed() || okKey;
+        if (!rows[i][1].empty() && rows[i][1][0] == '\x1d') {  // multiple lines: Enter adds one
+            ImGui::InputTextMultiline(leftLabel(rows[i][1].c_str() + 1).c_str(), &rows[i][2],
+                                      ImVec2(0, ImGui::GetTextLineHeight() * 4.5f));
+        } else {
+            ImGui::InputText(leftLabel(rows[i][1].c_str()).c_str(), &rows[i][2],
+                             ImGuiInputTextFlags_AutoSelectAll);
+            okKey = enterPressed() || okKey;
+        }
         ImGui::PopID();
     }
     if (ImGui::Button("OK") || okKey) {

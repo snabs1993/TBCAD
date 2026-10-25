@@ -411,3 +411,18 @@ TEST_CASE("ATTDEF Multiple lines is switched on from the mode prompt") {
     CHECK(t->attdef->multiLine);
     CHECK_FALSE(t->attdef->lockPosition);
 }
+
+TEST_CASE("INSERT and ATTEDIT take line breaks typed as \\P for a multiple-line attribute") {
+    Fixture f;
+    REQUIRE(f.host->run("ATTDEF", {"Multiple", "", "note", "Note", "V", "0,0", "2", "0"}).finished);
+    f.host->setSelection(f.modelSpace());
+    f.host->run("BLOCK", {"Memo", "0,0", "D"});
+    REQUIRE(f.doc.blockByName("Memo"));
+    f.host->run("INSERT", {"Memo", "0,0", "line1\\Pline2"});
+    const EntityId i = f.modelSpace().back();
+    const auto* ins = entityAs<InsertData>(*f.doc.find(i));
+    REQUIRE((ins && ins->attribs.size() == 1));
+    CHECK(ins->attribs[0].value == "line1\nline2");
+    f.host->run("ATTEDIT", {cmd::ScriptItem::pick(i), "a\\Pb\\Pc"});
+    CHECK(entityAs<InsertData>(*f.doc.find(i))->attribs[0].value == "a\nb\nc");
+}

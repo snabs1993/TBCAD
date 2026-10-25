@@ -1,5 +1,6 @@
 #include "tbcad/blocks/attributes.h"
 
+#include <cmath>
 #include <unordered_set>
 
 #include "tbcad/blocks/blocks.h"
@@ -140,6 +141,35 @@ std::optional<Entity> attributeText(const Entity& definition, const InsertData& 
     Entity e = definition;
     auto* td = entityAs<TextData>(e);
     td->utf8 = attributeValue(*t->attdef, insert);
+    if (t->attdef->multiLine && td->utf8.find('\n') != std::string::npos) {
+        // Several lines show as multiline text anchored where the single line would sit.
+        std::string markup;
+        for (char c : td->utf8) {
+            if (c == '\n')
+                markup += "\\P";
+            else if (c == '\\' || c == '{' || c == '}')
+                markup += std::string("\\") + c;
+            else if (c != '\r')
+                markup += c;
+        }
+        const bool aligned = td->h != HAlign::Left || td->v != VAlign::Baseline;
+        MTextData m;
+        m.position = aligned ? td->alignPoint : td->position;
+        if (!aligned)  // the baseline of a single line becomes the top of the first one
+            m.position += Vec2{-std::sin(td->rotation), std::cos(td->rotation)} * td->height;
+        m.height = td->height;
+        m.rotation = td->rotation;
+        m.style = td->style;
+        m.utf8 = std::move(markup);
+        m.attach = td->h == HAlign::Center || td->h == HAlign::Middle ? Attachment::TopCenter
+                   : td->h == HAlign::Right                           ? Attachment::TopRight
+                                                                      : Attachment::TopLeft;
+        if (!t->attdef->constant)
+            if (const Vec2 off = attributeOffset(*t->attdef, insert); off != Vec2{})
+                m.position += off;
+        e.data = Indirect<MTextData>(std::move(m));
+        return e;
+    }
     if (!t->attdef->constant)
         if (const Vec2 off = attributeOffset(*t->attdef, insert); off != Vec2{}) {
             td->position += off;
@@ -203,6 +233,35 @@ Result<Entity> attribDrag(const Document& doc, const Entity& insert, int index, 
     for (AttribValue& v : d.attribs)
         if (v.tag == td.attdef->tag)
             v.offset = inv.value().apply(world) - anchorOf(td);
+    return out;
+}
+
+}  // namespace tbcad::blocks
+
+namespace tbcad::blocks {
+
+std::string breaksToPrompt(std::string_view value) {
+    std::string out;
+    for (char c : value) {
+        if (c == '\n')
+            out += "\\P";
+        else if (c != '\r')
+            out += c;
+    }
+    return out;
+}
+
+std::string breaksFromPrompt(std::string_view typed) {
+    std::string out;
+    for (std::size_t i = 0; i < typed.size(); ++i) {
+        if (typed[i] == '\\' && i + 1 < typed.size() &&
+            (typed[i + 1] == 'P' || typed[i + 1] == 'p')) {
+            out += '\n';
+            ++i;
+        } else {
+            out += typed[i];
+        }
+    }
     return out;
 }
 

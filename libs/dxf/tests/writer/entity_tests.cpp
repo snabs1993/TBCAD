@@ -645,7 +645,7 @@ TEST_CASE("attribute definitions and values survive an export and re-import") {
         fixed.attdef = AttDefInfo{"K", "", "const", false, true, false, false};
         REQUIRE(tx.add(make(fixed), b).ok());
         InsertData ins{b, {10, 10}, {1, 1}, 0};
-        ins.attribs = {{"ROOM", "Kitchen"}, {"ID", "42"}};
+        ins.attribs = {{"ROOM", "Kitchen"}, {"ID", "42\n43"}};
         REQUIRE(tx.add(make(ins)).ok());
         tx.commit();
     }

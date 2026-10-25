@@ -49,6 +49,10 @@ std::size_t syncInserts(Transaction& tx, const Document& doc, BlockId block,
 std::optional<Entity> attributeText(const Entity& definition, const InsertData& insert,
                                     int attDisplay = 0);
 
+// Value of a multiple-line attribute as typed on one command line: line breaks are written \P.
+std::string breaksToPrompt(std::string_view value);
+std::string breaksFromPrompt(std::string_view typed);
+
 // How far the Insert has moved the value of `def` from where the definition puts it (block
 // coordinates); zero when it has not.
 Vec2 attributeOffset(const AttDefInfo& def, const InsertData& insert);

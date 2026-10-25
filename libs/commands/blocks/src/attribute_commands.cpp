@@ -221,8 +221,9 @@ public:
                     continue;
                 for (const AttribValue& v : values)
                     if (v.tag == info.tag)
-                        fields += v.tag + "\x1f" + (info.prompt.empty() ? info.tag : info.prompt) +
-                                  "\x1f" + v.value + "\x1e";
+                        fields += v.tag + "\x1f" + (info.multiLine ? "\x1d" : "") +
+                                  (info.prompt.empty() ? info.tag : info.prompt) + "\x1f" +
+                                  v.value + "\x1e";
             }
             if (!fields.empty()) {
                 const BlockDef* bd = doc.block(block);
@@ -264,11 +265,15 @@ public:
                 if (v.tag != info.tag)
                     continue;
                 auto r = co_await ctx.getString(
-                    (info.prompt.empty() ? info.tag : info.prompt) + " <" + v.value + ">",
-                    cmd::StringOptions{.defaultValue = v.value, .allowEmpty = true});
+                    (info.prompt.empty() ? info.tag : info.prompt) + " <" +
+                        (info.multiLine ? blocks::breaksToPrompt(v.value) : v.value) + ">" +
+                        (info.multiLine ? " (\\P starts a new line)" : ""),
+                    cmd::StringOptions{
+                        .defaultValue = info.multiLine ? blocks::breaksToPrompt(v.value) : v.value,
+                        .allowEmpty = true});
                 if (!r.ok())
                     co_return;
-                v.value = r.text;
+                v.value = info.multiLine ? blocks::breaksFromPrompt(r.text) : r.text;
             }
         }
         (void)ctx.tx().modify(target,
