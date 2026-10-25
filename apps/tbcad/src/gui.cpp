@@ -5110,6 +5110,8 @@ void Gui::dialogs() {
         ImGui::Spacing();
         ImGui::TextDisabled("%s", details.c_str());
         ImGui::TextDisabled("Crash folder: %s", crashDir.c_str());
+        const std::string logDir = platform::pathToUtf8(core_.logFolder());
+        ImGui::TextDisabled("Log folder: %s (type LOGFILEON to record a session)", logDir.c_str());
         ImGui::PopTextWrapPos();
         ImGui::Spacing();
         if (ImGui::Button("Copy version info", ImVec2(160, 0)))
@@ -5121,6 +5123,13 @@ void Gui::dialogs() {
             auto link = platform::checkLink(crashDir + "/");
             if (!platform::openExternal(link))
                 core_.print("Could not open " + crashDir);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Open log folder", ImVec2(160, 0))) {
+            std::error_code ec;
+            std::filesystem::create_directories(core_.logFolder(), ec);
+            if (!platform::openExternal(platform::checkLink(logDir + "/")))
+                core_.print("Could not open " + logDir);
         }
         if (ImGui::Button("Open problem page", ImVec2(160, 0))) {
             ImGui::SetClipboardText(details.c_str());
