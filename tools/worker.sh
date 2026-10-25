@@ -4,10 +4,11 @@
 #   tools/worker.sh <task.md> [model]
 #
 # <task.md> is a plain task spec: goal, files to look at, what "done" means, tests to add.
-# [model] is an opencode model id. Default: $TBCAD_WORKER_MODEL, else deepseek/deepseek-chat.
-#   deepseek/deepseek-chat              needs DEEPSEEK_API_KEY   (host api.deepseek.com)
-#   openrouter/qwen/qwen3-coder         needs OPENROUTER_API_KEY (host openrouter.ai)
-#   openrouter/moonshotai/kimi-k2       needs OPENROUTER_API_KEY
+# [model] is an opencode model id. Default: $TBCAD_WORKER_MODEL, else openrouter/deepseek/deepseek-v4-pro.
+# OpenRouter models need OPENROUTER_API_KEY and host openrouter.ai; `opencode models openrouter`
+# lists them. Good candidates: openrouter/deepseek/deepseek-v4-pro, openrouter/qwen/qwen3-coder-next,
+# openrouter/moonshotai/kimi-k2.7-code, openrouter/z-ai/glm-5.3. Direct DeepSeek:
+# deepseek/deepseek-chat with DEEPSEEK_API_KEY and host api.deepseek.com.
 #
 # The worker runs opencode (npm i -g opencode-ai) on branch worker/<task name>, starting from
 # origin/main, with AGENTS.md as its rules. It leaves its changes uncommitted. The reviewer then
@@ -15,7 +16,7 @@
 set -euo pipefail
 
 task="${1:?usage: tools/worker.sh <task.md> [model]}"
-model="${2:-${TBCAD_WORKER_MODEL:-deepseek/deepseek-chat}}"
+model="${2:-${TBCAD_WORKER_MODEL:-openrouter/deepseek/deepseek-v4-pro}}"
 root="$(git rev-parse --show-toplevel)"
 task="$(realpath "$task")"
 cd "$root"
