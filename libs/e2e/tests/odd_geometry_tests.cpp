@@ -73,7 +73,7 @@ std::vector<EntityId> buildOddDrawing(Document& doc) {
     add(make(CircleData{{50, 0}, 1e9}));   // huge radius
     add(make(CircleData{{50, 0}, 30}));
     add(make(ArcData{{0, 0}, 40, 0, 0}));  // zero sweep
-    add(make(ArcData{{0, 0}, 40, 0, 2 * M_PI}));
+    add(make(ArcData{{0, 0}, 40, 0, 2 * kPi}));
     add(poly({{0, 0}, {100, 100}, {100, 0}, {0, 100}}, true));  // bow tie
     add(poly({{0, 0}, {0, 0}, {0, 0}}, true));                  // all points coincide
     add(poly({{0, 0}, {10, 0}}, false, 1e9));                   // huge bulge
@@ -112,8 +112,8 @@ std::vector<EntityId> buildOddDrawing(Document& doc) {
     add(make(InsertData{prev, {200, 200}, {1, 1}, 0}));
     {
         HatchData h;  // a hatch with an empty loop and a zero-area loop
-        HatchLoop empty;
-        h.loops.push_back(empty);
+        HatchLoop none;
+        h.loops.push_back(none);
         HatchLoop flat;
         flat.edges.push_back(HatchLineEdge{{0, 0}, {10, 0}});
         flat.edges.push_back(HatchLineEdge{{10, 0}, {0, 0}});
