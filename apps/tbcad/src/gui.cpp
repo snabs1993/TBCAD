@@ -1437,6 +1437,18 @@ void Gui::toolStrip() {
                         core_.submitText(t.command);
                     }
                 }
+                if (t.command && ImGui::BeginPopupContextItem("##toolCtx")) {
+                    std::vector<std::string> q = core_.settings().getStrings(ui::kQuickAccessKey);
+                    const bool has =
+                        std::find(q.begin(), q.end(), std::string(t.command)) != q.end();
+                    if (!has && ImGui::MenuItem("Add to Quick Access")) {
+                        q.emplace_back(t.command);
+                        core_.settings().setStrings(ui::kQuickAccessKey, q);
+                    }
+                    if (has)
+                        ImGui::TextDisabled("Already on Quick Access");
+                    ImGui::EndPopup();
+                }
                 ImGui::PopID();
                 if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort |
                                          ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -1472,6 +1484,14 @@ void Gui::toolStrip() {
             if (ImGui::Button((label + "##quick").c_str(), ImVec2(0, iconSize)))
                 core_.submitText(quick[i]);
             ImGui::PopID();
+            if (ImGui::BeginPopupContextItem("##quickCtx")) {
+                if (ImGui::MenuItem("Remove from Quick Access")) {
+                    std::vector<std::string> q = quick;
+                    q.erase(q.begin() + static_cast<std::ptrdiff_t>(i));
+                    core_.settings().setStrings(ui::kQuickAccessKey, q);
+                }
+                ImGui::EndPopup();
+            }
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
                 std::string tip = quick[i];
                 if (cmd::Command* c = core_.registry().find(label); c && !c->description().empty())
