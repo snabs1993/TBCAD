@@ -44,6 +44,12 @@ F3 object snap, F7 grid, F8 ortho, F9 grid snap, F10 polar tracking. Use `OSNAP`
 ### 9. Tell us what breaks
 Use **Help > Report a Problem...**: note what you did, what you expected, and what happened. **Help > About** shows the version and build number to include.
 
+### 10. Installing and where your files live
+- The installer is not code-signed yet, so Windows may show **"Windows protected your PC"** (SmartScreen). Click **More info**, then **Run anyway**. This only happens for the installer, not for the program afterwards.
+- Settings (aliases, shortcuts, workspaces) are in `%APPDATA%\TBCAD`. Autosave copies and crash reports are in `%LOCALAPPDATA%\TBCAD` (folders `autosave` and `crashes`). Paste these into the Windows Explorer address bar to open them.
+- TBCAD autosaves every 10 minutes. After a crash it offers to recover the last autosave when you start it again.
+- If something goes wrong, use **Help > Report a Problem...** and attach the newest file from the `crashes` folder if there is one.
+
 ## ภาษาไทย
 
 ### 1. วาด
@@ -84,3 +90,9 @@ F3 จับจุด F7 ตาราง F8 วาดตั้งฉาก (Orth
 
 ### 9. ถ้าเจอปัญหา
 ใช้ **Help > Report a Problem...** จดว่าทำอะไร คาดหวังอะไร และเกิดอะไรขึ้น แล้วดูเวอร์ชันและเลขบิลด์ได้ที่ **Help > About**
+
+### 10. การติดตั้งและที่เก็บไฟล์
+- ตัวติดตั้งยังไม่ได้ลงลายเซ็นดิจิทัล Windows จึงอาจขึ้นว่า **"Windows protected your PC"** (SmartScreen) ให้กด **More info** แล้วกด **Run anyway** จะขึ้นเฉพาะตอนติดตั้ง ไม่ขึ้นตอนเปิดโปรแกรม
+- การตั้งค่า (ชื่อย่อคำสั่ง ปุ่มลัด เวิร์กสเปซ) อยู่ที่ `%APPDATA%\TBCAD` ส่วนไฟล์บันทึกอัตโนมัติและรายงานการล่มอยู่ที่ `%LOCALAPPDATA%\TBCAD` (โฟลเดอร์ `autosave` และ `crashes`) วางที่อยู่นี้ในช่อง address ของ Explorer เพื่อเปิด
+- TBCAD บันทึกอัตโนมัติทุก 10 นาที ถ้าโปรแกรมล่ม เปิดใหม่จะถามว่าจะกู้ไฟล์ล่าสุดหรือไม่
+- ถ้าเจอปัญหา ใช้ **Help > Report a Problem...** และแนบไฟล์ล่าสุดในโฟลเดอร์ `crashes` (ถ้ามี)
