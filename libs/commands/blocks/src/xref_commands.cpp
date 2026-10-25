@@ -88,10 +88,11 @@ public:
         underlay::PdfOptions pdfOptions;
         for (;;) {
             auto f = co_await ctx.getString(
-                std::string(pdf_ ? "Enter the .pdf file to attach"
-                            : kind_ == Kind::Image
-                                ? "Enter the .png, .jpg or .bmp file to attach"
-                                : "Enter the .tbcad, .dxf, .dwg or .pdf file to attach") +
+                std::string(
+                    pdf_ ? "Enter the .pdf file to attach"
+                    : kind_ == Kind::Image
+                        ? "Enter the picture file to attach (.png, .jpg, .bmp, .tif, .gif, .tga)"
+                        : "Enter the .tbcad, .dxf, .dwg or .pdf file to attach") +
                 (ctx.host().dialogsAvailable() ? " (? to browse)" : ""));
             if (!f.ok())
                 co_return;
@@ -134,7 +135,8 @@ public:
                 stored = underlay::makeSpec(spec.file, options);
             }
             if (kind_ == Kind::Image && !underlay::isImagePath(stored)) {
-                ctx.message("Pictures must be .png, .jpg, .jpeg or .bmp files");
+                ctx.message(
+                    "Pictures must be .png, .jpg, .jpeg, .bmp, .tif, .tiff, .gif or .tga files");
                 continue;
             }
             resolved = xref::resolvePath(stored, hostFile);
