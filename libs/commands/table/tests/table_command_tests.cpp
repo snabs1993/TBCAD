@@ -306,3 +306,18 @@ TEST_CASE("DATALINK reads the first sheet of an XLSX with shared strings and num
     CHECK_FALSE(err.empty());
     fs::remove_all(dir);
 }
+
+TEST_CASE("TABLEEDIT: Next and Previous step through cells like Tab and Shift+Tab") {
+    Fx f;
+    REQUIRE(f.host->run("TABLE", {"2", "2", "40", "10", ScriptItem::enter(), "0,0"}).finished);
+    const EntityId id = f.tableId();
+    REQUIRE(id);
+    auto r = f.host->run("TABLEEDIT", {ScriptItem::pick(id, {60, -5}), "20,-5", "A", "Next", "B",
+                                       "Next", "C", "Previous", "D", ScriptItem::enter()});
+    CHECK(r.finished);
+    const TableData* t = f.table();
+    REQUIRE(t);
+    CHECK(table::cellAt(*t, 0, 0).utf8 == "A");
+    CHECK(table::cellAt(*t, 0, 1).utf8 == "D");
+    CHECK(table::cellAt(*t, 1, 0).utf8 == "C");
+}

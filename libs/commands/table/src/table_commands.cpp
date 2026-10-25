@@ -124,7 +124,7 @@ public:
 class TableEditCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "TABLEEDIT"; }
-    std::vector<std::string> defaultAliases() const override { return {"TE"}; }
+    std::vector<std::string> defaultAliases() const override { return {"TE", "TABLEDIT"}; }
     std::string_view description() const override {
         return "Edit cell text, merge cells, add or remove rows and columns";
     }
@@ -165,10 +165,10 @@ public:
             cmd::PointOptions po;
             po.keywords = {"Text",      "RowBelow",  "RowAbove",   "ColRight", "ColLeft",
                            "DeleteRow", "DeleteCol", "Merge",      "Unmerge",  "Width",
-                           "Height",    "Align",     "AlignColumn"};
+                           "Height",    "Align",     "AlignColumn", "Next",      "Previous"};
             auto pick = co_await ctx.getPoint(
                 "Click a cell, or [Text/RowBelow/RowAbove/ColRight/ColLeft/DeleteRow/DeleteCol/"
-                "Merge/Unmerge/Width/Height/Align/AlignColumn] <done>",
+                "Merge/Unmerge/Width/Height/Align/AlignColumn/Next/Previous] <done>",
                 po);
             if (pick.status == Status::None || pick.status == Status::Cancel)
                 co_return;
@@ -183,7 +183,16 @@ public:
                     continue;
                 }
             }
-            const std::string& k = pick.keyword;
+            std::string k = pick.keyword;
+            if (k == "Next" || k == "Previous") {
+                // Tab / Shift+Tab: step to the neighbouring cell (wrapping across rows), then edit it.
+                const std::size_t cols = table::colCount(*t), rows = table::rowCount(*t);
+                std::size_t idx = cur.row * cols + cur.col;
+                idx = k == "Next" ? (idx + 1) % (rows * cols) : (idx + rows * cols - 1) % (rows * cols);
+                cur.row = idx / cols;
+                cur.col = idx % cols;
+                k = "Text";
+            }
             if (k == "Text") {
                 cmd::StringOptions so;
                 so.allowEmpty = true;
