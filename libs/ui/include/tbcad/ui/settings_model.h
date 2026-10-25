@@ -77,6 +77,12 @@ public:
     // `chordText` is a chord such as "Ctrl+Shift+K" (what the capture box produced); empty
     // unbinds the action.
     Outcome set(const std::string& action, const std::string& chordText, bool takeOver = false);
+    // Adds a shortcut that runs `commandLine` (e.g. "LAYER", "ZOOM E"), stored as action
+    // "cmd:<line>". Empty `chordText` creates it unbound. Conflicts work as in set().
+    Outcome addCommand(const std::string& commandLine, const std::string& chordText,
+                       bool takeOver = false);
+    // Deletes a "cmd:" shortcut.
+    Outcome removeCommand(const std::string& action);
     // Back to the chord declared in code.
     Outcome reset(const std::string& action);
 
