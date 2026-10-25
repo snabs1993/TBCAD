@@ -1465,6 +1465,7 @@ bool Importer::convText(const Record& r, const Frame& f, TextKind kind, std::vec
         info.constant = (flags & 2) != 0;
         info.verify = (flags & 4) != 0;
         info.preset = (flags & 8) != 0;
+        info.lockPosition = r.integer(280) != 0;
         if (info.tag.empty() || info.tag.find_first_of(" \t\r\n") != std::string::npos) {
             bad(r, "ATTDEF", "attribute tag is empty or has spaces; imported as text");
             d.utf8 = text;

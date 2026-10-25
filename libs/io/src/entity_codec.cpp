@@ -144,7 +144,8 @@ struct PayloadWriter {
         if (d.attdef) {
             const AttDefInfo& a = *d.attdef;
             w.u8(static_cast<std::uint8_t>((a.invisible ? 1 : 0) | (a.constant ? 2 : 0) |
-                                           (a.verify ? 4 : 0) | (a.preset ? 8 : 0) | 128 | gen));
+                                           (a.verify ? 4 : 0) | (a.preset ? 8 : 0) |
+                                           (a.lockPosition ? 64 : 0) | 128 | gen));
             str(a.tag);
             str(a.prompt);
             str(a.defaultValue);
@@ -784,6 +785,7 @@ struct PayloadReader {
                         a.constant = f & 2;
                         a.verify = f & 4;
                         a.preset = f & 8;
+                        a.lockPosition = f & 64;
                         a.tag = str();
                         a.prompt = str();
                         a.defaultValue = str();

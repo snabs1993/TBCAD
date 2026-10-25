@@ -65,10 +65,11 @@ public:
         for (; !dialog;) {
             auto m = co_await ctx.getKeyword(
                 "Attribute mode: Invisible=" + yn(info.invisible) +
-                    " Constant=" + yn(info.constant) + " Verify=" + yn(info.verify) + " Preset=" +
-                    yn(info.preset) + " [Invisible/Constant/Verify/Preset/Done] <Done>",
+                    " Constant=" + yn(info.constant) + " Verify=" + yn(info.verify) +
+                    " Preset=" + yn(info.preset) + " Lock=" + yn(info.lockPosition) +
+                    " [Invisible/Constant/Verify/Preset/Lock position/Done] <Done>",
                 cmd::KeywordOptions{
-                    .keywords = {"Invisible", "Constant", "Verify", "Preset", "Done"},
+                    .keywords = {"Invisible", "Constant", "Verify", "Preset", "Lock", "Done"},
                     .defaultKeyword = "Done"});
             if (!m.ok())
                 co_return;
@@ -82,6 +83,8 @@ public:
                 info.verify = !info.verify;
             else if (m.keyword == "Preset")
                 info.preset = !info.preset;
+            else if (m.keyword == "Lock")
+                info.lockPosition = !info.lockPosition;
         }
 
         for (; !dialog;) {
@@ -496,7 +499,8 @@ private:
             std::string modes;
             for (auto [on, name] :
                  {std::pair{a.invisible, "invisible"}, std::pair{a.constant, "constant"},
-                  std::pair{a.verify, "verify"}, std::pair{a.preset, "preset"}})
+                  std::pair{a.verify, "verify"}, std::pair{a.preset, "preset"},
+                  std::pair{a.lockPosition, "locked"}})
                 if (on)
                     modes += std::string("  ") + name;
             ctx.message(a.tag + "  prompt \"" + a.prompt + "\"  default \"" + a.defaultValue +

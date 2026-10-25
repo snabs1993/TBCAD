@@ -1533,6 +1533,8 @@ void Writer::writeTextRecord(const Props& p, const TextData& d, std::uint64_t ow
             (a.invisible ? 1 : 0) | (a.constant ? 2 : 0) | (a.verify ? 4 : 0) | (a.preset ? 8 : 0));
         if (d.v != VAlign::Baseline)
             o.i(74, static_cast<int>(d.v));
+        if (type == "ATTDEF" && a.lockPosition)
+            o.i(280, 1);
     }
     count(type);
 }

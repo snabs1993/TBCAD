@@ -636,7 +636,7 @@ TEST_CASE("attribute definitions and values survive an export and re-import") {
         hidden.position = {2, 5};
         hidden.alignPoint = hidden.position;
         hidden.utf8 = "ID";
-        hidden.attdef = AttDefInfo{"ID", "", "x", true, false, false, true};
+        hidden.attdef = AttDefInfo{"ID", "", "x", true, false, false, true, true};
         REQUIRE(tx.add(make(hidden), b).ok());
         TextData fixed;
         fixed.position = {2, 7};
