@@ -3,6 +3,7 @@ tbcad_add_library(cmd
     src/builtin.cpp
     src/context.cpp
     src/describe.cpp
+    src/help.cpp
     src/input.cpp
     src/registry.cpp
     src/pgp.cpp
@@ -22,5 +23,6 @@ tbcad_add_tests(cmd
     tests/alias_tests.cpp
     tests/hook_tests.cpp
     tests/describe_tests.cpp
+    tests/help_tests.cpp
     tests/runner_tests.cpp
     tests/undo_tests.cpp)

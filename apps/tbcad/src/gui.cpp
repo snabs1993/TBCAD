@@ -108,6 +108,13 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
           [this](const std::string& action) { return actionLabel(action); },
           [this] { cursorHud_ = flag("hud.enabled", true); }}),
       workspaces_(core.settingsFolder() / "workspaces") {
+    {
+        std::ifstream in(findBesideExecutable("assets/help/commands.md"), std::ios::binary);
+        std::ostringstream buf;
+        buf << in.rdbuf();
+        if (in)
+            core_.help().parse(buf.str());
+    }
     float sx = 1, sy = 1;
     glfwGetWindowContentScale(window, &sx, &sy);
     dpiScale_ = std::max(1.0f, sx);
@@ -5113,6 +5120,8 @@ void Gui::dialogs() {
         ImGui::EndPopup();
     }
 
+    if (std::string asked = core_.takeHelpRequest(); !asked.empty())
+        helpCommand_ = asked;  // HELP <command> on the command line
     if (!helpCommand_.empty()) {
         ImGui::OpenPopup("Command Help");
         helpShown_ = helpCommand_;
@@ -5133,6 +5142,23 @@ void Gui::dialogs() {
             ImGui::Separator();
             ImGui::PushTextWrapPos(500.0f);
             ImGui::TextUnformatted(std::string(c->description()).c_str());
+            ImGui::PopTextWrapPos();
+        }
+        if (const cmd::HelpEntry* page =
+                core_.help().find(c ? std::string(c->name()) : helpShown_)) {
+            ImGui::PushTextWrapPos(500.0f);
+            if (!page->summary.empty() && !c)
+                ImGui::TextUnformatted(page->summary.c_str());
+            auto field = [&](const char* label, const std::string& text) {
+                if (text.empty())
+                    return;
+                ImGui::Spacing();
+                ImGui::TextDisabled("%s", label);
+                ImGui::TextUnformatted(text.c_str());
+            };
+            field("How to use", page->usage);
+            field("Options", page->options);
+            field("Example", page->example);
             ImGui::PopTextWrapPos();
         }
         if (const auto* prompt = core_.runner().prompt()) {
