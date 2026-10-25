@@ -31,6 +31,17 @@ TEST_CASE("FROM: a base point, then an offset from it") {
     CHECK(near(lastLine(w).b, {20, 15}));
 }
 
+TEST_CASE("TK: tracked points, Enter ends") {
+    World w;
+    // (10,10) then 30 right of it, then 5 up; the line ends at (40,15)
+    REQUIRE(w.host.run("TWOLINE", {"0,0", "TK", "10,10", "@30,0", "@0,5", ""}).finished);
+    CHECK(near(lastLine(w).b, {40, 15}));
+    // a clicked point follows the nearer axis from the last tracked point
+    w.host.run("TWOLINE", {"0,0", "TK", "10,10"});
+    w.host.feed({cmd::ScriptItem::click({30, 12}), ""});
+    CHECK(near(lastLine(w).b, {30, 10}));
+}
+
 TEST_CASE("M2P and MTP: the middle of two points") {
     World w;
     REQUIRE(w.host.run("TWOLINE", {"0,0", "M2P", "10,0", "30,40"}).finished);

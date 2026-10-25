@@ -463,6 +463,27 @@ void SettingsDialog::drafting(ui::AppCore& core) {
         if (cur.polarSnap)
             number("Polar distance", drafting::keys::polarDistance,
                    cur.polarDistance > 0 ? cur.polarDistance : cur.snapSpacing, "%.6g");
+        {
+            // SNAPANG and SNAPBASE: the lattice angle and the point it passes through.
+            double ang = cur.snapAngleDeg;
+            ImGui::SetNextItemWidth(140);
+            ImGui::InputDouble("Snap angle", &ang, 0, 0, "%.6g", ImGuiInputTextFlags_AutoSelectAll);
+            if (ImGui::IsItemDeactivatedAfterEdit() && std::isfinite(ang)) {
+                char buf[40];
+                std::snprintf(buf, sizeof buf, "%.10g", ang);
+                core.setSetting(drafting::keys::snapAngle, buf);
+            }
+            double bx[2] = {cur.snapBase.x, cur.snapBase.y};
+            ImGui::SetNextItemWidth(220);
+            ImGui::InputScalarN("Snap base (X, Y)", ImGuiDataType_Double, bx, 2, nullptr, nullptr,
+                                "%.6g", ImGuiInputTextFlags_AutoSelectAll);
+            if (ImGui::IsItemDeactivatedAfterEdit() && std::isfinite(bx[0]) &&
+                std::isfinite(bx[1])) {
+                char buf[80];
+                std::snprintf(buf, sizeof buf, "%.10g,%.10g", bx[0], bx[1]);
+                core.setSetting(drafting::keys::snapBase, buf);
+            }
+        }
         ImGui::Separator();
         toggle("Grid on (F7)", drafting::keys::grid);
         number("Grid spacing", drafting::keys::gridSpacing, cur.gridSpacing, "%.6g");

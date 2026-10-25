@@ -339,7 +339,7 @@ PointParseContext CommandRunner::parseContext(const detail::PromptRequest& req) 
     PointParseContext c;
     c.base = req.base;
     // FROM's offset and M2P's second point are measured from the point just given.
-    if (ptMod_ == PtMod::FromOffset || ptMod_ == PtMod::Mid2)
+    if (ptMod_ == PtMod::FromOffset || ptMod_ == PtMod::Mid2 || ptMod_ == PtMod::TkNext)
         c.base = ptModA_;
     c.lastPoint = lastPoint_;
     c.cursor = cursor_;
@@ -614,6 +614,15 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                 p = (ptModA_ + p) * 0.5;
                 lastPoint_ = p;
                 break;
+            case PtMod::TkFirst:
+                ptModA_ = p;
+                ptMod_ = PtMod::TkNext;
+                host_.print("Next point (Enter to end tracking):");
+                return SubmitResult::Accepted;
+            case PtMod::TkNext:
+                ptModA_ = p;
+                host_.print("Next point (Enter to end tracking):");
+                return SubmitResult::Accepted;
             case PtMod::Track:
                 ptMod_ = PtMod::None;
                 if (parser_)
@@ -648,6 +657,25 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
             return complete(std::move(ans));
 
         case Input::Kind::Enter: {
+            if (ptMod_ == PtMod::TkNext && pointPrompt) {
+                // TK ends: the last tracked point is the answer.
+                const Vec2 p = ptModA_;
+                ptMod_ = PtMod::None;
+                lastPoint_ = p;
+                ans.status = Status::Ok;
+                if (req.kind == K::Point) {
+                    ans.point = p;
+                    if (req.base)
+                        lastSeg_ = std::make_pair(*req.base, p);
+                } else if (!req.base) {
+                    return reject("Type a value; there is no base point to measure from.");
+                } else if (req.kind == K::Distance) {
+                    ans.real = distance(*req.base, p);
+                } else {
+                    ans.real = normalizeAngle(std::atan2(p.y - req.base->y, p.x - req.base->x));
+                }
+                return complete(std::move(ans));
+            }
             switch (req.kind) {
                 case K::Selection:
                     if (shape_ != SelShape::None) {
@@ -895,6 +923,11 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                     host_.print("First point of mid:");
                     return SubmitResult::Accepted;
                 }
+                if (up == "TK" || up == "TRACK" || up == "TRACKING") {
+                    ptMod_ = PtMod::TkFirst;
+                    host_.print("First tracking point:");
+                    return SubmitResult::Accepted;
+                }
                 if (up == "TT") {
                     ptMod_ = PtMod::Track;
                     host_.print("Specify temporary OTRACK point:");
@@ -1030,11 +1063,19 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
             if (req.kind != K::Point && req.kind != K::Distance && req.kind != K::Angle)
                 return SubmitResult::Ignored;
             // While FROM or M2P collects its points the rubber band starts at the last of them.
-            const std::optional<Vec2> base = ptMod_ == PtMod::FromOffset || ptMod_ == PtMod::Mid2
-                                                 ? std::optional<Vec2>(ptModA_)
-                                             : ptMod_ == PtMod::None ? req.base
-                                                                     : std::nullopt;
-            return deliverPoint(filtered(in.raw, true, base, req.snap));
+            const bool tk = ptMod_ == PtMod::TkNext;
+            const std::optional<Vec2> base =
+                ptMod_ == PtMod::FromOffset || ptMod_ == PtMod::Mid2 || tk
+                    ? std::optional<Vec2>(ptModA_)
+                : ptMod_ == PtMod::None ? req.base
+                                        : std::nullopt;
+            Vec2 picked = filtered(in.raw, true, base, req.snap);
+            if (tk) {  // tracking moves along the nearer axis only
+                const Vec2 d = picked - ptModA_;
+                picked = std::abs(d.x) >= std::abs(d.y) ? Vec2{picked.x, ptModA_.y}
+                                                        : Vec2{ptModA_.x, picked.y};
+            }
+            return deliverPoint(picked);
         }
 
         case Input::Kind::Entity: {
