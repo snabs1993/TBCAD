@@ -131,3 +131,17 @@ TEST_CASE("RESETBLOCK puts dynamic references back to the block defaults") {
     CHECK(f.host->undo());
     CHECK(entityAs<InsertData>(*f.doc.find(c))->dynValues.size() == 1);
 }
+
+TEST_CASE("BACTION Array repeats the objects every column distance as the parameter grows") {
+    Fixture f;
+    BlockId b = makeFrame(f);
+    f.host->run("BPARAM", {"Frame", "L", "Width", "0,0", "10,0", "0", "0"});
+    // block, parameter, Array, column distance, object corners
+    f.host->run("BACTION", {"Frame", "Width", "Ar", "5", "-1,-1", "11,6"});
+    const BlockDef* def = f.doc.block(b);
+    REQUIRE((def && def->dynamic && def->dynamic->actions.size() == 1));
+    CHECK(def->dynamic->actions[0].kind == DynAction::Kind::Array);
+    CHECK(blocks::evaluateDynamic(f.doc, *def, {10}).size() == 8);   // 2 columns
+    CHECK(blocks::evaluateDynamic(f.doc, *def, {20}).size() == 16);  // 4 columns
+    CHECK(blocks::evaluateDynamic(f.doc, *def, {4}).size() == 4);    // fewer than one: the original
+}
