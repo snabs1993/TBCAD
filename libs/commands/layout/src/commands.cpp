@@ -1000,6 +1000,68 @@ public:
     }
 };
 
+// ALIGNSPACE: line a viewport's model view up with points on the sheet. One pair of points (a model
+// point and where it must appear on the sheet) pans the view; a second pair also sets the scale.
+class AlignSpaceCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "ALIGNSPACE"; }
+    std::string_view description() const override {
+        return "Align the model view of a viewport to points on the sheet";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        std::string target;
+        if (!requireLayout(ctx, target))
+            co_return;
+        int vpId = 0;
+        bool picked = false;
+        co_await askViewport(ctx, target, vpId, picked);
+        if (!picked)
+            co_return;
+        const auto lay = layout::findLayout(ctx.doc(), target);
+        const layout::Viewport* vp = lay ? lay->findViewport(vpId) : nullptr;
+        if (!vp)
+            co_return;
+        const Vec2 pc{(vp->paper.min.x + vp->paper.max.x) / 2,
+                      (vp->paper.min.y + vp->paper.max.y) / 2};
+        auto m1 = co_await ctx.getPoint("Specify first model point");
+        if (!m1.ok())
+            co_return;
+        cmd::PointOptions so;
+        so.base = m1.point;
+        auto s1 = co_await ctx.getPoint("Specify where it goes on the sheet (mm)", so);
+        if (!s1.ok())
+            co_return;
+        cmd::PointOptions o2;
+        o2.allowNone = true;
+        auto m2 = co_await ctx.getPoint("Specify second model point, or Enter to only move", o2);
+        double n = vp->scaleN;
+        if (m2.ok()) {
+            auto s2 =
+                co_await ctx.getPoint("Specify where the second point goes on the sheet (mm)");
+            if (!s2.ok())
+                co_return;
+            const double dm = std::hypot(m2.point.x - m1.point.x, m2.point.y - m1.point.y);
+            const double ds = std::hypot(s2.point.x - s1.point.x, s2.point.y - s1.point.y);
+            if (!(dm > 0) || !(ds > 0)) {
+                ctx.message("The two points must be apart.");
+                co_return;
+            }
+            n = dm / ds;
+            auto r = layout::setViewportScale(ctx.tx(), target, vpId, n);
+            if (!r) {
+                ctx.message(r.error().message);
+                co_return;
+            }
+        } else if (m2.status == Status::Cancel) {
+            co_return;
+        }
+        const Vec2 centre{m1.point.x - (s1.point.x - pc.x) * n,
+                          m1.point.y - (s1.point.y - pc.y) * n};
+        report(ctx, layout::setViewportCenter(ctx.tx(), target, vpId, centre),
+               "Viewport " + std::to_string(vpId) + " aligned.");
+    }
+};
+
 class TitleBlockCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "TITLEBLOCK"; }
@@ -1319,6 +1381,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<VpClipCommand>());
     (void)registry.add(std::make_unique<VpCenterCommand>());
     (void)registry.add(std::make_unique<ChSpaceCommand>());
+    (void)registry.add(std::make_unique<AlignSpaceCommand>());
     (void)registry.add(std::make_unique<TitleBlockCommand>());
     (void)registry.add(std::make_unique<MvsetupCommand>());
     (void)registry.add(std::make_unique<MvsetupCommand>(true));
