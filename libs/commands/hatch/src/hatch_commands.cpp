@@ -8,6 +8,7 @@
 #include "hatch_params.h"
 #include "tbcad/blocks/blocks.h"
 #include "tbcad/cmd/cmd.h"
+#include "tbcad/core/groups.h"
 #include "tbcad/geom/geom.h"
 #include "tbcad/hatch/hatch.h"
 #include "tbcad/hatchcmd/hatchcmd.h"
@@ -288,7 +289,9 @@ public:
         using cmd::Status;
         ctx.commitOnCancel();  // Esc ends the command but keeps the hatches already made
         Params p = loadParams(ctx.host());
-        last_.reset();  // each run starts a new hatch
+        if (ctx.doc().header().custom.count(kHpOriginKey))
+            p.base = hatchOrigin(ctx.doc().header());  // HPORIGIN: where every new hatch starts
+        last_.reset();                                 // each run starts a new hatch
         lastSig_.clear();
         ctx.host().setSetting("ui.showPanel", "hatch");  // like AutoCAD's contextual tab
         std::size_t made = 0;
@@ -1012,6 +1015,168 @@ private:
     }
 };
 
+// ---- SUPERHATCH ----------------------------------------------------------------------------
+
+bool insideRings(const std::vector<std::vector<Vec2>>& rings, Vec2 pt) {
+    bool in = false;  // even-odd: islands inside the outline are taken away
+    for (const auto& r : rings)
+        for (std::size_t i = 0, j = r.size() - 1; i < r.size(); j = i++)
+            if ((r[i].y > pt.y) != (r[j].y > pt.y) &&
+                pt.x < (r[j].x - r[i].x) * (pt.y - r[i].y) / (r[j].y - r[i].y) + r[i].x)
+                in = !in;
+    return in;
+}
+
+// SUPERHATCH fills an enclosed area with copies of a block (or an attached xref, which is a
+// block too) laid out on a grid as big as the block, like a hatch pattern made of that block.
+// Only copies that lie wholly inside the area are made. The grid starts at HPORIGIN.
+class SuperHatchCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "SUPERHATCH"; }
+    std::string_view description() const override {
+        return "Fill an enclosed area with copies of a block or xref";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        using cmd::Status;
+        ctx.commitOnCancel();
+        Params p = loadParams(ctx.host());
+        std::string blockName;
+        if (auto v = ctx.host().setting("hatch.superBlock"))
+            blockName = *v;
+        double scale = 1;
+        if (auto v = ctx.host().setting("hatch.superScale");
+            !v || !parseNumber(*v, scale) || !(scale > 0))
+            scale = 1;
+        const bool haveOrigin = ctx.doc().header().custom.count(kHpOriginKey) != 0;
+        const Vec2 origin = haveOrigin ? hatchOrigin(ctx.doc().header()) : p.base;
+        std::size_t made = 0;
+        for (;;) {
+            cmd::PointOptions opt;
+            opt.keywords = {"Block", "Scale"};
+            opt.snap = false;
+            auto r =
+                co_await ctx.getPoint("Pick internal point (block " +
+                                          (blockName.empty() ? std::string("none") : blockName) +
+                                          ", scale " + number(scale) + ")",
+                                      opt);
+            if (r.status == Status::Keyword) {
+                if (r.keyword == "Block") {
+                    cmd::StringOptions so;
+                    so.defaultValue = blockName;
+                    auto s = co_await ctx.getString("Block or xref name", so);
+                    if (s.ok()) {
+                        const std::string n = cmd::trim(s.text);
+                        if (ctx.doc().blockByName(n)) {
+                            blockName = n;
+                            ctx.host().setSetting("hatch.superBlock", n);
+                        } else {
+                            ctx.message("No block or xref named \"" + n + "\".");
+                        }
+                    }
+                } else if (r.keyword == "Scale") {
+                    cmd::RealOptions ro;
+                    ro.defaultValue = scale;
+                    ro.min = 1e-6;
+                    auto s = co_await ctx.getReal("Scale of the block", ro);
+                    if (s.ok()) {
+                        scale = s.value;
+                        ctx.host().setSetting("hatch.superScale", number(scale));
+                    }
+                }
+                continue;
+            }
+            if (!r.ok())
+                break;
+            if (blockName.empty()) {
+                ctx.message("Choose a Block first.");
+                continue;
+            }
+            made += fill(ctx, p, r.point, blockName, scale, origin);
+        }
+        if (made)
+            ctx.message(std::to_string(made) + " block copies placed.");
+    }
+
+private:
+    static std::size_t fill(cmd::CommandContext& ctx, const Params& p, Vec2 at,
+                            const std::string& blockName, double scale, Vec2 origin) {
+        const Document& doc = ctx.doc();
+        const cmd::IHost& host = ctx.host();
+        const BlockDef* def = doc.blockByName(blockName);
+        if (!def) {
+            ctx.message("No block or xref named \"" + blockName + "\".");
+            return 0;
+        }
+        const BBox2 bb = blocks::blockBounds(doc, def->id);
+        if (bb.empty() || !(bb.max.x - bb.min.x > 1e-9) || !(bb.max.y - bb.min.y > 1e-9)) {
+            ctx.message("The block is empty or has no width or height.");
+            return 0;
+        }
+        CurveStore store;
+        NearBoundary near =
+            findBoundaryNear([&](const BBox2& w) { return windowCandidates(doc, host, w, store); },
+                             searchWindow(doc, host), at, options(p));
+        if (!near.result.ok()) {
+            ctx.message(near.result.error().message);
+            return 0;
+        }
+        const Pattern* solid = PatternRegistry::find("SOLID");
+        if (!solid)
+            return 0;
+        Entity area = makeHatchEntity(near.result.value(), *solid, 1, 0, {});
+        const auto rings = hatch::loopRings(*entityAs<HatchData>(area), 0.01);
+        const BBox2 ab = hatchBounds(*entityAs<HatchData>(area));
+        const double w = (bb.max.x - bb.min.x) * scale, h = (bb.max.y - bb.min.y) * scale;
+        constexpr std::size_t kMax = 20000;
+        if (((ab.max.x - ab.min.x) / w + 1) * ((ab.max.y - ab.min.y) / h + 1) > 4.0 * kMax) {
+            ctx.message("The block is too small for this area (more than " + std::to_string(kMax) +
+                        " copies). Raise Scale.");
+            return 0;
+        }
+        const auto first = [&](double lo, double org, double step) {
+            return org + std::floor((lo - org) / step) * step;
+        };
+        std::vector<Entity> copies;
+        for (double y = first(ab.min.y, origin.y, h); y < ab.max.y; y += h)
+            for (double x = first(ab.min.x, origin.x, w); x < ab.max.x; x += w) {
+                if (!insideRings(rings, {x + w * 0.02, y + h * 0.02}) ||
+                    !insideRings(rings, {x + w * 0.98, y + h * 0.02}) ||
+                    !insideRings(rings, {x + w * 0.98, y + h * 0.98}) ||
+                    !insideRings(rings, {x + w * 0.02, y + h * 0.98}))
+                    continue;
+                Entity e;
+                InsertData ins;
+                ins.block = def->id;
+                ins.scale = {scale, scale};
+                ins.position = {x - bb.min.x * scale, y - bb.min.y * scale};
+                e.data = std::move(ins);
+                applyCurrentProperties(doc.header(), e);
+                copies.push_back(std::move(e));
+                if (copies.size() > kMax) {
+                    ctx.message("More than " + std::to_string(kMax) + " copies: raise Scale.");
+                    return 0;
+                }
+            }
+        if (copies.empty()) {
+            ctx.message("No whole copy of the block fits in this area. Lower Scale.");
+            return 0;
+        }
+        ctx.checkpoint();
+        std::size_t n = 0;
+        for (Entity& e : copies)
+            if (ctx.tx().add(std::move(e)))
+                ++n;
+        return n;
+    }
+
+    static BoundaryOptions options(const Params& p) {
+        BoundaryOptions bo;
+        bo.gapTolerance = p.gap;
+        return bo;
+    }
+};
+
 }  // namespace
 
 void registerCommands(cmd::Registry& registry) {
@@ -1019,6 +1184,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<HatchCommand>());
     (void)registry.add(std::make_unique<HatchCommand>(true));
     (void)registry.add(std::make_unique<HatchEditCommand>());
+    (void)registry.add(std::make_unique<SuperHatchCommand>());
     registry.addCommitHook(
         [](Document& doc, Transaction& tx) { hatch::updateAssociativeHatches(doc, tx); });
 }

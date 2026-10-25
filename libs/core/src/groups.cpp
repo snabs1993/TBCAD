@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cmath>
+#include <cstdlib>
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
@@ -81,6 +83,24 @@ int pickStyle(const Header& h) {
         it->second[0] > '3')
         return 1;
     return it->second[0] - '0';
+}
+
+Vec2 hatchOrigin(const Header& h) {
+    const auto it = h.custom.find(kHpOriginKey);
+    if (it == h.custom.end())
+        return {};
+    const std::string& t = it->second;
+    const auto comma = t.find(',');
+    if (comma == std::string::npos)
+        return {};
+    char* end = nullptr;
+    const double x = std::strtod(t.c_str(), &end);
+    if (end != t.c_str() + comma)
+        return {};
+    const double y = std::strtod(t.c_str() + comma + 1, &end);
+    if (end != t.c_str() + t.size() || !std::isfinite(x) || !std::isfinite(y))
+        return {};
+    return {x, y};
 }
 
 std::vector<EntityId> expandGroups(const Document& doc, std::span<const EntityId> ids) {
