@@ -249,3 +249,17 @@ TEST_CASE("DIM Continue and Baseline chain from the dimension just made, then DI
     CHECK(f.host->undo());
     CHECK(f.all<DimensionData>().empty());  // one command, one undo step
 }
+
+TEST_CASE("MLEADER Options: First and Second angle snap the leader segments") {
+    Fix f;
+    auto r = f.host->run("MLEADER", {"Options", "Maxpoints", "3", "First", "45", "Second", "90",
+                                     "eXit", "0,0", "10,3", "12,30", "Note"});
+    CHECK(r.finished);
+    auto ms = f.all<MLeaderData>();
+    REQUIRE(ms.size() == 1);
+    REQUIRE(ms[0]->lines[0].size() == 3);
+    CHECK(ms[0]->lines[0][1].y == doctest::Approx(0).epsilon(1e-9));  // first segment horizontal
+    CHECK(ms[0]->lines[0][1].x > 10);
+    // the second segment is vertical from the bend
+    CHECK(ms[0]->landing.x == doctest::Approx(ms[0]->lines[0][1].x));
+}
