@@ -3,6 +3,7 @@
 
 #include "tbcad/clipboard/clipboard.h"
 #include "tbcad/io/tbcad.h"
+#include "tbcad/table/table.h"
 #include "tbcad/ui/ui_registry.h"
 
 namespace tbcad::clipboard {
@@ -103,16 +104,22 @@ public:
         if (mode == Mode::Special) {
             cmd::KeywordOptions ko;
             ko.keywords = {"Objects", "Block",     "Original", "CurrentLayer",
-                           "Text",    "Hyperlink", "Image"};
+                           "Text",    "Hyperlink", "Image",    "Table"};
             ko.defaultKeyword = clip.empty() ? "Text" : "Objects";
             auto how = co_await ctx.getKeyword(
-                "Paste as [Objects/Block/Original coordinates/CurrentLayer/Text/Hyperlink/Image] "
+                "Paste as [Objects/Block/Original "
+                "coordinates/CurrentLayer/Text/Hyperlink/Image/Table] "
                 "<Objects>",
                 ko);
             if (!how.ok())
                 co_return;
             if (how.keyword == "Image") {
-                ctx.message("Pictures are placed from a file: use IMAGEATTACH (IAT).");
+                // The window saves the clipboard picture to a file and starts IMAGEATTACH on it.
+                ctx.host().requestUi("pasteimage");
+                co_return;
+            }
+            if (how.keyword == "Table") {
+                co_await pasteTable(ctx);
                 co_return;
             }
             if (how.keyword == "Text" || how.keyword == "Hyperlink") {
@@ -168,16 +175,77 @@ public:
     }
 
 private:
+    // The window answers a clipboardsnapshot request with this (control) text after it has put
+    // the system clipboard text in the transient setting below. Nobody can type it.
+    static constexpr const char* kSnapshotAnswer = "\x01";
+    static constexpr const char* kSnapshotKey = "tmp.clipboard.system";
+
+    // The clipboard text as one MTEXT string: line ends become \P, tabs become spaces.
+    static std::string snapshotText(cmd::CommandContext& ctx, bool paragraphs) {
+        std::string raw = ctx.host().setting(kSnapshotKey).value_or("");
+        std::string out;
+        for (std::size_t i = 0; i < raw.size(); ++i) {
+            const char c = raw[i];
+            if (c == '\r')
+                continue;
+            if (c == '\n')
+                out += paragraphs ? "\\P" : " ";
+            else
+                out += c == '\t' ? ' ' : c;
+        }
+        return cmd::trim(out);
+    }
+
+    // Cells copied from a spreadsheet (tab separated, or CSV text) become a TABLE.
+    static cmd::Task pasteTable(cmd::CommandContext& ctx) {
+        ctx.host().requestUi("clipboardsnapshot");
+        auto t =
+            co_await ctx.getString("Cells to paste (Ctrl+V pastes; copy them from Excel first)");
+        if (!t.ok())
+            co_return;
+        std::string raw =
+            t.text == kSnapshotAnswer ? ctx.host().setting(kSnapshotKey).value_or("") : t.text;
+        auto rows = table::parseCsv(raw);
+        if (rows.empty()) {
+            ctx.message("The clipboard holds no cells.");
+            co_return;
+        }
+        auto at = co_await ctx.getPoint("Specify insertion point (top-left corner)");
+        if (!at.ok())
+            co_return;
+        double h = 0;
+        const TextStyle* ts = ctx.doc().textStyle(ctx.doc().header().currentTextStyle);
+        if (ts && ts->height > 0)
+            h = ts->height;
+        else if (auto s = ctx.host().setting("text.height"))
+            h = std::atof(s->c_str());
+        TableData data = table::fromRows(rows, at.point, h > 0 ? h : 2.5, ts);
+        data.style = ctx.doc().header().currentTextStyle;
+        Entity e;
+        e.data = Indirect<TableData>(std::move(data));
+        applyCurrentProperties(ctx.doc().header(), e);
+        auto id = ctx.tx().add(std::move(e));
+        if (!id) {
+            ctx.message(id.error().message);
+            co_return;
+        }
+        ctx.host().setSelection({id.value()});
+        ctx.message("Table of " + std::to_string(rows.size()) + " rows pasted.");
+    }
+
     // Text (or a text that opens a link): typed or pasted into the command line, since the
     // system clipboard is read by the window, which types it as the answer. A link keeps the
     // address in HYPERLINK form and shows it as the text.
     static cmd::Task pasteText(cmd::CommandContext& ctx, bool link) {
+        ctx.host().requestUi("clipboardsnapshot");
         auto t =
             co_await ctx.getString(link ? "Web address or file (Ctrl+V pastes)"
                                         : "Text to paste (Ctrl+V pastes; \\P starts a new line)");
         if (!t.ok())
             co_return;
         std::string text = cmd::trim(t.text);
+        if (text == kSnapshotAnswer)  // the window answered with the clipboard text
+            text = snapshotText(ctx, !link);
         if (text.empty())
             co_return;
         auto at = co_await ctx.getPoint("Specify insertion point");
