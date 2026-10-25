@@ -158,6 +158,19 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
     const auto tDiag = Clock::now();
     for (const std::string& n : notes)
         report.warn(code::kBadObject, n);
+    if (!drawing.skippedEntities.empty()) {
+        // First in the report: the app shows only the first few notices on open.
+        std::size_t n = 0;
+        std::string list;
+        for (const auto& [name, count] : drawing.skippedEntities) {
+            n += count;
+            if (list.size() < 120)
+                list += (list.empty() ? "" : ", ") + name + " x" + std::to_string(count);
+        }
+        report.warn(code::kSkippedObject,
+                    std::to_string(n) + " object(s) of unsupported or proxy types are not shown (" +
+                        list + ").");
+    }
     if (!drawing.walkSummary.empty())
         report.summary(code::kSkippedObject, drawing.walkSummary);
     if (options.diagnostics) {

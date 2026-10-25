@@ -19,6 +19,21 @@ double sweepBetween(double from, double to) {
 
 }  // namespace
 
+namespace {
+void pushPoint(std::vector<PolyVertex>& v, Vec2 p, double bulge = 0) {
+    if (!v.empty() && tol::isZeroLength(v.back().p - p)) {
+        if (bulge != 0)
+            v.back().bulge = bulge;
+        return;
+    }
+    PolyVertex pv;
+    pv.p = p;
+    pv.bulge = bulge;
+    v.push_back(pv);
+}
+
+}  // namespace
+
 std::vector<CurveRef> loopCurves(const HatchLoop& loop) {
     std::vector<CurveRef> out;
     for (const HatchEdge& edge : loop.edges) {
@@ -381,6 +396,62 @@ FillResult generateFill(const HatchData& hatch, const Pattern& patternIn, const 
             return tone("too many segments");
     }
     return lines;
+}
+
+PolylineData loopPolyline(const HatchLoop& loop) {
+    PolylineData d;
+    d.closed = true;
+    auto curves = hatch::loopCurves(loop);
+    if (curves.empty())
+        return d;
+    if (curves.size() == 1 && curves[0].isClosed() &&
+        curves[0].kind() == geom::CurveRef::Kind::Arc) {
+        const auto& c = curves[0];
+        pushPoint(d.v, c.pointAt(c.t0()), 1);
+        pushPoint(d.v, c.pointAt(c.t0() + kPi), 1);
+        return d;
+    }
+    Vec2 cur{};
+    for (std::size_t i = 0; i < curves.size(); ++i) {
+        const geom::CurveRef& c = curves[i];
+        const Vec2 a = c.startPoint(), b = c.endPoint();
+        bool forward;
+        if (i == 0 && curves.size() > 1) {
+            const Vec2 na = curves[1].startPoint(), nb = curves[1].endPoint();
+            const double dEnd = std::min(distance(b, na), distance(b, nb));
+            const double dStart = std::min(distance(a, na), distance(a, nb));
+            forward = dEnd <= dStart;
+        } else {
+            forward = distance(a, cur) <= distance(b, cur);
+        }
+        const Vec2 from = forward ? a : b, to = forward ? b : a;
+        switch (c.kind()) {
+            case geom::CurveRef::Kind::Line:
+                pushPoint(d.v, from);
+                break;
+            case geom::CurveRef::Kind::Arc: {
+                const Vec2 mid = c.pointAt(c.t0() + c.sweep() / 2);
+                pushPoint(d.v, from, geom::bulgeThrough(from, mid, to).value_or(0));
+                break;
+            }
+            default: {
+                std::vector<Vec2> pts;
+                geom::flatten(c, 0.01, pts);
+                if (!forward)
+                    std::reverse(pts.begin(), pts.end());
+                if (!pts.empty())
+                    pts.pop_back();
+                for (const Vec2& p : pts)
+                    pushPoint(d.v, p);
+                break;
+            }
+        }
+        cur = to;
+    }
+    if (d.v.size() > 1 && tol::isZeroLength(d.v.front().p - d.v.back().p)) {
+        d.v.pop_back();
+    }
+    return d;
 }
 
 }  // namespace tbcad::hatch

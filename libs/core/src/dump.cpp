@@ -343,6 +343,8 @@ struct DataDumper {
                 o << "/" << cs->textHeight << "," << cs->color << "," << cs->fill << ","
                   << cs->align;
         }
+        if (!d.linkFile.empty())
+            o << " link\"" << d.linkFile << "\"";
         o << " cols";
         for (double w : d.colWidths)
             o << " " << w;

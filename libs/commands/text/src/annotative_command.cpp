@@ -392,8 +392,96 @@ public:
     }
 };
 
+// ANNORESET: the selected annotative objects go back to the current-scale representation: the
+// current scale becomes the one they are drawn at in model space (a symbol follows it). The list
+// of scales is kept; an object that does not list the current scale is left alone.
+class AnnoResetCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "ANNORESET"; }
+    std::string_view description() const override {
+        return "Reset annotative objects to the current annotation scale";
+    }
+
+    Task run(CommandContext& ctx) override {
+        auto sel = co_await ctx.getSelection("Select annotative objects",
+                                             cmd::SelectionOptions{.filter = [](const Entity& e) {
+                                                 return canBeAnnotative(e) && e.common.annotative;
+                                             }});
+        if (!sel.ok() || sel.ids.empty())
+            co_return;
+        const double cur = currentAnnotationScale(ctx.doc().header());
+        std::size_t changed = 0, skipped = 0;
+        for (EntityId id : sel.ids) {
+            const Entity* e = ctx.doc().find(id);
+            if (!e || !canBeAnnotative(*e) || !e->common.annotative)
+                continue;
+            std::vector<double> list = e->common.annoScales.get();
+            if (list.empty() || list.front() == cur)
+                continue;  // already follows the current scale
+            auto at = std::find(list.begin(), list.end(), cur);
+            if (at == list.end()) {
+                ++skipped;
+                continue;
+            }
+            const double oldN = list.front();
+            list.erase(at);
+            list.insert(list.begin(), cur);
+            if (ctx.tx().modify(id, [&](Entity& x) {
+                    x.common.annoScales = ScaleList(list);
+                    if (auto* ins = entityAs<InsertData>(x))
+                        ins->scale = ins->scale * (cur / oldN);
+                }))
+                ++changed;
+        }
+        ctx.message(std::to_string(changed) + " object(s) reset to " + scaleText(cur) +
+                    (skipped ? "; " + std::to_string(skipped) +
+                                   " do not list that scale (use OBJECTSCALE to add it)"
+                             : std::string()));
+        ctx.setUndoLabel("Annotation reset");
+    }
+};
+
+// ANNOUPDATE: text in an annotative text style becomes annotative at the current scale, so it
+// matches its style again. Objects that already are annotative are left as they are.
+class AnnoUpdateCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "ANNOUPDATE"; }
+    std::string_view description() const override {
+        return "Update objects to match the annotative setting of their styles";
+    }
+
+    Task run(CommandContext& ctx) override {
+        auto sel = co_await ctx.getSelection(
+            "Select text to update", cmd::SelectionOptions{.filter = [](const Entity& e) {
+                return kind(e) == EntityKind::Text || kind(e) == EntityKind::MText;
+            }});
+        if (!sel.ok() || sel.ids.empty())
+            co_return;
+        std::size_t changed = 0;
+        for (EntityId id : sel.ids) {
+            const Entity* e = ctx.doc().find(id);
+            if (!e || e->common.annotative)
+                continue;
+            Entity probe = *e;
+            applyStyleAnnotative(ctx.doc(), probe);
+            if (!probe.common.annotative)
+                continue;
+            if (ctx.tx().modify(id, [&](Entity& x) { applyStyleAnnotative(ctx.doc(), x); }))
+                ++changed;
+        }
+        ctx.message(std::to_string(changed) + " object(s) updated");
+        ctx.setUndoLabel("Annotation update");
+    }
+};
+
 }  // namespace
 
+std::unique_ptr<cmd::Command> makeAnnoResetCommand() {
+    return std::make_unique<AnnoResetCommand>();
+}
+std::unique_ptr<cmd::Command> makeAnnoUpdateCommand() {
+    return std::make_unique<AnnoUpdateCommand>();
+}
 std::unique_ptr<cmd::Command> makeObjectScaleCommand() {
     return std::make_unique<ObjectScaleCommand>();
 }

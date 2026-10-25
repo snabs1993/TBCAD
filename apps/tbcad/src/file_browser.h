@@ -24,6 +24,7 @@ private:
 
     bool open_ = false;
     bool requestOpen_ = false;
+    bool confirmOverwrite_ = false;
     Mode mode_ = Mode::Open;
     std::filesystem::path dir_{};
     std::string name_{};

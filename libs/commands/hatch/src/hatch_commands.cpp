@@ -731,13 +731,13 @@ public:
             if (changed > 0)
                 ctx.checkpoint();
             cmd::KeywordOptions ko;
-            ko.keywords = {"Pattern",    "Scale",        "Angle",        "Base",
-                           "Gradient",   "DIsassociate", "SEparate",     "DRaworder",
-                           "ANnotative", "DOuble",       "Transparency", "Done"};
+            ko.keywords = {"Pattern",      "Scale",    "Angle",     "Base",       "Gradient",
+                           "DIsassociate", "SEparate", "DRaworder", "ANnotative", "DOuble",
+                           "Transparency", "REcreate", "Done"};
             ko.defaultKeyword = "Done";
             auto k = co_await ctx.getKeyword(
                 "Hatch option [Pattern/Scale/Angle/Base/Gradient/DIsassociate/SEparate/"
-                "DRaworder/ANnotative/DOuble/Transparency/Done] <Done>",
+                "DRaworder/ANnotative/DOuble/Transparency/REcreate/Done] <Done>",
                 ko);
             if (!k.ok() || k.keyword == "Done")
                 break;
@@ -804,6 +804,15 @@ public:
                 ctx.message("The hatches no longer follow their boundary objects.");
             } else if (k.keyword == "SEparate") {
                 changed += separate(ctx, ids);
+            } else if (k.keyword == "REcreate") {
+                cmd::KeywordOptions yn;
+                yn.keywords = {"Yes", "No"};
+                yn.defaultKeyword = "No";
+                auto a = co_await ctx.getKeyword(
+                    "Associate the hatch with the new boundary [Yes/No] <No>", yn);
+                if (!a.ok())
+                    continue;
+                changed += recreate(ctx, ids, a.keyword == "Yes");
             } else if (k.keyword == "DRaworder") {
                 cmd::KeywordOptions dk;
                 dk.keywords = {"Back", "Front", "BEhind", "InFront"};
@@ -914,6 +923,37 @@ public:
     }
 
 private:
+    // A closed polyline for every loop of each hatch, on the hatch's layer (HATCHEDIT REcreate).
+    // With `associate` the hatch follows the new polylines, like one made from picked objects.
+    static std::size_t recreate(cmd::CommandContext& ctx, const std::vector<EntityId>& ids,
+                                bool associate) {
+        std::size_t made = 0;
+        for (EntityId id : ids) {
+            const Entity* e = ctx.doc().find(id);
+            const HatchData* h = e ? entityAs<HatchData>(*e) : nullptr;
+            if (!h)
+                continue;
+            Entity proto = *e;
+            std::vector<EntityId> created;
+            for (const HatchLoop& loop : h->loops) {
+                PolylineData pl = hatch::loopPolyline(loop);
+                if (pl.v.size() < 2)
+                    continue;
+                Entity piece = proto;
+                piece.data = std::move(pl);
+                if (auto nid = ctx.tx().add(std::move(piece)))
+                    created.push_back(nid.value());
+            }
+            made += created.size();
+            if (associate && !created.empty())
+                (void)ctx.tx().modify(
+                    id, [&](Entity& x) { entityAs<HatchData>(x)->sourceBoundary = created; });
+        }
+        ctx.message(made == 0 ? "No boundary could be made."
+                              : std::to_string(made) + " boundary polyline(s) created.");
+        return made;
+    }
+
     // Each area of a hatch becomes a hatch of its own (HATCHEDIT Separate).
     static std::size_t separate(cmd::CommandContext& ctx, std::vector<EntityId>& ids) {
         std::size_t made = 0;

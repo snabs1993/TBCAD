@@ -1158,3 +1158,25 @@ TEST_CASE("perf: open of a big DWG") {
             std::printf("  %s\n", d.message.c_str());
     std::printf("  open of %d objects (%zu KB file): %.0f ms\n", 3 * n, file.size() / 1024, total);
 }
+
+TEST_CASE("an entity of a class the reader does not know is reported as not shown") {
+    DwgFile f;
+    const int wipeType = f.addClass("WIPEOUT");
+    f.add(kLtype, linetype(kLtype, "Continuous"));
+    f.add(kLayer0, layer(kLayer0, "0", 7, kLtype));
+    f.add(kStyle, style(kStyle, "Standard"));
+    f.add(kModel, blockHeader(kModel, "*Model_Space", 0, 0));
+    f.add(kPaper, blockHeader(kPaper, "*Paper_Space", 0, 0));
+    ObjectWriter o(wipeType, 0x70);
+    o.entityCommon(2, 256, 0);
+    f.add(0x70, o.finish());
+    dxf::Report report;
+    auto r = importDwg(asBytes(f.build()), dxf::ImportOptions{}, report);
+    REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
+    bool told = false;
+    for (const auto& d : report.diagnostics())
+        if (d.severity == dxf::Severity::Warning &&
+            d.message.find("WIPEOUT x1") != std::string::npos)
+            told = true;
+    CHECK(told);
+}

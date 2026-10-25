@@ -23,12 +23,16 @@ std::unique_ptr<cmd::Command> makeAnnoNewCommand();
 std::unique_ptr<cmd::Command> makeFieldCommand();
 std::unique_ptr<cmd::Command> makeScaleListCommand();
 std::unique_ptr<cmd::Command> makeObjectScaleCommand();
+std::unique_ptr<cmd::Command> makeAnnoResetCommand();
+std::unique_ptr<cmd::Command> makeAnnoUpdateCommand();
 std::unique_ptr<cmd::Command> makeTxt2MTxtCommand();
 std::unique_ptr<cmd::Command> makeTCountCommand();
 std::unique_ptr<cmd::Command> makeSpellCommand();
 std::unique_ptr<cmd::Command> makeMTextFormatCommand();
 std::unique_ptr<cmd::Command> makeTxtExpCommand();
 std::unique_ptr<cmd::Command> makeTextAlignCommand();
+std::unique_ptr<cmd::Command> makeTextFitCommand();
+std::unique_ptr<cmd::Command> makeMTextPropCommand();
 void registerMTextExplode();
 std::unique_ptr<cmd::Command> makeArcTextCommand();
 

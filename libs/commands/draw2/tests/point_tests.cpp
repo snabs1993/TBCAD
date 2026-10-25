@@ -45,3 +45,9 @@ TEST_CASE("PTYPE refuses an unknown style") {
     CHECK(f.host.logContains("must be 0 to 4"));
     CHECK(f.doc.header().custom.count("pdmode") == 0);
 }
+
+TEST_CASE("DDPTYPE opens the Point Style panel without changing the drawing") {
+    Fixture f;
+    CHECK(f.host.run("DDPTYPE", {}).finished);
+    CHECK(f.entities().empty());
+}

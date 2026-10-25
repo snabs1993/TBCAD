@@ -127,7 +127,8 @@ std::optional<TableData> parse(std::string_view s);
 // are empty fields.
 std::string toCsv(const TableData& t);
 // Rows of fields; understands quotes, doubled quotes, CRLF or LF, a UTF-8 byte order mark and the
-// semicolon as well as the comma (Excel in some locales). Blank lines are skipped.
+// semicolon as well as the comma (Excel in some locales) and the tab (cells copied from Excel).
+// Blank lines are skipped.
 std::vector<std::vector<std::string>> parseCsv(std::string_view csv);
 // A table holding the rows, each column as wide as its longest text.
 TableData fromRows(const std::vector<std::vector<std::string>>& rows, Vec2 origin,

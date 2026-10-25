@@ -601,3 +601,29 @@ TEST_CASE("HATCH: lines inside a block reference bound the area, by pick point a
     REQUIRE(hs.size() == 1);
     CHECK(hatch::hatchArea(*hs[0]) == doctest::Approx(6000).epsilon(1e-6));
 }
+
+TEST_CASE("HATCHEDIT: REcreate makes a polyline for every loop and can associate the hatch") {
+    Fixture f;
+    f.rect({0, 0}, {100, 100});
+    f.addEntity(CircleData{{50, 50}, 30});
+    f.host->run("HATCH", {"5,5", ""});
+    auto count = [&] {
+        std::size_t n = 0;
+        f.doc.forEachEntity([&](const Entity& e) { n += entityAs<PolylineData>(e) != nullptr; });
+        return n;
+    };
+    CHECK(count() == 0);
+    EntityId id{};
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (kind(e) == EntityKind::Hatch)
+            id = e.common.id;
+    });
+    f.host->setSelection({id});
+    f.host->run("HATCHEDIT", {"RE", "No", "D"});
+    CHECK(count() == 2);
+    CHECK(f.host->logContains("2 boundary polyline(s) created."));
+    REQUIRE(f.hatches().size() == 1);
+    // Not associated, and the whole run is one undo step.
+    CHECK(f.host->undo());
+    CHECK(count() == 0);
+}

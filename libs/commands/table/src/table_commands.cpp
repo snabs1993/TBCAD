@@ -533,6 +533,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<TableStyleCommand>());
     (void)registry.add(std::make_unique<TableStylePanelCommand>());
     registerCsvCommands(registry);
+    registerDataLinkCommands(registry);
 }
 
 void registerUi(ui::UiRegistry& ui) {

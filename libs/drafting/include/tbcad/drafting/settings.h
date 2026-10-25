@@ -28,8 +28,9 @@ enum class SnapMode : std::uint8_t {
     ApparentIntersection,  // where two objects would meet if extended, near the cursor
     Extension,             // along the extension of a line or arc end the cursor rested on
     Parallel,              // from the base point parallel to a straight edge the cursor rested on
+    GeometricCenter,       // centroid of a closed polyline, the centre of a circle or ellipse
 };
-inline constexpr int kSnapModeCount = 13;
+inline constexpr int kSnapModeCount = 14;
 
 using SnapModeMask = std::uint32_t;
 constexpr SnapModeMask maskOf(SnapMode m) {

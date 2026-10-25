@@ -91,6 +91,7 @@ public:
 
     // Files dropped on the window; opened at the start of the next frame.
     void queueDroppedFile(std::string path);
+    void pasteClipboardPicture();
 
     // Command-line widget callback (public so the ImGui callback trampoline can reach it).
     int inputCallback(ImGuiInputTextCallbackData* data);
