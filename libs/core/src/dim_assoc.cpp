@@ -38,6 +38,20 @@ DimRefreshFn dimBreakRefresh() {
     return gBreakRefresh;
 }
 
+namespace {
+DimViewFn gView = nullptr;
+DimViewsAtFn gViewsAt = nullptr;
+}  // namespace
+
+void setDimViewLookups(DimViewFn view, DimViewsAtFn viewsAt) {
+    gView = view;
+    gViewsAt = viewsAt;
+}
+
+std::optional<DimViewMap> dimViewMap(const Document& doc, BlockId owner, int viewport) {
+    return gView ? gView(doc, owner, viewport) : std::nullopt;
+}
+
 std::optional<Vec2> dimAssocPoint(const Entity& e, const DimAssoc& a) {
     if (a.kind == DimAssoc::Kind::Center) {
         if (const auto* c = entityAs<CircleData>(e))
@@ -132,6 +146,17 @@ std::optional<DimAssoc> findDimAssocOnCurve(const Document& doc, Vec2 p, BlockId
     return found;
 }
 
+// A dimension linked through a viewport shows lengths of the model: the viewport's scale.
+void syncModelScale(const Document& doc, DimensionData& d, BlockId owner) {
+    d.modelScale = 0;
+    for (const DimAssoc& a : d.assoc)
+        if (a.kind != DimAssoc::Kind::None && a.viewport != 0)
+            if (auto m = dimViewMap(doc, owner, a.viewport)) {
+                d.modelScale = m->scaleN;
+                return;
+            }
+}
+
 int linkDimension(const Document& doc, DimensionData& d, BlockId owner) {
     int n = 0;
     std::size_t count = 0;
@@ -171,8 +196,19 @@ int linkDimension(const Document& doc, DimensionData& d, BlockId owner) {
         if (auto a = findDimAssoc(doc, d.defPts[i], owner)) {
             d.assoc[i] = *a;
             ++n;
+        } else if (owner.value != 0 && gViewsAt) {
+            // On a layout sheet: a point snapped to a model object through a viewport.
+            for (const auto& [id, map] : gViewsAt(doc, owner, d.defPts[i])) {
+                if (auto m = findDimAssoc(doc, map.toModel(d.defPts[i]), BlockId{})) {
+                    m->viewport = static_cast<std::uint16_t>(id);
+                    d.assoc[i] = *m;
+                    ++n;
+                    break;
+                }
+            }
         }
     }
+    syncModelScale(doc, d, owner);
     return n;
 }
 

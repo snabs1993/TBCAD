@@ -23,6 +23,7 @@ tbcad_add_tests(e2e
     tests/dim_chain_scale_tests.cpp
     tests/dim_assoc_tests.cpp
     tests/dim_assoc_more_tests.cpp
+    tests/dim_transspatial_tests.cpp
     tests/dim_hard_geometry_tests.cpp
     tests/dim_perf_tests.cpp
     tests/ucs_world_tests.cpp

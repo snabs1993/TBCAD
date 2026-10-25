@@ -329,7 +329,10 @@ struct TextParts {
 TextParts dimensionParts(const DimStyle& style, const DimensionData& d, bool stack) {
     const bool angular = isAngular(d.kind);
     // DIMLFAC scales lengths, never angles.
-    const double m = angular ? measurement(d) : measurement(d) * style.linearFactor;
+    // A trans-spatial dimension measures the model object, not its picture on the sheet.
+    const double m =
+        angular ? measurement(d)
+                : measurement(d) * style.linearFactor * (d.modelScale > 0 ? d.modelScale : 1.0);
     TextParts t;
     std::string num;
     if (style.tolerance == DimTolerance::Limits) {

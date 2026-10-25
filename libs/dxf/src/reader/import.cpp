@@ -3123,6 +3123,7 @@ Result<ImportResult> Importer::run() {
                     std::vector<Vec2> jogs;
                     bool flip1 = false, flip2 = false;
                     std::array<DimAssoc, 4> assoc{};
+                    double modelScale = 0;
                     std::optional<Vec2> textPos;
                     std::vector<EntityId> sources;
                     EntityId text;
@@ -3156,6 +3157,11 @@ Result<ImportResult> Importer::run() {
                             } else if (t.rfind("j=", 0) == 0) {
                                 if (auto v = numbers(t.substr(2), 2); !v.empty())
                                     jogs.push_back(Vec2{v[0], v[1]} * k_);
+                            } else if (t.rfind("mscale=", 0) == 0) {
+                                const double v =
+                                    std::strtod(std::string(t.substr(7)).c_str(), nullptr);
+                                if (std::isfinite(v) && v > 0)
+                                    modelScale = v;
                             } else if (t == "flip=10" || t == "flip=01" || t == "flip=11") {
                                 flip1 = t[5] == '1';
                                 flip2 = t[6] == '1';
@@ -3166,6 +3172,8 @@ Result<ImportResult> Importer::run() {
                                 const std::size_t c1 = rest.find(':'), c2 = rest.find(':', c1 + 1);
                                 if (c1 == std::string::npos || c2 == std::string::npos)
                                     continue;
+                                // an optional fourth part: the viewport of a trans-spatial link
+                                const std::size_t c3 = rest.find(':', c2 + 1);
                                 const int kind = std::atoi(rest.substr(0, c1).c_str());
                                 const EntityId on = target(rest.substr(c1 + 1, c2 - c1 - 1));
                                 if (kind < 1 || kind > 3 || !on)
@@ -3173,8 +3181,13 @@ Result<ImportResult> Importer::run() {
                                 DimAssoc& d = assoc[static_cast<std::size_t>(t[2] - '0')];
                                 d.kind = static_cast<DimAssoc::Kind>(kind);
                                 d.target = on;
-                                d.index = static_cast<std::uint32_t>(
-                                    std::strtoul(rest.substr(c2 + 1).c_str(), nullptr, 10));
+                                d.index = static_cast<std::uint32_t>(std::strtoul(
+                                    rest.substr(c2 + 1, c3 == std::string::npos ? c3 : c3 - c2 - 1)
+                                        .c_str(),
+                                    nullptr, 10));
+                                if (c3 != std::string::npos)
+                                    d.viewport = static_cast<std::uint16_t>(
+                                        std::strtoul(rest.substr(c3 + 1).c_str(), nullptr, 10));
                             }
                         }
                     }
@@ -3196,6 +3209,7 @@ Result<ImportResult> Importer::run() {
                         d->flipArrow1 = flip1;
                         d->flipArrow2 = flip2;
                         d->assoc = assoc;
+                        d->modelScale = modelScale;
                     } else if (auto* l = entityAs<LeaderData>(e)) {
                         l->breaks = std::move(breaks);
                         l->breakWith = std::move(with);

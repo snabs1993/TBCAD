@@ -114,6 +114,9 @@ public:
         layoutName_ = std::move(name);
         modelIndex_ = model;
     }
+    // Tests: new objects go into this block (a layout sheet's), like a host showing a layout.
+    void setDrawingOwner(BlockId owner) { drawingOwner_ = owner; }
+    BlockId drawingOwner() const override { return drawingOwner_; }
     std::string activeLayoutName() const override { return layoutName_; }
     const index::SpatialIndex* modelSpatialIndex() const override { return modelIndex_; }
     // Tests: the box viewExtents() reports (empty by default).
@@ -141,6 +144,7 @@ private:
     ViewState view_{};
     WindowQuery windowQuery_{};
     std::string layoutName_{};
+    BlockId drawingOwner_{};
     const index::SpatialIndex* modelIndex_ = nullptr;
     DisplayList preview_{};
 };

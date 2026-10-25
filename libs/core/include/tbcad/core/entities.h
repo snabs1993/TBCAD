@@ -592,6 +592,10 @@ struct DimAssoc {
     Kind kind = Kind::None;
     EntityId target{};
     std::uint32_t index = 0;
+    // Trans-spatial: 0 = the object is in the same space as the dimension. Otherwise the dimension
+    // is on a layout sheet and the object is in model space, seen through the viewport of that id
+    // in the sheet's layout; the definition point is where the object's point shows on the sheet.
+    std::uint16_t viewport = 0;
 };
 
 struct DimensionData {
@@ -626,6 +630,10 @@ struct DimensionData {
     // turns the other way (a diameter dimension's first or second point, a radius dimension's
     // only arrowhead is the first).
     bool flipArrow1 = false, flipArrow2 = false;
+    // Trans-spatial dimensions (see DimAssoc::viewport): model units per sheet millimetre, so the
+    // text shows the length of the model object, not of its picture on the sheet. 0 = none. Angles
+    // are not scaled.
+    double modelScale = 0;
 };
 
 struct LeaderData {

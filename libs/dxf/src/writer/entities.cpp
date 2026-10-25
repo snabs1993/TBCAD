@@ -389,7 +389,13 @@ void Writer::writeDimExtras(const std::vector<DimBreak>& breaks, const std::vect
             if (const DimAssoc& a = dim->assoc[k]; a.kind != DimAssoc::Kind::None)
                 items.push_back("as" + std::to_string(k) + "=" +
                                 std::to_string(static_cast<int>(a.kind)) + ":" +
-                                handleRef(a.target) + ":" + std::to_string(a.index));
+                                handleRef(a.target) + ":" + std::to_string(a.index) +
+                                (a.viewport ? ":" + std::to_string(a.viewport) : ""));
+        if (dim->modelScale != 0) {
+            char buf[40];
+            std::snprintf(buf, sizeof buf, "mscale=%.17g", dim->modelScale);
+            items.push_back(buf);
+        }
     }
     if (items.empty())
         return;
