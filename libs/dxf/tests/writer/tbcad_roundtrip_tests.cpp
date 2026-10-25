@@ -12,6 +12,7 @@
 #include "../lexer/test_util.h"
 #include "semantic_dump.h"
 #include "tbcad/blocks/display.h"
+#include "tbcad/core/dump.h"
 #include "tbcad/dxf/reader.h"
 #include "tbcad/dxf/writer.h"
 #include "tbcad/geom/geom.h"
@@ -68,6 +69,23 @@ TEST_CASE("every DXF survives DXF -> document -> .tbcad -> document, and exports
         const std::string diff =
             testing::SemanticDump::diff(testing::SemanticDump(doc1), testing::SemanticDump(doc2));
         CHECK_MESSAGE(diff.empty(), diff);
+
+        // Exact: every table row, entity field, id, owner and the draw order, nothing rounded.
+        const std::string exact1 = canonicalDump(doc1);
+        const std::string exact2 = canonicalDump(doc2);
+        if (exact1 != exact2) {
+            std::size_t at = 0;
+            while (at < exact1.size() && at < exact2.size() && exact1[at] == exact2[at])
+                ++at;
+            const std::size_t from =
+                exact1.rfind('\n', at) == std::string::npos ? 0 : exact1.rfind('\n', at) + 1;
+            FAIL_CHECK("canonical dump differs at byte " << at << ":\n  "
+                                                         << exact1.substr(from, 300) << "\n  "
+                                                         << exact2.substr(from, 300));
+        }
+        CHECK(doc2.nextIds().entity >= doc1.nextIds().entity);
+        CHECK(doc2.nextIds().layer >= doc1.nextIds().layer);
+        CHECK(doc2.nextIds().block >= doc1.nextIds().block);
 
         Report r1, r2;
         auto out1 = exportDxf(doc1, ExportOptions{}, r1);
