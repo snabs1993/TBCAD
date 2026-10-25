@@ -103,8 +103,8 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::KeywordOptions menu;
-        menu.keywords = {"New",   "Copy", "Delete", "Rename",  "Move",
-                         "Paper", "Set",  "List",   "Template"};
+        menu.keywords = {"New",   "Copy", "Delete", "Rename",   "Move",
+                         "Paper", "Set",  "List",   "Template", "SAveas"};
         menu.defaultKeyword = "List";
         auto choice = co_await ctx.getKeyword("Layout", menu);
         if (choice.status == Status::Cancel)
@@ -212,6 +212,46 @@ public:
                 layout::moveLayout(ctx.tx(), named.text,
                                    static_cast<std::size_t>(std::max<long long>(1, pos.value) - 1)),
                 "Layout \"" + named.text + "\" moved.");
+        } else if (kw == "SAveas") {
+            // A drawing that holds only this layout (its sheet objects and viewports, with the
+            // layers and styles of the drawing) and no model-space objects; Template reads it back.
+            cmd::StringOptions fo;
+            fo.defaultValue = named.text + ".tbcad";
+            auto f = co_await ctx.getString("File to save the layout template to (.tbcad)", fo);
+            if (!f.ok())
+                co_return;
+            std::string path = cmd::trim(f.text);
+            if (path.size() >= 2 && path.front() == '"' && path.back() == '"')
+                path = path.substr(1, path.size() - 2);
+            if (path.empty())
+                co_return;
+            auto bytes = io::writeTbcadToMemory(ctx.doc());
+            if (!bytes) {
+                ctx.message(bytes.error().message);
+                co_return;
+            }
+            io::IoReport rep;
+            auto copy = io::readTbcad(std::span<const std::uint8_t>(bytes.value()), rep);
+            if (!copy) {
+                ctx.message(copy.error().message);
+                co_return;
+            }
+            Document& tpl = *copy.value();
+            {
+                Transaction tx = tpl.begin("Layout template");
+                for (const auto& l : layout::layouts(tpl))
+                    if (lower(l.name) != lower(named.text))
+                        (void)layout::deleteLayout(tx, l.name);
+                for (EntityId id : tpl.modelSpace())
+                    (void)tx.erase(id);
+                tx.commit();
+            }
+            std::filesystem::path file(std::u8string(path.begin(), path.end()));
+            if (file.extension().empty())
+                file += ".tbcad";
+            auto w = io::writeTbcad(tpl, file);
+            ctx.message(w ? "Layout \"" + named.text + "\" saved to " + file.string() + "."
+                          : "Cannot save: " + w.error().message);
         } else if (kw == "Paper") {
             cmd::StringOptions po;
             po.defaultValue = layout::findLayout(ctx.doc(), named.text)->paperName;
