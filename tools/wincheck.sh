@@ -91,8 +91,21 @@ if mode != "all":
                 pass
     entries = list({e["file"]: e for e in picked}.values())
 
+def cmd_args(e):
+    return shlex.split(e["command"]) if "command" in e else list(e["arguments"])
+
+# A configured but never built tree (cloud sessions) lacks the @x.o.modmap response files the
+# compile commands name; ninja writes them in its scan step, without compiling anything.
+need = {}
+for e in entries:
+    for a in cmd_args(e):
+        if a.startswith("@") and a.endswith(".modmap") and not os.path.exists(os.path.join(e["directory"], a[1:])):
+            need.setdefault(e["directory"], []).append(a[1:])
+for d, targets in need.items():
+    subprocess.run(["ninja", "-C", d] + targets, capture_output=True, text=True)
+
 def check(e):
-    args = shlex.split(e["command"]) if "command" in e else list(e["arguments"])
+    args = cmd_args(e)
     out, skip = [], False
     for a in args:
         if skip:
