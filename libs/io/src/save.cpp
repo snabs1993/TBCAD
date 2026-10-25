@@ -30,9 +30,22 @@ namespace {
 namespace fs = std::filesystem;
 
 Error ioError(const std::string& what, const fs::path& p, const std::error_code& ec = {}) {
+#ifdef _WIN32
+    const DWORD last = GetLastError();  // read first: later calls may reset it
+    std::error_code sys = ec ? ec : std::error_code(static_cast<int>(last), std::system_category());
+#else
+    const std::error_code& sys = ec;
+#endif
     std::string m = what + " " + p.string();
-    if (ec)
-        m += ": " + ec.message();
+    if (sys)
+        m += ": " + sys.message();
+#ifdef _WIN32
+    if (sys.category() == std::system_category() &&
+        (sys.value() == ERROR_SHARING_VIOLATION || sys.value() == ERROR_LOCK_VIOLATION ||
+         sys.value() == ERROR_ACCESS_DENIED))
+        m += " (another program may have it open, or it is read-only: close it there, or use Save "
+             "As to keep your work under another name)";
+#endif
     return makeError(ErrorCode::Io, std::move(m));
 }
 
@@ -128,6 +141,17 @@ namespace detail {
 Result<void> saveTbcadParts(std::span<const std::span<const std::uint8_t>> parts,
                             const fs::path& requested, const WriteOptions& options) {
     const fs::path path = platform::longPath(requested);
+    {
+        // A read-only file is never replaced (rename would silently overwrite it on POSIX).
+        std::error_code ec;
+        const fs::file_status st = fs::status(path, ec);
+        if (!ec && fs::is_regular_file(st) &&
+            (st.permissions() & fs::perms::owner_write) == fs::perms::none)
+            return makeError(ErrorCode::Io, "cannot save " + requested.string() +
+                                                ": the file is read-only (clear its read-only "
+                                                "setting, or use Save As to keep your work under "
+                                                "another name)");
+    }
     fs::path tmp = path;
     tmp += ".tmp";
     if (Result<void> r = writeAndSync(tmp, parts); !r) {
