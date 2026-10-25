@@ -129,9 +129,10 @@ public:
         const std::string space = t.space();
 
         auto type = co_await ctx.getKeyword(
-            "Parameter type [Linear/Rotation/Flip/Visibility/Table] <Linear>",
-            cmd::KeywordOptions{.keywords = {"Linear", "Rotation", "Flip", "Visibility", "Table"},
-                                .defaultKeyword = "Linear"});
+            "Parameter type [Linear/Rotation/Flip/Visibility/Table/XY] <Linear>",
+            cmd::KeywordOptions{
+                .keywords = {"Linear", "Rotation", "Flip", "Visibility", "Table", "XY"},
+                .defaultKeyword = "Linear"});
         if (!type.ok())
             co_return;
         auto label = co_await ctx.getString("Enter parameter name <" + type.keyword + ">",
@@ -145,7 +146,36 @@ public:
             ctx.message("The block already has a parameter called \"" + p.name + "\"");
             co_return;
         }
-        if (type.keyword == "Linear") {
+        std::optional<DynParam> second;  // XY: the vertical half
+        if (type.keyword == "XY") {
+            // An XY parameter is a horizontal and a vertical distance from one base point, each
+            // with its own grip (as in AutoCAD); they are two linear parameters.
+            auto a = co_await ctx.getPoint("Specify the base point" + space);
+            if (!a.ok())
+                co_return;
+            auto b = co_await ctx.getPoint("Specify the opposite corner" + space,
+                                           cmd::PointOptions{.base = a.point});
+            if (!b.ok())
+                co_return;
+            if (tol::isZeroLength({b.point.x - a.point.x, 0}) ||
+                tol::isZeroLength({0, b.point.y - a.point.y})) {
+                ctx.message("The corner must differ from the base point in both X and Y");
+                co_return;
+            }
+            DynParam q = p;
+            p.kind = q.kind = DynParam::Kind::Linear;
+            p.name += " X";
+            q.name += " Y";
+            if (def->dynamic && (blocks::dynFind(*def->dynamic, q.name) >= 0 ||
+                                 blocks::dynFind(*def->dynamic, p.name) >= 0)) {
+                ctx.message("The block already has a parameter called \"" + p.name + "\"");
+                co_return;
+            }
+            p.base = q.base = t.map(a.point);
+            p.end = t.map({b.point.x, a.point.y});
+            q.end = t.map({a.point.x, b.point.y});
+            second = std::move(q);
+        } else if (type.keyword == "Linear") {
             p.kind = DynParam::Kind::Linear;
             auto a = co_await ctx.getPoint("Specify the start point" + space);
             if (!a.ok())
@@ -306,6 +336,8 @@ public:
             if (!d.dynamic)
                 d.dynamic = DynamicDef{};
             d.dynamic->params.push_back(std::move(p));
+            if (second)
+                d.dynamic->params.push_back(std::move(*second));
         });
         ctx.message("Added the " + kindName + " parameter");
         ctx.setUndoLabel("Add parameter");
