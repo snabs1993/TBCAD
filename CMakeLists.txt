@@ -6,6 +6,9 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+# Link the MSVC runtime statically so tbcad.exe starts on a PC without the Visual C++
+# redistributable (a friend's machine). Must be set before any target, including FetchContent ones.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 if(WIN32)
