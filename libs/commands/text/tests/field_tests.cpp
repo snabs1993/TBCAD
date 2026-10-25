@@ -9,6 +9,7 @@
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/text/field.h"
+#include "tbcad/text/text.h"
 
 using namespace tbcad;
 
@@ -184,4 +185,24 @@ TEST_CASE("FIELD offers layer, block, attribute and radius") {
           "%<layer:#" + std::to_string(circle.value) + ">%");
     REQUIRE(f.host.run("FIELD", {"Scale", "0,40"}).finished);
     CHECK(entityAs<TextData>(*f.doc.find(f.last()))->utf8 == "%<scale>%");
+}
+
+TEST_CASE("FONTALT and FONTMAP are kept as settings and given to the font code") {
+    Fixture f;
+    f.host.run("FONTALT", {"simplex.shx"});
+    CHECK(f.host.setting("text.fontalt").value_or("") == "simplex.shx");
+    f.host.run("FONTALT", {"."});
+    CHECK(f.host.setting("text.fontalt").value_or("x").empty());
+
+    const auto file = std::filesystem::temp_directory_path() / "tbcad_fontmap_test.fmp";
+    std::ofstream(file) << "romans;Arial\n";
+    f.host.run("FONTMAP", {file.string()});
+    CHECK(f.host.setting("text.fontmap.file").value_or("") == file.string());
+    TextStyle st;
+    st.shxFile = "romans.shx";
+    st.fontFamily = "TBCAD Stroke";
+    CHECK(text::resolveStyleFont(st).wanted == "Arial");
+    f.host.run("FONTMAP", {"."});
+    std::filesystem::remove(file);
+    CHECK(text::resolveStyleFont(st).wanted == "romans.shx");
 }

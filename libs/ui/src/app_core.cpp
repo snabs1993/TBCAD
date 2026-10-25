@@ -169,6 +169,13 @@ AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
     }
     for (auto& w : settings_.repair())
         startupWarnings_.push_back(std::move(w));
+    {
+        // FONTMAP / FONTALT from the last session.
+        const auto file = settings_.getString("text.fontmap.file", "");
+        const auto alt = settings_.getString("text.fontalt", "");
+        if (!file.empty() || !alt.empty())
+            text::setFontSubstitutionsFromFile(file, alt);
+    }
 
     keybindings_.declare("file.new", "Ctrl+N");
     keybindings_.declare("file.open", "Ctrl+O");
