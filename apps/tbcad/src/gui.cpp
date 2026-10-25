@@ -231,6 +231,7 @@ std::string Gui::actionLabel(const std::string& action) const {
         {"edit.deselect", "Edit > Deselect / cancel"},
         {"view.zoomExtents", "View > Zoom Extents"},
         {"view.toggleCommandLine", "View > Command Line"},
+        {"view.toggleProperties", "View > Object Properties"},
         {"view.expandLog", "View > Command Log"},
         {"view.textWindow", "Command history window (F2)"},
         {"view.cleanScreen", "View > Clean Screen"},
@@ -319,6 +320,8 @@ void Gui::runAction(const std::string& action) {
         core_.zoomExtents();
     else if (action == "view.toggleCommandLine")
         showCommandLine_ = !showCommandLine_;
+    else if (action == "view.toggleProperties")
+        panelOpen_["properties"] = !panelOpen_["properties"];
     else if (action == "view.commandPalette") {
         showCommandLine_ = true;
         paletteOpen_ = true;
@@ -1032,7 +1035,10 @@ void Gui::menuBar() {
         if (ImGui::MenuItem("Clean Screen", keys.label("view.cleanScreen").c_str(), cleanScreen_))
             cleanScreen_ = !cleanScreen_;
         for (const auto& p : registry_.panels())
-            ImGui::MenuItem(p.title.c_str(), nullptr, &panelOpen_[p.id]);
+            ImGui::MenuItem(
+                p.title.c_str(),
+                p.id == "properties" ? keys.label("view.toggleProperties").c_str() : nullptr,
+                &panelOpen_[p.id]);
         ImGui::Separator();
         workspaceMenu();
         if (ImGui::BeginMenu("Theme")) {

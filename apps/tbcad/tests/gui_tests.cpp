@@ -2500,6 +2500,24 @@ TEST_CASE("Clean Screen from the command line and Ctrl+0, workspaces with WSSAVE
     CHECK(h.core().setting("workspace.current").value_or("") == "Drafting");
 }
 
+TEST_CASE("Ctrl+1 toggles Object Properties and Ctrl+9 the command line, as in AutoCAD") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    REQUIRE(h.windowOpen("Object Properties"));
+    h.key(ImGuiKey_1, true);
+    h.frame(3);
+    CHECK_FALSE(h.windowOpen("Object Properties"));
+    h.key(ImGuiKey_1, true);
+    h.frame(3);
+    CHECK(h.windowOpen("Object Properties"));
+    h.key(ImGuiKey_9, true);
+    h.frame(3);
+    CHECK_FALSE(h.windowOpen("Command"));
+    h.key(ImGuiKey_9, true);
+    h.frame(3);
+    CHECK(h.windowOpen("Command"));
+}
+
 TEST_CASE("Publish dialog: the drawing's sheets, save the list, publish one PDF") {
     const fs::path dir = scratchDir("publish");
     Harness h(1920, 1080);
