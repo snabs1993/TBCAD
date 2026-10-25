@@ -18,6 +18,15 @@ Ucs DraftingEnv::effectiveUcs() const {
 }
 
 namespace {
+// The system the drafting aids work in: the UCS turned by SNAPANG.
+Ucs aidsUcs(const DraftingEnv& env, const DraftingSettings& s) {
+    Ucs u = env.effectiveUcs();
+    u.angle += s.snapAngleDeg * kPi / 180.0;
+    return u;
+}
+}  // namespace
+
+namespace {
 bool nearestEdge(const Entity& e, Vec2 p, Vec2& a, Vec2& b, double& dist);
 std::string formatDistance(const DraftingEnv& env, double mm);
 }  // namespace
@@ -273,7 +282,7 @@ std::optional<Constrained> constrain(const DraftingEnv* env, const cmd::PointQue
     const Vec2 base = *query.base;
     // Directions are measured in the current UCS: ortho follows its axes and polar angles count
     // from its X axis.
-    c.ucs = env->effectiveUcs();
+    c.ucs = aidsUcs(*env, s);
     const Vec2 v = c.ucs.dirFromWorld(raw - base);
     double d = length(v);
     if (d < 1e-9)
@@ -410,7 +419,7 @@ std::optional<Vec2> GridSnapFilter::filter(const cmd::PointQuery&, Vec2 raw, cmd
     // does not jump to a lattice.
     if (!s.snap || s.polarSnap || !(s.snapSpacing > 0) || !(s.snapSpacingY > 0))
         return std::nullopt;
-    const Ucs ucs = env_->effectiveUcs();
+    const Ucs ucs = aidsUcs(*env_, s);
     const Vec2 u = ucs.fromWorld(raw) - s.snapBase;
     if (s.isoPlane != IsoPlane::Off) {
         // The lattice of the plane: steps of the spacing along both of its axes.
@@ -548,7 +557,7 @@ std::optional<Vec2> OtrackFilter::filter(const cmd::PointQuery& query, Vec2 raw,
         return std::nullopt;
     if (acquired_.empty() && temp.empty() && !query.base)
         return std::nullopt;
-    const Ucs ucs = env_->effectiveUcs();
+    const Ucs ucs = aidsUcs(*env_, s);
     const double px = std::max(query.pixelSize, 1e-9);
     const double tol = 8.0 * px;
 
