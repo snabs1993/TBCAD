@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <map>
@@ -970,6 +971,26 @@ std::string describe(std::span<const std::byte> bytes) {
                 line("decoded section " + name + ": " + std::to_string(data.size()) +
                      " bytes, starts " + hex16(data));
             const auto& secs = sections.value().sections;
+            // TBCAD_DUMP_OBJECTS=<start>,<length>: raw bytes of the objects stream (at most 2000)
+            // for working out why a run of objects does not frame.
+            if (const char* spec = std::getenv("TBCAD_DUMP_OBJECTS")) {
+                const auto objs = secs.find("AcDb:AcDbObjects");
+                unsigned long start = 0, len = 0;
+                if (objs != secs.end() && std::sscanf(spec, "%lu,%lu", &start, &len) == 2) {
+                    len = std::min(len, 2000UL);
+                    for (unsigned long row = start; row < start + len && row < objs->second.size();
+                         row += 32) {
+                        std::string h = std::to_string(row) + ":";
+                        char b[4];
+                        for (unsigned long i = row;
+                             i < row + 32 && i < start + len && i < objs->second.size(); ++i) {
+                            std::snprintf(b, sizeof b, " %02X", objs->second[i]);
+                            h += b;
+                        }
+                        line("objects stream " + h);
+                    }
+                }
+            }
             if (const auto hdr = secs.find("AcDb:Header"); hdr != secs.end()) {
                 // The whole header: its layout differs between releases and is worked out from it.
                 std::string all;
