@@ -113,3 +113,21 @@ TEST_CASE("a lookup table parameter sets the parameters it drives") {
     const auto values = blocks::dynValues(*def, *entityAs<InsertData>(*f.doc.find(ins)));
     CHECK(values == std::vector<double>{12, 1});
 }
+
+TEST_CASE("RESETBLOCK puts dynamic references back to the block defaults") {
+    Fixture f;
+    BlockId b = makeFrame(f);
+    f.host->run("BPARAM", {"Frame", "L", "Width", "0,0", "10,0", "0", "0"});
+    f.host->run("BACTION", {"Frame", "Width", "St", "9,-1", "11,6", "-1,-1", "11,6"});
+    EntityId a = insertFrame(f, b);
+    EntityId c = insertFrame(f, b);
+    f.host->run("DYNSET", {cmd::ScriptItem::pick(a), "Width", "14"});
+    f.host->run("DYNSET", {cmd::ScriptItem::pick(c), "Width", "16"});
+    f.host->run("RESETBLOCK", {cmd::ScriptItem::select({a}), cmd::ScriptItem::enter()});
+    CHECK(entityAs<InsertData>(*f.doc.find(a))->dynValues.empty());
+    CHECK(entityAs<InsertData>(*f.doc.find(c))->dynValues.size() == 1);
+    f.host->run("RESETBLOCK", {"A"});
+    CHECK(entityAs<InsertData>(*f.doc.find(c))->dynValues.empty());
+    CHECK(f.host->undo());
+    CHECK(entityAs<InsertData>(*f.doc.find(c))->dynValues.size() == 1);
+}

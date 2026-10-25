@@ -490,6 +490,49 @@ public:
     }
 };
 
+// RESETBLOCK: puts dynamic block references back to their definition defaults.
+class ResetBlockCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "RESETBLOCK"; }
+    std::string_view description() const override {
+        return "Reset dynamic block references to the defaults of their block";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        Document& doc = ctx.doc();
+        auto isDynamic = [&doc](const Entity& e) {
+            const auto* ins = entityAs<InsertData>(e);
+            const BlockDef* def = ins ? doc.block(ins->block) : nullptr;
+            return def && def->dynamic;
+        };
+        cmd::SelectionOptions so;
+        so.filter = isDynamic;
+        so.keywords = {"All"};
+        auto sel = co_await ctx.getSelection("Select dynamic blocks to reset or [All]", so);
+        std::vector<EntityId> ids;
+        if (sel.status == cmd::Status::Keyword && sel.keyword == "All") {
+            for (EntityId id : doc.modelSpace())
+                if (const Entity* e = doc.find(id); e && isDynamic(*e))
+                    ids.push_back(id);
+        } else if (sel.ok()) {
+            ids = sel.ids;
+        } else {
+            co_return;
+        }
+        std::size_t n = 0;
+        for (EntityId id : ids) {
+            const Entity* e = doc.find(id);
+            if (!e || !isDynamic(*e) || entityAs<InsertData>(*e)->dynValues.empty())
+                continue;
+            if (ctx.tx().modify(id, [](Entity& t) { entityAs<InsertData>(t)->dynValues.clear(); }))
+                ++n;
+        }
+        ctx.message(std::to_string(n) + " dynamic block(s) reset.");
+        if (n > 0)
+            ctx.setUndoLabel("Reset block");
+    }
+};
+
 }  // namespace
 
 std::unique_ptr<cmd::Command> makeBParamCommand() {
@@ -500,6 +543,10 @@ std::unique_ptr<cmd::Command> makeBActionCommand() {
 }
 std::unique_ptr<cmd::Command> makeDynSetCommand() {
     return std::make_unique<DynSetCommand>();
+}
+
+std::unique_ptr<cmd::Command> makeResetBlockCommand() {
+    return std::make_unique<ResetBlockCommand>();
 }
 
 }  // namespace tbcad::block_cmds

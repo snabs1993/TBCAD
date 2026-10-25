@@ -4136,6 +4136,16 @@ void Gui::viewportMenu() {
                 if (core_.registry().find(command) && ImGui::MenuItem(label))
                     run(command);
             };
+            auto isDynamicInsert = [&] {
+                for (EntityId id : core_.selection()) {
+                    const Entity* e = core_.document().find(id);
+                    const auto* ins = e ? entityAs<InsertData>(*e) : nullptr;
+                    const BlockDef* def = ins ? core_.document().block(ins->block) : nullptr;
+                    if (def && def->dynamic)
+                        return true;
+                }
+                return false;
+            };
             ImGui::Separator();
             if (onlyOne && first) {
                 switch (*first) {
@@ -4152,6 +4162,8 @@ void Gui::viewportMenu() {
                         break;
                     case EntityKind::Insert:
                         item("Edit Block", "BEDIT");
+                        if (isDynamicInsert())
+                            item("Reset Block", "RESETBLOCK");
                         item("Explode", "EXPLODE");
                         break;
                     case EntityKind::Dimension:

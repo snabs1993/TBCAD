@@ -41,6 +41,7 @@ std::unique_ptr<cmd::Command> makeArrayRemoveCommand();
 std::unique_ptr<cmd::Command> makeBParamCommand();
 std::unique_ptr<cmd::Command> makeBActionCommand();
 std::unique_ptr<cmd::Command> makeDynSetCommand();
+std::unique_ptr<cmd::Command> makeResetBlockCommand();
 std::unique_ptr<cmd::Command> makeAsmDefCommand();
 std::unique_ptr<cmd::Command> makeAsmSetCommand();
 std::unique_ptr<cmd::Command> makeAsmInfoCommand();
