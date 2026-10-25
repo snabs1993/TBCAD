@@ -679,3 +679,32 @@ TEST_CASE("LAYOUTWIZARD can make a sheet with a viewport or an empty one") {
     REQUIRE(l.has_value());
     CHECK(l->viewports.empty());
 }
+
+TEST_CASE("ALIGNSPACE pans a viewport so a model point lands on a sheet point") {
+    Fixture f;
+    f.host->run("LAYOUT", {"New", "Plan", "A3", ""});
+    f.host->run("MVIEW", {"10,10", "410,287", "1:50", "2500,1000"});
+    // Sheet middle is (210,148.5): model (2500,1000) should show 100 mm to its right.
+    f.host->run("ALIGNSPACE", {"Model", "1", "2500,1000", "310,148.5", ""});
+    const layout::Viewport v = layout::findLayout(f.doc, "Plan")->viewports[0];
+    CHECK(v.center.x == doctest::Approx(-2500));
+    CHECK(v.center.y == doctest::Approx(1000));
+    CHECK(v.scaleN == doctest::Approx(50));
+    CHECK(f.host->undo());
+    CHECK(layout::findLayout(f.doc, "Plan")->viewports[0].center.x == doctest::Approx(2500));
+}
+
+TEST_CASE("ALIGNSPACE with two pairs also sets the scale and respects VPLOCK") {
+    Fixture f;
+    f.host->run("LAYOUT", {"New", "Plan", "A3", ""});
+    f.host->run("MVIEW", {"10,10", "410,287", "1:50", "2500,1000"});
+    f.host->run("VPLOCK", {"1", "Lock"});
+    f.host->run("ALIGNSPACE", {"Model", "1", "0,0", "210,148.5", "1000,0", "310,148.5"});
+    CHECK(layout::findLayout(f.doc, "Plan")->viewports[0].scaleN == doctest::Approx(50));
+    f.host->run("VPLOCK", {"1", "Unlock"});
+    f.host->run("ALIGNSPACE", {"Model", "1", "0,0", "210,148.5", "1000,0", "310,148.5"});
+    const layout::Viewport v = layout::findLayout(f.doc, "Plan")->viewports[0];
+    CHECK(v.scaleN == doctest::Approx(10));
+    CHECK(v.center.x == doctest::Approx(0));
+    CHECK(v.center.y == doctest::Approx(0));
+}

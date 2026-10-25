@@ -14,6 +14,7 @@
 #include "tbcad/io/tbcad.h"
 #include "tbcad/layout/layout.h"
 #include "tbcad/layoutcmd/layoutcmd.h"
+#include "tbcad/transform/apply.h"
 
 namespace tbcad::layoutcmd {
 
@@ -999,6 +1000,96 @@ public:
     }
 };
 
+// ALIGNSPACE: line up model and sheet through a viewport. "Model" pans the viewport so a model
+// point lands on a sheet point (a second pair also sets the scale); "Sheet" moves sheet objects so
+// a sheet point lands on where a model point is shown.
+class AlignSpaceCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "ALIGNSPACE"; }
+    std::string_view description() const override {
+        return "Align model objects with sheet objects through a viewport";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        std::string target;
+        if (!requireLayout(ctx, target))
+            co_return;
+        cmd::KeywordOptions ko;
+        ko.keywords = {"Model", "Sheet"};
+        ko.defaultKeyword = "Model";
+        auto mode =
+            co_await ctx.getKeyword("Move the view or the sheet objects [Model/Sheet] <Model>", ko);
+        if (!mode.ok())
+            co_return;
+        const bool moveSheet = mode.keyword == "Sheet";
+        std::vector<EntityId> ids;
+        if (moveSheet) {
+            auto sel = co_await ctx.getSelection("Select sheet objects to move");
+            if (!sel.ok() || sel.ids.empty())
+                co_return;
+            ids = std::move(sel.ids);
+        }
+        int vpId = 0;
+        bool picked = false;
+        co_await askViewport(ctx, target, vpId, picked);
+        if (!picked)
+            co_return;
+        auto first = co_await ctx.getPoint("Specify the model point to align");
+        if (!first.ok())
+            co_return;
+        auto firstSheet = co_await ctx.getPoint("Specify the matching point on the sheet");
+        if (!firstSheet.ok())
+            co_return;
+        auto lay = layout::findLayout(ctx.doc(), target);
+        const layout::Viewport* vp = lay ? lay->findViewport(vpId) : nullptr;
+        if (!vp) {
+            ctx.message("Viewport " + std::to_string(vpId) + " is gone.");
+            co_return;
+        }
+        const Vec2 mid{(vp->paper.min.x + vp->paper.max.x) / 2,
+                       (vp->paper.min.y + vp->paper.max.y) / 2};
+        if (moveSheet) {
+            // Where the model point is drawn on the sheet now.
+            const Vec2 shown = mid + (first.point - vp->center) / vp->scaleN;
+            const Vec2 d = shown - firstSheet.point;
+            if (std::abs(d.x) < 1e-9 && std::abs(d.y) < 1e-9) {
+                ctx.message("Already aligned.");
+                co_return;
+            }
+            const auto rep = transform::applyTransform(ctx, ids, Transform2::translate(d), false);
+            if (rep.failed > 0)
+                ctx.message(std::to_string(rep.failed) + " object(s) could not be moved.");
+            co_return;
+        }
+        double scaleN = vp->scaleN;
+        cmd::PointOptions po;
+        po.allowNone = true;
+        auto second = co_await ctx.getPoint(
+            "Second model point to also set the scale, or Enter to keep the scale", po);
+        if (second.status == Status::Cancel)
+            co_return;
+        if (second.ok()) {
+            auto secondSheet = co_await ctx.getPoint("Specify the matching point on the sheet");
+            if (!secondSheet.ok())
+                co_return;
+            const double model = length(second.point - first.point);
+            const double sheet = length(secondSheet.point - firstSheet.point);
+            if (model < 1e-9 || sheet < 1e-9) {
+                ctx.message("The two points must be apart.");
+                co_return;
+            }
+            scaleN = model / sheet;
+        }
+        if (scaleN != vp->scaleN)
+            if (auto r = layout::setViewportScale(ctx.tx(), target, vpId, scaleN); !r) {
+                ctx.message(r.error().message);
+                co_return;
+            }
+        const Vec2 centre = first.point - (firstSheet.point - mid) * scaleN;
+        report(ctx, layout::setViewportCenter(ctx.tx(), target, vpId, centre),
+               "Viewport " + std::to_string(vpId) + " aligned.");
+    }
+};
+
 class TitleBlockCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "TITLEBLOCK"; }
@@ -1185,6 +1276,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<VpResizeCommand>());
     (void)registry.add(std::make_unique<VpClipCommand>());
     (void)registry.add(std::make_unique<VpCenterCommand>());
+    (void)registry.add(std::make_unique<AlignSpaceCommand>());
     (void)registry.add(std::make_unique<ChSpaceCommand>());
     (void)registry.add(std::make_unique<TitleBlockCommand>());
     (void)registry.add(std::make_unique<MvsetupCommand>());
