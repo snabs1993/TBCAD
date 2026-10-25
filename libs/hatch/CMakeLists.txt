@@ -41,7 +41,7 @@ tbcad_add_tests(hatch
     tests/pattern_tests.cpp
     tests/perf_tests.cpp
     tests/fuzz_tests.cpp
-    tests/messy_tests.cpp)
+    tests/messy_tests.cpp tests/property_tests.cpp)
 
 # Optional libFuzzer build (clang only): cmake -DTBCAD_FORMATS_FUZZ=ON
 if(TBCAD_FORMATS_FUZZ)

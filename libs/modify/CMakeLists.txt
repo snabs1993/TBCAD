@@ -21,4 +21,4 @@ tbcad_add_tests(modify
     tests/semantic_tests.cpp
     tests/stress_tests.cpp
     tests/test_support.h
-    tests/trim_tests.cpp)
+    tests/trim_tests.cpp tests/property_tests.cpp)
