@@ -524,8 +524,8 @@ private:
         std::string w = " (at " + std::to_string(e.offset) + ", page offset " +
                         std::to_string(e.offset % 0x7400) + ", bytes";
         static const char* d = "0123456789ABCDEF";
-        for (std::size_t i = 0; i < 8 && static_cast<std::size_t>(e.offset) + i < file_.size();
-             ++i) {
+        for (std::size_t i = 0;
+             e.offset >= 0 && i < 8 && static_cast<std::size_t>(e.offset) + i < file_.size(); ++i) {
             const std::uint8_t b = file_[static_cast<std::size_t>(e.offset) + i];
             w += ' ';
             w += d[b >> 4];
@@ -571,6 +571,10 @@ private:
     void decodeOne(const MapEntry& e) {
         TypeTimer timer(*this);
         framed_ = true;
+        if (e.offset < 0 || static_cast<std::size_t>(e.offset) >= file_.size()) {
+            frameNote("object " + hex(e.handle) + " lies outside the file" + where(e));
+            return;
+        }
         BitReader head(file_.subspan(static_cast<std::size_t>(e.offset)));
         const std::uint32_t size = head.ms();
         // R2010 and later: the size of the handle stream (in bits) follows the size. The size

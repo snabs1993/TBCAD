@@ -13,7 +13,7 @@ the repository; real-world samples that the owner provides stay in a private loc
   `gen/gen_big_dxf.py` writes a 50 MB file for timing `tbcad-convert`.
 - `fuzz/` - seed inputs for the libFuzzer targets of fonts (`stroke/`: .shx, .tbsf), PDF underlays
   (`pdf/`), plot styles (`ctb/`), formulas (`expr/`), hatch patterns (`patterns/`) and commands
-  (`commands/`: bytes read as a command and its clicks, picks and typed answers); files named
+  (`dwg/`: DWG files built by the test builder, `commands/`: bytes read as a command and its clicks, picks and typed answers); files named
   `repro-*` are inputs that once crashed or hung, kept so the fuzzers re-check them.
 - `roundtrip/` - reserved for the DXF exporter tests (W4-6).
 

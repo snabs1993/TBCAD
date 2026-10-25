@@ -37,8 +37,9 @@ jobs:
           if [ "${{ github.event_name }}" = "schedule" ]; then seconds=300; else seconds=30; fi
           mkdir -p build/fuzz-corpus-dwg artifacts
           printf 'AC1015\0\0\0\0\0\0\0' > build/fuzz-corpus-dwg/header
+          cp tests/corpus/fuzz/dwg/*.dwg build/fuzz-corpus-dwg/
           build/fuzz/libs/dwg/tbcad_dwg_fuzz_dwg build/fuzz-corpus-dwg \
-            -max_total_time=$seconds -timeout=10 -rss_limit_mb=2048 \
+            -max_total_time=$seconds -timeout=10 -rss_limit_mb=2048 -max_len=65536 \
             -artifact_prefix=artifacts/
       - name: Upload crash inputs
         if: failure()
