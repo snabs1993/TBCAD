@@ -667,3 +667,15 @@ TEST_CASE("MVSETUP rejects a bad scale without making a layout") {
     f.host->run("MVSETUP", {"Plan", "A3", "Landscape", "bogus"});
     CHECK_FALSE(layout::findLayout(f.doc, "Plan").has_value());
 }
+
+TEST_CASE("LAYOUTWIZARD can make a sheet with a viewport or an empty one") {
+    Fixture f;
+    f.host->run("LAYOUTWIZARD", {"Plan", "A3", "Landscape", "Yes", "1:50", "No"});
+    auto l = layout::findLayout(f.doc, "Plan");
+    REQUIRE(l.has_value());
+    CHECK(l->viewports.size() == 1);
+    f.host->run("LAYOUTWIZARD", {"Empty", "A4", "Portrait", "No", "No"});
+    l = layout::findLayout(f.doc, "Empty");
+    REQUIRE(l.has_value());
+    CHECK(l->viewports.empty());
+}

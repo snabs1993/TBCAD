@@ -197,6 +197,26 @@ TEST_CASE("MSPACE enters the model through a viewport and PSPACE returns to the 
     CHECK(core.inPaperSpace());
 }
 
+TEST_CASE("VPMAX maximises the viewport and VPMIN goes back to the sheet") {
+    auto registry = makeRegistry();
+    AppCore core(*registry, platform::AppPaths{tempDir("paper_vpmax") / "cfg",
+                                               tempDir("paper_vpmax") / "data"});
+    core.setViewportSize(1000, 800);
+    {
+        auto tx = core.document().begin("layout");
+        REQUIRE(layout::createLayout(tx, "A", "A3").ok());
+        REQUIRE(layout::addViewport(tx, "A", BBox2{{20, 20}, {220, 170}}, {5000, 3000}, 50).ok());
+        tx.commit();
+    }
+    REQUIRE(core.setActiveLayout("A"));
+    core.submitText("VPMAX");
+    CHECK_FALSE(core.inPaperSpace());
+    CHECK(core.editingViewport() == 1);
+    CHECK(core.camera().center.x == doctest::Approx(5000).epsilon(0.01));
+    core.submitText("VPMIN");
+    CHECK(core.inPaperSpace());
+}
+
 TEST_CASE("zooming and panning inside a viewport changes its view, unless it is locked") {
     auto registry = makeRegistry();
     AppCore core(*registry,

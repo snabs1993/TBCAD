@@ -1039,11 +1039,16 @@ public:
 
 // MVSETUP: one-step sheet setup. Makes a layout, one viewport inside the margins at a scale (or
 // fitted to the drawing) and, if asked, a title block.
+// MVSETUP asks for a viewport scale straight away. LAYOUTWIZARD (the wizard flag) first asks
+// whether the sheet gets a viewport at all, so an empty sheet can be made too.
 class MvsetupCommand final : public cmd::Command {
 public:
-    std::string_view name() const override { return "MVSETUP"; }
+    explicit MvsetupCommand(bool wizard = false) : wizard_(wizard) {}
+    std::string_view name() const override { return wizard_ ? "LAYOUTWIZARD" : "MVSETUP"; }
     std::string_view description() const override {
-        return "Set up a new sheet: paper size, one viewport at a scale, optional title block";
+        return wizard_ ? "Make a new layout step by step: paper size, title block, viewport"
+                       : "Set up a new sheet: paper size, one viewport at a scale, optional title "
+                         "block";
     }
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::StringOptions no;
@@ -1068,14 +1073,27 @@ public:
         auto orient = co_await ctx.getKeyword("Orientation [Landscape/Portrait] <Landscape>", ko);
         if (!orient.ok())
             co_return;
+        bool withViewport = true;
+        if (wizard_) {
+            cmd::KeywordOptions vo;
+            vo.keywords = {"Yes", "No"};
+            vo.defaultKeyword = "Yes";
+            auto vp = co_await ctx.getKeyword("Add a viewport [Yes/No] <Yes>", vo);
+            if (!vp.ok())
+                co_return;
+            withViewport = vp.keyword == "Yes";
+        }
         cmd::StringOptions so;
         so.defaultValue = "Fit";
-        auto scale = co_await ctx.getString("Viewport scale (1:N) or [Fit] <Fit>", so);
-        if (!scale.ok())
-            co_return;
-        const bool fit = lower(scale.text) == "fit" || lower(scale.text) == "f";
+        cmd::StringResult scale{};
+        if (withViewport) {
+            scale = co_await ctx.getString("Viewport scale (1:N) or [Fit] <Fit>", so);
+            if (!scale.ok())
+                co_return;
+        }
+        const bool fit = !withViewport || lower(scale.text) == "fit" || lower(scale.text) == "f";
         double n = 0;
-        if (!fit && !parseScaleN(scale.text, n)) {
+        if (withViewport && !fit && !parseScaleN(scale.text, n)) {
             ctx.message("Not a scale: \"" + scale.text + "\". Use 1:N.");
             co_return;
         }
@@ -1123,10 +1141,11 @@ public:
             if (!(n > 0))
                 n = 1;
         }
-        if (auto id = layout::addViewport(ctx.tx(), name.text, rect, centre, n); !id) {
-            ctx.message(id.error().message);
-            co_return;
-        }
+        if (withViewport)
+            if (auto id = layout::addViewport(ctx.tx(), name.text, rect, centre, n); !id) {
+                ctx.message(id.error().message);
+                co_return;
+            }
         if (tb.keyword == "Yes")
             if (auto r = layout::addTitleBlock(ctx.tx(), name.text, f); !r)
                 ctx.message(r.error().message);
@@ -1134,8 +1153,14 @@ public:
         ctx.host().setSetting("layout.show", name.text);
         char buf[32];
         std::snprintf(buf, sizeof buf, "%.4g", n);
-        ctx.message("Sheet \"" + name.text + "\" set up with a viewport at 1:" + buf + ".");
+        if (withViewport)
+            ctx.message("Sheet \"" + name.text + "\" set up with a viewport at 1:" + buf + ".");
+        else
+            ctx.message("Sheet \"" + name.text + "\" set up without a viewport.");
     }
+
+private:
+    bool wizard_;
 };
 
 }  // namespace
@@ -1163,6 +1188,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<ChSpaceCommand>());
     (void)registry.add(std::make_unique<TitleBlockCommand>());
     (void)registry.add(std::make_unique<MvsetupCommand>());
+    (void)registry.add(std::make_unique<MvsetupCommand>(true));
 }
 
 }  // namespace tbcad::layoutcmd
