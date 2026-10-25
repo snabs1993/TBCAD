@@ -474,3 +474,14 @@ TEST_CASE("PICKSTYLE is a command and a SETVAR name, 0 to 3") {
     f.host.run("SETVAR", {"PICKSTYLE", "0"});
     CHECK(pickStyle(f.doc.header()) == 0);
 }
+
+TEST_CASE("HPORIGIN is a command and a SETVAR name, a point") {
+    Fixture f;
+    CHECK(hatchOrigin(f.doc.header()).x == 0);
+    f.host.run("HPORIGIN", {"12.5,-3"});
+    CHECK(hatchOrigin(f.doc.header()).x == doctest::Approx(12.5));
+    CHECK(hatchOrigin(f.doc.header()).y == doctest::Approx(-3));
+    f.host.run("SETVAR", {"HPORIGIN", "bad"});
+    CHECK(f.host.logContains("HPORIGIN is a point: x,y."));
+    CHECK(hatchOrigin(f.doc.header()).x == doctest::Approx(12.5));
+}

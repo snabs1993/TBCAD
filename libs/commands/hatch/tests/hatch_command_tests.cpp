@@ -5,6 +5,7 @@
 
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/script_host.h"
+#include "tbcad/core/groups.h"
 #include "tbcad/geom/geom.h"
 #include "tbcad/hatch/hatch.h"
 #include "tbcad/hatchcmd/hatchcmd.h"
@@ -626,4 +627,31 @@ TEST_CASE("HATCHEDIT: REcreate makes a polyline for every loop and can associate
     // Not associated, and the whole run is one undo step.
     CHECK(f.host->undo());
     CHECK(count() == 0);
+}
+
+TEST_CASE("HATCH starts at HPORIGIN, and SUPERHATCH fills an area with whole copies of a block") {
+    Fixture f;
+    f.rect({0, 0}, {100, 60});
+    {
+        Transaction tx = f.doc.begin("setup");
+        REQUIRE(tx.modifyHeader([](Header& h) { h.custom[kHpOriginKey] = "5,7"; }).ok());
+        BlockId b = tx.addBlock(BlockDef{.name = "Tile"}).value();
+        Entity e;
+        e.data = LineData{{0, 0}, {10, 10}};
+        REQUIRE(tx.add(std::move(e), b).ok());
+        tx.commit();
+    }
+    f.host->run("HATCH", {"50,30", ""});
+    REQUIRE(f.hatches().size() == 1);
+    CHECK(f.hatches()[0]->patternOrigin.x == doctest::Approx(5));
+    CHECK(f.hatches()[0]->patternOrigin.y == doctest::Approx(7));
+
+    f.host->run("SUPERHATCH", {"Block", "Tile", "Scale", "2", "50,30", ""});
+    std::size_t inserts = 0;
+    f.doc.forEachEntity([&](const Entity& x) {
+        if (kind(x) == EntityKind::Insert)
+            ++inserts;
+    });
+    // 20 mm cells from (5,7): 4 columns and 2 rows fit wholly inside 100 x 60.
+    CHECK(inserts == 8);
 }

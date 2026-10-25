@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <functional>
 
@@ -193,6 +194,27 @@ const std::vector<Var>& variables() {
              if (v.size() != 1 || v[0] < '0' || v[0] > '3')
                  return "PICKSTYLE is 0, 1, 2 or 3.";
              h.custom[kPickStyleKey] = std::string(v);
+             return {};
+         }},
+        {"HPORIGIN", "pattern origin of new hatches, x,y",
+         [](const Document& d) {
+             const Vec2 o = hatchOrigin(d.header());
+             char buf[80];
+             std::snprintf(buf, sizeof buf, "%.10g,%.10g", o.x, o.y);
+             return std::string(buf);
+         },
+         [](const Document&, std::string_view v, Header& h) -> std::string {
+             const std::string t(v);
+             auto comma = t.find(',');
+             if (comma == std::string::npos)
+                 comma = t.find(' ');
+             char* end = nullptr;
+             const double x = comma == std::string::npos ? 0 : std::strtod(t.c_str(), &end);
+             const bool xOk = comma != std::string::npos && end == t.c_str() + comma;
+             const double y = xOk ? std::strtod(t.c_str() + comma + 1, &end) : 0;
+             if (!xOk || end != t.c_str() + t.size() || !std::isfinite(x) || !std::isfinite(y))
+                 return "HPORIGIN is a point: x,y.";
+             h.custom[kHpOriginKey] = t.substr(0, comma) + "," + t.substr(comma + 1);
              return {};
          }},
         {"CECOLOR", "colour of new objects",

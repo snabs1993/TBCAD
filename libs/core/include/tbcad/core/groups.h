@@ -27,6 +27,10 @@ Result<void> writeGroups(Transaction& tx, const std::vector<Group>& groups);
 inline constexpr const char* kPickStyleKey = "tbcad.pickstyle";
 int pickStyle(const Header& h);
 
+// HPORIGIN in Header::custom: "x,y", the pattern origin every new hatch starts with.
+inline constexpr const char* kHpOriginKey = "tbcad.hporigin";
+Vec2 hatchOrigin(const Header& h);
+
 // `ids` plus every member of each selectable group that contains one of them (first occurrence
 // order, no duplicates), and the boundaries of associative hatches, as PICKSTYLE says. Cheap
 // when the document has no groups.

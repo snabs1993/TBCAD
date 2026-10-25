@@ -578,7 +578,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeResumeCommand());
     (void)registry.add(makeSetvarCommand());
     for (const char* v : {"CELTSCALE", "PSLTSCALE", "MSLTSCALE", "PLINEGEN", "ANNOAUTOSCALE",
-                          "ANNOALLVISIBLE", "SELECTIONANNODISPLAY", "PICKSTYLE", "MIRRTEXT"})
+                          "ANNOALLVISIBLE", "SELECTIONANNODISPLAY", "PICKSTYLE", "MIRRTEXT", "HPORIGIN"})
         (void)registry.add(makeVarCommand(v));
     (void)registry.add(makeLwDisplayCommand());
     (void)registry.add(makeQpModeCommand());
