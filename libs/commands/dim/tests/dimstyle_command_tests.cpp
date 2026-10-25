@@ -553,3 +553,19 @@ TEST_CASE("DIMSTYLE AngleZeros, TolZeros and AltZeros set DIMAZIN, DIMTZIN and D
     CHECK(dim::formatNumber(*s, 12.5, false) == "12.5");
     CHECK(dim::formatNumber(*s, kPi / 2, true) == "90.00\xC2\xB0");
 }
+
+TEST_CASE("-DIMSTYLE Save, Restore, Status and Variables work from the command line") {
+    Fixture f;
+    CHECK(f.host->run("-DIMSTYLE", {"Save", "Plan"}).finished);
+    const DimStyle* plan = f.doc.dimStyleByName("Plan");
+    REQUIRE(plan);
+    CHECK(f.doc.header().currentDimStyle == plan->id);
+    CHECK(f.host->run("-DIMSTYLE", {"Restore", "Standard"}).finished);
+    CHECK(f.doc.header().currentDimStyle == kDimStyleStandard);
+    CHECK(f.host->run("-DIMSTYLE", {"Restore", "Nope"}).finished);
+    CHECK(f.doc.header().currentDimStyle == kDimStyleStandard);
+    f.host->clearLog();
+    CHECK(f.host->run("-DIMSTYLE", {"STatus"}).finished);
+    CHECK(f.host->run("-DIMSTYLE", {"Variables", "Plan"}).finished);
+    CHECK(f.host->run("-DIMSTYLE", {"?"}).finished);
+}
