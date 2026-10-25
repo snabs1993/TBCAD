@@ -1253,10 +1253,10 @@ Result<void> AppCore::saveDxf(const fs::path& path) {
     const auto& bytes = out.value().bytes;
     io::WriteOptions wo;
     wo.keepBackup = settings_.getBool("files.backup", true);
-    auto saved = io::saveTbcadBytes(
-        std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(bytes.data()),
-                                      bytes.size()),
-        path, wo);
+    auto saved =
+        io::saveTbcadBytes(std::span<const std::uint8_t>(
+                               reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size()),
+                           path, wo);
     if (!saved) {
         print("Cannot save " + path.string() + ": " + saved.error().message);
         return makeError(ErrorCode::Io, saved.error().message);
