@@ -31,6 +31,20 @@ TEST_CASE("the snap lattice passes through the snap base") {
     CHECK(near(w.hover({14, 13}), {10, 10}));
 }
 
+TEST_CASE("SNAPANG turns the snap lattice") {
+    World w;
+    w.set(keys::snap, "1");
+    w.set(keys::snapSpacing, "10");
+    w.set(keys::snapAngle, "90");
+    // a lattice turned a quarter: still on multiples of 10 along the turned axes
+    CHECK(near(w.hover({14, 13}), {10, 10}));
+    w.set(keys::snapAngle, "45");
+    const double r = std::sqrt(0.5);
+    CHECK(near(w.hover(Vec2{10 * r, 10 * r} + Vec2{0.3, -0.2}), {10 * r, 10 * r}, 1e-9));
+    w.set(keys::snapAngle, "0");
+    CHECK(near(w.hover({14, 13}), {10, 10}));
+}
+
 TEST_CASE("isometric snap uses the Y spacing and the base") {
     World w;
     w.set(keys::snap, "1");

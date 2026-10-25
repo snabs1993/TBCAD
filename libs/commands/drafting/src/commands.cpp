@@ -192,7 +192,7 @@ public:
 
 protected:
     std::vector<std::string> options() const override {
-        return {"Spacing", "Aspect", "Base", "Type"};
+        return {"Spacing", "Aspect", "Base", "Rotate", "Type"};
     }
     cmd::Task option(cmd::CommandContext& ctx, const std::string& opt) override {
         const auto cur = drafting::DraftingSettings::read(ctx.host());
@@ -228,6 +228,17 @@ protected:
             const Vec2 u = ucs.fromWorld(b.point);
             ctx.host().setSetting(drafting::keys::snapBase, number(u.x) + "," + number(u.y));
             ctx.message("Snap base: " + number(u.x) + "," + number(u.y));
+            co_return;
+        }
+        if (opt == "Rotate") {
+            // SNAPANG: turns the snap, grid, ortho and polar tracking (0 = the UCS axes).
+            cmd::RealOptions ra;
+            ra.defaultValue = cur.snapAngleDeg;
+            auto a = co_await ctx.getReal("Rotation angle <" + number(cur.snapAngleDeg) + ">", ra);
+            if (!a.ok())
+                co_return;
+            ctx.host().setSetting(drafting::keys::snapAngle, number(a.value));
+            ctx.message("Snap angle: " + number(a.value));
             co_return;
         }
         if (opt == "Type") {

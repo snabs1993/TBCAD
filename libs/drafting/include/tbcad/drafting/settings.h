@@ -83,6 +83,8 @@ inline constexpr const char* snapSpacing = "drafting.snap.spacing";      // mm
 inline constexpr const char* gridSpacing = "drafting.grid.spacing";      // mm; 0 = snap X spacing
 inline constexpr const char* snapSpacingY = "drafting.snap.spacing.y";   // mm; unset = snap spacing
 inline constexpr const char* snapBase = "drafting.snap.base";            // "x,y" in the UCS
+inline constexpr const char* snapAngle =
+    "drafting.snap.angle";  // degrees; turns snap, grid, ortho, polar
 inline constexpr const char* snapType = "drafting.snap.type";            // "grid" | "polar"
 inline constexpr const char* polarDistance = "drafting.polar.distance";  // mm; 0 = snap spacing
 inline constexpr const char* gridStyle = "drafting.grid.style";          // "dots" | "lines"
@@ -118,6 +120,7 @@ struct DraftingSettings {
     double snapSpacing = 10;   // X spacing
     double snapSpacingY = 10;  // Y spacing (the isometric lattice uses this one)
     Vec2 snapBase{};           // the snap lattice passes through this UCS point
+    double snapAngleDeg = 0;   // SNAPANG: the aids are turned by this angle from the UCS
     bool polarSnap = false;    // SNAP type Polar: steps of polarDistance along tracking only
     double polarDistance = 0;  // 0 = the snap X spacing
     double gridSpacing = 10;

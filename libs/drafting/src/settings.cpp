@@ -264,6 +264,7 @@ DraftingSettings DraftingSettings::read(const cmd::IHost& host) {
             std::isfinite(x) && std::isfinite(y))
             s.snapBase = {x, y};
     }
+    s.snapAngleDeg = numOf(keys::snapAngle, 0, -360);
     if (auto t = get(keys::snapType))
         s.polarSnap = lower(*t) == "polar";
     s.polarDistance = numOf(keys::polarDistance, 0, 0);

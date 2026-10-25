@@ -77,7 +77,7 @@ void registerUi(ui::UiRegistry& ui) {
         if (pc.doc) {  // the grid follows the current UCS
             const auto ucs = drafting::currentUcs(pc.doc, pc.host);
             gs.origin = ucs.toWorld(s.snapBase);  // the grid passes through the snap base
-            gs.angle = ucs.angle;
+            gs.angle = ucs.angle + s.snapAngleDeg * 3.14159265358979323846 / 180.0;
         }
         drafting::buildGrid(underlay, *pc.camera, gs);
     });

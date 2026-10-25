@@ -115,6 +115,8 @@ TEST_CASE("SNAP Aspect, Base and Type, and POLAR Additional and Relative") {
     s = drafting::DraftingSettings::read(f.host);
     CHECK(s.snapBase.x == doctest::Approx(3));
     CHECK(s.snapBase.y == doctest::Approx(4));
+    f.host.run("SNAP", {"rotate", "30"});
+    CHECK(drafting::DraftingSettings::read(f.host).snapAngleDeg == doctest::Approx(30));
     f.host.run("SNAP", {"type", "polar", "7"});
     s = drafting::DraftingSettings::read(f.host);
     CHECK(s.polarSnap);
