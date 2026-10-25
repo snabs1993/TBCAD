@@ -587,6 +587,23 @@ TEST_CASE("Properties edit a hatch pattern, scale, angle and origin - and undo")
     CHECK(entityAs<HatchData>(*doc.find(id))->patternScale == doctest::Approx(2.5));
 }
 
+TEST_CASE("Properties edit the line spacing of multiline text - range checked - and undo") {
+    Document doc;
+    MTextData m;
+    m.utf8 = "a\\Pb";
+    const EntityId id = addEntity(doc, Indirect<MTextData>(m));
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    cmd::ScriptHost host(doc, reg);
+    host.setSelection({id});
+    host.run("-PROP", {"Set", "linespacing", "9", cmd::ScriptItem::enter()});
+    CHECK(entityAs<MTextData>(*doc.find(id))->lineSpacing == doctest::Approx(1.0));
+    host.run("-PROP", {"Set", "linespacing", "1.5", cmd::ScriptItem::enter()});
+    CHECK(entityAs<MTextData>(*doc.find(id))->lineSpacing == doctest::Approx(1.5));
+    CHECK(host.undo());
+    CHECK(entityAs<MTextData>(*doc.find(id))->lineSpacing == doctest::Approx(1.0));
+}
+
 TEST_CASE("Properties edit attribute values, dimension override and style, table text style") {
     Document doc;
     cmd::Registry reg;

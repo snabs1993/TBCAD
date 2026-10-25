@@ -238,6 +238,9 @@ std::vector<GeometryField> geometryFields(const Entity& e, int vertex) {
         num("height", "Text height", mt->height);
         num("width", "Defined width", mt->width);
         out.push_back({"rotation", "Rotation", FieldType::Angle, true, deg(mt->rotation)});
+        num("linespacing", "Line spacing factor", mt->lineSpacing);
+        if (mt->bgMode != 0)
+            num("bgscale", "Background offset factor", mt->bgScale);
     } else if (const auto* in = entityAs<InsertData>(e)) {
         num("x", "Position X", in->position.x);
         num("y", "Position Y", in->position.y);
@@ -485,6 +488,14 @@ Result<void> setGeometryField(Transaction& tx, EntityId id, const std::string& f
                 if (v <= 0)
                     return fail(bad("Height must be greater than zero."));
                 mt->height = v;
+            } else if (f == "linespacing") {
+                if (v < 0.25 || v > 4)
+                    return fail(bad("The line spacing factor is 0.25 to 4."));
+                mt->lineSpacing = v;
+            } else if (f == "bgscale") {
+                if (v < 1 || v > 5)
+                    return fail(bad("The background offset factor is 1 to 5."));
+                mt->bgScale = v;
             } else if (f == "width") {
                 if (v < 0)
                     return fail(bad("Width cannot be negative."));
