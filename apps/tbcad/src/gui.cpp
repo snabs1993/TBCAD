@@ -230,6 +230,8 @@ std::string Gui::actionLabel(const std::string& action) const {
         {"edit.selectAll", "Edit > Select All"},
         {"edit.deselect", "Edit > Deselect / cancel"},
         {"view.zoomExtents", "View > Zoom Extents"},
+        {"file.exit", "File > Exit"},
+        {"drafting.snapAlt", "Tools > Drafting Aids > Snap (second key)"},
         {"view.toggleCommandLine", "View > Command Line"},
         {"view.toggleProperties", "View > Object Properties"},
         {"view.expandLog", "View > Command Log"},
@@ -295,6 +297,10 @@ void Gui::runAction(const std::string& action) {
         doOpen();
     else if (action == "file.close")
         requestAction(Pending::Close);
+    else if (action == "file.exit")
+        requestAction(Pending::Exit);
+    else if (action == "drafting.snapAlt")
+        core_.submitText("'TOGGLESNAP");
     else if (action == "view.nextDocument")
         core_.activateDocument((core_.activeDocument() + 1) % core_.documentCount());
     else if (action == "view.prevDocument")
@@ -991,7 +997,7 @@ void Gui::menuBar() {
             doExportDxf();
         registeredMenu("File");
         ImGui::Separator();
-        if (ImGui::MenuItem("Exit"))
+        if (ImGui::MenuItem("Exit", keys.label("file.exit").c_str()))
             requestAction(Pending::Exit);
         ImGui::EndMenu();
     }

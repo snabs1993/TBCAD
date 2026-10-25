@@ -168,6 +168,7 @@ AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
     keybindings_.declare("file.save", "Ctrl+S");
     keybindings_.declare("file.saveAs", "Ctrl+Shift+S");
     keybindings_.declare("file.close", "Ctrl+W");
+    keybindings_.declare("file.exit", "Ctrl+Q");  // as in AutoCAD
     keybindings_.declare("view.nextDocument", "Ctrl+Tab");
     keybindings_.declare("view.prevDocument", "Ctrl+Shift+Tab");
     keybindings_.declare("edit.undo", "Ctrl+Z");
@@ -176,6 +177,7 @@ AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
     keybindings_.declare("edit.deselect", "Escape");
     keybindings_.declare("edit.delete", "Delete");
     keybindings_.declare("view.zoomExtents", "");
+    keybindings_.declare("drafting.snapAlt", "Ctrl+B");        // AutoCAD's second key for F9
     keybindings_.declare("view.toggleCommandLine", "Ctrl+9");  // as in AutoCAD
     keybindings_.declare("view.toggleProperties", "Ctrl+1");   // as in AutoCAD
     keybindings_.declare("view.commandPalette", "Ctrl+Shift+P");
