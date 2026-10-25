@@ -71,16 +71,20 @@ public:
         Method method = Method::Fit;
         std::vector<Vec2> pts;
         bool closed = false;
+        std::optional<Vec2> startTan, endTan;  // set by Tangents, else asked for at the end
+        bool presetTangents = false;
 
         for (;;) {
             cmd::PointOptions o;
             if (!pts.empty())
                 o.base = pts.back();
             if (pts.empty())
-                o.keywords = {"Method"};
+                o.keywords = {"Method", "Object"};
             else {
                 if (pts.size() >= 3)
                     o.keywords.push_back("Close");
+                if (method == Method::Fit)
+                    o.keywords.push_back("Tangents");
                 o.keywords.push_back("Undo");
             }
             o.preview = [c, method, pts](Vec2 cursor, DisplayList& out) {
@@ -112,6 +116,44 @@ public:
                 if (!m.ok())
                     co_return;
                 method = m.keyword == "Fit" ? Method::Fit : Method::Cv;
+            } else if (r.keyword == "Object") {
+                // Converts a polyline (its vertices become the fit points) and replaces it.
+                cmd::EntityOptions eo;
+                eo.filter = [](const Entity& e) { return kind(e) == EntityKind::Polyline; };
+                auto o2 = co_await ctx.getEntity("Select polyline to convert to a spline", eo);
+                if (!o2.ok())
+                    co_return;
+                const Entity* e = ctx.doc().find(o2.id);
+                const auto* pl = e ? entityAs<PolylineData>(*e) : nullptr;
+                if (!pl)
+                    co_return;
+                for (const PolyVertex& v : pl->v)
+                    if (pts.empty() || !tol::isZeroLength(v.p - pts.back()))
+                        pts.push_back(v.p);
+                closed = pl->closed && pts.size() >= 3;
+                if (closed && tol::isZeroLength(pts.back() - pts.front()))
+                    pts.pop_back();
+                if (auto sp = build(Method::Fit, pts, closed); sp) {
+                    (void)ctx.tx().erase(o2.id);
+                    addEntity(ctx, *sp);
+                } else {
+                    ctx.message("The polyline could not be converted to a spline.");
+                }
+                co_return;
+            } else if (r.keyword == "Tangents") {
+                cmd::PointOptions so;
+                so.base = pts.front();
+                auto st = co_await ctx.getPoint("Specify start tangent", std::move(so));
+                if (!st.ok())
+                    continue;
+                cmd::PointOptions eo;
+                eo.base = pts.back();
+                auto et = co_await ctx.getPoint("Specify end tangent", std::move(eo));
+                if (!et.ok())
+                    continue;
+                startTan = st.point - pts.front();
+                endTan = et.point - pts.back();
+                presetTangents = true;
             } else if (r.keyword == "Undo") {
                 pts.pop_back();
             } else {  // Close
@@ -124,8 +166,7 @@ public:
             ctx.message("A spline needs at least two points.");
             co_return;
         }
-        std::optional<Vec2> startTan, endTan;
-        if (method == Method::Fit && !closed) {
+        if (method == Method::Fit && !closed && !presetTangents) {
             cmd::PointOptions so;
             so.base = pts.front();
             so.preview = [c, method, pts](Vec2 cursor, DisplayList& out) {

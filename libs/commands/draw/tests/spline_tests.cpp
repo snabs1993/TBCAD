@@ -190,3 +190,27 @@ TEST_CASE("SPLINE previews the curve and is one undo step") {
     f.host.undo();
     CHECK(f.entities().empty());
 }
+
+TEST_CASE("SPLINE Object converts a polyline into a fit spline and replaces it") {
+    Fixture f;
+    f.host.run("PLINE", {"0,0", "10,10", "20,0", "30,10", ""});
+    REQUIRE(f.entities().size() == 1);
+    CHECK(f.host.run("SPL", {"Object", ScriptItem::pick(f.entities()[0]->common.id, {5, 5})})
+              .finished);
+    auto es = f.entities();
+    REQUIRE(es.size() == 1);
+    const auto& s = indirect<SplineData>(es[0]);
+    REQUIRE(s.fit.size() == 4);
+    checkPassesThrough(es[0], kPts);
+}
+
+TEST_CASE("SPLINE Tangents sets both end tangents before Enter") {
+    Fixture f;
+    f.host.run("SPL", {"0,0", "10,10", "20,0", "Tangents", "10,0", "30,0", ""});
+    auto es = f.entities();
+    REQUIRE(es.size() == 1);
+    auto curve = geom::SplineCurve::make(indirect<SplineData>(es[0]));
+    REQUIRE(curve.ok());
+    const Vec2 d = curve.value()->derivativeAt(curve.value()->tMin());
+    CHECK(std::abs(d.y) < 1e-9 * std::max(1.0, std::abs(d.x)));
+}
