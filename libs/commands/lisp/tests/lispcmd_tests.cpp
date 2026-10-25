@@ -204,3 +204,32 @@ TEST_CASE("an expression typed in parentheses on the command line runs as LISP")
     CHECK(f.host->logContains("42"));
     CHECK_FALSE(f.host->runner().active());
 }
+
+TEST_CASE("GETVAR and SETVAR read and change a drawing variable") {
+    Fixture f;
+    f.lisp("(setvar \"LTSCALE\" 2.5)");
+    f.host->clearLog();
+    f.lisp("(getvar \"ltscale\")");
+    CHECK(f.host->logContains("2.5"));
+    f.host->clearLog();
+    f.lisp("(getvar \"NOSUCHVAR\")");
+    CHECK(f.host->logContains("nil"));
+    f.host->undo();
+    f.host->clearLog();
+    f.lisp("(getvar \"LTSCALE\")");
+    CHECK_FALSE(f.host->logContains("2.5"));
+}
+
+TEST_CASE("ssget W and C select by window") {
+    Fixture f;
+    f.lisp("(entmake '((0 . \"LINE\") (10 0.0 0.0 0.0) (11 10.0 0.0 0.0)))");
+    f.host->clearLog();
+    f.lisp("(sslength (ssget \"C\" '(5 -1) '(6 1)))");
+    CHECK(f.host->logContains("1"));
+    f.host->clearLog();
+    f.lisp("(ssget \"W\" '(5 -1) '(6 1))");
+    CHECK(f.host->logContains("nil"));
+    f.host->clearLog();
+    f.lisp("(sslength (ssget \"W\" '(-1 -1) '(11 1)))");
+    CHECK(f.host->logContains("1"));
+}
