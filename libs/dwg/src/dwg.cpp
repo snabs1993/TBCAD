@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <variant>
 
+#include "bits/bit_reader.h"
 #include "container/lz21.h"
 #include "container/r2000.h"
 #include "container/r2004.h"
@@ -30,6 +31,7 @@ Result<bool> readR2000(Bytes file, detail::Drawing& drawing, std::vector<std::st
     auto header = detail::readFileHeader(file);
     if (!header)
         return header.error();
+    drawing.unicode = setTextCodepage(header.value().codepage);
     const auto classes = detail::readClasses(file, header.value().records[1], notes);
     const auto map = detail::readObjectMap(file, header.value().records[2], notes);
     if (map.empty()) {
@@ -92,6 +94,9 @@ Result<bool> readR2004Plus(Bytes file, Version version, detail::Drawing& drawing
         report.error(code::kBadSection, msg);
         return makeError(ErrorCode::Parse, msg);
     }
+    const bool converted = !fmt.r2007 && setTextCodepage(sec.codepage);
+    if (fmt.r2007)
+        setTextCodepage(0);
     const auto classes = detail::parseClasses(find("AcDb:Classes"), fmt, maintenance, notes);
     {
         std::string cl = "classes read: " + std::to_string(classes.size());
@@ -103,7 +108,7 @@ Result<bool> readR2004Plus(Bytes file, Version version, detail::Drawing& drawing
     }
     const auto vars = detail::parseHeader(find("AcDb:Header"), fmt, maintenance, notes);
     drawing.codepage = sec.codepage;
-    drawing.unicode = fmt.r2007;
+    drawing.unicode = fmt.r2007 || converted;
     drawing.unitsKnown = vars.valid;
     drawing.insunits = vars.insunits;
     drawing.ltscale = vars.ltscale;

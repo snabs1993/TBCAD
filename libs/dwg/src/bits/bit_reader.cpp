@@ -221,6 +221,79 @@ std::uint32_t BitReader::objectTypeR2010() {
     }
 }
 
+namespace {
+
+thread_local int gTextCodepage = 0;
+
+void putUtf8(std::string& out, std::uint32_t c) {
+    if (c < 0x80) {
+        out.push_back(static_cast<char>(c));
+    } else if (c < 0x800) {
+        out.push_back(static_cast<char>(0xc0 | (c >> 6)));
+        out.push_back(static_cast<char>(0x80 | (c & 0x3f)));
+    } else {
+        out.push_back(static_cast<char>(0xe0 | (c >> 12)));
+        out.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3f)));
+        out.push_back(static_cast<char>(0x80 | (c & 0x3f)));
+    }
+}
+
+bool supportedCodepage(int cp) {
+    return cp == 30 || cp == 37 || cp == 2;
+}
+
+// Unicode of a byte >= 0x80 in the code page (0 when undefined).
+std::uint32_t highByte(int cp, std::uint8_t b) {
+    if (cp == 2)
+        return b;
+    if (cp == 30) {
+        static const std::uint16_t k[32] = {
+            0x20ac, 0,      0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030, 0x0160,
+            0x2039, 0x0152, 0,      0x017d, 0,      0,      0x2018, 0x2019, 0x201c, 0x201d, 0x2022,
+            0x2013, 0x2014, 0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, 0,      0x017e, 0x0178};
+        return b < 0xa0 ? k[b - 0x80] : b;
+    }
+    // 874 (Thai)
+    if (b == 0x80)
+        return 0x20ac;
+    if (b == 0x85)
+        return 0x2026;
+    if (b >= 0x91 && b <= 0x97) {
+        static const std::uint16_t k[7] = {0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014};
+        return k[b - 0x91];
+    }
+    if (b == 0xa0)
+        return 0xa0;
+    if (b >= 0xa1 && b <= 0xda)
+        return 0x0e01u + (b - 0xa1u);
+    if (b >= 0xdf && b <= 0xfb)
+        return 0x0e3fu + (b - 0xdfu);
+    return 0;
+}
+
+}  // namespace
+
+bool setTextCodepage(int dwgCodepage) {
+    gTextCodepage = supportedCodepage(dwgCodepage) ? dwgCodepage : 0;
+    return gTextCodepage != 0;
+}
+
+std::string codepageToUtf8(const std::string& bytes, int cp) {
+    if (!supportedCodepage(cp))
+        return bytes;
+    std::string out;
+    out.reserve(bytes.size());
+    for (unsigned char c : bytes) {
+        if (c < 0x80) {
+            out.push_back(static_cast<char>(c));
+            continue;
+        }
+        const std::uint32_t u = highByte(cp, c);
+        putUtf8(out, u ? u : 0xfffd);
+    }
+    return out;
+}
+
 std::string BitReader::textBytes() {
     if (strings_) {
         std::string t = strings_->textUnicode();
@@ -242,7 +315,7 @@ std::string BitReader::textBytes() {
     // Stored strings carry a terminating zero.
     while (!s.empty() && s.back() == '\0')
         s.pop_back();
-    return s;
+    return gTextCodepage ? codepageToUtf8(s, gTextCodepage) : s;
 }
 
 std::string BitReader::textUnicode() {

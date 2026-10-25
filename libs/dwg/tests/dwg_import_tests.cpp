@@ -713,6 +713,54 @@ TEST_CASE("an R2004 file with compressed sections imports like the R2000 one") {
     }
 }
 
+TEST_CASE("layer and block names in a Thai or accented code page show as UTF-8") {
+    struct Case {
+        int codepage;
+        const char* layerBytes;
+        const char* layerUtf8;
+    };
+    const Case cases[] = {
+        {37, "\xCA\xD1 \xB5 A", "\xE0\xB8\xAA\xE0\xB8\xB1 \xE0\xB8\x95 A"},  // ANSI_874
+        {30, "Caf\xE9 \x96 long layer name with spaces 12345",
+         "Caf\xC3\xA9 \xE2\x80\x93 long layer name with spaces 12345"},
+    };
+    for (const Case& c : cases) {
+        for (bool r2004 : {false, true}) {
+            CAPTURE(c.codepage);
+            CAPTURE(r2004);
+            gCodepage = c.codepage;
+            DwgFile f = sampleFile();
+            f.add(0x19, layer(0x19, c.layerBytes, 3, kLtype));
+            f.add(0x1a, blockHeader(0x1a, c.layerBytes, 1, 2));
+            std::vector<std::uint8_t> bytes;
+            if (r2004) {
+                gR2004 = true;
+                DwgFile g = sampleFile();
+                g.add(0x19, layer(0x19, c.layerBytes, 3, kLtype));
+                g.add(0x1a, blockHeader(0x1a, c.layerBytes, 1, 2));
+                gR2004 = false;
+                Dwg2004File cf;
+                std::vector<std::uint8_t> objects, handles;
+                g.sections(objects, handles);
+                cf.section("AcDb:AcDbObjects", objects);
+                cf.section("AcDb:Handles", handles, 0x80);
+                bytes = cf.build("AC1018");
+            } else {
+                bytes = f.build();
+            }
+            gCodepage = 30;
+            auto file = asBytes(bytes);
+            dxf::Report report;
+            auto r = importDwg(file, dxf::ImportOptions{}, report);
+            REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
+            const Document& doc = *r.value().document;
+            CHECK(doc.layerByName(c.layerUtf8) != nullptr);
+            CHECK(doc.blockByName(c.layerUtf8) != nullptr);
+            CHECK(doc.layerByName("WALLS") != nullptr);
+        }
+    }
+}
+
 TEST_CASE("damaged or truncated files give a result or a clean error, never a crash") {
     auto good = sampleDrawing();
     for (std::size_t cut : {std::size_t{10}, std::size_t{0x30}, good.size() / 2, good.size() - 3}) {

@@ -14,6 +14,7 @@ namespace tbcad::dwg::test {
 inline bool gR2004 = false;
 inline bool gR2007 = false;  // R2010 layout: string stream, no object size
 inline bool gR2013 = false;
+inline int gCodepage = 30;         // code page index written in the file header
 inline bool gMapRestarts = false;  // object map sections restart handle and offset deltas
 
 class BitWriter {
@@ -410,7 +411,7 @@ public:
             for (int i = 0; i < 4; ++i)
                 out[at + static_cast<std::size_t>(i)] = static_cast<std::uint8_t>(v >> (8 * i));
         };
-        out[0x13] = 30;  // code page
+        out[0x13] = static_cast<std::uint8_t>(gCodepage);  // code page
         put32(0x15, 3);
         for (std::uint32_t i = 0; i < 3; ++i) {
             const std::size_t at = 0x19 + i * 9;
@@ -562,7 +563,7 @@ public:
         // The file header: 0x80 plain bytes, then 0x6C bytes XORed with the fixed sequence.
         std::memcpy(out.data(), version, 6);
         out[0x0B] = static_cast<std::uint8_t>(maintenance);
-        out[0x13] = 30;
+        out[0x13] = static_cast<std::uint8_t>(gCodepage);
         std::vector<std::uint8_t> head(0x6C, 0);
         std::memcpy(head.data(), "AcFssFcAJMB", 11);
         auto set32 = [&](std::size_t at, std::uint32_t v) {
