@@ -679,3 +679,43 @@ TEST_CASE("LAYOUTWIZARD can make a sheet with a viewport or an empty one") {
     REQUIRE(l.has_value());
     CHECK(l->viewports.empty());
 }
+
+TEST_CASE("EXPORTLAYOUT writes the viewport geometry at paper scale plus the sheet objects") {
+    Fixture f;
+    {
+        auto tx = f.doc.begin("line");
+        tx.add(Entity{{}, LineData{{2000, 1000}, {3000, 1000}}});  // inside the viewport
+        tx.add(Entity{{}, LineData{{90000, 0}, {91000, 0}}});      // far outside it
+        tx.commit();
+    }
+    f.host->run("LAYOUT", {"New", "Plan", "A3", ""});
+    f.host->run("MVIEW", {"10,10", "410,287", "1:50", "2500,1000"});
+    {
+        auto tx = f.doc.begin("sheet");
+        tx.add(Entity{{}, LineData{{5, 5}, {50, 5}}}, layout::findLayout(f.doc, "Plan")->content);
+        tx.commit();
+    }
+    const auto file = std::filesystem::temp_directory_path() / "tbcad_exportlayout_test.tbcad";
+    std::filesystem::remove(file);
+    auto r = f.host->run("EXPORTLAYOUT", {file.string()});
+    CHECK(r.finished);
+    REQUIRE(std::filesystem::exists(file));
+    io::IoReport rep;
+    auto back = io::readTbcad(file, rep);
+    REQUIRE(back.ok());
+    const Document& out = *back.value();
+    REQUIRE(out.modelSpaceCount() == 2);  // the far line is left out
+    bool scaled = false, sheetLine = false;
+    for (EntityId id : out.modelSpace()) {
+        const auto* ln = entityAs<LineData>(*out.find(id));
+        REQUIRE(ln);
+        // 1000 model units at 1:50 = 20 mm; the viewport middle (2500,1000) lands on (210,148.5).
+        if (std::abs(ln->a.x - 200) < 1e-6 && std::abs(ln->b.x - 220) < 1e-6)
+            scaled = std::abs(ln->a.y - 148.5) < 1e-6;
+        if (std::abs(ln->a.x - 5) < 1e-9)
+            sheetLine = true;
+    }
+    CHECK(scaled);
+    CHECK(sheetLine);
+    std::filesystem::remove(file);
+}
