@@ -995,3 +995,40 @@ TEST_CASE("an annotative object shows only in viewports whose scale it supports"
     CHECK(perViewport[perViewport.size() - 2] == 3);
     CHECK(perViewport.back() == 3);
 }
+
+TEST_CASE("a viewport border takes the colour of its layer and goes with the layer's state") {
+    Document doc;
+    LayerId frame;
+    run(doc, "layer", [&](Transaction& tx) {
+        Layer l;
+        l.name = "Frame";
+        l.color = Color::index(1);  // red
+        frame = tx.addLayer(l).value();
+        return Result<void>{};
+    });
+    run(doc, "layout", [&](Transaction& tx) {
+        if (auto r = createLayout(tx, "L"); !r)
+            return r;
+        BBox2 a;
+        a.expand({10, 10});
+        a.expand({100, 100});
+        auto vp = addViewport(tx, "L", a, {50, 10}, 1);
+        if (!vp)
+            return Result<void>(vp.error());
+        return setViewportBorderLayer(tx, "L", vp.value(), frame);
+    });
+    auto borders = [&] {
+        std::vector<Rgba> colours;
+        auto sheet = buildLayoutSheet(doc, "L").value();
+        for (const auto& p : sheet.prims)
+            if (const auto* path = std::get_if<exportlib::PlotPath>(&p); path && path->closed)
+                colours.push_back(path->style.color);
+        return colours;
+    };
+    auto c = borders();
+    REQUIRE(c.size() == 1);
+    CHECK(c[0] == exportlib::plotColor(paletteColor(1), exportlib::ColorMode::AsDisplayed));
+    run(doc, "off",
+        [&](Transaction& tx) { return tx.modifyLayer(frame, [](Layer& l) { l.plot = false; }); });
+    CHECK(borders().empty());
+}
