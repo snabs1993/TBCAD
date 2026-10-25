@@ -43,37 +43,58 @@ public:
     std::string_view description() const override { return description_; }
 
     Task run(CommandContext& ctx) override {
-        auto sel = co_await ctx.getSelection("Select objects on the layers to change");
-        if (!sel.ok())
-            co_return;
-        std::vector<LayerId> ids = layersOf(ctx.doc(), sel.ids);
-        std::vector<LayerId> done;
-        for (LayerId id : ids) {
-            Result<void> r;
-            switch (act_) {
-                case Act::Off:
-                    r = setOn(ctx.doc(), ctx.tx(), id, false);
-                    break;
-                case Act::Freeze:
-                    r = setFrozen(ctx.doc(), ctx.tx(), id, true);
-                    break;
-                case Act::Lock:
-                    r = setLocked(ctx.doc(), ctx.tx(), id, true);
-                    break;
-                case Act::Unlock:
-                    r = setLocked(ctx.doc(), ctx.tx(), id, false);
-                    break;
+        // Repeats until Enter, as in AutoCAD; Undo puts back the layers of the last pick.
+        ctx.commitOnCancel();
+        std::vector<std::vector<LayerId>> history;
+        for (;;) {
+            cmd::SelectionOptions so;
+            so.keywords = {"Undo"};
+            so.allowPreselection = history.empty();  // else a kept selection would answer forever
+            auto sel =
+                co_await ctx.getSelection("Select objects on the layers to change or [Undo]", so);
+            if (sel.status == cmd::Status::Keyword && sel.keyword == "Undo") {
+                if (history.empty()) {
+                    ctx.message("Nothing to undo.");
+                    continue;
+                }
+                for (LayerId id : history.back())
+                    (void)apply(ctx, id, true);
+                ctx.message("Undone: " + names(ctx.doc(), history.back()) + ".");
+                history.pop_back();
+                continue;
             }
-            if (r)
-                done.push_back(id);
-            else
-                ctx.message(r.error().message);
+            if (!sel.ok())
+                co_return;
+            std::vector<LayerId> done;
+            for (LayerId id : layersOf(ctx.doc(), sel.ids)) {
+                Result<void> r = apply(ctx, id, false);
+                if (r)
+                    done.push_back(id);
+                else
+                    ctx.message(r.error().message);
+            }
+            if (!done.empty()) {
+                ctx.message(std::string(description_) + ": " + names(ctx.doc(), done) + ".");
+                history.push_back(std::move(done));
+            }
         }
-        if (!done.empty())
-            ctx.message(std::string(description_) + ": " + names(ctx.doc(), done) + ".");
     }
 
 private:
+    Result<void> apply(CommandContext& ctx, LayerId id, bool undo) const {
+        switch (act_) {
+            case Act::Off:
+                return setOn(ctx.doc(), ctx.tx(), id, undo);
+            case Act::Freeze:
+                return setFrozen(ctx.doc(), ctx.tx(), id, !undo);
+            case Act::Lock:
+                return setLocked(ctx.doc(), ctx.tx(), id, !undo);
+            case Act::Unlock:
+                return setLocked(ctx.doc(), ctx.tx(), id, undo);
+        }
+        return {};
+    }
+
     const char* name_;
     const char* description_;
     Act act_;

@@ -434,6 +434,26 @@ TEST_CASE("XCLIP clips an insert in block coordinates - OFF, ON and Delete - und
     CHECK(entityAs<InsertData>(*f.doc.find(ins))->clip.size() == 3);
 }
 
+TEST_CASE("XCLIP generate Polyline draws the clip boundary in world coordinates") {
+    Dir dir;
+    fs::path file = writeSource(dir.path, "plan.tbcad", 10);
+    Fixture f;
+    f.host->run("XATTACH", {file.string(), "", "", "", "100,0"});
+    EntityId ins = f.modelSpace()[0];
+    f.host->run("XCLIP", {cmd::ScriptItem::pick(ins), "", "", "100,0", "104,10"});
+    const std::size_t before = f.modelSpace().size();
+    f.host->run("XCLIP", {cmd::ScriptItem::pick(ins), "Polyline"});
+    REQUIRE(f.modelSpace().size() == before + 1);
+    const auto* pl = entityAs<PolylineData>(*f.doc.find(f.modelSpace().back()));
+    REQUIRE(pl);
+    CHECK(pl->closed);
+    REQUIRE(pl->v.size() == 4);
+    CHECK(near(pl->v[0].p, {100, 0}));
+    CHECK(near(pl->v[2].p, {104, 10}));
+    CHECK(f.host->undo());
+    CHECK(f.modelSpace().size() == before);
+}
+
 TEST_CASE("XBIND Insert merges the layers of the xref into the drawing's own") {
     Dir dir;
     fs::path file = writeSource(dir.path, "plan.tbcad", 2);
