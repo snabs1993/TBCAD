@@ -7,8 +7,9 @@ namespace tbcad {
 // The one plain message shown when the graphics driver cannot give OpenGL 3.3 (no window
 // could be created). `renderer` / `version` are what a basic probe context reported, "" if none.
 inline std::string openGlProblemText(const std::string& renderer, const std::string& version) {
-    std::string t = "TBCAD needs OpenGL 3.3 to draw, and this computer's graphics driver does not "
-                    "provide it.\n\n";
+    std::string t =
+        "TBCAD needs OpenGL 3.3 to draw, and this computer's graphics driver does not "
+        "provide it.\n\n";
     t += "Graphics: " + (renderer.empty() ? std::string("unknown") : renderer) + "\n";
     t += "OpenGL version: " + (version.empty() ? std::string("none") : version) + "\n\n";
     const bool noDriver = renderer.find("GDI Generic") != std::string::npos ||
