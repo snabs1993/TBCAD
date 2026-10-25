@@ -40,6 +40,10 @@ WizardStyle=modern
 Compression=lzma2
 SolidCompression=yes
 ChangesAssociations=yes
+; Installing over a running TBCAD closes it first (it would lock tbcad.exe) and does not restart it.
+CloseApplications=yes
+CloseApplicationsFilter=tbcad.exe,tbcad-convert.exe,tbcad-mcp.exe
+RestartApplications=no
 VersionInfoVersion={#AppVersion}
 VersionInfoCompany=TBCAD contributors
 VersionInfoDescription=TBCAD setup
