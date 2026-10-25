@@ -15,10 +15,37 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         ctx.commitOnCancel();
-        auto first = co_await ctx.getPoint("Specify first point");
-        if (!first.ok())
+        cmd::PointOptions fo;
+        fo.allowNone = true;
+        auto first = co_await ctx.getPoint("Specify first point or Enter to continue", fo);
+        std::vector<Vec2> pts;
+        if (first.status == cmd::Status::None) {
+            // Enter at the first prompt: start where the last line or arc ended.
+            auto last = lastLineOrArc(ctx.doc());
+            if (!last) {
+                ctx.message("There is no line or arc to continue from.");
+                co_return;
+            }
+            pts.push_back(last->point);
+            if (last->fromArc) {
+                // After an arc the first segment is tangent to it; ask only for its length.
+                cmd::DistanceOptions lo;
+                lo.base = last->point;
+                auto l = co_await ctx.getDistance("Length of line", std::move(lo));
+                if (!l.ok())
+                    co_return;
+                const Vec2 end =
+                    last->point + Vec2{std::cos(last->tangent), std::sin(last->tangent)} * l.value;
+                ctx.checkpoint();
+                if (!addEntity(ctx, LineData{last->point, end}))
+                    co_return;
+                pts.push_back(end);
+            }
+        } else if (first.ok()) {
+            pts.push_back(first.point);
+        } else {
             co_return;
-        std::vector<Vec2> pts{first.point};
+        }
         for (;;) {
             cmd::PointOptions opts;
             opts.base = pts.back();
