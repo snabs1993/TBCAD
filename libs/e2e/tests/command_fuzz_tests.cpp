@@ -96,6 +96,10 @@ TEST_CASE("every command survives scripted and random input on the Thai house sa
 
     auto dir = std::filesystem::temp_directory_path() / ("tbcad_fuzz_" + std::to_string(getpid()));
     std::filesystem::create_directories(dir);
+    // Commands that take a file name from a prompt (WBLOCK, EXPORT, ...) write what the random
+    // input names into the working directory, so run from the scratch folder.
+    const auto startDir = std::filesystem::current_path();
+    std::filesystem::current_path(dir);
 
     std::mt19937 rng(20261013);
     for (const std::string& name : names) {
@@ -140,6 +144,7 @@ TEST_CASE("every command survives scripted and random input on the Thai house sa
             CHECK(canonicalDump(*back.value()) == canonicalDump(*doc));
         }
     }
+    std::filesystem::current_path(startDir);
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);
 }

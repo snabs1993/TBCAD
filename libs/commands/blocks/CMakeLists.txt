@@ -30,6 +30,12 @@ tbcad_add_library(block_cmds
   DEPENDS tbcad::cmd tbcad::blocks tbcad::xref tbcad::drafting tbcad::geom tbcad::hatch tbcad::table tbcad::text tbcad::ui
           tbcad::select)
 
+# MSVC /O2 stops with C4737 ("unable to perform required tail call") on the long INSERT coroutine;
+# `#pragma optimize` does not stop it, so this one file is compiled without optimisation.
+if(MSVC)
+  set_source_files_properties(src/insert_command.cpp PROPERTIES COMPILE_OPTIONS "/Od")
+endif()
+
 # The panel draws with Dear ImGui, which only the application build fetches.
 if(TBCAD_BUILD_APP)
   include(deps/imgui)
