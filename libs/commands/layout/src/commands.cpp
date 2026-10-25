@@ -469,9 +469,37 @@ public:
         if (!requireLayout(ctx, target))
             co_return;
         cmd::PointOptions fo;
-        fo.keywords = {"Fit", "Polygonal", "Object", "ON", "OFF", "Lock"};
+        fo.keywords = {"Fit", "Polygonal", "Object", "ON", "OFF", "Lock", "2", "3", "4"};
         auto a = co_await ctx.getPoint(
-            "Specify first corner on the sheet (mm) or [Fit/Polygonal/Object/ON/OFF/Lock]", fo);
+            "Specify first corner on the sheet (mm) or [Fit/Polygonal/Object/ON/OFF/Lock/2/3/4]",
+            fo);
+        // 2 / 3 / 4: several viewports that share one area, split as asked.
+        int multi = 0;
+        std::string arrangement;
+        if (a.status == Status::Keyword &&
+            (a.keyword == "2" || a.keyword == "3" || a.keyword == "4")) {
+            multi = a.keyword[0] - '0';
+            if (multi < 4) {
+                cmd::KeywordOptions ao;
+                ao.keywords = multi == 2
+                                  ? std::vector<std::string>{"Horizontal", "Vertical"}
+                                  : std::vector<std::string>{"Horizontal", "Vertical", "Above",
+                                                             "Below",      "Left",     "Right"};
+                ao.defaultKeyword = multi == 2 ? "Vertical" : "Right";
+                auto k = co_await ctx.getKeyword(
+                    multi == 2 ? "Arrangement [Horizontal/Vertical] <Vertical>"
+                               : "Arrangement [Horizontal/Vertical/Above/Below/Left/Right] <Right>",
+                    ao);
+                if (!k.ok())
+                    co_return;
+                arrangement = k.keyword;
+            }
+            cmd::PointOptions po;
+            po.keywords = {"Fit"};
+            a = co_await ctx.getPoint("Specify first corner on the sheet (mm) or [Fit] <Fit>", po);
+            if (a.status == Status::None)
+                a.status = Status::Keyword, a.keyword = "Fit";
+        }
         if (a.status == Status::Keyword && (a.keyword == "ON" || a.keyword == "OFF")) {
             int vpId = 0;
             bool picked = false;
@@ -531,27 +559,29 @@ public:
             co_return;
         }
 
+        std::vector<BBox2> rects{rect};
+        if (multi) {
+            rects = splitViewportArea(rect, multi, arrangement);
+            if (!outline.empty())
+                outline.clear();  // the outline only makes sense for a single viewport
+        }
         // The scale: typed, or Fit to show the whole drawing.
         cmd::StringOptions so;
         so.defaultValue = "1:100";
         auto scale = co_await ctx.getString("Viewport scale (1:N) or [Fit] <1:100>", so);
         if (!scale.ok())
             co_return;
-        double n = 0;
-        Vec2 centre{};
+        double typedN = 0;
+        Vec2 typedCentre{};
         const bool fit = lower(scale.text) == "fit" || lower(scale.text) == "f";
+        const BBox2 box = modelExtents(ctx.doc());
         if (fit) {
-            const BBox2 box = modelExtents(ctx.doc());
-            if (box.empty() || !(rect.width() > 0) || !(rect.height() > 0)) {
+            if (box.empty()) {
                 ctx.message("The drawing is empty: type a scale.");
                 co_return;
             }
-            n = std::max(box.width() / rect.width(), box.height() / rect.height());
-            if (!(n > 0))
-                n = 1;
-            centre = {(box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2};
         } else {
-            if (!parseScaleN(scale.text, n)) {
+            if (!parseScaleN(scale.text, typedN)) {
                 ctx.message("Not a scale: \"" + scale.text + "\". Use 1:N.");
                 co_return;
             }
@@ -559,28 +589,76 @@ public:
             auto center = co_await ctx.getPoint(
                 "Specify the model point at the viewport centre <centre of the drawing>", co);
             if (center.status == Status::None) {  // Enter: show the middle of the drawing
-                const BBox2 box = modelExtents(ctx.doc());
                 if (box.empty()) {
                     ctx.message("The drawing is empty: type the model point.");
                     co_return;
                 }
-                centre = {(box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2};
+                typedCentre = {(box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2};
             } else if (center.ok()) {
-                centre = center.point;
+                typedCentre = center.point;
             } else {
                 co_return;
             }
         }
-        auto id = layout::addViewport(ctx.tx(), target, rect, centre, n);
-        if (id && !outline.empty())
-            if (auto r = layout::setViewportClip(ctx.tx(), target, id.value(), outline); !r)
-                ctx.message(r.error().message);
-        ctx.message(id ? "Viewport " + std::to_string(id.value()) + " added to \"" + target + "\"" +
-                             (fit ? " at 1:" + formatScale(n) : std::string()) + "."
-                       : id.error().message);
+        for (const BBox2& r : rects) {
+            double n = typedN;
+            Vec2 centre = typedCentre;
+            if (fit) {
+                if (!(r.width() > 0) || !(r.height() > 0)) {
+                    ctx.message("The drawing is empty: type a scale.");
+                    co_return;
+                }
+                n = std::max(box.width() / r.width(), box.height() / r.height());
+                if (!(n > 0))
+                    n = 1;
+                centre = {(box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2};
+            }
+            auto id = layout::addViewport(ctx.tx(), target, r, centre, n);
+            if (id && !outline.empty())
+                if (auto res = layout::setViewportClip(ctx.tx(), target, id.value(), outline); !res)
+                    ctx.message(res.error().message);
+            ctx.message(id ? "Viewport " + std::to_string(id.value()) + " added to \"" + target +
+                                 "\"" + (fit ? " at 1:" + formatScale(n) : std::string()) + "."
+                           : id.error().message);
+        }
     }
 
 private:
+    // The area cut into `count` viewports (2, 3 or 4) the way AutoCAD's MVIEW does: halves,
+    // a big one beside two small ones, or a 2 x 2 grid.
+    static std::vector<BBox2> splitViewportArea(const BBox2& r, int count, const std::string& how) {
+        const double x0 = r.min.x, x1 = r.max.x, y0 = r.min.y, y1 = r.max.y;
+        const double xm = (x0 + x1) / 2, ym = (y0 + y1) / 2;
+        auto box = [](double ax, double ay, double bx, double by) {
+            BBox2 b;
+            b.expand({ax, ay});
+            b.expand({bx, by});
+            return b;
+        };
+        if (count == 4)
+            return {box(x0, y0, xm, ym), box(xm, y0, x1, ym), box(x0, ym, xm, y1),
+                    box(xm, ym, x1, y1)};
+        if (count == 2) {
+            if (how == "Horizontal")  // one above the other
+                return {box(x0, y0, x1, ym), box(x0, ym, x1, y1)};
+            return {box(x0, y0, xm, y1), box(xm, y0, x1, y1)};
+        }
+        if (how == "Horizontal")  // three rows
+            return {box(x0, y0, x1, y0 + (y1 - y0) / 3),
+                    box(x0, y0 + (y1 - y0) / 3, x1, y0 + 2 * (y1 - y0) / 3),
+                    box(x0, y0 + 2 * (y1 - y0) / 3, x1, y1)};
+        if (how == "Vertical")  // three columns
+            return {box(x0, y0, x0 + (x1 - x0) / 3, y1),
+                    box(x0 + (x1 - x0) / 3, y0, x0 + 2 * (x1 - x0) / 3, y1),
+                    box(x0 + 2 * (x1 - x0) / 3, y0, x1, y1)};
+        if (how == "Above")  // the big one on top
+            return {box(x0, ym, x1, y1), box(x0, y0, xm, ym), box(xm, y0, x1, ym)};
+        if (how == "Below")
+            return {box(x0, y0, x1, ym), box(x0, ym, xm, y1), box(xm, ym, x1, y1)};
+        if (how == "Left")
+            return {box(x0, y0, xm, y1), box(xm, y0, x1, ym), box(xm, ym, x1, y1)};
+        return {box(xm, y0, x1, y1), box(x0, y0, xm, ym), box(x0, ym, xm, y1)};  // Right
+    }
     static constexpr double kFitMarginMm = 10;  // the default plot margin
     static std::string formatScale(double n) {
         char buf[32];

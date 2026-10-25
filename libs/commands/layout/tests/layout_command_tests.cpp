@@ -739,3 +739,19 @@ TEST_CASE("ALIGNSPACE pans and scales a viewport so model points land on sheet p
     CHECK(f.host->undo());
     CHECK(layout::findLayout(f.doc, "Plan")->viewports[0].scaleN == doctest::Approx(50));
 }
+
+TEST_CASE("MVIEW 2, 3 and 4 split an area into several viewports") {
+    Fixture f;
+    f.host->run("LAYOUT", {"New", "Plan", "A3", ""});
+    CHECK(f.host->run("MVIEW", {"2", "Vertical", "10,10", "410,210", "1:50", "0,0"}).finished);
+    auto l = layout::findLayout(f.doc, "Plan");
+    REQUIRE(l->viewports.size() == 2);
+    CHECK(l->viewports[0].paper.width() == doctest::Approx(200));
+    CHECK(l->viewports[1].paper.min.x == doctest::Approx(210));
+    CHECK(f.host->run("MVIEW", {"4", "10,10", "410,210", "1:50", "0,0"}).finished);
+    CHECK(layout::findLayout(f.doc, "Plan")->viewports.size() == 6);
+    CHECK(f.host->run("MVIEW", {"3", "Above", "10,10", "410,210", "1:50", "0,0"}).finished);
+    l = layout::findLayout(f.doc, "Plan");
+    REQUIRE(l->viewports.size() == 9);
+    CHECK(l->viewports[6].paper.width() == doctest::Approx(400));
+}
