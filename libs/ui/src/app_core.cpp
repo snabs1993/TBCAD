@@ -724,6 +724,10 @@ Recovery readRecovery(const fs::path& tbcadFile) {
     r.autosaveFile = tbcadFile;
     {
         std::error_code ec;
+        const auto sz = fs::file_size(tbcadFile, ec);
+        if (!ec)
+            r.sizeBytes = sz;
+        ec.clear();
         const auto ft = fs::last_write_time(tbcadFile, ec);
         if (!ec) {
             const auto sys = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
