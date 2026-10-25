@@ -920,15 +920,15 @@ void SettingsDialog::keybindings(ui::AppCore& core) {
         ImGui::TextColored(kWarn, "%s", keyMessage_.c_str());
     }
     ImGui::SetNextItemWidth(180);
-    ImGui::InputTextWithHint("##newCmd", "Command, e.g. LAYER", &newCommand_);
+    ImGui::InputTextWithHint("##newCmd", "Command, e.g. LAYER", &keyCommand_);
     ImGui::SameLine();
     if (ImGui::Button("Add command shortcut")) {
-        auto out = editor.addCommand(newCommand_, "");
+        auto out = editor.addCommand(keyCommand_, "");
         keyMessage_ = out.error;
         if (out.ok) {
-            capturing_ = std::string(platform::Keybindings::kCommandPrefix) + newCommand_;
+            capturing_ = std::string(platform::Keybindings::kCommandPrefix) + keyCommand_;
             pendingConflict_.clear();
-            newCommand_.clear();
+            keyCommand_.clear();
         }
     }
     keyProfile(core);

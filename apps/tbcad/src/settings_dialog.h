@@ -67,7 +67,7 @@ private:
     std::string listMessage_{};
     // Keybindings page.
     std::string keyFilter_{};
-    std::string newCommand_{};
+    std::string keyCommand_{};
     std::string capturing_{};  // action being rebound; empty = none
     std::string keyMessage_{};
     std::string keyFile_{};
