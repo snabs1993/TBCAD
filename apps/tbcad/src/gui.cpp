@@ -1080,6 +1080,8 @@ void Gui::menuBar() {
             showQuickStart_ = true;
         if (ImGui::MenuItem("Command List"))
             showCommandList_ = true;
+        if (ImGui::MenuItem("Report a Problem..."))
+            showReport_ = true;
         if (ImGui::MenuItem("About TBCAD"))
             showAbout_ = true;
         if (ImGui::MenuItem("Third-Party Notices"))
@@ -4531,6 +4533,45 @@ void Gui::dialogs() {
             showNotices_ = true;
         ImGui::SameLine();
         if (ImGui::Button("Close", ImVec2(110, 0)))
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    if (showReport_) {
+        ImGui::OpenPopup("Report a Problem");
+        showReport_ = false;
+    }
+    if (ImGui::BeginPopupModal("Report a Problem", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        const std::string details =
+            std::string("TBCAD ") + TBCAD_VERSION + " (build " + TBCAD_GIT_HASH + ")";
+        const std::string crashDir = platform::pathToUtf8(core_.paths().crashDir());
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 36.0f);
+        ImGui::TextUnformatted(
+            "Found something wrong? Tell us what you were doing, and attach the drawing if you "
+            "can. If the program crashed, attach the newest file from the crash folder.");
+        ImGui::Spacing();
+        ImGui::TextDisabled("%s", details.c_str());
+        ImGui::TextDisabled("Crash folder: %s", crashDir.c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::Spacing();
+        if (ImGui::Button("Copy version info", ImVec2(160, 0)))
+            ImGui::SetClipboardText(details.c_str());
+        ImGui::SameLine();
+        if (ImGui::Button("Open crash folder", ImVec2(160, 0))) {
+            std::error_code ec;
+            std::filesystem::create_directories(core_.paths().crashDir(), ec);
+            auto link = platform::checkLink(crashDir + "/");
+            if (!platform::openExternal(link))
+                core_.print("Could not open " + crashDir);
+        }
+        if (ImGui::Button("Open problem page", ImVec2(160, 0))) {
+            ImGui::SetClipboardText(details.c_str());
+            auto link = platform::checkLink("https://github.com/snabs1993/TBCAD/issues/new");
+            if (!platform::openExternal(link))
+                core_.print("Could not open the problem page");
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Close", ImVec2(160, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape))
             ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }

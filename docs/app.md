@@ -96,6 +96,8 @@ path support. On Windows the IME candidate window follows the command line's tex
 Typing anywhere goes to the command line; Space or Enter on an empty line repeats the last command
 or finishes a prompt. Up/Down browse earlier lines, Tab completes a command name.
 
+Help > Report a Problem shows the version and build, opens the crash report folder, and opens the issue page (the version text is copied to the clipboard first).
+
 Help > About shows the MIT notice and the third-party credits, including the FreeType line
 required by its license, and opens `THIRD_PARTY_NOTICES.txt` (copied next to the program).
 
