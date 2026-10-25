@@ -328,6 +328,7 @@ PlotSettings loadSettings(const cmd::IHost& h) {
     s.customWidthMm = getD(h, "plot.custom.width", s.customWidthMm);
     s.customHeightMm = getD(h, "plot.custom.height", s.customHeightMm);
     s.landscape = getB(h, "plot.landscape", s.landscape);
+    s.upsideDown = getB(h, "plot.upsidedown", s.upsideDown);
     if (auto v = h.setting("plot.area")) {
         if (*v == "display")
             s.area = PlotArea::Display;
@@ -379,6 +380,7 @@ void saveSettings(cmd::IHost& h, const PlotSettings& s) {
     h.setSetting("plot.custom.width", fmt(s.customWidthMm));
     h.setSetting("plot.custom.height", fmt(s.customHeightMm));
     h.setSetting("plot.landscape", s.landscape ? "1" : "0");
+    h.setSetting("plot.upsidedown", s.upsideDown ? "1" : "0");
     h.setSetting("plot.area", s.area == PlotArea::Display  ? "display"
                               : s.area == PlotArea::Window ? "window"
                                                            : "extents");

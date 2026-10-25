@@ -281,6 +281,44 @@ struct Builder {
 
 }  // namespace
 
+void rotateSheet180(PlotSheet& sheet) {
+    const double w = sheet.layout.pageWidthMm, h = sheet.layout.pageHeightMm;
+    constexpr double kPi = 3.14159265358979323846;
+    const Transform2 flip{-1, 0, w, 0, -1, h};
+    auto pt = [&](Vec2& v) { v = flip.apply(v); };
+    for (PlotPrimitive& prim : sheet.prims) {
+        std::visit(
+            [&](auto& p) {
+                using T = std::decay_t<decltype(p)>;
+                if constexpr (std::is_same_v<T, PlotPath> || std::is_same_v<T, PlotDots>) {
+                    for (Vec2& v : p.pts)
+                        pt(v);
+                } else if constexpr (std::is_same_v<T, PlotArc>) {
+                    pt(p.center);
+                    p.start += kPi;
+                    p.end += kPi;
+                } else if constexpr (std::is_same_v<T, PlotFill>) {
+                    for (auto& ring : p.rings)
+                        for (Vec2& v : ring)
+                            pt(v);
+                    if (p.glyph)
+                        p.glyph->emToWorld = flip * p.glyph->emToWorld;
+                } else if constexpr (std::is_same_v<T, PlotClip>) {
+                    BBox2 r;
+                    r.expand(flip.apply(p.rect.min));
+                    r.expand(flip.apply(p.rect.max));
+                    p.rect = r;
+                    for (Vec2& v : p.poly)
+                        pt(v);
+                } else if constexpr (std::is_same_v<T, PlotImage>) {
+                    for (Vec2& v : p.corners)
+                        pt(v);
+                }
+            },
+            prim);
+    }
+}
+
 void dropLayers(PlotSheet& sheet) {
     sheet.layerNames.clear();
     for (PlotPrimitive& prim : sheet.prims) {

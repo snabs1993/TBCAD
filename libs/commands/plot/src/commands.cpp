@@ -103,7 +103,7 @@ public:
             menu.keywords = {"Paper",   "Orientation", "Area",        "Scale",        "Center",
                              "Offset",  "Margin",      "LineWeights", "Transparency", "Color",
                              "Style",   "Format",      "Resolution",  "Layout",       "Stamp",
-                             "LWScale", "Screening",   "PdfLayers",   "Export"};
+                             "LWScale", "Screening",   "PdfLayers",   "UpsideDown",   "Export"};
             menu.defaultKeyword = "Export";
             std::string prompt;
             timePhase("menu summary",
@@ -191,6 +191,13 @@ public:
                     }
                     s.paperName = found->name;
                 }
+            } else if (kw == "UpsideDown") {
+                KeywordOptions ko;
+                ko.keywords = {"Yes", "No"};
+                ko.defaultKeyword = s.upsideDown ? "Yes" : "No";
+                auto r = co_await ctx.getKeyword("Plot upside down", ko);
+                if (r.ok())
+                    s.upsideDown = r.keyword == "Yes";
             } else if (kw == "Orientation") {
                 KeywordOptions ko;
                 ko.keywords = {"Landscape", "Portrait"};
