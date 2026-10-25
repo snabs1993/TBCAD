@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include "tbcad/table/table.h"
 #include "tbcad/text/text.h"
 
@@ -55,6 +57,35 @@ void registerDisplay() {
                                    const auto* t = entityAs<TableData>(e);
                                    return t ? bounds(*t) : BBox2{};
                                });
+}
+
+bool fitRowHeights(const Document& doc, TableData& t) {
+    bool grown = false;
+    for (std::size_t r = 0; r < rowCount(t); ++r) {
+        for (std::size_t c = 0; c < colCount(t); ++c) {
+            const TableCell& cell = cellAt(t, r, c);
+            if (cell.covered || cell.rowSpan != 1 || cellBody(cell.utf8).empty())
+                continue;
+            double w = 0;
+            for (std::size_t k = c; k < c + cell.colSpan && k < colCount(t); ++k)
+                w += t.colWidths[k];
+            const TableCellStyle& cs = cellStyleOfRow(t, r);
+            MTextData m;
+            m.height = cs.textHeight > 0 ? cs.textHeight : t.textHeight;
+            m.width = std::max(0.0, w - 2 * t.margin);
+            m.style = t.style;
+            m.utf8 = displayText(t, r, c);
+            const text::TextLayout lay = text::layoutMText(doc, m);
+            if (lay.empty())
+                continue;
+            const double need = (lay.frame.max.y - lay.frame.min.y) + 2 * t.margin;
+            if (need > t.rowHeights[r] + 1e-6) {
+                t.rowHeights[r] = need;
+                grown = true;
+            }
+        }
+    }
+    return grown;
 }
 
 Result<std::vector<Entity>> explodeTable(const Document& doc, const Entity& e) {
