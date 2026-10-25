@@ -6,6 +6,7 @@
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/io/tbcad.h"
+#include "tbcad/platform/clipboard_picture.h"
 
 using namespace tbcad;
 using cmd::ScriptItem;
@@ -556,4 +557,41 @@ TEST_CASE("PASTESPEC Image asks the window to paste the clipboard picture") {
     f.host.run("PASTESPEC", {"Image"});
     REQUIRE_FALSE(f.host.uiRequests().empty());
     CHECK(f.host.uiRequests().back() == "pasteimage");
+}
+
+TEST_CASE("COPYCLIP leaves a picture and the text of the copied texts for other programs") {
+    Fixture f;
+    LineData l;
+    l.a = {0, 0};
+    l.b = {100, 50};
+    EntityId line = f.add(l);
+    TextData t;
+    t.position = {10, 10};
+    t.height = 5;
+    t.utf8 = "Hello";
+    EntityId text = f.add(t);
+    (void)platform::takeStashedClipboardPicture();
+    auto r = f.host.run("COPYCLIP", {ScriptItem::select({line, text}), ScriptItem::enter()});
+    CHECK(r.finished);
+    auto pic = platform::takeStashedClipboardPicture();
+    REQUIRE(pic.has_value());
+    CHECK(pic->width > 100);
+    CHECK(pic->width > pic->height);
+    // some dark pixel: the line was drawn
+    bool dark = false;
+    for (std::size_t i = 0; i + 3 < pic->rgba.size(); i += 4)
+        dark = dark || pic->rgba[i] < 128;
+    CHECK(dark);
+    CHECK(f.host.setting("clipboard.text") == "Hello");
+}
+
+TEST_CASE("COPYCLIP of objects without text leaves the marker as the clipboard text") {
+    Fixture f;
+    LineData l;
+    l.a = {0, 0};
+    l.b = {10, 10};
+    EntityId line = f.add(l);
+    CHECK(f.host.run("COPYCLIP", {ScriptItem::select({line}), ScriptItem::enter()}).finished);
+    CHECK(f.host.setting("clipboard.text") == "[TBCAD objects]");
+    CHECK(platform::takeStashedClipboardPicture().has_value());
 }

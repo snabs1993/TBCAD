@@ -8,6 +8,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "file_browser.h"
@@ -243,6 +244,13 @@ private:
     std::string input_{};
     ui::InputHistory inputHistory_{};
     bool refocusInput_ = false;
+    // The text COPYCLIP put on the system clipboard (the marker or the copied text); it means "our
+    // objects" for Ctrl+V.
+    std::optional<std::string> ownClipText_{};
+    bool isOwnClipText(const char* text) const {
+        return std::string_view(text).rfind("[TBCAD objects", 0) == 0 ||
+               (ownClipText_ && *ownClipText_ == text);
+    }
     bool textEditorActive_ = false;  // a text prompt is edited in a box in the drawing
     int textEditorFocus_ = 0;
     std::string textEditorBuf_{};

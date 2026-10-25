@@ -3,6 +3,7 @@
 #include <map>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 #include "tbcad/cmd/registry.h"
@@ -69,5 +70,21 @@ bool hasClip();
 
 void registerCommands(cmd::Registry& registry);
 void registerUi(ui::UiRegistry& ui);
+
+}  // namespace tbcad::clipboard
+
+namespace tbcad::platform {
+struct ClipboardPicture;
+}
+
+namespace tbcad::clipboard {
+
+// What COPYCLIP also leaves on the system clipboard for other programs. A picture of the objects
+// on white paper, longest side about 1600 pixels; null when the selection has nothing to draw or
+// is too big to render quickly.
+std::optional<platform::ClipboardPicture> renderPicture(const Document& doc,
+                                                        std::span<const EntityId> ids);
+// The plain text of the TEXT / MTEXT objects, one per line, in the order given; empty when none.
+std::string plainTextOf(const Document& doc, std::span<const EntityId> ids);
 
 }  // namespace tbcad::clipboard

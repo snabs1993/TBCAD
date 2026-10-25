@@ -829,8 +829,7 @@ void Gui::shortcuts() {
     if (io.WantTextInput && input_.empty() && io.KeyCtrl && !io.KeyShift && !io.KeyAlt &&
         ImGui::IsKeyPressed(ImGuiKey_V, ImGuiInputFlags_None)) {
         const char* text = ImGui::GetClipboardText();
-        const bool ownText =
-            !text || !*text || std::string_view(text).rfind("[TBCAD objects", 0) == 0;
+        const bool ownText = !text || !*text || isOwnClipText(text);
         if (ownText && !core_.runner().active() && core_.registry().find("PASTECLIP")) {
             ImGui::SetKeyOwner(ImGuiKey_V, ImGuiKeyOwner_NoOwner, ImGuiInputFlags_LockThisFrame);
             runAction("edit.paste");
@@ -844,7 +843,7 @@ void Gui::shortcuts() {
     if (!io.WantTextInput && core_.runner().active() && io.KeyCtrl && !io.KeyShift && !io.KeyAlt &&
         ImGui::IsKeyPressed(ImGuiKey_V, ImGuiInputFlags_None)) {
         const char* text = ImGui::GetClipboardText();
-        if (text && *text && std::string_view(text).rfind("[TBCAD objects", 0) != 0) {
+        if (text && *text && !isOwnClipText(text)) {
             std::string line(text);
             line = line.substr(0, line.find_first_of("\r\n"));
             input_ += line;
@@ -872,8 +871,7 @@ void Gui::shortcuts() {
             // the drawing paste as well started PASTECLIP over a path typed at a prompt.
             if (action == "edit.paste" && io.WantTextInput) {
                 const char* text = ImGui::GetClipboardText();
-                const bool objects =
-                    !text || !*text || std::string_view(text).rfind("[TBCAD objects", 0) == 0;
+                const bool objects = !text || !*text || isOwnClipText(text);
                 if (!objects || core_.runner().active())
                     continue;
             }
@@ -3938,8 +3936,18 @@ ViewportRect Gui::frame() {
     for (const std::string& path : droppedFiles_)
         doOpenPath(path);
     droppedFiles_.clear();
-    if (auto text = core_.takeClipboardText())
-        glfwSetClipboardString(window_, text->c_str());
+    if (auto text = core_.takeClipboardText()) {
+        // COPYCLIP leaves a picture (maybe empty) with its text: both go to the system clipboard
+        // at once, and the text is remembered so Ctrl+V knows the objects are ours.
+        if (auto pic = platform::takeStashedClipboardPicture()) {
+            ownClipText_ = *text;
+            if (!platform::writeClipboard(*text, pic->width > 0 ? &*pic : nullptr))
+                glfwSetClipboardString(window_, text->c_str());
+        } else {
+            ownClipText_.reset();
+            glfwSetClipboardString(window_, text->c_str());
+        }
+    }
     shortcuts();
     for (const std::string& what : core_.takeUiRequests()) {
         if (what == "settings")
@@ -3951,7 +3959,7 @@ ViewportRect Gui::frame() {
         else if (what == "clipboardsnapshot") {
             // PASTESPEC Text/Table waits for an answer: hand it the system clipboard text.
             const char* text = glfwGetClipboardString(window_);
-            if (text && *text && std::string_view(text).rfind("[TBCAD objects", 0) != 0) {
+            if (text && *text && !isOwnClipText(text)) {
                 core_.setSetting("tmp.clipboard.system", text);
                 core_.submitText("\x01");
             }

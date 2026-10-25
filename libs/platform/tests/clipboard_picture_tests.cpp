@@ -88,3 +88,45 @@ TEST_CASE("cut-short or unsupported bitmap data is refused") {
     auto rle = header(1, 1, 8, 1);
     CHECK_FALSE(parseDib(rle.data(), rle.size()));
 }
+
+TEST_CASE("buildDib writes a bottom-up 24-bit bitmap that parseDib reads back") {
+    ClipboardPicture pic;
+    pic.width = 3;
+    pic.height = 2;
+    for (int i = 0; i < 6; ++i) {
+        pic.rgba.push_back(static_cast<std::uint8_t>(10 * i));
+        pic.rgba.push_back(static_cast<std::uint8_t>(20 + i));
+        pic.rgba.push_back(static_cast<std::uint8_t>(200 - i));
+        pic.rgba.push_back(255);
+    }
+    auto dib = buildDib(pic);
+    REQUIRE(!dib.empty());
+    auto back = parseDib(dib.data(), dib.size());
+    REQUIRE(back.has_value());
+    CHECK(back->width == 3);
+    CHECK(back->height == 2);
+    CHECK(back->rgba == pic.rgba);
+}
+
+TEST_CASE("buildDib blends transparent pixels over white and refuses empty pictures") {
+    ClipboardPicture pic;
+    pic.width = 1;
+    pic.height = 1;
+    pic.rgba = {0, 0, 0, 0};
+    auto dib = buildDib(pic);
+    auto back = parseDib(dib.data(), dib.size());
+    REQUIRE(back.has_value());
+    CHECK(back->rgba[0] == 255);
+    CHECK(buildDib(ClipboardPicture{}).empty());
+}
+
+TEST_CASE("the stashed clipboard picture is handed out once") {
+    CHECK(!takeStashedClipboardPicture().has_value());
+    ClipboardPicture pic;
+    pic.width = 5;
+    stashClipboardPicture(pic);
+    auto got = takeStashedClipboardPicture();
+    REQUIRE(got.has_value());
+    CHECK(got->width == 5);
+    CHECK(!takeStashedClipboardPicture().has_value());
+}
