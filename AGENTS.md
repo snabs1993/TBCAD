@@ -19,6 +19,11 @@ TBCAD is a free 2D CAD program (C++20, MIT). Read CONTRIBUTING.md once; this fil
 
 ## Build and test (Linux)
 
+The window (gui.cpp, ImGui panels) is off by default on Linux and needs X11 headers. Run
+`tools/cloud-setup.sh` once (a SessionStart hook does it in cloud sessions); it installs them and
+configures with `-DTBCAD_BUILD_APP=ON`. Run GUI tests headless with
+`TBCAD_REQUIRE_GL=1 TBCAD_REQUIRE_GUI=1 xvfb-run -a -s "-screen 0 1600x1000x24" ctest ...`.
+
 ```sh
 cmake --preset linux-clang-debug            # once
 cmake --build build/linux-clang-debug -j8

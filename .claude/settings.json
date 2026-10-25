@@ -1,0 +1,7 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "tools/cloud-setup.sh >/tmp/cloud-setup.log 2>&1 || true" } ] }
+    ]
+  }
+}
