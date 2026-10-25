@@ -1116,8 +1116,17 @@ TEST_CASE("a viewport on a layer that does not plot has no plotted border") {
         return t.substr(at, t.find('\n', at) - at);
     };
     const std::string v1 = line("V\t1\t"), v2 = line("V\t2\t");
-    CHECK(v1.substr(v1.size() - 2) == "\t0");  // border off: Defpoints does not plot
-    CHECK(v2.substr(v2.size() - 2) == "\t1");
+    // The last two fields: border on / off, and the id of the layer the border is on (0 = none).
+    const auto tail = [](const std::string& v, std::string& layer) {
+        layer = v.substr(v.rfind('\t') + 1);
+        const std::string rest = v.substr(0, v.rfind('\t'));
+        return rest.substr(rest.size() - 1);
+    };
+    std::string layer1, layer2;
+    CHECK(tail(v1, layer1) == "0");  // border off: Defpoints does not plot
+    CHECK(tail(v2, layer2) == "1");
+    CHECK(layer1 != "0");  // the border keeps its layer
+    CHECK(layer2 == "0");
 }
 
 TEST_CASE("a layout's plot style table becomes a page setup assigned to it") {

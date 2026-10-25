@@ -429,6 +429,7 @@ private:
         std::vector<Vec2> clip{};  // outline of a clipped viewport (sheet mm)
         bool locked = false;
         bool border = true;
+        LayerId borderLayer{};  // group 8 of the VIEWPORT; null = layer 0
         std::uint32_t level = 0;
     };
     struct Sheet {

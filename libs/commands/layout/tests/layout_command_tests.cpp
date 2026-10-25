@@ -775,3 +775,27 @@ TEST_CASE("LAYOUT SAveas writes a template with only that layout, and Template r
     CHECK(all[0].viewports.size() == 1);
     std::filesystem::remove(file);
 }
+
+TEST_CASE("MVIEW Layer puts the viewport border on a layer and the setting survives a save") {
+    Fixture f;
+    LayerId frame;
+    {
+        auto tx = f.doc.begin("layer");
+        Layer l;
+        l.name = "Frame";
+        frame = tx.addLayer(l).value();
+        tx.commit();
+    }
+    f.host->run("LAYOUT", {"New", "Plan", "A3", ""});
+    f.host->run("MVIEW", {"10,10", "200,200", "1:50", "0,0"});
+    CHECK(f.host->run("MVIEW", {"Layer", "frame", "1"}).finished);
+    CHECK(layout::findLayout(f.doc, "Plan")->viewports[0].borderLayer == frame);
+    f.host->run("MVIEW", {"Layer", "nope"});
+    CHECK(f.host->logContains("No layer named"));
+    io::IoReport rep;
+    auto bytes = io::writeTbcadToMemory(f.doc);
+    REQUIRE(bytes.ok());
+    auto back = io::readTbcad(std::span<const std::uint8_t>(bytes.value()), rep);
+    REQUIRE(back.ok());
+    CHECK(layout::findLayout(*back.value(), "Plan")->viewports[0].borderLayer.value == frame.value);
+}

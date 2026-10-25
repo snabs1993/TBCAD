@@ -509,9 +509,10 @@ public:
         if (!requireLayout(ctx, target))
             co_return;
         cmd::PointOptions fo;
-        fo.keywords = {"Fit", "Polygonal", "Object", "ON", "OFF", "Lock", "2", "3", "4"};
+        fo.keywords = {"Fit", "Polygonal", "Object", "ON", "OFF", "Lock", "Layer", "2", "3", "4"};
         auto a = co_await ctx.getPoint(
-            "Specify first corner on the sheet (mm) or [Fit/Polygonal/Object/ON/OFF/Lock/2/3/4]",
+            "Specify first corner on the sheet (mm) or "
+            "[Fit/Polygonal/Object/ON/OFF/Lock/Layer/2/3/4]",
             fo);
         // 2 / 3 / 4: several viewports that share one area, split as asked.
         int multi = 0;
@@ -548,6 +549,28 @@ public:
                 report(ctx, layout::setViewportOn(ctx.tx(), target, vpId, a.keyword == "ON"),
                        "Viewport " + std::to_string(vpId) +
                            (a.keyword == "ON" ? " is on." : " is off."));
+            co_return;
+        }
+        if (a.status == Status::Keyword && a.keyword == "Layer") {
+            // The viewport border goes on this layer: its colour, and off / frozen / no-plot.
+            auto layerName = co_await ctx.getString("Layer name");
+            if (!layerName.ok())
+                co_return;
+            const Layer* layer = nullptr;
+            for (const auto& [id, l] : ctx.doc().layers())
+                if (lower(l.name) == lower(layerName.text) && !layer)
+                    layer = &l;
+            if (!layer) {
+                ctx.message("No layer named \"" + layerName.text + "\".");
+                co_return;
+            }
+            const LayerId layerId = layer->id;
+            int vpId = 0;
+            bool picked = false;
+            co_await askViewport(ctx, target, vpId, picked);
+            if (picked)
+                report(ctx, layout::setViewportBorderLayer(ctx.tx(), target, vpId, layerId),
+                       "Viewport " + std::to_string(vpId) + " is on layer " + layer->name + ".");
             co_return;
         }
         if (a.status == Status::Keyword && a.keyword == "Lock") {
