@@ -16,17 +16,19 @@ set(_layers_sources
   src/layer_commands.cpp
   src/layer_tools.cpp
   src/laytrans.cpp
+  src/standards.cpp
+  src/standards_commands.cpp
   src/laywalk.cpp
   src/property_commands.cpp
   src/register.cpp
   "${CMAKE_CURRENT_BINARY_DIR}/builtin_linetypes.cpp")
-set(_layers_deps tbcad::cmd tbcad::ui tbcad::core tbcad::geom tbcad::blocks tbcad::layout tbcad::text tbcad::dim tbcad::hatch)
+set(_layers_deps tbcad::cmd tbcad::ui tbcad::core tbcad::geom tbcad::blocks tbcad::xref tbcad::layout tbcad::text tbcad::dim tbcad::hatch)
 
 # The panels draw with Dear ImGui, which only exists when the application is built. Without it
 # the panels are registered as empty stubs, so headless builds and tests still link.
 if(TBCAD_BUILD_APP)
   include(deps/imgui)
-  list(APPEND _layers_sources ui/color_picker.cpp ui/layers_panel.cpp ui/laywalk_panel.cpp ui/properties_panel.cpp)
+  list(APPEND _layers_sources ui/color_picker.cpp ui/layers_panel.cpp ui/laywalk_panel.cpp ui/standards_panel.cpp ui/properties_panel.cpp)
   list(APPEND _layers_deps tbcad::imgui)
 else()
   list(APPEND _layers_sources src/panels_stub.cpp)
@@ -47,6 +49,7 @@ tbcad_add_tests(layers
     tests/layer_state_tests.cpp
     tests/linetype_tests.cpp
     tests/properties_tests.cpp
+    tests/standards_tests.cpp
   DEPENDS tbcad_layers tbcad_command_registry tbcad::io)
 if(TARGET tbcad_layers_tests)
   target_compile_definitions(tbcad_layers_tests PRIVATE TBCAD_SOURCE_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
