@@ -20,3 +20,7 @@ is plotted with its own setup, so one job can mix colour and monochrome sheets a
 tables.
 
 The Plot panel has the same printer choice, copies and **Print** / **Print dialog...** buttons.
+
+## COMPARE
+
+`COMPARE` (alias `DRAWINGCOMPARE`) asks for an earlier revision (.tbcad or .dxf) and boxes what differs in the open drawing: green on layer COMPARE-ADDED for new objects, red on COMPARE-REMOVED for objects that are gone, yellow on COMPARE-CHANGED for objects that moved or changed. The list is also placed on the clipboard text. Only model space is compared.
