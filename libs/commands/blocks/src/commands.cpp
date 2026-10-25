@@ -78,6 +78,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeUnderlayFadeCommand());
     (void)registry.add(makeXReloadCommand());
     (void)registry.add(makeXDetachCommand());
+    (void)registry.add(makeXrefLineCommand());
     (void)registry.add(makeXBindCommand());
     (void)registry.add(makeXUnloadCommand());
     (void)registry.add(makeXClipCommand());

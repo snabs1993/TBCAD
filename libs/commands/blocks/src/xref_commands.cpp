@@ -60,7 +60,9 @@ const char* stateText(xref::State s) {
 class XAttachCommand final : public cmd::Command {
 public:
     enum class Kind { Drawing, Pdf, Image };
-    explicit XAttachCommand(Kind kind) : kind_(kind), pdf_(kind == Kind::Pdf) {}
+    // `forced` skips the Attach/Overlay question: 1 attaches, 2 overlays (used by -XREF).
+    explicit XAttachCommand(Kind kind, int forced = 0)
+        : kind_(kind), pdf_(kind == Kind::Pdf), forced_(forced) {}
 
     std::string_view name() const override {
         return pdf_ ? "PDFATTACH" : kind_ == Kind::Image ? "IMAGEATTACH" : "XATTACH";
@@ -157,7 +159,9 @@ public:
 
         const bool underlayKind = pdf_ || kind_ == Kind::Image;
         bool overlay = false;
-        if (!underlayKind) {  // a picture or PDF page is never an overlay
+        if (!underlayKind && forced_ != 0) {
+            overlay = forced_ == 2;
+        } else if (!underlayKind) {  // a picture or PDF page is never an overlay
             auto kind = co_await ctx.getKeyword(
                 "Reference type [Attach/Overlay] <Attach>",
                 cmd::KeywordOptions{.keywords = {"Attach", "Overlay"}, .defaultKeyword = "Attach"});
@@ -274,6 +278,7 @@ public:
 private:
     Kind kind_;
     bool pdf_;
+    int forced_;
 };
 
 // XRELOAD: reloads external references from their files.
@@ -570,6 +575,54 @@ public:
         }
         ctx.setUndoLabel("Reference type of " + name);
         ctx.message("\"" + name + "\" is now " + (overlay ? "an overlay" : "an attachment"));
+    }
+};
+
+// -XREF: the command-line form of the External References palette. It asks for an option and hands
+// over to the command that does the work, so scripts and the command line can attach, overlay,
+// detach, repath, reload, unload and bind without a dialog.
+class XrefLineCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "-XREF"; }
+    std::vector<std::string> defaultAliases() const override { return {"-XR"}; }
+    std::string_view description() const override {
+        return "Attach, overlay, detach, reload, unload, bind or repath external references from "
+               "the command line";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        for (;;) {
+            auto k = co_await ctx.getKeyword(
+                "Enter an option [?/Attach/Overlay/Detach/Path/Reload/Unload/Bind]",
+                cmd::KeywordOptions{.keywords = {"?", "Attach", "Overlay", "Detach", "Path",
+                                                 "Reload", "Unload", "Bind"}});
+            if (!k.ok())
+                co_return;
+            if (k.keyword == "?") {
+                if (xref::xrefs(ctx.doc()).empty())
+                    ctx.message("There are no external references in this drawing.");
+                else
+                    ctx.message("Xrefs: " + xrefNames(ctx.doc()));
+                continue;
+            }
+            std::unique_ptr<cmd::Command> sub;
+            if (k.keyword == "Attach")
+                sub = std::make_unique<XAttachCommand>(XAttachCommand::Kind::Drawing, 1);
+            else if (k.keyword == "Overlay")
+                sub = std::make_unique<XAttachCommand>(XAttachCommand::Kind::Drawing, 2);
+            else if (k.keyword == "Detach")
+                sub = std::make_unique<XrefByNameCommand>(XrefByNameCommand::Mode::Detach);
+            else if (k.keyword == "Path")
+                sub = std::make_unique<XPathCommand>();
+            else if (k.keyword == "Reload")
+                sub = std::make_unique<XReloadCommand>();
+            else if (k.keyword == "Unload")
+                sub = std::make_unique<XrefByNameCommand>(XrefByNameCommand::Mode::Unload);
+            else
+                sub = std::make_unique<XrefByNameCommand>(XrefByNameCommand::Mode::Bind);
+            co_await sub->run(ctx);
+            co_return;
+        }
     }
 };
 
@@ -1133,6 +1186,9 @@ std::unique_ptr<cmd::Command> makeXrefTypeCommand() {
 }
 std::unique_ptr<cmd::Command> makeXOpenCommand() {
     return std::make_unique<XOpenCommand>();
+}
+std::unique_ptr<cmd::Command> makeXrefLineCommand() {
+    return std::make_unique<XrefLineCommand>();
 }
 std::unique_ptr<cmd::Command> makeXListCommand() {
     return std::make_unique<XListCommand>();
