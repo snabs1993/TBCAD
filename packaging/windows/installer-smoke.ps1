@@ -15,6 +15,12 @@ function Run($exe, $argList) {
     return $p.ExitCode
 }
 
+# Upgrading over a running TBCAD must close it instead of failing on the locked tbcad.exe.
+$iss = Get-Content (Join-Path $PSScriptRoot 'tbcad.iss') -Raw
+foreach ($k in 'CloseApplications=yes', 'RestartApplications=no') {
+    if ($iss -notmatch [regex]::Escape($k)) { throw "tbcad.iss lacks $k" }
+}
+
 $code = Run $Setup @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', "/DIR=$dir", '/TASKS=assoc_tbcad')
 if ($code -ne 0) { throw "installer exit code $code" }
 
