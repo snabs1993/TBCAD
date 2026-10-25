@@ -293,6 +293,44 @@ TEST_CASE("Thai text is escaped in R2000 and survives - R2007 writes UTF-8") {
     CHECK_MESSAGE(semanticDiff(doc, *back2.document).empty(), semanticDiff(doc, *back2.document));
 }
 
+TEST_CASE("Thai block, style and attribute names and values survive R2000 and R2007") {
+    Document doc;
+    {
+        auto tx = doc.begin("thai names");
+        REQUIRE(tx.addTextStyle(TextStyle{{}, "ตัวอักษรไทย", "TH Sarabun New", "", 1.0, 0.0}).ok());
+        BlockDef def;
+        def.name = "ประตู";
+        BlockId blk = tx.addBlock(def).value();
+        TextData tag;
+        tag.utf8 = "ROOM";
+        tag.attdef = AttDefInfo{"ROOM", "ชื่อห้อง?", "ห้องนอน"};
+        Entity ad;
+        ad.data = Indirect<TextData>(tag);
+        REQUIRE(tx.add(std::move(ad), blk).ok());
+        InsertData ins{blk, {5, 5}, {1, 1}, 0, {AttribValue{"ROOM", "ห้องรับแขก", {2.5, -1}}}};
+        Entity e;
+        e.data = Indirect<InsertData>(ins);
+        REQUIRE(tx.add(std::move(e)).ok());
+        tx.commit();
+    }
+    for (DxfVersion v : {DxfVersion::R2000, DxfVersion::R2007}) {
+        ExportOptions o;
+        o.version = v;
+        Result<ExportResult> out = exportDoc(doc, o);
+        REQUIRE(out.ok());
+        ImportResult back = importText(out.value().bytes);
+        CHECK_MESSAGE(semanticDiff(doc, *back.document).empty(), semanticDiff(doc, *back.document));
+        CHECK(back.document->blockByName("ประตู") != nullptr);
+        CHECK(back.document->textStyleByName("ตัวอักษรไทย") != nullptr);
+        bool found = false;
+        back.document->forEachEntity([&](const Entity& en) {
+            if (const auto* i = entityAs<InsertData>(en))
+                found = !i->attribs.empty() && i->attribs[0].value == "ห้องรับแขก";
+        });
+        CHECK(found);
+    }
+}
+
 TEST_CASE(
     "sub-layers are flattened to parent~child names with TBCAD XDATA and come back as a tree") {
     Document doc;
