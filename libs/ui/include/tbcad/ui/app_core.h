@@ -172,6 +172,10 @@ public:
     // Saves to the current file; fails with NotFound-style error text when there is none yet
     // (the window then asks for a name and calls saveAs).
     Result<void> save();
+    // True when the drawing's file was changed by another program since it was opened or saved.
+    bool fileChangedOnDisk() const;
+    // Saves over the file even though it changed on disk (the user chose Overwrite).
+    Result<void> saveOverwrite();
     Result<void> saveAs(const std::filesystem::path& path);
     // What a DXF saved in `version` would lose or simplify (one line each; empty = nothing).
     // Shown in the Save As version prompt.

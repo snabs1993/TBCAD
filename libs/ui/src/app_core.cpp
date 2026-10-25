@@ -1661,6 +1661,16 @@ Result<void> AppCore::save() {
     return saveAs(session_->file);
 }
 
+bool AppCore::fileChangedOnDisk() const {
+    return !readOnlyOrigin() && changedOnDisk(*session_);
+}
+
+Result<void> AppCore::saveOverwrite() {
+    if (session_ && !session_->file.empty())
+        session_->overwriteConfirmed = true;
+    return save();
+}
+
 // Puts the current UCS into the drawing's header so that it comes back when the file is reopened.
 void AppCore::storeCurrentUcs() {
     const drafting::Ucs u = drafting::currentUcs(&session_->doc, this);
