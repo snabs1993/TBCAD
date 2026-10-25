@@ -124,7 +124,7 @@ std::optional<Continuation> lastLineOrArc(const Document& doc) {
     }
     const auto& a = std::get<ArcData>(best->data);
     const Vec2 end = a.center + Vec2{std::cos(a.endAngle), std::sin(a.endAngle)} * a.radius;
-    return Continuation{end, a.endAngle + kPi / 2};
+    return Continuation{end, a.endAngle + kPi / 2, true};
 }
 
 }  // namespace tbcad::draw::detail

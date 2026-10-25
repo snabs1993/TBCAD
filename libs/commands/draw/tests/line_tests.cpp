@@ -144,3 +144,33 @@ TEST_CASE("LINE: each segment is in the drawing while the command still waits fo
     f.host.feed({"100,50"});
     CHECK(f.entities().size() == 2);
 }
+
+TEST_CASE("LINE Enter at the first prompt continues from the end of the last line") {
+    Fixture f;
+    f.host.run("L", {"0,0", "10,0", ""});
+    auto r = f.host.run("L", {"", "@0,5", ""});
+    CHECK(r.finished);
+    auto es = f.entities();
+    REQUIRE(es.size() == 2);
+    CHECK(close(as<LineData>(es[1]).a, {10, 0}));
+    CHECK(close(as<LineData>(es[1]).b, {10, 5}));
+}
+
+TEST_CASE("LINE Enter after an arc asks for a tangent length") {
+    Fixture f;
+    f.host.run("ARC", {"10,0", "C", "0,0", "0,10"});  // ends at (0,10) heading west
+    auto r = f.host.run("L", {"", "4", ""});
+    CHECK(r.finished);
+    auto es = f.entities();
+    REQUIRE(es.size() == 2);
+    CHECK(close(as<LineData>(es[1]).a, {0, 10}));
+    CHECK(close(as<LineData>(es[1]).b, {-4, 10}));
+}
+
+TEST_CASE("LINE Enter with nothing to continue from draws nothing") {
+    Fixture f;
+    auto r = f.host.run("L", {""});
+    CHECK(r.finished);
+    CHECK(f.entities().empty());
+    CHECK(f.host.logContains("no line or arc"));
+}

@@ -46,6 +46,7 @@ std::optional<Vec2> centerFromIncluded(Vec2 a, Vec2 b, double included);
 struct Continuation {
     Vec2 point{};
     double tangent = 0;
+    bool fromArc = false;
 };
 std::optional<Continuation> lastLineOrArc(const Document& doc);
 
