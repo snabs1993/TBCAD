@@ -55,7 +55,10 @@ class Run {
 public:
     enum class State { Interp, Asking, Done };
 
-    explicit Run(std::function<Value()> program) : program_(std::move(program)) {
+    explicit Run(std::function<Value()> program) : program_(std::move(program)) {}
+    // Starts the program. Separate from the constructor so the caller can finish setting up
+    // (the session's pointer to this run) before the program can ask anything.
+    void start() {
         thread_ = std::thread([this] { body(); });
     }
     ~Run() {
@@ -966,6 +969,7 @@ protected:
             program = [&s, userName] { return s.interp.evalText("(C:" + userName + ")"); };
         auto run = std::make_unique<Run>(std::move(program));
         s.run = run.get();
+        run->start();
 
         for (;;) {
             if (run->wait() == Run::State::Done)
