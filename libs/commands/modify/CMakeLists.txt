@@ -18,4 +18,5 @@ tbcad_add_tests(modify_commands
     tests/command_tests.cpp
     tests/robustness_tests.cpp
     tests/cancel_sweep_tests.cpp
+    tests/offset_property_tests.cpp
   DEPENDS tbcad_command_registry)
