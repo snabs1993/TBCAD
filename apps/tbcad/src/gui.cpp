@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -3248,6 +3249,30 @@ void Gui::startPage(const ViewportRect& rect) {
                     doOpenPath(path);
                 ImGui::PopID();
             }
+        }
+        if (flag("ui.tipOfTheDay", true)) {
+            static const char* const kTips[] = {
+                "Ctrl+0 or F11 hides every panel (Clean Screen). Press it again to bring them "
+                "back.",
+                "Ctrl+Shift+P lists every command with its keys.",
+                "Press Enter on an empty command line to repeat the last command.",
+                "Hold the middle button and drag to pan. The wheel zooms at the cursor.",
+                "Use Report a Problem in the Help menu to send us what went wrong.",
+                "Save as DXF when you share a drawing: it opens in other CAD programs.",
+            };
+            constexpr int kTipCount = static_cast<int>(sizeof(kTips) / sizeof(kTips[0]));
+            static int tip = static_cast<int>((std::time(nullptr) / 86400) % kTipCount);
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::TextDisabled("Tip of the day");
+            ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + 420.0f * dpiScale_);
+            ImGui::TextUnformatted(kTips[tip]);
+            ImGui::PopTextWrapPos();
+            if (ImGui::SmallButton("Next tip"))
+                tip = (tip + 1) % kTipCount;
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Hide tips"))
+                core_.settings().setBool("ui.tipOfTheDay", false);
         }
         if (flag("ui.gettingAround", true)) {
             ImGui::Spacing();
