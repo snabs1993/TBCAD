@@ -224,7 +224,8 @@ bool Keybindings::overridden(std::string_view actionId) const {
 }
 
 bool Keybindings::isCommandAction(std::string_view actionId) {
-    return actionId.size() > kCommandPrefix.size() && actionId.substr(0, kCommandPrefix.size()) == kCommandPrefix;
+    return actionId.size() > kCommandPrefix.size() &&
+           actionId.substr(0, kCommandPrefix.size()) == kCommandPrefix;
 }
 
 void Keybindings::forget(std::string_view actionId) {

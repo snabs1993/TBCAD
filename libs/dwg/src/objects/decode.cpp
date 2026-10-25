@@ -1703,8 +1703,7 @@ private:
             n = form == 0 ? probe.rl() : probe.bl();
             probe.bs();  // cloning flag
             probe.rc();  // hard owner flag
-            if (!probe.failed() && n <= 100000 &&
-                (!fmt_.r2007 || probe.bitPos() == mainEnd_)) {
+            if (!probe.failed() && n <= 100000 && (!fmt_.r2007 || probe.bitPos() == mainEnd_)) {
                 r.seekBit(probe.bitPos());
                 done = true;
             }

@@ -253,13 +253,13 @@ void parseHeaderVariables(BitReader& r, const Format& fmt, HeaderVars& v,
     auto skipSpace = [&] {  // one set of paper or model space variables
         skipBd(9);          // INSBASE, EXTMIN, EXTMAX
         for (int i = 0; i < 4; ++i)
-            r.rd();         // LIMMIN, LIMMAX (2RD each)
-        r.bd();             // ELEVATION
-        skipBd(9);          // UCSORG, UCSXDIR, UCSYDIR
-        skipH(2);           // UCSNAME, UCSORTHOREF
-        r.bs();             // UCSORTHOVIEW
-        skipH(1);           // UCSBASE
-        skipBd(18);         // six UCSORG* points
+            r.rd();  // LIMMIN, LIMMAX (2RD each)
+        r.bd();      // ELEVATION
+        skipBd(9);   // UCSORG, UCSXDIR, UCSYDIR
+        skipH(2);    // UCSNAME, UCSORTHOREF
+        r.bs();      // UCSORTHOVIEW
+        skipH(1);    // UCSBASE
+        skipBd(18);  // six UCSORG* points
     };
     std::string stages;
     auto stage = [&](const char* name, double value) {
