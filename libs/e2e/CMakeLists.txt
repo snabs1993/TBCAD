@@ -41,6 +41,7 @@ tbcad_add_tests(e2e
     tests/text_fonts_tests.cpp
     tests/cmdline_ux_tests.cpp
     tests/drawing_objects_tests.cpp
+    tests/appcore_undo_tests.cpp
   DEPENDS tbcad::dxf tbcad::io tbcad::cmd tbcad::command_registry tbcad::appcore tbcad::dwgopen)
 # The target exists only when tests are built (the ezdxf and fuzz jobs configure without them).
 if(TARGET tbcad_e2e_tests)
