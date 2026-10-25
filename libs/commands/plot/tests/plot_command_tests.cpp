@@ -110,6 +110,25 @@ TEST_CASE("PLOT: the UpsideDown option is stored and turns the SVG") {
     CHECK_FALSE(plot::loadSettings(*f.host).upsideDown);
 }
 
+TEST_CASE("PLOT Area View: a named view becomes the plot window") {
+    Fixture f;
+    {
+        auto tx = f.doc.begin("view");
+        REQUIRE(tx.modifyHeader([](Header& h) {
+                      h.custom["tbcad.view.Detail"] = "500 20 1 400 200";
+                  }).ok());
+        tx.commit();
+    }
+    auto r = f.host->run("EXPORTSVG", {"Area", "View", "detail", "", f.path("v.svg")});
+    CHECK(r.finished);
+    auto s = plot::loadSettings(*f.host);
+    CHECK(s.area == exportlib::PlotArea::Window);
+    CHECK(s.window.min.x == doctest::Approx(300));
+    CHECK(s.window.max.y == doctest::Approx(120));
+    r = f.host->run("EXPORTSVG", {"Area", "View", "nope", "", f.path("v2.svg")});
+    CHECK(f.host->logContains("There is no view named"));
+}
+
 TEST_CASE("an extension is added - Esc leaves nothing behind") {
     Fixture f;
     auto base = f.path("noext");
