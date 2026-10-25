@@ -124,3 +124,13 @@ TEST_CASE("RECTANGLE Width gives the polyline a width") {
         CHECK(v.endWidth == doctest::Approx(0.5));
     }
 }
+
+TEST_CASE("RECTANGLE Area from length or width") {
+    Fixture f;
+    f.host.run("REC", {"0,0", "Area", "50", "Length", "10", "20,20"});
+    f.host.run("REC", {"0,0", "A", "50", "Width", "5", "20,20"});
+    auto es = f.entities();
+    REQUIRE(es.size() == 2);
+    checkVertices(as<PolylineData>(es[0]), {{0, 0}, {10, 0}, {10, 5}, {0, 5}});
+    checkVertices(as<PolylineData>(es[1]), {{0, 0}, {10, 0}, {10, 5}, {0, 5}});
+}
