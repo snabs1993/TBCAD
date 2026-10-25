@@ -218,6 +218,15 @@ AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
             startupWarnings_.push_back(problem);
         installSession(std::move(doc), {});
     }
+    // One plain message when the user-data folders cannot be written; the app still works and
+    // saves drawings wherever the user picks.
+    const bool configOk = platform::isWritableDirectory(paths_.configDir);
+    if (!configOk || !platform::isWritableDirectory(paths_.dataDir)) {
+        startupWarnings_.push_back(
+            "Cannot write to the settings folder " +
+            platform::pathToUtf8(configOk ? paths_.dataDir : paths_.configDir) +
+            ". Settings and autosave will not be kept; saving your drawings still works.");
+    }
     for (const auto& w : startupWarnings_)
         print(w);
 }

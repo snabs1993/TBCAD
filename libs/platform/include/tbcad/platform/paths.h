@@ -52,4 +52,8 @@ std::filesystem::path longPath(const std::filesystem::path& p, bool windows = kH
 // Creates the directory (and parents). False on failure.
 bool ensureDirectory(const std::filesystem::path& dir);
 
+// Creates the directory if needed and proves a file can be written there (a read-only folder,
+// a full disk or a locked-down OneDrive folder fail here, not at the first save).
+bool isWritableDirectory(const std::filesystem::path& dir);
+
 }  // namespace tbcad::platform

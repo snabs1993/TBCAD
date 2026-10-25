@@ -1,6 +1,7 @@
 #include "tbcad/platform/paths.h"
 
 #include <cstdlib>
+#include <fstream>
 #include <string>
 #include <system_error>
 
@@ -85,6 +86,21 @@ bool ensureDirectory(const std::filesystem::path& dir) {
     std::error_code ec;
     std::filesystem::create_directories(dir, ec);
     return !ec && std::filesystem::is_directory(dir, ec);
+}
+
+bool isWritableDirectory(const std::filesystem::path& dir) {
+    if (!ensureDirectory(dir))
+        return false;
+    std::error_code ec;
+    const std::filesystem::path probe = dir / ".tbcad-write-test";
+    {
+        std::ofstream out(longPath(probe), std::ios::binary | std::ios::trunc);
+        out << "x";
+        if (!out.flush())
+            return false;
+    }
+    std::filesystem::remove(longPath(probe), ec);
+    return true;
 }
 
 }  // namespace tbcad::platform

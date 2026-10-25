@@ -2010,3 +2010,14 @@ TEST_CASE("snap angle and snap base are saved with the drawing and come back on 
         CHECK(std::stod(base.substr(base.find(',') + 1)) == doctest::Approx(7));
     }
 }
+
+TEST_CASE("an unwritable user-data folder gives one message and the app still saves") {
+    fs::path dir = tempDir("unwritable");
+    { std::ofstream(dir / "blocker") << "a file where a folder should be"; }
+    auto registry = makeRegistry();
+    AppCore core(*registry, platform::AppPaths{dir / "blocker" / "cfg", dir / "blocker" / "data"});
+    REQUIRE(core.startupWarnings().size() == 1);
+    CHECK(core.startupWarnings()[0].find("Cannot write to the settings folder") !=
+          std::string::npos);
+    core.shutdown();
+}
