@@ -2023,12 +2023,18 @@ private:
 
     void spline(BitReader& r, EntityRec& e) {
         e.dxfType = "SPLINE";
-        const std::int32_t scenario = r.bl();
+        const std::int32_t storedScenario = r.bl();
         bool flagClosed = false;
+        std::int32_t scenario = storedScenario;
         if (fmt_.r2013) {
             const std::int32_t flags1 = r.bl();
-            r.bl();  // knot parameter
+            const std::int32_t knotParameter = r.bl();
             flagClosed = (flags1 & 4) != 0;
+            // From R2013 the stored scenario is not reliable (real R2018 files store 1 for a
+            // spline made of fit points): the layout follows the method flag and the knot
+            // parameter, fit points unless the knots are custom.
+            if ((flags1 & 1) != 0 && knotParameter != 15)
+                scenario = 2;
         }
         const std::int32_t degree = r.bl();
         bool rational = false, closed = flagClosed, periodic = false;

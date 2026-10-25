@@ -919,6 +919,50 @@ TEST_CASE("ellipse, spline and solid import") {
     CHECK(others == 1);
 }
 
+// Real R2018 files store scenario 1 for a spline made of fit points; the method flag decides.
+TEST_CASE("an R2013 fit-point spline is read by its method flag, not the stored scenario") {
+    gR2004 = gR2007 = gR2013 = true;
+    DwgFile f;
+    f.add(kLtype, linetype(kLtype, "Continuous"));
+    f.add(kLayer0, layer(kLayer0, "0", 7, kLtype));
+    f.add(kStyle, style(kStyle, "Standard"));
+    f.add(kModel, blockHeader(kModel, "*Model_Space", 0, 0));
+    f.add(kPaper, blockHeader(kPaper, "*Paper_Space", 0, 0));
+    {
+        ObjectWriter o(0x24, 0x41);
+        o.entityCommon(2, 256, 0);
+        o.main.bl(1);  // stored scenario (wrong for a fit spline)
+        o.main.bl(9);  // method fit points + use knot parameter
+        o.main.bl(0);  // chord
+        o.main.bl(3);  // degree
+        o.main.bd(1e-10);
+        for (int i = 0; i < 6; ++i)
+            o.main.bd(0.0);  // tangents
+        o.main.bl(2);        // fit points
+        for (double c : {0.0, 0.0, 0.0, 10.0, 5.0, 0.0})
+            o.main.bd(c);
+        commonHandles(o, 2, 0, kLayer0);
+        f.add(0x41, o.finish());
+    }
+    gR2004 = gR2007 = gR2013 = false;
+    Dwg2004File c;
+    std::vector<std::uint8_t> objects, handles;
+    f.sections(objects, handles);
+    c.section("AcDb:AcDbObjects", objects);
+    c.section("AcDb:Handles", handles, 0x80);
+    dxf::Report report;
+    auto r = importDwg(asBytes(c.build("AC1032")), dxf::ImportOptions{}, report);
+    REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
+    const Document& doc = *r.value().document;
+    int splines = 0;
+    for (EntityId id : doc.modelSpace())
+        if (const auto* d = entityAs<SplineData>(*doc.find(id))) {
+            ++splines;
+            CHECK(d->fit.size() == 2);
+        }
+    CHECK(splines == 1);
+}
+
 TEST_CASE("a 2D polyline with its vertices and an mtext import") {
     DwgFile f;
     f.add(kLtype, linetype(kLtype, "Continuous"));
