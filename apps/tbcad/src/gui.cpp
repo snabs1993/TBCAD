@@ -3847,6 +3847,10 @@ void Gui::viewportMenu() {
             }
             item("Cut", "CUTCLIP");
             item("Copy", "COPYCLIP");
+            item("Copy with Base Point", "COPYBASE");
+            item("Paste", "PASTECLIP");
+            item("Paste as Block", "PASTEBLOCK");
+            item("Paste to Original Coordinates", "PASTEORIG");
             ImGui::Separator();
             for (const char* c : {"MOVE", "COPY", "ROTATE", "SCALE", "MIRROR", "ERASE"})
                 if (core_.registry().find(c) && ImGui::MenuItem(c))
@@ -3856,8 +3860,32 @@ void Gui::viewportMenu() {
                 item("Trim", "TRIM");
                 item("Extend", "EXTEND");
             }
+            if (core_.registry().find("DRAWORDER") && ImGui::BeginMenu("Draw Order")) {
+                // The selection is taken as picked first; the keyword answers the ordering prompt.
+                if (ImGui::MenuItem("Bring to Front")) {
+                    run("DRAWORDER");
+                    run("Front");
+                }
+                if (ImGui::MenuItem("Send to Back")) {
+                    run("DRAWORDER");
+                    run("Back");
+                }
+                if (ImGui::MenuItem("Bring Above Objects")) {
+                    run("DRAWORDER");
+                    run("Above");
+                }
+                if (ImGui::MenuItem("Send Under Objects")) {
+                    run("DRAWORDER");
+                    run("Below");
+                }
+                ImGui::EndMenu();
+            }
+            if (core_.selection().size() > 1)
+                item("Group", "GROUP");
+            item("Ungroup", "UNGROUP");
             ImGui::Separator();
             item("Select Similar", "SELECTSIMILAR");
+            item("Quick Select", "QSELECT");
             item("Match Properties", "MATCHPROP");
             item("Properties", "PROPERTIES");
             if (core_.registry().find("LAYISO") && ImGui::MenuItem("Isolate Layer"))
@@ -3867,6 +3895,13 @@ void Gui::viewportMenu() {
         } else {
             if (core_.registry().find("PASTECLIP") && ImGui::MenuItem("Paste"))
                 run("PASTECLIP");
+            if (core_.registry().find("PASTEBLOCK") && ImGui::MenuItem("Paste as Block"))
+                run("PASTEBLOCK");
+            if (core_.registry().find("PASTEORIG") &&
+                ImGui::MenuItem("Paste to Original Coordinates"))
+                run("PASTEORIG");
+            if (core_.registry().find("QSELECT") && ImGui::MenuItem("Quick Select"))
+                run("QSELECT");
             if (ImGui::MenuItem("Select All"))
                 core_.selectAll();
         }
