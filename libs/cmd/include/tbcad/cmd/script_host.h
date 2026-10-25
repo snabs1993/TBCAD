@@ -76,6 +76,7 @@ public:
         runner_.queueScript(std::move(lines), repeat);
         return true;
     }
+    bool resumeScript() override { return runner_.resumeScript(); }
     bool repeatCommand(const std::string& name) override {
         runner_.setMultiple(name);
         return true;

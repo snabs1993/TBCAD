@@ -96,6 +96,15 @@ void CommandRunner::queueScript(std::vector<std::string> lines, int repeat) {
                    std::make_move_iterator(add.end()));
 }
 
+bool CommandRunner::resumeScript() {
+    if (suspended_.empty())
+        return false;
+    script_.insert(script_.begin(), std::make_move_iterator(suspended_.begin()),
+                   std::make_move_iterator(suspended_.end()));
+    suspended_.clear();
+    return true;
+}
+
 void CommandRunner::pumpScript() {
     ++entry_;
     while (!script_.empty()) {
@@ -395,8 +404,11 @@ bool CommandRunner::redo() {
 }
 
 SubmitResult CommandRunner::submit(const Input& input) {
-    if (input.kind == Input::Kind::Cancel)
+    if (input.kind == Input::Kind::Cancel && !script_.empty()) {
+        suspended_ = std::move(script_);  // RESUME picks it up again
         script_.clear();
+        host_.print("Script interrupted. Type RESUME to continue it.");
+    }
     ++entry_;
     const SubmitResult r = submitInput(input);
     --entry_;

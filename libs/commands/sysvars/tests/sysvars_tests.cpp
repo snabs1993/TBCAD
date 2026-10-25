@@ -369,6 +369,22 @@ TEST_CASE("SCRIPT types each line of the file, RSCRIPT repeats it, Esc stops") {
     fs::remove_all(dir, ec);
 }
 
+TEST_CASE("RESUME continues a script that Esc interrupted") {
+    Fixture f;
+    f.host.run("RESUME", {});
+    CHECK(f.host.logContains("No interrupted script"));
+    f.host.runner().queueScript({"CIRCLE 0,0 5", "CIRCLE 10,0 5"});
+    f.host.runner().submit(cmd::Input::cancel());  // Esc before the first line ran
+    CHECK(f.host.logContains("RESUME"));
+    std::size_t n = 0;
+    f.doc.forEachEntity([&](const Entity&) { ++n; });
+    CHECK(n == 0);
+    f.host.run("RESUME", {});
+    n = 0;
+    f.doc.forEachEntity([&](const Entity&) { ++n; });
+    CHECK(n == 2);
+}
+
 TEST_CASE("LIMITS stores the drawing limits, keeps them on Enter and undoes") {
     Fixture f;
     CHECK(drawingLimits(f.doc.header()).empty());

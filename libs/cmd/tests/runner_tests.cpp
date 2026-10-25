@@ -472,6 +472,21 @@ TEST_CASE("UNDO/REDO commands and undo groups") {
     CHECK(host.logContains("Nothing to undo."));
 }
 
+TEST_CASE("MREDO redoes a number of steps or all of them") {
+    Fixture f;
+    ScriptHost host(f.doc, f.reg);
+    for (int i = 0; i < 4; ++i)
+        host.run("TWOLINE", {"0," + std::to_string(i), "1," + std::to_string(i)});
+    host.run("UNDO", {"4"});
+    CHECK(lines(f.doc).size() == 0);
+    host.run("MREDO", {"2"});
+    CHECK(lines(f.doc).size() == 2);
+    host.run("MREDO", {"A"});
+    CHECK(lines(f.doc).size() == 4);
+    host.run("MREDO", {"1"});
+    CHECK(host.logContains("Nothing to redo."));
+}
+
 TEST_CASE("UNDO takes a count and the BEgin, End, Mark and Back options") {
     Fixture f;
     ScriptHost host(f.doc, f.reg);

@@ -1,3 +1,6 @@
+#include <limits>
+#include <string>
+
 #include "tbcad/cmd/registry.h"
 
 namespace tbcad::cmd {
@@ -107,6 +110,35 @@ public:
     }
 };
 
+// MREDO: redo a number of steps, or All.
+class MRedoCommand final : public Command {
+public:
+    std::string_view name() const override { return "MREDO"; }
+    std::string_view description() const override { return "Redo several undone steps at once"; }
+    Task run(CommandContext& ctx) override {
+        UndoStack& st = ctx.undoStack();
+        IntOptions io;
+        io.keywords = {"All", "Last"};
+        io.defaultValue = 1;
+        io.min = 1;
+        auto r = co_await ctx.getInteger("Enter the number of actions to redo or [All/Last]", io);
+        long long want = 0;
+        if (r.status == Status::Ok)
+            want = r.value;
+        else if (r.status == Status::Keyword)
+            want = r.keyword == "All" ? std::numeric_limits<long long>::max() : 1;
+        else
+            co_return;
+        long long done = 0;
+        for (; done < want && st.redo(ctx.doc()); ++done) {
+        }
+        if (done == 0)
+            ctx.message("Nothing to redo.");
+        else
+            ctx.message("Redid " + std::to_string(done) + (done == 1 ? " step." : " steps."));
+    }
+};
+
 class UndoBeginCommand final : public Command {
 public:
     std::string_view name() const override { return "UNDOBEGIN"; }
@@ -187,6 +219,7 @@ void registerBuiltinCommands(Registry& registry) {
     (void)registry.add(std::make_unique<UCommand>());
     (void)registry.add(std::make_unique<UndoCommand>());
     (void)registry.add(std::make_unique<RedoCommand>());
+    (void)registry.add(std::make_unique<MRedoCommand>());
     (void)registry.add(std::make_unique<UndoBeginCommand>());
     (void)registry.add(std::make_unique<UndoEndCommand>());
     (void)registry.add(std::make_unique<UndoMarkCommand>());

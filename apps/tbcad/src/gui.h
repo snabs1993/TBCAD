@@ -107,7 +107,17 @@ public:
     }
 
 private:
-    enum class Pending { None, Close, Exit };
+    // CloseAll closes every drawing except the one `keepDoc_` names (0 = none): CLOSEALL and the
+    // tab menu's "Close Other Drawings".
+    enum class Pending { None, Close, Exit, CloseAll };
+    std::uint64_t keepDoc_ = 0;
+    bool keepDocSet_ = false;
+    void closeAllDrawings(bool keepActive);
+    void saveAllDrawings();
+    // QVDRAWING / QVLAYOUT: cards of the open drawings (or of this drawing's layouts) to switch to.
+    void quickView();
+    int quickView_ = 0;    // 0 closed, 1 drawings, 2 layouts of the active drawing
+    int tabCloseAll_ = 0;  // from the tab menu: 1 close all, 2 close the others
     enum class BrowserPurpose { Open, SaveAs, ImportDxf, ExportDxf, LayoutTemplate };
 
     void shortcuts();

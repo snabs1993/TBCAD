@@ -309,6 +309,16 @@ void Gui::runAction(const std::string& action) {
         requestAction(Pending::Exit);
     else if (action == "drafting.snapAlt")
         core_.submitText("'TOGGLESNAP");
+    else if (action == "file.closeAll")
+        closeAllDrawings(false);
+    else if (action == "file.closeOthers")
+        closeAllDrawings(true);
+    else if (action == "file.saveAll")
+        saveAllDrawings();
+    else if (action == "view.quickViewDrawings")
+        quickView_ = 1;
+    else if (action == "view.quickViewLayouts")
+        quickView_ = 2;
     else if (action == "view.nextDocument")
         core_.activateDocument((core_.activeDocument() + 1) % core_.documentCount());
     else if (action == "view.prevDocument")
@@ -409,7 +419,54 @@ void Gui::continuePending() {
         }
         pending_ = Pending::None;
         exitRequested_ = true;
+    } else if (pending_ == Pending::CloseAll) {
+        const auto target = [&](std::size_t i) {
+            return !keepDocSet_ || core_.documentId(i) != keepDoc_;
+        };
+        for (std::size_t i = 0; i < core_.documentCount(); ++i) {
+            if (!target(i) || !core_.documentModified(i))
+                continue;
+            if (!core_.activateDocument(i)) {
+                pending_ = Pending::None;  // a command is still running there
+                return;
+            }
+            openSavePrompt_ = true;
+            bringToFront();
+            return;
+        }
+        // Nothing left to ask: close them all, last first so the indices stay valid.
+        pending_ = Pending::None;
+        for (std::size_t i = core_.documentCount(); i-- > 0;)
+            if (target(i))
+                core_.closeDocument(i);
+        for (std::size_t i = 0; i < core_.documentCount(); ++i)
+            if (keepDocSet_ && core_.documentId(i) == keepDoc_)
+                (void)core_.activateDocument(i);
+        keepDocSet_ = false;
+        startPage_ = true;
     }
+}
+
+void Gui::closeAllDrawings(bool keepActive) {
+    keepDocSet_ = keepActive;
+    keepDoc_ = keepActive ? core_.documentId(core_.activeDocument()) : 0;
+    requestAction(Pending::CloseAll);
+}
+
+void Gui::saveAllDrawings() {
+    const ui::AppCore::SaveAllReport r = core_.saveAll();
+    for (const std::string& f : r.failed)
+        core_.print("Not saved: " + f);
+    std::string text =
+        "Saved " + std::to_string(r.saved) + (r.saved == 1 ? " drawing" : " drawings");
+    if (!r.needSaveAs.empty()) {
+        // The first one without a file name is asked for here; SAVEALL again does the next.
+        text += "; " + std::to_string(r.needSaveAs.size()) + " need a file name";
+        if (core_.activateDocument(r.needSaveAs.front()))
+            doSaveAs();
+    }
+    toast(text);
+    core_.print(text);
 }
 
 void Gui::performPending(bool discard) {
@@ -421,6 +478,11 @@ void Gui::performPending(bool discard) {
             startPage_ = true;
             break;
         case Pending::Exit:
+            if (discard)
+                core_.closeDocument(core_.activeDocument());
+            continuePending();
+            break;
+        case Pending::CloseAll:
             if (discard)
                 core_.closeDocument(core_.activeDocument());
             continuePending();
@@ -677,6 +739,115 @@ void Gui::toast(const std::string& text) {
     if (toasts_.size() > 4)
         toasts_.erase(toasts_.begin());
     anyActivity_ = true;
+}
+
+void Gui::quickView() {
+    if (quickView_ == 0)
+        return;
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    bool open = true;
+    const char* title =
+        quickView_ == 1 ? "Quick View: Drawings###quickview" : "Quick View: Layouts###quickview";
+    if (ImGui::Begin(title, &open,
+                     ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings |
+                         ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoCollapse)) {
+        if (ImGui::RadioButton("Drawings", quickView_ == 1))
+            quickView_ = 1;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Layouts", quickView_ == 2))
+            quickView_ = 2;
+        ImGui::Separator();
+        const ImVec2 card(160, 110);
+        // One card: the picture of a saved drawing when there is one, else its kind in words.
+        const auto drawCard = [&](const std::string& id, const std::filesystem::path& file,
+                                  const std::string& word, bool current) {
+            unsigned tex = thumbnailLoader_ && !file.empty() ? thumbnailLoader_(file) : 0;
+            if (current)
+                ImGui::PushStyleColor(ImGuiCol_Button,
+                                      ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
+            bool hit;
+            if (tex)
+                hit = ImGui::ImageButton(id.c_str(), static_cast<ImTextureID>(tex), card);
+            else
+                hit = ImGui::Button((word + "##" + id).c_str(),
+                                    ImVec2(card.x + ImGui::GetStyle().FramePadding.x * 2,
+                                           card.y + ImGui::GetStyle().FramePadding.y * 2));
+            if (current)
+                ImGui::PopStyleColor();
+            return hit;
+        };
+        if (quickView_ == 1) {
+            const std::size_t n = core_.documentCount();
+            std::optional<std::size_t> pick;
+            std::optional<std::pair<std::size_t, std::string>> pickLayout;
+            for (std::size_t i = 0; i < n; ++i) {
+                if (i % 4)
+                    ImGui::SameLine();
+                ImGui::BeginGroup();
+                const std::string name = core_.documentTitle(i);
+                std::string ext = platform::pathToUtf8(core_.documentFile(i).extension());
+                if (ext.empty())
+                    ext = "Untitled";
+                if (drawCard("qvd" + std::to_string(core_.documentId(i)), core_.documentFile(i),
+                             ext, i == core_.activeDocument()))
+                    pick = i;
+                ImGui::TextUnformatted((name + (core_.documentModified(i) ? " *" : "")).c_str());
+                // The drawing's model and layouts, to jump straight to one.
+                if (ImGui::SmallButton(("Model##qvm" + std::to_string(i)).c_str()))
+                    pickLayout = std::pair{i, std::string()};
+                for (const std::string& l : core_.documentLayouts(i)) {
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton((l + "##qvl" + std::to_string(i)).c_str()))
+                        pickLayout = std::pair{i, l};
+                }
+                ImGui::EndGroup();
+            }
+            if (pickLayout) {
+                if (core_.activateDocument(pickLayout->first)) {
+                    core_.setActiveLayout(pickLayout->second);
+                    open = false;
+                }
+            } else if (pick && core_.activateDocument(*pick)) {
+                open = false;
+            }
+            ImGui::Separator();
+            if (ImGui::Button("New"))
+                runAction("file.new");
+            ImGui::SameLine();
+            if (ImGui::Button("Open..."))
+                runAction("file.open");
+            ImGui::SameLine();
+            if (ImGui::Button("Save All"))
+                runAction("file.saveAll");
+            ImGui::SameLine();
+            if (ImGui::Button("Close All")) {
+                open = false;
+                runAction("file.closeAll");
+            }
+        } else {
+            std::vector<std::string> names{""};
+            for (const std::string& l : core_.layoutNames())
+                names.push_back(l);
+            std::optional<std::string> pick;
+            for (std::size_t i = 0; i < names.size(); ++i) {
+                if (i % 4)
+                    ImGui::SameLine();
+                ImGui::BeginGroup();
+                const std::string label = names[i].empty() ? std::string("Model") : names[i];
+                if (drawCard("qvl" + std::to_string(i), {}, label,
+                             names[i] == core_.activeLayout()))
+                    pick = names[i];
+                ImGui::TextUnformatted(label.c_str());
+                ImGui::EndGroup();
+            }
+            if (pick && core_.setActiveLayout(*pick))
+                open = false;
+        }
+    }
+    ImGui::End();
+    if (!open || ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+        quickView_ = 0;
 }
 
 void Gui::drawXrefBalloon(const ViewportRect& rect) {
@@ -993,16 +1164,23 @@ void Gui::menuBar() {
         }
         if (ImGui::MenuItem("Close", keys.label("file.close").c_str()))
             runAction("file.close");
+        if (ImGui::MenuItem("Close All", nullptr, false,
+                            core_.documentCount() > 1 || !core_.isPristine()))
+            runAction("file.closeAll");
         ImGui::Separator();
         if (ImGui::MenuItem("Save", keys.label("file.save").c_str()))
             runAction("file.save");
         if (ImGui::MenuItem("Save As...", keys.label("file.saveAs").c_str()))
             runAction("file.saveAs");
+        if (ImGui::MenuItem("Save All", nullptr, false, core_.anyDocumentModified()))
+            runAction("file.saveAll");
         ImGui::Separator();
         if (ImGui::MenuItem("Import DXF..."))
             doImportDxf();
         if (ImGui::MenuItem("Export DXF..."))
             doExportDxf();
+        if (ImGui::MenuItem("Export..."))
+            core_.submitText("EXPORT");
         registeredMenu("File");
         ImGui::Separator();
         if (ImGui::MenuItem("Exit", keys.label("file.exit").c_str()))
@@ -2803,6 +2981,11 @@ void Gui::gripMenu(const ViewportRect& rect) {
 }
 
 void Gui::docTabs() {
+    if (tabCloseAll_ != 0) {
+        const bool others = tabCloseAll_ == 2;
+        tabCloseAll_ = 0;
+        closeAllDrawings(others);
+    }
     ImGuiViewport* vp = ImGui::GetMainViewport();
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
                                    ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoScrollWithMouse;
@@ -2815,6 +2998,7 @@ void Gui::docTabs() {
             const std::size_t active = core_.activeDocument();
             const bool external = active != shownActive_;
             std::optional<std::size_t> toActivate, toClose;
+            bool closeAll = false, closeOthers = false;
             for (std::size_t i = 0; i < n; ++i) {
                 std::string label =
                     core_.documentTitle(i) + "###doc" + std::to_string(core_.documentId(i));
@@ -2831,17 +3015,46 @@ void Gui::docTabs() {
                 }
                 if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Middle))
                     open = false;  // middle-click closes a tab
-                if (ImGui::BeginPopupContextItem("##doctabmenu")) {
+                // One popup per tab: the same id for every tab would open them all at once.
+                ImGui::PushID(static_cast<int>(core_.documentId(i)));
+                const bool menuOpen = ImGui::BeginPopupContextItem("##doctabmenu");
+                if (menuOpen) {
                     // The commands work on the active drawing, so the tab is made active first.
                     const bool here = i == active || (!external && core_.activateDocument(i));
+                    if (ImGui::MenuItem("New"))
+                        runAction("file.new");
+                    if (ImGui::MenuItem("Open..."))
+                        runAction("file.open");
+                    ImGui::Separator();
                     if (ImGui::MenuItem("Save", nullptr, false, here))
                         runAction("file.save");
+                    if (ImGui::MenuItem("Save As...", nullptr, false, here))
+                        runAction("file.saveAs");
+                    if (ImGui::MenuItem("Save All", nullptr, false, core_.anyDocumentModified()))
+                        runAction("file.saveAll");
+                    ImGui::Separator();
                     if (ImGui::MenuItem("Close", nullptr, false, here))
                         open = false;
+                    if (ImGui::MenuItem("Close All"))
+                        closeAll = true;
+                    if (ImGui::MenuItem("Close Other Drawings", nullptr, false, here && n > 1))
+                        closeOthers = true;
+                    ImGui::Separator();
                     if (ImGui::MenuItem("Copy full path", nullptr, false, here && core_.hasFile()))
-                        ImGui::SetClipboardText(core_.file().string().c_str());
+                        ImGui::SetClipboardText(platform::pathToUtf8(core_.file()).c_str());
+                    if (ImGui::MenuItem("Open file location", nullptr, false,
+                                        here && core_.hasFile())) {
+                        platform::LinkCheck folder;
+                        folder.kind = platform::LinkKind::Folder;
+                        folder.target = platform::pathToUtf8(core_.file().parent_path());
+                        if (!platform::openExternal(folder))
+                            core_.print("Folder: " + folder.target);
+                    }
+                    if (ImGui::MenuItem("Quick view of drawings"))
+                        quickView_ = 1;
                     ImGui::EndPopup();
                 }
+                ImGui::PopID();
                 if (!open)
                     toClose = i;
             }
@@ -2856,6 +3069,9 @@ void Gui::docTabs() {
                     requestAction(Pending::Close);
                 else
                     shownActive_ = static_cast<std::size_t>(-1);
+            } else if (closeAll || closeOthers) {
+                // Next frame, once the menu is gone: the save question is a modal of its own.
+                tabCloseAll_ = closeOthers ? 2 : 1;
             }
         }
     }
@@ -4006,6 +4222,23 @@ ViewportRect Gui::frame() {
             } else {
                 core_.print("No file dialog here: type the path.");
             }
+        } else if (what.rfind("savefile:export:", 0) == 0) {
+            static const std::vector<platform::FileFilter> exportTypes = {
+                {"PDF", "*.pdf"},
+                {"DXF drawing", "*.dxf"},
+                {"SVG", "*.svg"},
+                {"PNG picture", "*.png"},
+                {"JPEG picture", "*.jpg;*.jpeg"}};
+            if (platform::nativeDialogsAvailable()) {
+                if (auto p = platform::showSaveDialog(nativeHandle(), exportTypes, "Export", "pdf",
+                                                      what.substr(16), dialogFolder())) {
+                    rememberFolder(*p);
+                    core_.submitText("\"" + platform::pathToUtf8(*p) + "\"");
+                }
+                // A cancelled dialog leaves the command waiting for a typed name.
+            } else {
+                core_.print("No file dialog here: type the file name.");
+            }
         } else if (what.rfind("open:", 0) == 0) {
             // A hyperlink: only after the drafter agrees, and never a program or a script.
             platform::LinkCheck link = platform::checkLink(what.substr(5));
@@ -4135,6 +4368,7 @@ ViewportRect Gui::frame() {
     textEditor(rect);
     drawToasts(rect);
     drawXrefBalloon(rect);
+    quickView();
 
     // Non-blocking notice when a command put geometry outside the working area.
     if (core_.outOfAreaNotice()) {

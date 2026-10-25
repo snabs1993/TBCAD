@@ -89,6 +89,8 @@ public:
     // SCRIPT: types these lines as the user would, after the running command ends. False when the
     // host cannot (no command line).
     virtual bool queueScript(std::vector<std::string> /*lines*/, int /*repeat*/) { return false; }
+    // RESUME: continues the script Esc interrupted. False when there is none (or the host cannot).
+    virtual bool resumeScript() { return false; }
     // MULTIPLE: starts this command when the running one ends, and again each time it ends
     // without being cancelled. False when the host cannot.
     virtual bool repeatCommand(const std::string& /*name*/) { return false; }

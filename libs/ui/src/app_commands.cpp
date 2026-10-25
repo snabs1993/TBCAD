@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <memory>
@@ -555,6 +556,101 @@ private:
     const char* pathPrompt_;
 };
 
+// Commands that only ask the window to do something (the open drawings live there).
+class UiRequestCommand final : public cmd::Command {
+public:
+    UiRequestCommand(const char* name, std::vector<std::string> aliases, const char* request,
+                     const char* help)
+        : name_(name), aliases_(std::move(aliases)), request_(request), help_(help) {}
+    std::string_view name() const override { return name_; }
+    std::vector<std::string> defaultAliases() const override { return aliases_; }
+    std::string_view description() const override { return help_; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().requestUi(request_);
+        co_return;
+    }
+
+private:
+    const char* name_;
+    std::vector<std::string> aliases_;
+    const char* request_;
+    const char* help_;
+};
+
+// EXPORT [EXP]: one command for every export format, picked by the file's extension, as
+// AutoCAD's Export Data dialog does. Hands over to EXPORTDXF / EXPORTPDF / EXPORTSVG /
+// EXPORTPNG / EXPORTJPG with their defaults.
+class ExportCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "EXPORT"; }
+    std::vector<std::string> defaultAliases() const override { return {"EXP"}; }
+    std::string_view description() const override {
+        return "Export the drawing to DXF, PDF, SVG, PNG or JPEG, chosen by the file name";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        const bool dialog = ctx.host().dialogsAvailable() &&
+                            ctx.host().setting("files.filedia").value_or("1") != "0";
+        std::string stem = "Drawing1";
+        if (auto f = ctx.host().setting("document.file"); f && !f->empty())
+            stem = platform::pathToUtf8(platform::pathFromUtf8(*f).stem());
+        if (dialog)
+            ctx.host().requestUi("savefile:export:" + stem + ".pdf");
+        cmd::StringOptions so;
+        so.defaultValue = stem + ".pdf";
+        auto r = co_await ctx.getString("Export to file (.dxf .pdf .svg .png .jpg)", so);
+        if (!r.ok())
+            co_return;
+        std::string file = cmd::trim(r.text);
+        if (file.size() > 1 && file.front() == '"' && file.back() == '"')
+            file = file.substr(1, file.size() - 2);
+        if (file.empty())
+            co_return;
+        std::string ext = platform::pathToUtf8(platform::pathFromUtf8(file).extension());
+        for (char& c : ext)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (ext.empty()) {
+            ext = ".pdf";
+            file += ext;
+        }
+        const char* command = ext == ".dxf"                     ? "EXPORTDXF"
+                              : ext == ".pdf"                   ? "EXPORTPDF"
+                              : ext == ".svg"                   ? "EXPORTSVG"
+                              : ext == ".png"                   ? "EXPORTPNG"
+                              : ext == ".jpg" || ext == ".jpeg" ? "EXPORTJPG"
+                                                                : nullptr;
+        if (!command) {
+            ctx.message("Cannot export to " + ext + " files. Use .dxf, .pdf, .svg, .png or .jpg.");
+            co_return;
+        }
+        std::error_code ec;
+        const bool exists = std::filesystem::exists(platform::pathFromUtf8(file), ec);
+        if (exists && !dialog) {  // the file dialog has already asked
+            cmd::KeywordOptions yn;
+            yn.keywords = {"Yes", "No"};
+            yn.defaultKeyword = "No";
+            auto answer = co_await ctx.getKeyword(file + " already exists. Replace it?", yn);
+            if (answer.status != cmd::Status::Keyword || answer.keyword != "Yes") {
+                ctx.message("Export cancelled; the existing file was not changed.");
+                co_return;
+            }
+        }
+        std::vector<std::string> lines{command};
+        if (ext == ".dxf") {
+            lines.push_back(file);
+            if (exists)
+                lines.emplace_back("Yes");  // already answered above or in the dialog
+            lines.emplace_back("");         // default DXF version
+        } else {
+            lines.emplace_back("Export");
+            lines.push_back(file);
+            if (exists && ctx.host().setting("files.filedia").value_or("1") != "0")
+                lines.emplace_back("Yes");
+        }
+        if (!ctx.host().queueScript(std::move(lines), 1))
+            ctx.message("EXPORT cannot hand over to " + std::string(command) + " here.");
+    }
+};
+
 // FILEDIA: 1 shows file dialogs, 0 asks for file names on the command line.
 class FilediaCommand final : public cmd::Command {
 public:
@@ -971,6 +1067,19 @@ private:
 void registerAppCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<ZoomCommand>());
     (void)registry.add(std::make_unique<FilediaCommand>());
+    (void)registry.add(std::make_unique<ExportCommand>());
+    (void)registry.add(std::make_unique<UiRequestCommand>(
+        "SAVEALL", std::vector<std::string>{}, "action:file.saveAll",
+        "Save every open drawing that has changes"));
+    (void)registry.add(std::make_unique<UiRequestCommand>(
+        "CLOSEALL", std::vector<std::string>{}, "action:file.closeAll",
+        "Close every open drawing, asking about unsaved changes"));
+    (void)registry.add(std::make_unique<UiRequestCommand>(
+        "QVDRAWING", std::vector<std::string>{"QVD"}, "action:view.quickViewDrawings",
+        "Quick view of the open drawings and their layouts"));
+    (void)registry.add(std::make_unique<UiRequestCommand>(
+        "QVLAYOUT", std::vector<std::string>{"QVL"}, "action:view.quickViewLayouts",
+        "Quick view of the layouts of this drawing"));
     (void)registry.add(std::make_unique<PickVarCommand>(
         "PICKADD", "selection.pickadd", 2, 2,
         "0 = a pick replaces the selection (Shift adds), 1 or 2 = picks add (Shift removes)"));

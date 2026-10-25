@@ -1825,3 +1825,27 @@ TEST_CASE("undo and redo across Save, Save As and opening the file again") {
     CHECK(f.core->document().entityCount() == 2);
     CHECK_FALSE(f.core->undo());
 }
+
+TEST_CASE("saveAll saves the changed drawings with a file and lists the untitled ones") {
+    Fixture f("saveall");
+    f.line("0,0", "10,0");
+    REQUIRE(f.core->saveAs(f.dir / "a.tbcad").ok());
+    f.line("0,10", "10,10");  // changed after saving
+    f.core->newDocument();
+    f.line("0,0", "5,5");
+    REQUIRE(f.core->saveAs(f.dir / "b.tbcad").ok());  // saved, unchanged
+    f.core->newDocument();
+    f.line("0,0", "7,7");  // untitled and changed
+    REQUIRE(f.core->documentCount() == 3);
+    CHECK(f.core->documentFile(0).filename() == "a.tbcad");
+    CHECK(f.core->documentFile(2).empty());
+    CHECK(f.core->documentLayouts(0) == f.core->layoutNames());
+
+    const auto r = f.core->saveAll();
+    CHECK(r.saved == 1);
+    CHECK(r.needSaveAs == std::vector<std::size_t>{2});
+    CHECK(r.failed.empty());
+    CHECK(f.core->activeDocument() == 2);  // the active tab stays
+    CHECK_FALSE(f.core->documentModified(0));
+    CHECK(f.core->documentModified(2));
+}
