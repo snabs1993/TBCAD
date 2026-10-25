@@ -206,6 +206,7 @@ public:
         long long maxPoints = mls.maxPoints;  // points of a leader line, arrowhead and landing
         bool dogleg = mls.dogleg;
         double firstAngle = 0, secondAngle = 0;  // degrees; 0 = free
+        MLeaderData::LineType lineType = MLeaderData::LineType::Straight;
         std::optional<std::string> typedNote;
         const BlockDef* block = nullptr;
         auto isOption = [](const cmd::PointResult& r, const char* name) {
@@ -224,11 +225,12 @@ public:
             if (isOption(first, "Options")) {
                 for (;;) {
                     cmd::KeywordOptions ko;
-                    ko.keywords = {"Type", "Maxpoints", "First", "Second", "Dogleg", "eXit"};
+                    ko.keywords = {"Type",   "Leader", "Maxpoints", "First",
+                                   "Second", "Dogleg", "eXit"};
                     ko.defaultKeyword = "eXit";
                     auto k = co_await ctx.getKeyword(
-                        "Enter an option [Type of content/Maxpoints/First angle/Second "
-                        "angle/Dogleg/eXit] "
+                        "Enter an option [Type of content/Leader type/Maxpoints/First angle/"
+                        "Second angle/Dogleg/eXit] "
                         "<eXit>",
                         ko);
                     if (!k.ok())
@@ -244,6 +246,19 @@ public:
                         if (!t.ok())
                             co_return;
                         contentType = t.keyword;
+                    } else if (k.keyword == "Leader") {
+                        cmd::KeywordOptions to;
+                        to.keywords = {"Straight", "Spline", "None"};
+                        to.defaultKeyword = lineType == MLeaderData::LineType::Spline ? "Spline"
+                                            : lineType == MLeaderData::LineType::None ? "None"
+                                                                                      : "Straight";
+                        auto t = co_await ctx.getKeyword(
+                            "Leader type [Straight/Spline/None] <" + *to.defaultKeyword + ">", to);
+                        if (!t.ok())
+                            co_return;
+                        lineType = t.keyword == "Spline" ? MLeaderData::LineType::Spline
+                                   : t.keyword == "None" ? MLeaderData::LineType::None
+                                                         : MLeaderData::LineType::Straight;
                     } else if (k.keyword == "Maxpoints") {
                         cmd::IntOptions io;
                         io.min = 2;
@@ -479,6 +494,7 @@ public:
         MLeaderData m;
         m.style = sid;
         m.dogleg = dogleg;
+        m.lineType = lineType;
         const DimStyle& ds = dim::styleOf(ctx.doc(), sid);
         const double k = ds.overallScale > 0 ? ds.overallScale : 1.0;
         const double doglegLen =

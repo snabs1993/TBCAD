@@ -1096,6 +1096,29 @@ Layout layoutLeader(const Document& doc, const LeaderData& d, double tolerance, 
     return L;
 }
 
+namespace {
+
+// A smooth curve through the points (Catmull-Rom, sampled), starting and ending on them.
+std::vector<Vec2> smoothThrough(const std::vector<Vec2>& p) {
+    if (p.size() < 3)
+        return p;
+    constexpr int kSteps = 12;
+    std::vector<Vec2> out{p.front()};
+    for (std::size_t i = 0; i + 1 < p.size(); ++i) {
+        const Vec2 p0 = p[i == 0 ? 0 : i - 1], p1 = p[i], p2 = p[i + 1],
+                   p3 = p[i + 2 < p.size() ? i + 2 : i + 1];
+        for (int s = 1; s <= kSteps; ++s) {
+            const double t = static_cast<double>(s) / kSteps, t2 = t * t, t3 = t2 * t;
+            out.push_back(((p1 * 2) + (p2 - p0) * t + (p0 * 2 - p1 * 5 + p2 * 4 - p3) * t2 +
+                           (p1 * 3 - p0 - p2 * 3 + p3) * t3) *
+                          0.5);
+        }
+    }
+    return out;
+}
+
+}  // namespace
+
 Layout layoutMLeader(const Document& doc, const MLeaderData& d, double tolerance,
                      double annoScale) {
     Layout L;
@@ -1104,10 +1127,10 @@ Layout layoutMLeader(const Document& doc, const MLeaderData& d, double tolerance
         st.textHeight = d.textHeight;
     Ctx c(doc, st, tolerance > 0 ? tolerance : 0.01);
     for (const auto& pts : d.lines) {
-        if (pts.size() < 2)
+        if (pts.size() < 2 || d.lineType == MLeaderData::LineType::None)
             continue;
         Layout::Line line;
-        line.pts = pts;
+        line.pts = d.lineType == MLeaderData::LineType::Spline ? smoothThrough(pts) : pts;
         L.lines.push_back(std::move(line));
         addArrow(L, c, pts[0], normalized(pts[1] - pts[0]));
     }

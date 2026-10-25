@@ -2973,12 +2973,16 @@ Result<ImportResult> Importer::run() {
                     return v[at++].integer;
                 };
                 MLeaderData m;
-                int content = 1, dogleg = 1;
+                int content = 1, dogleg = 1, lineType = 0;
                 if (v[at].code != 1000 ||
-                    std::sscanf(v[at].text.c_str(), "c=%d;d=%d", &content, &dogleg) != 2 ||
+                    std::sscanf(v[at].text.c_str(), "c=%d;d=%d;t=%d", &content, &dogleg,
+                                &lineType) < 2 ||
                     content < 0 || content > 2)
                     continue;
                 ++at;
+                m.lineType = lineType >= 0 && lineType <= 2
+                                 ? static_cast<MLeaderData::LineType>(lineType)
+                                 : MLeaderData::LineType::Straight;
                 m.content = static_cast<MLeaderData::Content>(content);
                 m.dogleg = dogleg != 0;
                 m.textHeight = real() * k_;

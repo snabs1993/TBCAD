@@ -4,6 +4,7 @@
 
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/script_host.h"
+#include "tbcad/dim/dim.h"
 #include "tbcad/dimcmd/dimcmd.h"
 
 using namespace tbcad;
@@ -262,4 +263,21 @@ TEST_CASE("MLEADER Options: First and Second angle snap the leader segments") {
     CHECK(ms[0]->lines[0][1].x > 10);
     // the second segment is vertical from the bend
     CHECK(ms[0]->landing.x == doctest::Approx(ms[0]->lines[0][1].x));
+}
+
+TEST_CASE("MLEADER Options: Leader type Spline curves the leader line, None leaves it out") {
+    Fix f;
+    f.host->run("MLEADER", {"Options", "Leader", "Spline", "Maxpoints", "3", "eXit", "0,0", "10,20",
+                            "30,20", "Note"});
+    f.host->run("MLEADER", {"Options", "Leader", "None", "eXit", "0,40", "30,60", "Note"});
+    auto ms = f.all<MLeaderData>();
+    REQUIRE(ms.size() == 2);
+    CHECK(ms[0]->lineType == MLeaderData::LineType::Spline);
+    CHECK(ms[1]->lineType == MLeaderData::LineType::None);
+    const tbcad::dim::Layout curved = tbcad::dim::layoutMLeader(f.doc, *ms[0], 0.01, 1);
+    REQUIRE_FALSE(curved.lines.empty());
+    CHECK(curved.lines[0].pts.size() > 3);  // sampled
+    const tbcad::dim::Layout alone = tbcad::dim::layoutMLeader(f.doc, *ms[1], 0.01, 1);
+    for (const auto& line : alone.lines)  // only the dogleg is left, no line from the arrowhead
+        CHECK(line.pts.front() != ms[1]->lines[0].front());
 }

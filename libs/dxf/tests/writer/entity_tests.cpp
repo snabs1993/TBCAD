@@ -874,6 +874,7 @@ TEST_CASE("a multileader is exported as leaders, a dogleg line and its note") {
         m.contentPos = {22.5, 10};
         m.utf8 = "Steel beam";
         m.style = kDimStyleStandard;
+        m.lineType = MLeaderData::LineType::Spline;
         REQUIRE(tx.add(make(Indirect<MLeaderData>(m))));
         tx.commit();
     }
@@ -904,6 +905,7 @@ TEST_CASE("a multileader is exported as leaders, a dogleg line and its note") {
         CHECK(e.common.ext.get().xdata.empty());
     });
     REQUIRE(m);
+    CHECK(m->lineType == MLeaderData::LineType::Spline);
     CHECK(m->lines.size() == 2);
     CHECK(m->lines[1][0].y == doctest::Approx(30));
     CHECK(m->landing.x == doctest::Approx(20));

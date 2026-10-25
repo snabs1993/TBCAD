@@ -756,6 +756,10 @@ struct MlineData {
 // note or a block. Arrowheads and sizes come from the dimension style (MLEADERSTYLE).
 struct MLeaderData {
     enum class Content : std::uint8_t { None, Text, Block };
+    // How the leader lines are drawn: straight segments, a smooth curve through the points, or
+    // not at all (the note or block stands alone).
+    enum class LineType : std::uint8_t { Straight, Spline, None };
+    LineType lineType = LineType::Straight;
     std::vector<std::vector<Vec2>> lines{};  // each runs from its arrowhead towards the landing
     Vec2 landing{};                          // where the lines meet
     Vec2 contentPos{};   // end of the dogleg: the note starts here (or ends, on the left side)
