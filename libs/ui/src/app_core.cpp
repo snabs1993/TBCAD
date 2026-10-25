@@ -31,6 +31,7 @@
 #include "tbcad/hatch/fill.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/layout/layout.h"
+#include "tbcad/platform/crash.h"
 #include "tbcad/platform/file_lock.h"
 #include "tbcad/platform/json.h"
 #include "tbcad/platform/paths.h"
@@ -1901,6 +1902,7 @@ std::string AppCore::redoLabel() const {
 // ---- command line ------------------------------------------------------------------------------
 
 void AppCore::print(std::string_view message) {
+    platform::recordCommandLine(std::string(message));
     if (logFile_.is_open()) {
         logFile_ << message << '\n';
         logFile_.flush();

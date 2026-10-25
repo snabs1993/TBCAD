@@ -13,6 +13,10 @@ namespace tbcad::platform {
 //   `appVersion` goes into the report header. Call once, early in main.
 void installCrashHandler(const std::filesystem::path& dir, const std::string& appVersion);
 
+// Remembers a command-line line in a fixed ring of the last 200 lines (each cut to 255 bytes).
+// A crash report ends with them under "Last command lines:". Cheap; call for every printed line.
+void recordCommandLine(const std::string& line);
+
 // Crash reports in `dir` (the .txt files), oldest first, that were not yet acknowledged.
 std::vector<std::filesystem::path> pendingCrashReports(const std::filesystem::path& dir);
 
