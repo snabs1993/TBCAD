@@ -87,7 +87,24 @@ private:
     bool repeat_;
 };
 
+class ResumeCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "RESUME"; }
+    std::string_view description() const override {
+        return "Continue a script that Esc interrupted";
+    }
+    Task run(CommandContext& ctx) override {
+        if (!ctx.host().resumeScript())
+            ctx.message("No interrupted script to resume.");
+        co_return;
+    }
+};
+
 }  // namespace
+
+std::unique_ptr<cmd::Command> makeResumeCommand() {
+    return std::make_unique<ResumeCommand>();
+}
 
 std::unique_ptr<cmd::Command> makeScriptCommand(bool repeat) {
     return std::make_unique<ScriptCommand>(repeat);

@@ -34,5 +34,6 @@ std::unique_ptr<cmd::Command> makeSpaceTransCommand();
 std::unique_ptr<cmd::Command> makeDelayCommand();
 // SCRIPT, or RSCRIPT when `repeat`.
 std::unique_ptr<cmd::Command> makeScriptCommand(bool repeat);
+std::unique_ptr<cmd::Command> makeResumeCommand();
 
 }  // namespace tbcad::sysvars

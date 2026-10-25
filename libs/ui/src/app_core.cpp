@@ -3581,6 +3581,10 @@ bool AppCore::queueScript(std::vector<std::string> lines, int repeat) {
     return true;
 }
 
+bool AppCore::resumeScript() {
+    return session_ && session_->runner && session_->runner->resumeScript();
+}
+
 bool AppCore::repeatCommand(const std::string& name) {
     if (!session_ || !session_->runner)
         return false;

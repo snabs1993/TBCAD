@@ -401,6 +401,7 @@ public:
     std::optional<std::string> setting(std::string_view key) const override;
     double ucsAngle() const override;
     bool queueScript(std::vector<std::string> lines, int repeat) override;
+    bool resumeScript() override;
     bool repeatCommand(const std::string& name) override;
     void setSetting(std::string_view key, std::string value) override;
     std::filesystem::path settingsFolder() const override { return paths_.configDir; }

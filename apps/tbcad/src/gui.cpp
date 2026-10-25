@@ -449,8 +449,8 @@ void Gui::saveAllDrawings() {
     const ui::AppCore::SaveAllReport r = core_.saveAll();
     for (const std::string& f : r.failed)
         core_.print("Not saved: " + f);
-    std::string text = "Saved " + std::to_string(r.saved) +
-                       (r.saved == 1 ? " drawing" : " drawings");
+    std::string text =
+        "Saved " + std::to_string(r.saved) + (r.saved == 1 ? " drawing" : " drawings");
     if (!r.needSaveAs.empty()) {
         // The first one without a file name is asked for here; SAVEALL again does the next.
         text += "; " + std::to_string(r.needSaveAs.size()) + " need a file name";
@@ -739,8 +739,8 @@ void Gui::quickView() {
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     bool open = true;
-    const char* title = quickView_ == 1 ? "Quick View: Drawings###quickview"
-                                        : "Quick View: Layouts###quickview";
+    const char* title =
+        quickView_ == 1 ? "Quick View: Drawings###quickview" : "Quick View: Layouts###quickview";
     if (ImGui::Begin(title, &open,
                      ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings |
                          ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoCollapse)) {
@@ -1156,8 +1156,8 @@ void Gui::menuBar() {
         }
         if (ImGui::MenuItem("Close", keys.label("file.close").c_str()))
             runAction("file.close");
-        if (ImGui::MenuItem("Close All", nullptr, false, core_.documentCount() > 1 ||
-                                                             !core_.isPristine()))
+        if (ImGui::MenuItem("Close All", nullptr, false,
+                            core_.documentCount() > 1 || !core_.isPristine()))
             runAction("file.closeAll");
         ImGui::Separator();
         if (ImGui::MenuItem("Save", keys.label("file.save").c_str()))
@@ -3007,7 +3007,10 @@ void Gui::docTabs() {
                 }
                 if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Middle))
                     open = false;  // middle-click closes a tab
-                if (ImGui::BeginPopupContextItem("##doctabmenu")) {
+                // One popup per tab: the same id for every tab would open them all at once.
+                ImGui::PushID(static_cast<int>(core_.documentId(i)));
+                const bool menuOpen = ImGui::BeginPopupContextItem("##doctabmenu");
+                if (menuOpen) {
                     // The commands work on the active drawing, so the tab is made active first.
                     const bool here = i == active || (!external && core_.activateDocument(i));
                     if (ImGui::MenuItem("New"))
@@ -3043,6 +3046,7 @@ void Gui::docTabs() {
                         quickView_ = 1;
                     ImGui::EndPopup();
                 }
+                ImGui::PopID();
                 if (!open)
                     toClose = i;
             }
@@ -4134,8 +4138,11 @@ ViewportRect Gui::frame() {
             }
         } else if (what.rfind("savefile:export:", 0) == 0) {
             static const std::vector<platform::FileFilter> exportTypes = {
-                {"PDF", "*.pdf"}, {"DXF drawing", "*.dxf"}, {"SVG", "*.svg"},
-                {"PNG picture", "*.png"}, {"JPEG picture", "*.jpg;*.jpeg"}};
+                {"PDF", "*.pdf"},
+                {"DXF drawing", "*.dxf"},
+                {"SVG", "*.svg"},
+                {"PNG picture", "*.png"},
+                {"JPEG picture", "*.jpg;*.jpeg"}};
             if (platform::nativeDialogsAvailable()) {
                 if (auto p = platform::showSaveDialog(nativeHandle(), exportTypes, "Export", "pdf",
                                                       what.substr(16), dialogFolder())) {

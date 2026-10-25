@@ -69,6 +69,8 @@ public:
     // through. They run after the command that queued them finishes. A line that finds a command
     // waiting answers it; an empty line is Enter. Esc drops what is left.
     void queueScript(std::vector<std::string> lines, int repeat = 1);
+    // RESUME: queues what Esc dropped from the last script. False when nothing was interrupted.
+    bool resumeScript();
     bool scriptRunning() const { return !script_.empty(); }
     // MULTIPLE: `name` runs when the current command ends, and again after every run that asked
     // for input and was not cancelled. Esc (or a failed run) ends the repeating.
@@ -93,6 +95,7 @@ private:
     SubmitResult submitInput(const Input& input);
     void pumpScript();
     std::deque<std::string> script_{};
+    std::deque<std::string> suspended_{};
     std::string multiple_{};
     bool multipleHadPrompt_ = false;
     int entry_ = 0;  // depth of submit/start calls: scripts are pumped by the outermost one
