@@ -11,6 +11,19 @@ namespace tbcad::layout {
 
 namespace {
 
+// The colour a layer gives its border; white (index 7) prints dark, as everywhere else.
+Rgba borderColour(const Color& c) {
+    if (c.kind == ColorKind::Rgb)
+        return Rgba{c.r, c.g, c.b, 255};
+    if (c.kind == ColorKind::Index && c.indexValue() != 7)
+        return paletteColor(c.indexValue());
+    return Rgba{0, 0, 0, 255};
+}
+
+}  // namespace
+
+namespace {
+
 std::size_t lanes() {
     if (std::getenv("SERIAL_X"))
         return 1;
@@ -232,10 +245,15 @@ Result<exportlib::PlotSheet> buildLayoutSheet(const Document& doc, const std::st
         });
         sheet.prims.emplace_back(exportlib::PlotClip{vp.paper, false, {}});
 
-        if (options.viewportBorders && vp.border) {
+        // The border goes with its layer: off, frozen or not plotting leaves the sheet without it.
+        const Layer* borderLayer = vp.borderLayer.value ? doc.layer(vp.borderLayer) : nullptr;
+        const bool layerShows =
+            !borderLayer || (borderLayer->on && !borderLayer->frozen && borderLayer->plot);
+        if (options.viewportBorders && vp.border && layerShows) {
             exportlib::PlotPath border;
             border.closed = true;
-            border.style.color = exportlib::plotColor(Rgba{0, 0, 0, 255}, s.color);
+            border.style.color = exportlib::plotColor(
+                borderLayer ? borderColour(borderLayer->color) : Rgba{0, 0, 0, 255}, s.color);
             border.style.widthMm = s.lineweights ? 0.25 : s.hairlineMm;
             border.pts = viewportOutline(vp);
             sheet.prims.emplace_back(std::move(border));

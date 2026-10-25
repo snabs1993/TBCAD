@@ -2549,6 +2549,10 @@ void Importer::finishLayouts() {
             if (!v.level.empty())
                 if (auto lt = levelByFold_.find(fold(v.level)); lt != levelByFold_.end())
                     levelId = std::to_string(lt->second.value);
+            std::string borderLayerId = "0";
+            if (v.layer != "0")
+                if (const auto it = layerByFold_.find(fold(v.layer)); it != layerByFold_.end())
+                    borderLayerId = std::to_string(it->second.value);
             std::string frozenIds;
             for (const std::string& ln : v.frozen) {
                 const auto it = layerByFold_.find(fold(ln));
@@ -2559,7 +2563,7 @@ void Importer::finishLayouts() {
                     "\t" + num(v.max.x) + "\t" + num(v.max.y) + "\t" + num(v.center.x) + "\t" +
                     num(v.center.y) + "\t" + num(v.scaleN) + "\t" + (v.on ? "1" : "0") + "\t" +
                     frozenIds + "\t" + levelId + "\t" + (v.locked ? "1" : "0") + "\t" + clipText +
-                    "\t" + (border ? "1" : "0") + "\n";
+                    "\t" + (border ? "1" : "0") + "\t" + borderLayerId + "\n";
         }
     }
     (void)tx_->modifyHeader([&](Header& h) {

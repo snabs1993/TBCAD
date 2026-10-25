@@ -33,7 +33,9 @@ struct Viewport {
     std::vector<LayerId> frozen{};  // frozen in this viewport (their sub-layers too)
     LevelId level{};                // shows only this level when set (0 = every visible level)
     bool locked = false;            // scale and view centre cannot be changed (VPLOCK)
-    bool border = true;  // the rectangle is drawn and plotted (false: its layer does not plot)
+    bool border = true;     // the rectangle is drawn and plotted (false: its layer does not plot)
+    LayerId borderLayer{};  // MVIEW Layer: the border takes this layer's colour and goes with its
+                            // on / frozen / plot state (null = the border is always drawn)
 };
 
 // True when the sheet point is inside the viewport's outline.
@@ -85,6 +87,9 @@ Result<int> addViewport(Transaction& tx, const std::string& layout, const BBox2&
 Result<void> removeViewport(Transaction& tx, const std::string& layout, int id);
 Result<void> setViewportScale(Transaction& tx, const std::string& layout, int id, double scaleN);
 // A locked viewport refuses setViewportScale and setViewportCenter (VPLOCK).
+// The layer the border of viewport `id` belongs to (a null layer = none).
+Result<void> setViewportBorderLayer(Transaction& tx, const std::string& layoutName, int id,
+                                    LayerId layer);
 Result<void> setViewportLocked(Transaction& tx, const std::string& layoutName, int id, bool locked);
 Result<void> setViewportCenter(Transaction& tx, const std::string& layout, int id, Vec2 center);
 // Moves or resizes the rectangle on the sheet; what it shows keeps its scale and centre.

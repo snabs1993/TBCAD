@@ -59,7 +59,7 @@ std::string serialize(const std::vector<Layout>& all) {
             // The outline of a clipped viewport: x:y pairs joined by ';'.
             for (std::size_t i = 0; i < v.clip.size(); ++i)
                 o << (i ? ";" : "") << num(v.clip[i].x) << ':' << num(v.clip[i].y);
-            o << '\t' << (v.border ? 1 : 0) << '\n';
+            o << '\t' << (v.border ? 1 : 0) << '\t' << v.borderLayer.value << '\n';
         }
     }
     return o.str();
@@ -187,6 +187,9 @@ std::vector<Layout> layouts(const Document& doc) {
                     v.clip.clear();
             }
             v.border = !(f.size() > 14 && f[14] == "0");
+            if (f.size() > 15)
+                v.borderLayer =
+                    LayerId{static_cast<std::uint32_t>(std::strtoul(f[15].c_str(), nullptr, 10))};
             out.back().viewports.push_back(std::move(v));
         }
     }
@@ -467,6 +470,16 @@ Result<void> setViewportCenter(Transaction& tx, const std::string& layoutName, i
     if (ed.vp->locked)
         return err(ErrorCode::Conflict, "Viewport is locked. Use VPLOCK Off first.");
     ed.vp->center = c;
+    return store(tx, ed.all);
+}
+
+Result<void> setViewportBorderLayer(Transaction& tx, const std::string& layoutName, int id,
+                                    LayerId layer) {
+    auto e = openEdit(tx, layoutName, id);
+    if (!e)
+        return e.error();
+    Edit ed = std::move(e.value());
+    ed.vp->borderLayer = layer;
     return store(tx, ed.all);
 }
 

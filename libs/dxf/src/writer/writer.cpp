@@ -253,6 +253,9 @@ void Writer::prepareSheets() {
             if (f.size() > 11)
                 v.level = static_cast<std::uint32_t>(std::strtoul(f[11].c_str(), nullptr, 10));
             v.border = !(f.size() > 14 && f[14] == "0");
+            if (f.size() > 15)
+                v.borderLayer =
+                    LayerId{static_cast<std::uint32_t>(std::strtoul(f[15].c_str(), nullptr, 10))};
             if (f.size() > 13 && !f[13].empty()) {
                 for (const std::string& pt : splitOn(f[13], ';')) {
                     const std::size_t c = pt.find(':');
@@ -300,7 +303,10 @@ void Writer::writeSheetBlock(Out& o, const Sheet& sheet, const std::string& bloc
         o.h(330, sheet.rec);
         o.raw(100, "AcDbEntity");
         o.i(67, 1);
-        o.raw(8, "0");
+        if (v.borderLayer.value)
+            o.str(8, layerNameOf(v.borderLayer));
+        else
+            o.raw(8, "0");
         o.raw(100, "AcDbViewport");
         o.pt(10, {(v.min.x + v.max.x) / 2, (v.min.y + v.max.y) / 2});
         o.d(40, w);
