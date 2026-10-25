@@ -1218,6 +1218,10 @@ void registerAppCommands(cmd::Registry& registry) {
         "When the file of an external reference changes: 0 = say nothing, 1 = a marker in the "
         "status bar, 2 = the marker and a balloon to reload it, 3 = reload it by itself"));
     (void)registry.add(std::make_unique<PickVarCommand>(
+        "PICKDRAG", "selection.pickdrag", 1, 1,
+        "1 = drag from one corner to the other to select with a window, 0 = click one corner, "
+        "then click the other"));
+    (void)registry.add(std::make_unique<PickVarCommand>(
         "PICKFIRST", "selection.pickfirst", 1, 1,
         "1 = commands use the objects selected before them, 0 = they always ask"));
     (void)registry.add(std::make_unique<SpaceCommand>(

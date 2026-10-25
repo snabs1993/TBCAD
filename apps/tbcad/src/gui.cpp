@@ -3818,7 +3818,7 @@ void Gui::viewportInput(const ViewportRect& rect) {
     }
     if (leftDown_) {
         if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-            if (!pointPrompt && !dragging_ && !pressTookPoint_ &&
+            if (!pointPrompt && !dragging_ && !pressTookPoint_ && core_.dragPicksWindow() &&
                 std::hypot(mouse.x - pressPos_.x, mouse.y - pressPos_.y) > 4.0 * s)
                 dragging_ = true;
             if (dragging_ && io.KeyAlt) {
@@ -3867,9 +3867,10 @@ void Gui::viewportInput(const ViewportRect& rect) {
                 core_.cycleClick(ps);
             } else if (doubleClick_)
                 core_.doubleClick(ps);
-            else
+            else if (!core_.windowClick(ps))
                 core_.click(ps);
-            core_.setSelectionDrag(std::nullopt);
+            if (core_.dragPicksWindow())
+                core_.setSelectionDrag(std::nullopt);
             core_.setLassoPath({});
             lassoPath_.clear();
             leftDown_ = dragging_ = false;

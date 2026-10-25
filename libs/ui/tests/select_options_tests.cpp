@@ -192,6 +192,21 @@ TEST_CASE("PICKFIRST 0: a command ignores the objects selected before it") {
     CHECK(f.count() == 3);
 }
 
+TEST_CASE("PICKDRAG 0: two clicks make a selection window") {
+    SelFixture f("selpickdrag");
+    CHECK(f.core->dragPicksWindow());
+    CHECK_FALSE(f.core->windowClick(f.at({-20, -10})));
+    f.core->submitText("PICKDRAG 0");
+    CHECK_FALSE(f.core->dragPicksWindow());
+    CHECK(f.core->windowClick(f.at({-5, -5})));  // first corner, empty space
+    CHECK(f.core->selection().empty());
+    CHECK(f.core->windowClick(f.at({15, 25})));  // second corner: lines at y=0 and y=20
+    CHECK(f.core->selection().size() == 2);
+    CHECK_FALSE(f.core->windowClick(f.at({5, 0})));  // on an object: a normal click
+    f.core->submitText("PICKDRAG 1");
+    CHECK_FALSE(f.core->windowClick(f.at({-5, -5})));
+}
+
 TEST_CASE("an unknown word at Select objects names the options") {
     SelFixture f("selbad");
     f.core->submitText("TESTERASE");

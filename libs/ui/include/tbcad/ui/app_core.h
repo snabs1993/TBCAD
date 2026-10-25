@@ -337,6 +337,10 @@ public:
     // A finished rectangle drag from `a` to `b` (screen pixels). Left to right selects what is
     // completely inside (window), right to left what it touches (crossing). Shift removes.
     void dragSelect(Vec2 a, Vec2 b, const PointerState& p);
+    // PICKDRAG 0: a click on empty space starts a selection window and the next click ends it
+    // (no dragging). True when the click was taken as a window corner; otherwise call `click`.
+    bool windowClick(const PointerState& p);
+    bool dragPicksWindow() const;  // PICKDRAG 1 (default): press-drag-release makes the window
     // Live selection rectangle shown in the overlay while dragging; nullopt = none.
     // How many objects the selection box being dragged would pick right now (none: no drag).
     std::optional<std::size_t> dragSelectCount();
@@ -634,6 +638,7 @@ private:
     DisplayList preview_{};
     bool hasPreview_ = false;
     std::optional<std::pair<Vec2, Vec2>> drag_{};
+    std::optional<Vec2> windowCorner_{};  // PICKDRAG 0: first corner, screen pixels
     struct DragCount {
         Vec2 a{}, b{};
         std::uint64_t revision = ~0ull;
