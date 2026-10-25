@@ -1,5 +1,6 @@
 #include "commands.h"
 #include "tbcad/blocks/tbcad_blocks.h"
+#include "tbcad/underlay/pdf.h"
 
 namespace tbcad::block_cmds {
 
@@ -9,20 +10,27 @@ namespace {
 // block's coordinates, so it moves, turns and scales with the insert.
 class XClipCommand final : public cmd::Command {
 public:
-    std::string_view name() const override { return "XCLIP"; }
-    std::vector<std::string> defaultAliases() const override { return {"XC"}; }
+    // `pdf`: PDFCLIP, the same for PDF underlays only.
+    explicit XClipCommand(bool pdf = false) : pdf_(pdf) {}
+    std::string_view name() const override { return pdf_ ? "PDFCLIP" : "XCLIP"; }
+    std::vector<std::string> defaultAliases() const override {
+        return pdf_ ? std::vector<std::string>{} : std::vector<std::string>{"XC"};
+    }
     std::string_view description() const override {
-        return "Clip a block or external reference to a boundary";
+        return pdf_ ? "Clip a PDF underlay to a rectangle or polygon"
+                    : "Clip a block or external reference to a boundary";
     }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         Document& doc = ctx.doc();
         cmd::EntityOptions eo;
-        eo.filter = [&doc](const Entity& e) {
+        eo.filter = [&doc, this](const Entity& e) {
             const auto* ins = entityAs<InsertData>(e);
-            return ins && doc.block(ins->block) && !ins->array;
+            const BlockDef* def = ins ? doc.block(ins->block) : nullptr;
+            return def && !ins->array && (!pdf_ || underlay::isPdfPath(def->xrefPath));
         };
-        auto picked = co_await ctx.getEntity("Select a block or xref to clip", eo);
+        auto picked = co_await ctx.getEntity(
+            pdf_ ? "Select a PDF underlay to clip" : "Select a block or xref to clip", eo);
         if (!picked.ok())
             co_return;
         const EntityId id = picked.id;
@@ -132,9 +140,55 @@ public:
         ctx.setUndoLabel("Clip");
         ctx.message("Clipped to a boundary of " + std::to_string(world.size()) + " points");
     }
+
+private:
+    bool pdf_;
+};
+
+// XCLIPFRAME and PDFFRAME: 0 hides the clip boundary, 1 shows and plots it, 2 shows it on screen
+// only. XCLIPFRAME is for blocks and xrefs, PDFFRAME for PDF underlays. Settings of the drawing.
+class ClipFrameCommand final : public cmd::Command {
+public:
+    explicit ClipFrameCommand(bool pdf) : pdf_(pdf) {}
+    std::string_view name() const override { return pdf_ ? "PDFFRAME" : "XCLIPFRAME"; }
+    std::string_view description() const override {
+        return pdf_ ? "Show, hide or plot the clip boundary of PDF underlays"
+                    : "Show, hide or plot the clip boundary of blocks and xrefs";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        const char* key = pdf_ ? kPdfFrameKey : kXclipFrameKey;
+        const int now = clipFrameMode(ctx.doc().header(), key);
+        cmd::IntOptions io;
+        io.defaultValue = now;
+        io.min = 0;
+        io.max = 2;
+        auto v = co_await ctx.getInteger(std::string(name()) +
+                                             " 0 hidden, 1 shown and plotted, 2 shown not "
+                                             "plotted <" +
+                                             std::to_string(now) + ">",
+                                         io);
+        if (!v.ok())
+            co_return;
+        const std::string value = std::to_string(std::clamp<long long>(v.value, 0, 2));
+        (void)ctx.tx().modifyHeader([&](Header& h) { h.custom[key] = value; });
+        ctx.setUndoLabel(std::string(name()));
+        ctx.message(std::string(name()) + " = " + value);
+    }
+
+private:
+    bool pdf_;
 };
 
 }  // namespace
+
+std::unique_ptr<cmd::Command> makeClipFrameCommand(bool pdf) {
+    return std::make_unique<ClipFrameCommand>(pdf);
+}
+
+std::unique_ptr<cmd::Command> makePdfClipCommand() {
+    return std::make_unique<XClipCommand>(true);
+}
 
 std::unique_ptr<cmd::Command> makeXClipCommand() {
     return std::make_unique<XClipCommand>();

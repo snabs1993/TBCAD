@@ -81,6 +81,9 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeXBindCommand());
     (void)registry.add(makeXUnloadCommand());
     (void)registry.add(makeXClipCommand());
+    (void)registry.add(makePdfClipCommand());
+    (void)registry.add(makeClipFrameCommand(false));
+    (void)registry.add(makeClipFrameCommand(true));
     (void)registry.add(makeXListCommand());
     (void)registry.add(makeXrefPaletteCommand());
     (void)registry.add(makeXPathCommand());

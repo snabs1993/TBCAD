@@ -72,6 +72,19 @@ inline int wipeoutFrameMode(const Header& h) {
     return it->second[0] - '0';
 }
 
+// XCLIPFRAME and PDFFRAME: whether the clip boundary of a block or xref (XCLIPFRAME) or of a PDF
+// underlay (PDFFRAME) is drawn. 0 hidden (the default), 1 shown and plotted, 2 shown but not
+// plotted. Kept in Header::custom.
+inline constexpr const char* kXclipFrameKey = "tbcad.xclipframe";
+inline constexpr const char* kPdfFrameKey = "tbcad.pdfframe";
+inline int clipFrameMode(const Header& h, const char* key) {
+    const auto it = h.custom.find(key);
+    if (it == h.custom.end() || it->second.size() != 1 || it->second[0] < '0' ||
+        it->second[0] > '2')
+        return 0;
+    return it->second[0] - '0';
+}
+
 // PDFOSNAP: whether object snap sees the geometry of PDF underlays. Off by default (a page can
 // hold millions of vertices). Kept in Header::custom.
 inline constexpr const char* kPdfOsnapKey = "tbcad.pdfosnap";

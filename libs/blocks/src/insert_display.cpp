@@ -9,6 +9,7 @@
 #include "tbcad/blocks/display.h"
 #include "tbcad/blocks/dynamic.h"
 #include "tbcad/underlay/image.h"
+#include "tbcad/underlay/pdf.h"
 
 namespace tbcad::blocks {
 
@@ -239,6 +240,22 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
     } else {
         for (const Transform2& it : items)
             transformList(*blockSpace, it, out);
+    }
+    if (clipped) {
+        // XCLIPFRAME / PDFFRAME: the boundary itself, drawn above the clipped content.
+        const int frame = clipFrameMode(
+            doc.header(), underlay::isPdfPath(def->xrefPath) ? kPdfFrameKey : kXclipFrameKey);
+        if (frame != 0) {
+            DisplayList frames;
+            DisplayPolyline pl;
+            pl.pts = ins->clip;
+            pl.closed = true;
+            pl.style = self;
+            pl.style.noPlot = frame == 2;
+            frames.items.emplace_back(std::move(pl));
+            for (const Transform2& it : items)
+                transformList(frames, it, out);
+        }
     }
     // Replaced array items show their own block, styled like the array.
     for (const SwappedItem& sw : swappedItems(doc, *ins)) {
