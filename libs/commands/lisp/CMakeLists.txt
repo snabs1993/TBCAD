@@ -1,6 +1,6 @@
 tbcad_add_library(lispcmd
   SOURCES src/lispcmd.cpp
-  DEPENDS tbcad::cmd tbcad::core tbcad::lisp)
+  DEPENDS tbcad::cmd tbcad::core tbcad::geom tbcad::lisp tbcad::sysvars)
 
 tbcad_add_tests(lispcmd
   SOURCES

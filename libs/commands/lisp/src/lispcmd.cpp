@@ -12,7 +12,9 @@
 #include <thread>
 
 #include "tbcad/cmd/cmd.h"
+#include "tbcad/geom/entity.h"
 #include "tbcad/lisp/lisp.h"
+#include "tbcad/sysvars/variables.h"
 
 namespace tbcad::lispcmd {
 
@@ -256,7 +258,7 @@ struct Session : std::enable_shared_from_this<Session> {
     Value entityList(EntityId id);
     Value entMake(const Value& list);
     Value entMod(const Value& list);
-    Value select(const Value& mode, const Value& filter, Run* r);
+    Value select(const Value& mode, const std::vector<Value>& corners, const Value& filter, Run* r);
     LayerId layerNamed(const std::string& name);
     std::filesystem::path resolve(const std::string& name) const;
     bool readFile(const std::string& name, std::string& out) const;
@@ -566,7 +568,8 @@ Groups filterGroups(const Value& filter) {
 
 }  // namespace
 
-Value Session::select(const Value& mode, const Value& filter, Run* r) {
+Value Session::select(const Value& mode, const std::vector<Value>& corners, const Value& filter,
+                      Run* r) {
     Groups f = filterGroups(filter);
     std::vector<std::uint64_t> ids;
     bool all = mode.kind == K::Str && (upperCase(mode.s) == "X" || upperCase(mode.s) == "_X");
@@ -580,6 +583,27 @@ Value Session::select(const Value& mode, const Value& filter, Run* r) {
             for (EntityId id : ctx->host().selection())
                 if (matchesFilter(*this, id, f))
                     ids.push_back(id.value);
+    } else if (mode.kind == K::Str && (upperCase(mode.s) == "W" || upperCase(mode.s) == "C")) {
+        // (ssget "W" p1 p2 [filter]): inside the box; "C": inside or touching it.
+        if (corners.size() < 2)
+            throw Error("too few arguments");
+        const Vec2 p = toPoint(corners[0]);
+        const Vec2 q = toPoint(corners[1]);
+        const double x0 = std::min(p.x, q.x), x1 = std::max(p.x, q.x);
+        const double y0 = std::min(p.y, q.y), y1 = std::max(p.y, q.y);
+        const bool crossing = upperCase(mode.s) == "C";
+        for (EntityId id : doc().modelSpace()) {
+            const Entity* e = doc().find(id);
+            if (!e || !matchesFilter(*this, id, f))
+                continue;
+            const BBox2 b = geom::bounds(*e, doc());
+            if (b.empty())
+                continue;
+            const bool inside = b.min.x >= x0 && b.max.x <= x1 && b.min.y >= y0 && b.max.y <= y1;
+            const bool touches = b.max.x >= x0 && b.min.x <= x1 && b.max.y >= y0 && b.min.y <= y1;
+            if (crossing ? touches : inside)
+                ids.push_back(id.value);
+        }
     } else {
         if (!r)
             throw Error("ssget needs a command line to pick objects");
@@ -597,6 +621,20 @@ Value Session::select(const Value& mode, const Value& filter, Run* r) {
         return Value::nil();
     return Value::pickSet(std::move(ids));
 }
+
+namespace {
+// A drawing variable's text as a LISP value: numbers as numbers, anything else as a string.
+Value varValue(const std::string& text) {
+    char* end = nullptr;
+    const double x = std::strtod(text.c_str(), &end);
+    if (!text.empty() && *end == 0 && std::isfinite(x)) {
+        if (text.find_first_of(".eE") == std::string::npos)
+            return Value::integer(static_cast<long long>(x));
+        return Value::real(x);
+    }
+    return Value::str(text);
+}
+}  // namespace
 
 void Session::defineDrawingFunctions() {
     interp.defineSubr("ENTGET", [this](Interp&, Args& a) {
@@ -637,15 +675,37 @@ void Session::defineDrawingFunctions() {
     });
     interp.defineSubr("SSGET", [this](Interp&, Args& a) {
         Value mode, filter;
+        std::vector<Value> corners;
         if (!a.empty() && a[0].kind == K::Str) {
             mode = a[0];
-            // ("X" filter) or ("W" p1 p2 filter): the filter is the last list.
-            if (a.size() > 1 && (a.back().kind == K::Pair))
+            // ("X" filter) or ("W" p1 p2 filter): the filter is the last list after the points.
+            const std::size_t pts = upperCase(mode.s) == "W" || upperCase(mode.s) == "C" ? 2 : 0;
+            for (std::size_t k = 1; k <= pts && k < a.size(); ++k)
+                corners.push_back(a[k]);
+            if (a.size() > 1 + pts && a.back().kind == K::Pair)
                 filter = a.back();
         } else if (!a.empty()) {
             filter = a[0];
         }
-        return select(mode, filter, run);
+        return select(mode, corners, filter, run);
+    });
+    interp.defineSubr("GETVAR", [this](Interp&, Args& a) {
+        if (a.empty() || a[0].kind != K::Str)
+            throw Error("bad argument type");
+        auto v = sysvars::variableValue(doc(), a[0].s);
+        if (!v)
+            return Value::nil();
+        return varValue(*v);
+    });
+    interp.defineSubr("SETVAR", [this](Interp&, Args& a) {
+        if (a.size() < 2 || a[0].kind != K::Str)
+            throw Error("bad argument type");
+        std::string text = a[1].kind == K::Str ? a[1].s : lisp::toString(a[1], false);
+        const std::string err = sysvars::setVariable(tx(), doc(), a[0].s, text);
+        if (!err.empty())
+            throw Error("bad argument value");
+        auto v = sysvars::variableValue(doc(), a[0].s);
+        return v ? varValue(*v) : Value::nil();
     });
     interp.defineSubr("SSLENGTH", [](Interp&, Args& a) {
         if (a.empty() || a[0].kind != K::PickSet)

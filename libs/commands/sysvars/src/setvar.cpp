@@ -9,6 +9,7 @@
 #include "commands.h"
 #include "tbcad/core/groups.h"
 #include "tbcad/layers/layer_ops.h"
+#include "tbcad/sysvars/variables.h"
 
 namespace tbcad::sysvars {
 
@@ -571,6 +572,29 @@ std::unique_ptr<cmd::Command> makeRolloverTipsCommand() {
 
 std::unique_ptr<cmd::Command> makeSetvarCommand() {
     return std::make_unique<SetvarCommand>();
+}
+
+std::optional<std::string> variableValue(const Document& doc, std::string_view name) {
+    const std::string n = upper(std::string(name));
+    for (const Var& v : variables())
+        if (n == v.name)
+            return v.get(doc);
+    return std::nullopt;
+}
+
+std::string setVariable(Transaction& tx, const Document& doc, std::string_view name,
+                        std::string_view text) {
+    const std::string n = upper(std::string(name));
+    for (const Var& v : variables()) {
+        if (n != v.name)
+            continue;
+        std::string err;
+        auto r = tx.modifyHeader([&](Header& h) { err = v.set(doc, text, h); });
+        if (!r)
+            return r.error().message;
+        return err;
+    }
+    return "Unknown variable " + n + ".";
 }
 
 }  // namespace tbcad::sysvars
