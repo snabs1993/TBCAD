@@ -4,6 +4,13 @@
 
 #include <filesystem>
 
+#ifdef _WIN32
+#include <process.h>
+#define getpid _getpid
+#else
+#include <unistd.h>
+#endif
+
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/ui/app_core.h"
 #include "tbcad/ui/ui_registry.h"
@@ -21,7 +28,7 @@ struct Session {
     fs::path file;
 
     Session() {
-        dir = fs::temp_directory_path() / "tbcad_dirty_flag";
+        dir = fs::temp_directory_path() / ("tbcad_dirty_flag_" + std::to_string(::getpid()));
         fs::remove_all(dir);
         fs::create_directories(dir);
         registerAllCommands(registry);
