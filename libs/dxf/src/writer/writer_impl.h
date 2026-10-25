@@ -316,7 +316,7 @@ private:
     // needs none); the block is added to the drawing the first time.
     std::uint64_t arrowBlockHandle(ArrowType a);
     std::map<int, std::uint64_t> arrowRec_{};
-    std::uint64_t mleaderStdStyle_ = 0;                       // "Standard" MLEADERSTYLE
+    std::uint64_t mleaderStdStyle_ = 0;  // "Standard" MLEADERSTYLE
     // ACAD_TABLE (ExportOptions::nativeTables): the "Standard" TABLESTYLE, made on first use.
     bool nativeTables() const;
     std::uint64_t tableStdStyle_ = 0;
