@@ -214,3 +214,14 @@ TEST_CASE("SPLINE Tangents sets both end tangents before Enter") {
     const Vec2 d = curve.value()->derivativeAt(curve.value()->tMin());
     CHECK(std::abs(d.y) < 1e-9 * std::max(1.0, std::abs(d.x)));
 }
+
+TEST_CASE("SPLINE toLerance drops fit points that lie within the tolerance of the curve") {
+    Fixture f;
+    // the middle point is 0.05 off a straight run
+    f.host.run("SPL", {"0,0", "toLerance", "0.5", "10,0.05", "20,0", "", "", ""});
+    auto es = f.entities();
+    REQUIRE(es.size() == 1);
+    const auto& s = indirect<SplineData>(es[0]);
+    CHECK(s.fit.size() == 2);
+    CHECK(geom::distance(*es[0], Vec2{10, 0.05}) <= 0.5);
+}

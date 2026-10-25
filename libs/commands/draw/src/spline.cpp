@@ -52,6 +52,33 @@ std::optional<SplineData> fitSpline(const std::vector<Vec2>& pts, bool closed,
     return r.value();
 }
 
+// Fit tolerance: the curve may miss a fit point by up to `tol`. Interior points are dropped, one
+// at a time, while every point dropped so far stays within `tol` of the curve through the rest.
+std::optional<SplineData> fitWithTolerance(const std::vector<Vec2>& pts, double tol,
+                                           std::optional<Vec2> st, std::optional<Vec2> et) {
+    std::vector<Vec2> kept = pts;
+    std::vector<Vec2> dropped;
+    for (std::size_t i = 1; i + 1 < kept.size() && kept.size() > 2;) {
+        std::vector<Vec2> trial = kept;
+        trial.erase(trial.begin() + static_cast<std::ptrdiff_t>(i));
+        auto sp = fitSpline(trial, false, st, et);
+        bool ok = sp.has_value();
+        if (ok) {
+            const Entity e = makeEntity(*sp);
+            for (const Vec2& q : dropped)
+                ok = ok && geom::distance(e, q) <= tol;
+            ok = ok && geom::distance(e, kept[i]) <= tol;
+        }
+        if (ok) {
+            dropped.push_back(kept[i]);
+            kept = std::move(trial);
+        } else {
+            ++i;
+        }
+    }
+    return fitSpline(kept, false, st, et);
+}
+
 std::optional<SplineData> build(Method m, const std::vector<Vec2>& pts, bool closed,
                                 std::optional<Vec2> st = {}, std::optional<Vec2> et = {}) {
     return m == Method::Fit ? fitSpline(pts, closed, st, et) : controlSpline(pts, closed);
@@ -71,6 +98,7 @@ public:
         Method method = Method::Fit;
         std::vector<Vec2> pts;
         bool closed = false;
+        double fitTolerance = 0;
         std::optional<Vec2> startTan, endTan;  // set by Tangents, else asked for at the end
         bool presetTangents = false;
 
@@ -83,6 +111,8 @@ public:
             else {
                 if (pts.size() >= 3)
                     o.keywords.push_back("Close");
+                if (method == Method::Fit)
+                    o.keywords.push_back("toLerance");
                 if (method == Method::Fit)
                     o.keywords.push_back("Tangents");
                 o.keywords.push_back("Undo");
@@ -140,6 +170,13 @@ public:
                     ctx.message("The polyline could not be converted to a spline.");
                 }
                 co_return;
+            } else if (r.keyword == "toLerance") {
+                auto t = co_await ctx.getReal("Specify fit tolerance <0>",
+                                              cmd::RealOptions{.defaultValue = 0});
+                if (t.ok() && t.value >= 0)
+                    fitTolerance = t.value;
+                else if (t.ok())
+                    ctx.message("The tolerance cannot be negative.");
             } else if (r.keyword == "Tangents") {
                 cmd::PointOptions so;
                 so.base = pts.front();
@@ -190,7 +227,9 @@ public:
             if (et.ok())
                 endTan = et.point - pts.back();
         }
-        auto s = build(method, pts, closed, startTan, endTan);
+        auto s = method == Method::Fit && !closed && fitTolerance > 0
+                     ? fitWithTolerance(pts, fitTolerance, startTan, endTan)
+                     : build(method, pts, closed, startTan, endTan);
         if (!s) {
             ctx.message("The spline could not be created from those points.");
             co_return;
