@@ -126,7 +126,8 @@ std::optional<TableData> parse(std::string_view s);
 // The cells as plain text, one CSV row per table row, CRLF line ends; covered (merged-over) cells
 // are empty fields.
 std::string toCsv(const TableData& t);
-// Rows of fields; understands quotes, doubled quotes, CRLF or LF, a UTF-8 byte order mark and the
+// Rows of fields; understands quotes, doubled quotes, CRLF or LF, a UTF-8 byte order mark, Excel's
+// UTF-16 "Unicode Text" and Thai (874) or Western (1252) ANSI files (when not valid UTF-8), and the
 // semicolon as well as the comma (Excel in some locales) and the tab (cells copied from Excel).
 // Blank lines are skipped.
 std::vector<std::vector<std::string>> parseCsv(std::string_view csv);
