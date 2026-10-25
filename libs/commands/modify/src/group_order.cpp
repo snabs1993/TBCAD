@@ -82,6 +82,136 @@ public:
     }
 };
 
+// -GROUP: the command-line form, groups addressed by name.
+class GroupLineCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "-GROUP"; }
+    std::vector<std::string> defaultAliases() const override { return {"-G"}; }
+    std::string_view description() const override {
+        return "Make, change and list groups from the command line";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.setUndoLabel("GROUP");
+        cmd::KeywordOptions ko;
+        ko.keywords = {"?", "Add", "Remove", "REName", "Selectable", "Create", "Explode"};
+        ko.defaultKeyword = "Create";
+        auto k = co_await ctx.getKeyword(
+            "Enter a group option [?/Add/Remove/REName/Selectable/Create/Explode] <Create>", ko);
+        if (!k.ok())
+            co_return;
+        std::vector<Group> groups = readGroups(ctx.doc());
+        auto findNamed = [&](const std::string& n) -> Group* {
+            for (Group& g : groups) {
+                if (sameGroupName(g.name, n))
+                    return &g;
+            }
+            return nullptr;
+        };
+        auto store = [&] {
+            if (auto r = writeGroups(ctx.tx(), groups); !r)
+                ctx.message(r.error().message);
+        };
+        cmd::SelectionOptions so;
+        so.filter = [&doc = ctx.doc()](const Entity& e) { return isModifiable(doc, e); };
+        so.allowPreselection = true;
+
+        if (k.keyword == "?") {
+            if (groups.empty())
+                ctx.message("No groups in this drawing.");
+            for (const Group& g : groups)
+                ctx.message("Group \"" + g.name + "\": " + std::to_string(g.members.size()) +
+                            " objects" + (g.selectable ? "" : ", not selectable"));
+            co_return;
+        }
+        if (k.keyword == "Create") {
+            std::string fallback = "GROUP" + std::to_string(groups.size() + 1);
+            auto name = co_await ctx.getString("Enter group name <" + fallback + ">",
+                                               cmd::StringOptions{.defaultValue = fallback});
+            if (!name.ok())
+                co_return;
+            std::string chosen = cmd::trim(name.text);
+            if (chosen.empty())
+                chosen = fallback;
+            if (findNamed(chosen)) {
+                ctx.message("There is already a group named \"" + chosen + "\".");
+                co_return;
+            }
+            auto sel = co_await ctx.getSelection("Select objects for grouping", so);
+            if (!sel.ok() || sel.ids.empty())
+                co_return;
+            const std::unordered_set<EntityId> taken(sel.ids.begin(), sel.ids.end());
+            for (Group& other : groups)
+                std::erase_if(other.members, [&](EntityId id) { return taken.count(id) != 0; });
+            groups.push_back(Group{chosen, sel.ids, true});
+            store();
+            ctx.message("Group \"" + chosen + "\" made of " + std::to_string(sel.ids.size()) +
+                        " objects.");
+            co_return;
+        }
+        auto gname = co_await ctx.getString("Enter group name or [?]");
+        if (!gname.ok())
+            co_return;
+        std::string target = cmd::trim(gname.text);
+        Group* g = findNamed(target);
+        if (!g) {
+            ctx.message("No group named \"" + target + "\".");
+            co_return;
+        }
+        if (k.keyword == "Explode") {
+            const std::string actual = g->name;
+            std::erase_if(groups, [&](const Group& x) { return x.name == actual; });
+            store();
+            ctx.message("Group \"" + actual + "\" dissolved.");
+        } else if (k.keyword == "REName") {
+            auto n = co_await ctx.getString("Enter new group name");
+            if (!n.ok())
+                co_return;
+            std::string chosen = cmd::trim(n.text);
+            if (chosen.empty())
+                co_return;
+            if (Group* other = findNamed(chosen); other && other != g) {
+                ctx.message("There is already a group named \"" + chosen + "\".");
+                co_return;
+            }
+            g->name = chosen;
+            store();
+        } else if (k.keyword == "Selectable") {
+            auto a = co_await ctx.getKeyword(
+                "Select the whole group on a pick [Yes/No] <Yes>",
+                cmd::KeywordOptions{.keywords = {"Yes", "No"}, .defaultKeyword = "Yes"});
+            if (!a.ok())
+                co_return;
+            g->selectable = a.keyword == "Yes";
+            store();
+        } else if (k.keyword == "Remove") {
+            auto sel = co_await ctx.getSelection("Select objects to remove from the group", so);
+            if (!sel.ok())
+                co_return;
+            const std::unordered_set<EntityId> out(sel.ids.begin(), sel.ids.end());
+            std::erase_if(g->members, [&](EntityId id) { return out.count(id) != 0; });
+            store();
+        } else {  // Add
+            auto sel = co_await ctx.getSelection("Select objects to add to the group", so);
+            if (!sel.ok())
+                co_return;
+            const std::unordered_set<EntityId> picked(sel.ids.begin(), sel.ids.end());
+            for (Group& other : groups) {
+                if (&other != g)
+                    std::erase_if(other.members,
+                                  [&](EntityId id) { return picked.count(id) != 0; });
+            }
+            std::unordered_set<EntityId> have(g->members.begin(), g->members.end());
+            for (EntityId id : sel.ids) {
+                if (have.insert(id).second)
+                    g->members.push_back(id);
+            }
+            store();
+            ctx.message(std::to_string(sel.ids.size()) + " added to \"" + g->name + "\".");
+        }
+    }
+};
+
 class UngroupCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "UNGROUP"; }
@@ -430,6 +560,9 @@ std::unique_ptr<cmd::Command> makeHatchToBack() {
 
 std::unique_ptr<cmd::Command> makeGroup() {
     return std::make_unique<GroupCommand>();
+}
+std::unique_ptr<cmd::Command> makeGroupLine() {
+    return std::make_unique<GroupLineCommand>();
 }
 std::unique_ptr<cmd::Command> makeGroupEdit() {
     return std::make_unique<GroupEditCommand>();

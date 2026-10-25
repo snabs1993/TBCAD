@@ -2512,3 +2512,21 @@ TEST_CASE("OFFSET reports its settings, Undo takes back the last offset, Enter e
     CHECK(r.finished);
     CHECK(f.count(EntityKind::Line) == 1);
 }
+
+TEST_CASE("-GROUP creates, renames, lists and explodes groups by name") {
+    Fixture f;
+    EntityId a = f.add(LineData{{0, 0}, {1, 0}});
+    EntityId b = f.add(LineData{{0, 2}, {1, 2}});
+    f.host.run("-GROUP", {"Create", "Walls", ScriptItem::pick(a, {0.5, 0}),
+                          ScriptItem::pick(b, {0.5, 2}), ScriptItem::enter()});
+    REQUIRE(readGroups(f.doc).size() == 1);
+    CHECK(readGroups(f.doc)[0].name == "Walls");
+    CHECK(f.host.undoStack().undoLabel() == "GROUP");
+    f.host.run("-GROUP", {"REName", "walls", "Doors"});
+    REQUIRE(readGroups(f.doc).size() == 1);
+    CHECK(readGroups(f.doc)[0].name == "Doors");
+    f.host.run("-GROUP", {"Selectable", "Doors", "No"});
+    CHECK_FALSE(readGroups(f.doc)[0].selectable);
+    f.host.run("-GROUP", {"Explode", "Doors"});
+    CHECK(readGroups(f.doc).empty());
+}

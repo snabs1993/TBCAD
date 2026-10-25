@@ -455,3 +455,31 @@ TEST_CASE(
         CHECK(f.modelSpace().size() == 10);
     }
 }
+
+TEST_CASE("-ARRAY rectangular asks rows, columns and distances without a dialog") {
+    Fixture f;
+    EntityId c = f.addCircle(0, 0, 1);
+    f.host->setSelection({c});
+    auto r = f.host->run("-ARRAY", {"R", "2", "3", "10", "5"});
+    CHECK(r.finished);
+    CHECK(f.modelSpace().size() == 6);
+    bool found = false;
+    for (EntityId id : f.modelSpace())
+        found = found || near(entityAs<CircleData>(*f.doc.find(id))->center, {10, 10});
+    CHECK(found);
+    CHECK(f.host->undo());
+    CHECK(f.modelSpace().size() == 1);
+}
+
+TEST_CASE("-ARRAY polar of 4 items over 180 degrees") {
+    Fixture f;
+    EntityId c = f.addCircle(10, 0, 1);
+    f.host->setSelection({c});
+    auto r = f.host->run("-ARRAY", {"P", "0,0", "4", "180", "Yes"});
+    CHECK(r.finished);
+    REQUIRE(f.modelSpace().size() == 4);
+    bool found = false;
+    for (EntityId id : f.modelSpace())
+        found = found || near(entityAs<CircleData>(*f.doc.find(id))->center, {-10, 0}, 1e-9);
+    CHECK(found);
+}
