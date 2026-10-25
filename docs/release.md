@@ -10,7 +10,7 @@ Release builds come from `.github/workflows/release.yml`. It never touches `ci.y
    - `TBCAD-<version>-setup.exe` (Inno Setup installer), and
    - `TBCAD-<version>-portable.zip`,
 
-   and attaches both to a **draft** GitHub Release. Read the draft, then publish it by hand.
+   installs and uninstalls the setup once on the runner (`packaging/windows/installer-smoke.ps1`: files present, `tbcad --self-test`, DXF conversion, clean uninstall), and attaches both to a **draft** GitHub Release (always a draft, also for tags with a suffix). Read the draft, then publish it by hand.
 
 To try the pipeline without a tag, run the workflow from the Actions tab (**Run workflow**). The
 files appear as the `tbcad-windows-release` artifact and no release is created.
