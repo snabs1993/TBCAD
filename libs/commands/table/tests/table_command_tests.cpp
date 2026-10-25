@@ -1,11 +1,14 @@
 #include <doctest/doctest.h>
 
+#include <cstring>
 #include <filesystem>
+#include <fstream>
 
 #include "tbcad/blocks/tbcad_blocks.h"
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/script_host.h"
 #include "tbcad/geom/geom.h"
+#include "tbcad/io/zip.h"
 #include "tbcad/table/table.h"
 #include "tbcad/tablecmd/tablecmd.h"
 
@@ -242,4 +245,64 @@ TEST_CASE("TABLESTYLE and TS open the Table Style dialog") {
     Fx f;
     CHECK(f.host->run("TABLESTYLE", {}).finished);
     CHECK(f.host->run("TS", {}).finished);
+}
+
+TEST_CASE("DATALINK fills a table from a CSV and DATALINKUPDATE reads it again") {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "tbcad_table_link";
+    fs::create_directories(dir);
+    const std::string file = (dir / "l.csv").string();
+    auto write = [&](const char* s) { std::ofstream(file, std::ios::binary) << s; };
+    write("a,b\r\n1,2\r\n");
+    Fx f;
+    REQUIRE(f.host->run("TABLE", {"1", "1", "30", "8", "", "5,6"}).finished);
+    const EntityId id = f.tableId();
+    REQUIRE(f.host->run("DATALINK", {ScriptItem::pick(id, {6, -1}), file}).finished);
+    REQUIRE(f.table());
+    CHECK(f.table()->linkFile == file);
+    CHECK(table::rowCount(*f.table()) == 2);
+    CHECK(table::cellAt(*f.table(), 1, 1).utf8 == "2");
+    CHECK(f.table()->origin.x == doctest::Approx(5));
+    write("a,b,c\r\n1,2,3\r\n4,5,6\r\n");
+    REQUIRE(f.host->run("DATALINKUPDATE", {}).finished);
+    CHECK(table::rowCount(*f.table()) == 3);
+    CHECK(table::colCount(*f.table()) == 3);
+    CHECK(table::cellAt(*f.table(), 2, 2).utf8 == "6");
+    CHECK(f.host->undo());
+    CHECK(table::rowCount(*f.table()) == 2);
+    fs::remove_all(dir);
+}
+
+TEST_CASE("DATALINK reads the first sheet of an XLSX with shared strings and numbers") {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "tbcad_table_xlsx";
+    fs::create_directories(dir);
+    const std::string file = (dir / "l.xlsx").string();
+    auto entry = [](const char* n, const char* s) {
+        io::ZipEntry e;
+        e.name = n;
+        e.data.assign(s, s + std::strlen(s));
+        return e;
+    };
+    auto bytes = io::zipBytes(
+        {entry("xl/sharedStrings.xml",
+               "<sst><si><t>Door</t></si><si><r><t>W &amp; </t></r><r><t>H</t></r></si></sst>"),
+         entry("xl/worksheets/sheet1.xml",
+               "<worksheet><sheetData><row r=\"1\"><c r=\"A1\" t=\"s\"><v>0</v></c>"
+               "<c r=\"C1\" t=\"s\"><v>1</v></c></row><row r=\"3\"><c r=\"B3\"><v>900</v></c>"
+               "<c r=\"C3\" t=\"inlineStr\"><is><t>x</t></is></c></row></sheetData></worksheet>")});
+    REQUIRE(bytes);
+    std::ofstream(file, std::ios::binary)
+        .write(reinterpret_cast<const char*>(bytes.value().data()),
+               static_cast<std::streamsize>(bytes.value().size()));
+    std::string err;
+    const auto rows = tablecmd::readLinkRows(file, err);
+    REQUIRE(rows.size() == 3);
+    CHECK(rows[0][0] == "Door");
+    CHECK(rows[0][2] == "W & H");
+    CHECK(rows[2][1] == "900");
+    CHECK(rows[2][2] == "x");
+    CHECK(tablecmd::readLinkRows((dir / "none.xlsx").string(), err).empty());
+    CHECK_FALSE(err.empty());
+    fs::remove_all(dir);
 }

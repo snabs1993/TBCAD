@@ -2,7 +2,8 @@ tbcad_add_library(table_commands
   SOURCES
     src/table_commands.cpp
     src/csv_commands.cpp
-  DEPENDS tbcad::cmd tbcad::table tbcad::blocks tbcad::geom tbcad::text tbcad::ui)
+    src/data_link.cpp
+  DEPENDS tbcad::cmd tbcad::table tbcad::blocks tbcad::io tbcad::geom tbcad::text tbcad::ui)
 
 if(TBCAD_BUILD_APP)
   include(deps/imgui)
@@ -15,4 +16,4 @@ tbcad_add_tests(table_commands
   SOURCES
     tests/main.cpp
     tests/table_command_tests.cpp
-  DEPENDS tbcad::cmd)
+  DEPENDS tbcad::cmd tbcad::io)
