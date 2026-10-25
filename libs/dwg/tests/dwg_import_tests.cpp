@@ -212,6 +212,9 @@ std::vector<std::uint8_t> lwpolyline(std::uint64_t h, bool closed, bool plinegen
     return o.finish();
 }
 
+std::string gTextBytes = "Hello";  // TEXT string as written in the file (code page bytes)
+std::string gMTextBytes = "Line one\\Pline two";
+
 std::vector<std::uint8_t> text(std::uint64_t h) {
     ObjectWriter o(0x01, h);
     o.entityCommon(2, 256, 0);
@@ -223,7 +226,7 @@ std::vector<std::uint8_t> text(std::uint64_t h) {
     o.main.b(true);  // extrusion default
     o.main.b(true);  // thickness 0
     o.main.rd(2.5);  // height
-    o.main.text("Hello");
+    o.main.text(gTextBytes);
     commonHandles(o, 2, 0, kLayer0);
     o.handles.handle(5, kStyle);
     return o.finish();
@@ -429,7 +432,7 @@ std::vector<std::uint8_t> mtextObj(std::uint64_t h) {
     o.main.bs(1);
     o.main.bd(0.0);
     o.main.bd(0.0);
-    o.main.text("Line one\\Pline two");
+    o.main.text(gMTextBytes);
     o.main.bs(1);
     o.main.bd(1.0);
     o.main.b(false);
@@ -758,6 +761,54 @@ TEST_CASE("layer and block names in a Thai or accented code page show as UTF-8")
             CHECK(doc.blockByName(c.layerUtf8) != nullptr);
             CHECK(doc.layerByName("WALLS") != nullptr);
         }
+    }
+}
+
+TEST_CASE("TEXT, MTEXT and layer names in Thai and East Asian code pages show as UTF-8") {
+    struct Case {
+        int codepage;
+        const char* bytes;
+        const char* utf8;
+    };
+    const Case cases[] = {
+        {37, "\xCA\xC7\xD1\xCA\xB4\xD5",
+         "\xE0\xB8\xAA\xE0\xB8\xA7\xE0\xB8\xB1\xE0\xB8\xAA\xE0\xB8\x94\xE0\xB8\xB5"},
+        {38, "\x93\xFA\x96\x7B", "\xE6\x97\xA5\xE6\x9C\xAC"},  // Shift-JIS
+        {39, "\xD6\xD0\xCE\xC4", "\xE4\xB8\xAD\xE6\x96\x87"},  // GBK
+        {40, "\xC7\xD1\xB1\xDB", "\xED\x95\x9C\xEA\xB8\x80"},  // Korean
+        {41, "\xA4\xA4\xA4\xE5", "\xE4\xB8\xAD\xE6\x96\x87"},  // Big5
+    };
+    for (const Case& c : cases) {
+        CAPTURE(c.codepage);
+        gCodepage = c.codepage;
+        gTextBytes = c.bytes;
+        gMTextBytes = std::string(c.bytes) + "\\P" + c.bytes;
+        DwgFile f = sampleFile();
+        f.add(0x19, layer(0x19, c.bytes, 3, kLtype));
+        f.add(0x60, mtextObj(0x60));
+        const auto bytes = f.build();
+        gCodepage = 30;
+        const std::string expectText = c.utf8;
+        gTextBytes = "Hello";
+        gMTextBytes = "Line one\\Pline two";
+        dxf::Report report;
+        auto r = importDwg(asBytes(bytes), dxf::ImportOptions{}, report);
+        REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
+        const Document& doc = *r.value().document;
+        CHECK(doc.layerByName(expectText) != nullptr);
+        int texts = 0, mtexts = 0;
+        for (EntityId id : doc.modelSpace()) {
+            if (const auto* tx = entityAs<TextData>(*doc.find(id))) {
+                ++texts;
+                CHECK(tx->utf8 == expectText);
+            }
+            if (const auto* m = entityAs<MTextData>(*doc.find(id))) {
+                ++mtexts;
+                CHECK(m->utf8.find(expectText) != std::string::npos);
+            }
+        }
+        CHECK(texts == 1);
+        CHECK(mtexts == 1);
     }
 }
 

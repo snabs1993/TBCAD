@@ -2,6 +2,9 @@
 
 #include <array>
 #include <cstring>
+#include <optional>
+
+#include "tbcad/dxf/encoding.h"
 
 namespace tbcad::dwg {
 
@@ -238,8 +241,27 @@ void putUtf8(std::string& out, std::uint32_t c) {
     }
 }
 
+// Double-byte code pages (DWG header code page index -> DXF encoding): 38 Shift-JIS,
+// 39 GBK, 40 Korean, 41 Big5, 42 Johab.
+std::optional<dxf::Encoding> multiByteEncoding(int cp) {
+    switch (cp) {
+        case 38:
+            return dxf::Encoding::Cp932;
+        case 39:
+            return dxf::Encoding::Cp936;
+        case 40:
+            return dxf::Encoding::Cp949;
+        case 41:
+            return dxf::Encoding::Cp950;
+        case 42:
+            return dxf::Encoding::Cp1361;
+        default:
+            return std::nullopt;
+    }
+}
+
 bool supportedCodepage(int cp) {
-    return cp == 30 || cp == 37 || cp == 2;
+    return cp == 30 || cp == 37 || cp == 2 || multiByteEncoding(cp).has_value();
 }
 
 // Unicode of a byte >= 0x80 in the code page (0 when undefined).
@@ -281,6 +303,8 @@ bool setTextCodepage(int dwgCodepage) {
 std::string codepageToUtf8(const std::string& bytes, int cp) {
     if (!supportedCodepage(cp))
         return bytes;
+    if (const auto enc = multiByteEncoding(cp))
+        return dxf::decodeText(bytes, *enc);
     std::string out;
     out.reserve(bytes.size());
     for (unsigned char c : bytes) {
