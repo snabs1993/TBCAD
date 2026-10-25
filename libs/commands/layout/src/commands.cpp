@@ -779,7 +779,12 @@ public:
         if (!picked)
             co_return;
         bool on = true;
-        if (!preselected) {
+        if (preselected) {
+            // The Viewport panel and a selected viewport: the command flips the lock.
+            if (auto lay = layout::findLayout(ctx.doc(), target))
+                if (const layout::Viewport* v = lay->findViewport(vpId))
+                    on = !v->locked;
+        } else {
             bool locked = false;
             if (auto lay = layout::findLayout(ctx.doc(), target))
                 for (const layout::Viewport& v : lay->viewports)

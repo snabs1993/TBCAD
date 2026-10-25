@@ -21,5 +21,7 @@ std::string currentLayout(const cmd::IHost& host, const Document& doc);
 int selectedViewport(const cmd::IHost& host, const Document& doc);
 
 void registerUi(ui::UiRegistry& ui);
+// The "Viewport" panel (scale and lock of the selected viewport); empty without the GUI.
+void registerViewportPanel(ui::UiRegistry& ui);
 
 }  // namespace tbcad::layoutcmd
