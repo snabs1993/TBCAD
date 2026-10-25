@@ -205,6 +205,7 @@ public:
         std::string contentType = mls.content;
         long long maxPoints = mls.maxPoints;  // points of a leader line, arrowhead and landing
         bool dogleg = mls.dogleg;
+        double firstAngle = 0, secondAngle = 0;  // degrees; 0 = free
         std::optional<std::string> typedNote;
         const BlockDef* block = nullptr;
         auto isOption = [](const cmd::PointResult& r, const char* name) {
@@ -223,10 +224,13 @@ public:
             if (isOption(first, "Options")) {
                 for (;;) {
                     cmd::KeywordOptions ko;
-                    ko.keywords = {"Type", "Maxpoints", "Dogleg", "eXit"};
+                    ko.keywords = {"Type", "Maxpoints", "First", "Second", "Dogleg", "eXit"};
                     ko.defaultKeyword = "eXit";
                     auto k = co_await ctx.getKeyword(
-                        "Enter an option [Type of content/Maxpoints/Dogleg/eXit] <eXit>", ko);
+                        "Enter an option [Type of content/Maxpoints/First angle/Second "
+                        "angle/Dogleg/eXit] "
+                        "<eXit>",
+                        ko);
                     if (!k.ok())
                         co_return;
                     if (k.keyword == "eXit")
@@ -251,6 +255,19 @@ public:
                         if (!n.ok())
                             co_return;
                         maxPoints = n.value;
+                    } else if (k.keyword == "First" || k.keyword == "Second") {
+                        double& inc = k.keyword == "First" ? firstAngle : secondAngle;
+                        auto a = co_await ctx.getReal(
+                            std::string(k.keyword == "First" ? "First" : "Second") +
+                                " segment angle increment in degrees, 0 for any <" +
+                                std::to_string(static_cast<int>(inc)) + ">",
+                            cmd::RealOptions{.defaultValue = inc});
+                        if (!a.ok())
+                            co_return;
+                        if (a.value < 0 || a.value >= 180)
+                            ctx.message("The angle must be from 0 to below 180.");
+                        else
+                            inc = a.value;
                     } else {
                         cmd::KeywordOptions yo;
                         yo.keywords = {"Yes", "No"};
@@ -359,16 +376,27 @@ public:
             if (!first.ok())
                 co_return;
             lines.push_back({first.point});
+            // The next point keeps the angle of its segment on a multiple of the increment.
+            auto snapped = [&](Vec2 prev, Vec2 pt) {
+                const double inc =
+                    (lines.front().size() == 1 ? firstAngle : secondAngle) * kPi / 180;
+                const double len = length(pt - prev);
+                if (!(inc > 0) || !(len > 0))
+                    return pt;
+                const double a = std::round(std::atan2((pt - prev).y, (pt - prev).x) / inc) * inc;
+                return prev + Vec2{std::cos(a), std::sin(a)} * len;
+            };
             for (;;) {
                 cmd::PointOptions po;
                 po.base = lines.back().back();
                 po.freeText = true;
                 po.keywords = {"Add"};
                 const std::vector<std::vector<Vec2>> shown = lines;
-                po.preview = [c, shown, sid](Vec2 cursor, DisplayList& out) {
+                po.preview = [c, shown, sid, snapped, prev = lines.back().back()](
+                                 Vec2 cursor, DisplayList& out) {
                     for (const auto& l : shown) {
                         std::vector<Vec2> pts = l;
-                        pts.push_back(cursor);
+                        pts.push_back(snapped(prev, cursor));
                         Entity e;
                         e.data = Indirect<LeaderData>(leaderOf(c->doc(), pts, "", sid));
                         previewEntity(*c, std::move(e), out);
@@ -402,11 +430,12 @@ public:
                 }
                 if (!land.ok())
                     co_return;
+                const Vec2 landAt = snapped(lines.front().back(), land.point);
                 if (more) {
-                    lines.front().push_back(land.point);
+                    lines.front().push_back(landAt);
                     continue;
                 }
-                landing = land.point;
+                landing = landAt;
                 break;
             }
         }
