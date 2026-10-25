@@ -28,6 +28,7 @@
 #include "tbcad/ui/foreign_files.h"
 #include "tbcad/ui/paper_view.h"
 #include "tbcad/ui/scene_sync.h"
+#include "tbcad/ui/tab_preview.h"
 #include "tbcad/ui/theme.h"
 #include "tbcad/ui/ui_registry.h"
 #include "tbcad/underlay/image.h"
@@ -142,6 +143,11 @@ public:
     bool anyDocumentModified() const;
     // Stable while the drawing stays open, whatever happens to the other tabs.
     std::uint64_t documentId(std::size_t index) const;
+    // Line picture of drawing `index` (QVDRAWING) or of a layout of the active drawing (QVLAYOUT),
+    // for the hover popup of its tab. Kept until the drawing changes. Empty when there is nothing
+    // to show.
+    const TabPreview& documentPreview(std::size_t index);
+    const TabPreview& layoutPreview(const std::string& layoutName);
     // Untitled, unmodified and empty: nothing the user would miss.
     bool isPristine() const;
     // The file of drawing `index` (empty when untitled) and its layout names.
@@ -518,7 +524,12 @@ private:
     // and the built-in drawing was used instead.
     std::unique_ptr<Document> defaultDocument(std::string* problem = nullptr);
     platform::AppPaths paths_;
-    std::string thumbnailFor_;  // pendingThumbnail()
+    struct PreviewEntry {
+        std::uint64_t revision = ~std::uint64_t{0};
+        TabPreview preview{};
+    };
+    std::map<std::string, PreviewEntry> previews_{};  // by "doc:<id>" / "layout:<id>:<name>"
+    std::string thumbnailFor_;                        // pendingThumbnail()
     std::uint64_t thumbnailDoc_ = 0;
     std::vector<std::string> panelRequests_{};
     std::uint64_t selectionRevision_ = 1;
