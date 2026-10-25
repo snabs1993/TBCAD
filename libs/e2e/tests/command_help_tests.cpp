@@ -60,8 +60,7 @@ TEST_CASE("HELP and ? print a page, search the pages and ask for the page window
     rig.core->submitText("? o");  // an alias finds the page of its command
     CHECK(rig.core->takeHelpRequest() == "OFFSET");
     rig.core->submitText("? parallel");
-    CHECK(rig.core->history()[rig.core->history().size() - 2].find("OFFSET") !=
-          std::string::npos);
+    CHECK(rig.core->history()[rig.core->history().size() - 2].find("OFFSET") != std::string::npos);
     CHECK(rig.core->takeHelpRequest().empty());
     rig.core->submitText("help zzzqqq");
     CHECK(last().find("No help page") != std::string::npos);

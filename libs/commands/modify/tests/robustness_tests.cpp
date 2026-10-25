@@ -109,7 +109,7 @@ TEST_CASE("FILLET and CHAMFER between every pair of curve kinds are finite and u
         for (std::size_t j = 0; j < ss.size(); ++j) {
             if (i == j)
                 continue;
-            CAPTURE(ss[i].name);
+            CAPTURE(std::string(ss[i].name));
             CAPTURE(ss[j].name);
             for (int mode = 0; mode < 2; ++mode) {
                 Rig r;
@@ -913,6 +913,98 @@ TEST_CASE("no modify command changes an object on a locked layer") {
             r.host.setSelection({ids[k]});
             go(c, {ScriptItem::select({ids[k], ids[o]}), ScriptItem::enter(), "0,0", "5,5",
                    ScriptItem::enter(), ScriptItem::esc()});
+        }
+    }
+}
+
+// TRIM and EXTEND options on every curve kind: Fence, Crossing, Edge (Extend) and Remove. What
+// stays is finite, lies on the source curve, ends on a cutting edge or at an old end, leaves the
+// cutters and a bystander alone, and one undo gives the drawing back byte for byte.
+namespace {
+double nearestOnPolyline(const std::vector<Vec2>& o, Vec2 p) {
+    double m = 1e18;
+    for (std::size_t i = 0; i + 1 < o.size(); ++i) {
+        const Vec2 ab{o[i + 1].x - o[i].x, o[i + 1].y - o[i].y};
+        const double l2 = ab.x * ab.x + ab.y * ab.y;
+        double t = l2 > 0 ? ((p.x - o[i].x) * ab.x + (p.y - o[i].y) * ab.y) / l2 : 0;
+        t = std::clamp(t, 0.0, 1.0);
+        m = std::min(m, distance(p, Vec2{o[i].x + t * ab.x, o[i].y + t * ab.y}));
+    }
+    return m;
+}
+}  // namespace
+
+TEST_CASE("TRIM options Fence, Crossing, Edge and Remove on every curve kind keep their rules") {
+    const auto ss = samples();
+    for (std::size_t i = 0; i < ss.size(); ++i) {
+        for (int mode = 0; mode < 4; ++mode) {
+            CAPTURE(std::string(ss[i].name));
+            CAPTURE(mode);
+            Rig r;
+            const double c1 = ss[i].p1.x * 0.7 + ss[i].p2.x * 0.3;
+            const double c2 = ss[i].p1.x * 0.3 + ss[i].p2.x * 0.7;
+            // Edge mode: the cutters stop short of the curve, so only Extend reaches it.
+            const double y0 = mode == 2 ? 40 : -60, y1 = mode == 2 ? 41 : 60;
+            EntityId target = r.add(ss[i].data);
+            EntityId a = r.add(LineData{{c1, y0}, {c1, y1}});
+            EntityId b = r.add(LineData{{c2, y0}, {c2, y1}});
+            EntityId bystander = r.add(LineData{{500, 500}, {510, 500}});
+            const std::string before = canonicalDump(r.doc);
+            const Vec2 p = ss[i].p1;
+            const auto fmt = [](Vec2 v) { return std::to_string(v.x) + "," + std::to_string(v.y); };
+            std::vector<Vec2> src;
+            geom::outlinePoints(*r.doc.find(target), 0.0005, src);
+            std::vector<ScriptItem> items{ScriptItem::select({a, b}), ScriptItem::enter()};
+            if (mode == 0) {
+                for (const char* s : {"F"})
+                    items.push_back(s);
+                items.push_back(fmt({p.x, -70}));
+                items.push_back(fmt({p.x, 70}));
+                items.push_back(ScriptItem::enter());
+            } else if (mode == 1) {
+                items.push_back("C");
+                items.push_back(fmt({p.x - 0.4, p.y - 0.4}));
+                items.push_back(fmt({p.x + 0.4, p.y + 0.4}));
+            } else if (mode == 2) {
+                items.push_back("E");
+                items.push_back("E");
+                items.push_back(ScriptItem::pick(target, p));
+            } else {
+                items.push_back("Remove");
+                items.push_back(ScriptItem::select({bystander}));
+                items.push_back(ScriptItem::enter());
+            }
+            items.push_back(ScriptItem::esc());
+            if (!r.host.run("TRIM", items).finished)
+                r.host.feed({ScriptItem::esc(), ScriptItem::esc()});
+            const std::string after = canonicalDump(r.doc);
+            CHECK(finiteDump(after));
+            // The cutters never move; the bystander is only touched by Remove.
+            CHECK(r.doc.contains(a));
+            CHECK(r.doc.contains(b));
+            CHECK(r.doc.contains(bystander) == (mode != 3));
+            r.doc.forEachEntity([&](const Entity& e) {
+                if (e.common.id == a || e.common.id == b || e.common.id == bystander)
+                    return;
+                std::vector<Vec2> po;
+                if (!geom::outlinePoints(e, 0.01, po) || po.empty())
+                    return;
+                for (Vec2 q : po)
+                    CHECK(nearestOnPolyline(src, q) < 0.05);
+                // A kept end lies on a cutter or is an old end of the source curve.
+                for (Vec2 q : {po.front(), po.back()}) {
+                    if (mode == 3)
+                        break;  // nothing was cut
+                    const bool onCut = std::abs(q.x - c1) < 1e-3 || std::abs(q.x - c2) < 1e-3;
+                    const bool oldEnd =
+                        distance(q, src.front()) < 1e-3 || distance(q, src.back()) < 1e-3;
+                    CHECK((onCut || oldEnd));
+                }
+            });
+            if (after != before) {
+                CHECK(r.host.undo());
+                CHECK(canonicalDump(r.doc) == before);
+            }
         }
     }
 }
