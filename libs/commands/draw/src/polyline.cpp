@@ -76,7 +76,9 @@ public:
                 o.keywords = {"Arc"};
                 if (canClose)
                     o.keywords.push_back("Close");
-                o.keywords.insert(o.keywords.end(), {"Halfwidth", "Undo", "Width"});
+                o.keywords.insert(o.keywords.end(), {"Halfwidth", "Length", "Undo", "Width"});
+                if (v.size() < 2)
+                    std::erase(o.keywords, "Length");
             }
             if (v.size() < 2)
                 std::erase(o.keywords, "Undo");
@@ -115,6 +117,15 @@ public:
                 arcMode = true;
             } else if (kw == "Line") {
                 arcMode = false;
+            } else if (kw == "Length") {
+                // A segment of the given length continuing the previous segment's direction.
+                cmd::DistanceOptions lo;
+                lo.base = v.back().p;
+                auto l = co_await ctx.getDistance("Specify length of line", std::move(lo));
+                if (!l.ok())
+                    co_return;
+                const double t = currentTangent(v);
+                addVertex(ctx, v, v.back().p + Vec2{std::cos(t), std::sin(t)} * l.value, 0, w);
             } else if (kw == "Undo") {
                 v.pop_back();
                 v.back().bulge = 0;
