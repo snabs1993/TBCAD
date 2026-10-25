@@ -701,6 +701,77 @@ public:
     }
 };
 
+// COPYHIST: the whole command history onto the clipboard.
+class CopyHistCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "COPYHIST"; }
+    std::string_view description() const override {
+        return "Copy the command line history to the clipboard";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        const std::string text = ctx.host().setting("history.text").value_or("");
+        if (text.empty()) {
+            ctx.message("The command history is empty.");
+            co_return;
+        }
+        ctx.host().setSetting("clipboard.text", text);
+        ctx.message("The command history was copied to the clipboard.");
+    }
+};
+
+// LOGFILEON / LOGFILEOFF: write every command-line line to a session log file.
+class LogFileCommand final : public cmd::Command {
+public:
+    LogFileCommand(const char* name, bool on) : name_(name), on_(on) {}
+    std::string_view name() const override { return name_; }
+    std::string_view description() const override {
+        return on_ ? "Start writing the command line to a log file"
+                   : "Stop writing the command line to a log file";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        const bool now = ctx.host().setting("log.file").value_or("0") == "1";
+        if (on_ == now) {
+            ctx.message(on_ ? "Logging is already on: " +
+                                  ctx.host().setting("log.path").value_or("")
+                            : "Logging is already off.");
+            co_return;
+        }
+        ctx.host().setSetting("log.file", on_ ? "1" : "0");
+        if (on_ && ctx.host().setting("log.file").value_or("0") != "1")
+            ctx.message("Could not create the log file in " +
+                        ctx.host().setting("log.path").value_or(""));
+        else
+            ctx.message(on_ ? "Logging to " + ctx.host().setting("log.path").value_or("")
+                            : "Logging stopped.");
+    }
+
+private:
+    const char* name_;
+    bool on_;
+};
+
+// LOGFILEPATH: show the log folder, or move it (takes effect at the next LOGFILEON).
+class LogFilePathCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "LOGFILEPATH"; }
+    std::string_view description() const override { return "Show or set the log file folder"; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        const std::string cur = ctx.host().setting("log.path").value_or("");
+        cmd::StringOptions so;
+        so.defaultValue = cur;
+        auto r = co_await ctx.getString("Log file folder <" + cur + ">", so);
+        if (!r.ok())
+            co_return;
+        const std::string t = cmd::trim(r.text);
+        if (t.empty() || t == cur) {
+            ctx.message(cur);
+            co_return;
+        }
+        ctx.host().setSetting("log.folder", t);
+        ctx.message("Log files will be written to " + t + " from the next LOGFILEON.");
+    }
+};
+
 // PICKADD / PICKFIRST: a 0 / 1 / 2 system variable kept in the host settings.
 class PickVarCommand final : public cmd::Command {
 public:
@@ -1111,6 +1182,10 @@ void registerAppCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<ZoomCommand>());
     (void)registry.add(std::make_unique<FilediaCommand>());
     (void)registry.add(std::make_unique<DwgReportCommand>());
+    (void)registry.add(std::make_unique<CopyHistCommand>());
+    (void)registry.add(std::make_unique<LogFileCommand>("LOGFILEON", true));
+    (void)registry.add(std::make_unique<LogFileCommand>("LOGFILEOFF", false));
+    (void)registry.add(std::make_unique<LogFilePathCommand>());
     (void)registry.add(std::make_unique<ExportCommand>());
     (void)registry.add(std::make_unique<UiRequestCommand>(
         "SAVEALL", std::vector<std::string>{}, "action:file.saveAll",

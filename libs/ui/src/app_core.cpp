@@ -1901,10 +1901,48 @@ std::string AppCore::redoLabel() const {
 // ---- command line ------------------------------------------------------------------------------
 
 void AppCore::print(std::string_view message) {
+    if (logFile_.is_open()) {
+        logFile_ << message << '\n';
+        logFile_.flush();
+    }
     history_.emplace_back(message);
     if (history_.size() > kMaxHistory)
         history_.erase(history_.begin(),
                        history_.begin() + static_cast<std::ptrdiff_t>(kMaxHistory / 4));
+}
+
+std::filesystem::path AppCore::logFolder() const {
+    return logDir_.empty() ? paths_.dataDir / "logs" : logDir_;
+}
+
+bool AppCore::startLogFile() {
+    if (logFile_.is_open())
+        return true;
+    std::error_code ec;
+    std::filesystem::create_directories(logFolder(), ec);
+    char stamp[32] = "session";
+    const std::time_t now = std::time(nullptr);
+    std::tm tmv{};
+#ifdef _WIN32
+    localtime_s(&tmv, &now);
+#else
+    localtime_r(&now, &tmv);
+#endif
+    std::strftime(stamp, sizeof stamp, "%Y%m%d-%H%M%S", &tmv);
+    logPath_ = logFolder() / (std::string("tbcad-") + stamp + ".log");
+    logFile_.open(logPath_, std::ios::app | std::ios::binary);
+    if (!logFile_.is_open())
+        return false;
+    // The lines already on screen go first, so the file reads like the command window.
+    for (const auto& l : history_)
+        logFile_ << l << '\n';
+    logFile_.flush();
+    return true;
+}
+
+void AppCore::stopLogFile() {
+    if (logFile_.is_open())
+        logFile_.close();
 }
 
 std::string AppCore::promptText() const {
@@ -3876,6 +3914,16 @@ std::optional<std::string> AppCore::setting(std::string_view key) const {
         return documentFile();
     if (key == "open.report")  // the reader notices of the active drawing, for DWGREPORT
         return session_ ? std::optional<std::string>(session_->openReport) : std::nullopt;
+    if (key == "history.text") {
+        std::string text;
+        for (const auto& l : history_)
+            text += l + '\n';
+        return text;
+    }
+    if (key == "log.file")
+        return std::string(logFile_.is_open() ? "1" : "0");
+    if (key == "log.path")  // the file being written, else the folder a new one would go to
+        return platform::pathToUtf8(logFile_.is_open() ? logPath_ : logFolder());
     if (key == "open.report.format")
         return session_ ? std::optional<std::string>(session_->openReportFormat) : std::nullopt;
     // The layout commands work on the sheet on screen, or on the one whose viewport is being
@@ -3926,6 +3974,17 @@ void AppCore::setSetting(std::string_view key, std::string value) {
     }
     if (key == "clipboard.text")
         clipboardOut_ = value;
+    if (key == "log.file") {  // LOGFILEON / LOGFILEOFF
+        if (isTrue(value))
+            startLogFile();
+        else
+            stopLogFile();
+        return;
+    }
+    if (key == "log.folder") {  // LOGFILEPATH <folder>
+        logDir_ = platform::pathFromUtf8(value);
+        return;
+    }
     if (key == "layout.show") {  // LAYOUT New: switch once the command is over
         pendingLayout_ = std::move(value);
         return;

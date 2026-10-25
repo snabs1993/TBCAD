@@ -1258,6 +1258,27 @@ TEST_CASE("DWGREPORT copies the reader notices of a foreign file to the clipboar
     CHECK(text->find("DWG R2018") != std::string::npos);
 }
 
+TEST_CASE("COPYHIST copies the command history and LOGFILEON writes the command line to a file") {
+    Fixture f("logfile");
+    f.core->print("hello history");
+    f.core->submitText("COPYHIST");
+    auto text = f.core->takeClipboardText();
+    REQUIRE(text.has_value());
+    CHECK(text->find("hello history") != std::string::npos);
+
+    f.core->submitText("LOGFILEON");
+    REQUIRE(f.core->logFileOn());
+    f.core->print("line after logging");
+    const fs::path file = f.core->logFilePath();
+    f.core->submitText("LOGFILEOFF");
+    CHECK_FALSE(f.core->logFileOn());
+    std::ifstream in(file, std::ios::binary);
+    std::stringstream buf;
+    buf << in.rdbuf();
+    CHECK(buf.str().find("hello history") != std::string::npos);
+    CHECK(buf.str().find("line after logging") != std::string::npos);
+}
+
 TEST_CASE("a foreign file opens on a worker thread and finishes when polled") {
     Fixture f("foreignasync");
     fs::path src = f.dir / "slow.dwg";

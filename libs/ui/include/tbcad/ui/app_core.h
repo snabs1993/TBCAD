@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <map>
 #include <memory>
 #include <optional>
@@ -259,6 +260,12 @@ public:
     // Text a command put in the `clipboard.text` setting for the system clipboard (COPYRESULT).
     // Returns it once.
     std::optional<std::string> takeClipboardText();
+    // LOGFILEON / LOGFILEOFF: copy every command-line line to a session log file.
+    bool startLogFile();
+    void stopLogFile();
+    bool logFileOn() const { return logFile_.is_open(); }
+    const std::filesystem::path& logFilePath() const { return logPath_; }
+    std::filesystem::path logFolder() const;
     // The pending prompt, for option chips and the cursor HUD. Null when idle.
     const cmd::PromptInfo* promptInfo() const { return prompt_ ? &*prompt_ : nullptr; }
     // Command names and aliases beginning with `prefix`, for completion.
@@ -619,6 +626,9 @@ private:
         std::vector<std::vector<Vec2>> loops{};
     } hatchOutlines_{};
     std::vector<std::string> history_{};
+    std::ofstream logFile_{};  // LOGFILEON: every printed line is appended here
+    std::filesystem::path logPath_{};
+    std::filesystem::path logDir_{};  // LOGFILEPATH; empty = <data>/logs
     std::optional<cmd::PromptInfo> prompt_{};
     cmd::FilterFeedback feedback_{};
     DisplayList preview_{};
