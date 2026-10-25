@@ -8,6 +8,7 @@ tbcad_add_library(underlay
     src/pdf_parse.cpp
     src/pdf_import.cpp
     src/image.cpp
+    src/tiff.cpp
   DEPENDS tbcad::core)
 target_link_libraries(tbcad_underlay PRIVATE miniz stb_image)
 
@@ -16,6 +17,7 @@ tbcad_add_tests(underlay
     tests/main.cpp
     tests/pdf_tests.cpp
     tests/image_tests.cpp
+    tests/tiff_tests.cpp
   DEPENDS miniz stb_image)
 
 # Optional libFuzzer build (clang only): cmake -DTBCAD_FORMATS_FUZZ=ON

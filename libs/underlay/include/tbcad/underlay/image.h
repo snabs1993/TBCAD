@@ -1,7 +1,7 @@
-// Raster underlays: PNG, JPEG and BMP pictures drawn behind the drawing. An image is attached as
-// an external reference (libs/xref) whose content is a frame of the picture in pixel units; the
-// pixels themselves are not stored in the drawing, only the path. How it is shown (fade, clip) is
-// kept per block in the header table "tbcad.underlays". See docs/underlay.md.
+// Raster underlays: PNG, JPEG, BMP, GIF, TGA and TIFF pictures drawn behind the drawing. An image
+// is attached as an external reference (libs/xref) whose content is a frame of the picture in pixel
+// units; the pixels themselves are not stored in the drawing, only the path. How it is shown (fade,
+// clip) is kept per block in the header table "tbcad.underlays". See docs/underlay.md.
 #pragma once
 
 #include <array>
@@ -25,7 +25,8 @@ inline constexpr const char* kImageLayerName = "IMAGE";
 // Header table key of the display parameters.
 inline constexpr const char* kImageParamsKey = "tbcad.underlays";
 
-bool isImagePath(std::string_view stored);  // by extension: .png .jpg .jpeg .bmp
+bool isImagePath(
+    std::string_view stored);  // by extension: .png .jpg .jpeg .bmp .tif .tiff .gif .tga
 
 struct ImageInfo {
     int width = 0, height = 0;
