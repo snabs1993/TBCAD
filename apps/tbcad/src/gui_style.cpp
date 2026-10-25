@@ -54,6 +54,17 @@ std::string findAsset(const std::string& relative) {
     return {};
 }
 
+std::string findSample(const std::string& name) {
+    std::error_code ec;
+    const fs::path source = fs::path(TBCAD_SOURCE_ASSETS_DIR).parent_path() / "samples";
+    for (const fs::path& dir : {executableDir() / "samples", fs::path("samples"), source}) {
+        fs::path p = dir / name;
+        if (fs::exists(p, ec))
+            return p.string();
+    }
+    return {};
+}
+
 std::string findBesideExecutable(const std::string& name) {
     std::error_code ec;
     for (const fs::path& dir : {executableDir(), fs::current_path(ec)}) {

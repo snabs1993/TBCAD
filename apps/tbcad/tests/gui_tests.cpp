@@ -2924,3 +2924,32 @@ TEST_CASE("OpenGL problem message names the GPU and the fix") {
     CHECK(b.find("unknown") != std::string::npos);
     CHECK(b.find("Update the graphics driver") != std::string::npos);
 }
+
+TEST_CASE("first run: the start page opens the sample or a new drawing in one click, no dialog") {
+    {
+        Harness h(1600, 900);  // an empty config folder, as on a first run
+        bool welcomed = false;
+        for (const auto& line : h.core().history())
+            welcomed = welcomed || line.find("Welcome to TBCAD") != std::string::npos;
+        CHECK(welcomed);
+        CHECK(h.core().isPristine());
+        REQUIRE(h.has("New drawing", "##start"));
+        REQUIRE(h.has("Open sample drawing", "##start"));
+        REQUIRE(h.click("Open sample drawing", "##start"));
+        h.settle();
+        CHECK_FALSE(h.has("New drawing", "##start"));
+        CHECK_FALSE(h.core().isPristine());
+        CHECK(h.core().documentCount() == 1);
+        CHECK(h.core().hasFile());
+        CHECK_FALSE(h.windowOpen("Save"));
+        CHECK_FALSE(h.windowOpen("Open"));
+        CHECK(h.imguiErrors().empty());
+    }
+    Harness h(1600, 900);
+    REQUIRE(h.click("New drawing", "##start"));
+    h.settle();
+    CHECK_FALSE(h.has("New drawing", "##start"));
+    CHECK(h.core().documentCount() >= 1);
+    CHECK_FALSE(h.windowOpen("Open"));
+    CHECK_FALSE(h.windowOpen("Save"));
+}
