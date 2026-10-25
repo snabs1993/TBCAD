@@ -518,7 +518,9 @@ public:
 class PublishCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "PUBLISH"; }
-    std::vector<std::string> defaultAliases() const override { return {"SHEETLIST"}; }
+    std::vector<std::string> defaultAliases() const override {
+        return {"SHEETLIST", "SHEETSET", "SSM"};
+    }
     std::string_view description() const override {
         return "Make a list of sheets from several drawings and publish them to one PDF";
     }

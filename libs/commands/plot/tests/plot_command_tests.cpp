@@ -62,6 +62,8 @@ TEST_CASE("commands are registered with their aliases") {
     CHECK(f.reg.find("-PLOT") == f.reg.find("PLOT"));
     CHECK(f.reg.find("-PUBLISH") == f.reg.find("PLOTSET"));
     CHECK(f.reg.find("PUBLISH") != f.reg.find("PLOTSET"));
+    CHECK(f.reg.find("SHEETSET") == f.reg.find("PUBLISH"));
+    CHECK(f.reg.find("SSM") == f.reg.find("PUBLISH"));
     CHECK(f.reg.find("EXPORTPDF") != nullptr);
     CHECK(f.reg.find("EXPORTSVG") != nullptr);
 }
