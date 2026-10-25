@@ -118,3 +118,33 @@ TEST_CASE("saving a drawing asks the window for its picture for the start page")
     f.core->newDocument();
     CHECK(f.core->pendingThumbnail().empty());
 }
+
+TEST_CASE("a .dxf in the template folder is a template, SAVEAS .tbt makes a template copy") {
+    Fixture f("tmpl-dxf");
+    f.core->submitText("TESTLINE");
+    f.core->submitText("0,0");
+    f.core->submitText("10,0");
+    fs::create_directories(f.core->templateFolder());
+    REQUIRE(f.core->saveAs(f.core->templateFolder() / "Sheet.dxf").ok());
+
+    const auto names = f.core->templateNames();
+    CHECK(std::find(names.begin(), names.end(), "Sheet.dxf") != names.end());
+    const std::size_t before = f.core->documentCount();
+    CHECK(f.core->newFromTemplate("Sheet.dxf").empty());
+    CHECK(f.core->documentCount() == before + 1);
+    CHECK_FALSE(f.core->hasFile());  // the template file is never overwritten by SAVE
+    CHECK(f.core->document().modelSpaceCount() == 1);
+    CHECK_FALSE(f.core->newFromTemplate("Missing.dxf").empty());
+
+    // As the default, by full path.
+    f.core->setSetting("template.default", "Sheet.dxf");
+    f.core->newDocument();
+    CHECK(f.core->document().modelSpaceCount() == 1);
+
+    // Save As with the .tbt extension writes a template and leaves this drawing alone.
+    f.core->newDocument();
+    const fs::path tbt = f.dir / "Office.tbt";
+    CHECK(f.core->saveAs(tbt).ok());
+    CHECK(fs::exists(tbt));
+    CHECK_FALSE(f.core->hasFile());
+}

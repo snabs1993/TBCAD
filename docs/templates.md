@@ -28,3 +28,8 @@ drawing in inches, with acad.lin's inch linetype patterns and AutoCAD's imperial
 Opening a `.tbt` file (File > Open) gives an untitled copy; the template file is never changed by it.
 If the chosen default template is missing or unreadable, TBCAD says so in the history and uses the
 built-in drawing.
+
+## DXF and DWT templates, Save As template
+
+- A `.dxf` or `.dwt` file placed in the template folder is listed by NEWFROMTEMPLATE and TEMPLATEDEFAULT under its file name (`Sheet.dxf`). A full path to a `.dxf`, `.dwt` or `.tbt` also works. The new drawing is untitled; the template file is never overwritten.
+- Save As with the "Drawing Template" filter (`.tbt`) writes a template copy; the open drawing keeps its own name.
