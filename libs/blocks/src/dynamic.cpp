@@ -165,6 +165,23 @@ std::vector<Entity> evaluateDynamic(const Document& doc, const BlockDef& def,
                              : dynDefault(p);
         const Vec2 dir = unitOf(p.base, p.end);
         const double def0 = dynDefault(p);
+        if (a.kind == DynAction::Kind::Array) {
+            const double spacing = a.frameMin.x;
+            if (p.kind != DynParam::Kind::Linear || !(spacing > 0))
+                continue;
+            const int count = std::clamp(static_cast<int>(std::floor(v / spacing + 1e-9)), 1, 1000);
+            const std::size_t original = out.size();
+            for (int i = 1; i < count; ++i)
+                for (EntityId id : a.objects) {
+                    auto it = slot.find(id);
+                    if (it == slot.end() || it->second >= original)
+                        continue;
+                    Entity copy = out[it->second];
+                    applyTransform(copy, Transform2::translate(dir * (spacing * i)));
+                    out.push_back(std::move(copy));
+                }
+            continue;
+        }
         for (EntityId id : a.objects) {
             auto it = slot.find(id);
             if (it == slot.end())
@@ -186,6 +203,8 @@ std::vector<Entity> evaluateDynamic(const Document& doc, const BlockDef& def,
                 case DynAction::Kind::Rotate:
                     if (p.kind == DynParam::Kind::Rotation)
                         applyTransform(e, Transform2::rotate(v, p.base));
+                    break;
+                case DynAction::Kind::Array:
                     break;
                 case DynAction::Kind::Flip:
                     if (p.kind == DynParam::Kind::Flip && v >= 0.5 && !(p.base == p.end))

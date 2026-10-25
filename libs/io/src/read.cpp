@@ -963,7 +963,7 @@ private:
             for (std::size_t k = 0; k < na; ++k) {
                 DynAction a;
                 std::uint8_t kind = r.u8();
-                if (kind > static_cast<std::uint8_t>(DynAction::Kind::Flip))
+                if (kind > static_cast<std::uint8_t>(DynAction::Kind::Array))
                     bad("unknown dynamic action kind");
                 a.kind = static_cast<DynAction::Kind>(kind);
                 a.param = static_cast<int>(small(r.varint(), 10000, "parameter"));

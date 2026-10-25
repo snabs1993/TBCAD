@@ -346,13 +346,14 @@ public:
         switch (param.kind) {
             case DynParam::Kind::Linear: {
                 auto k = co_await ctx.getKeyword(
-                    "Action [Stretch/Move/Scale] <Stretch>",
-                    cmd::KeywordOptions{.keywords = {"Stretch", "Move", "Scale"},
+                    "Action [Stretch/Move/Scale/Array] <Stretch>",
+                    cmd::KeywordOptions{.keywords = {"Stretch", "Move", "Scale", "Array"},
                                         .defaultKeyword = "Stretch"});
                 if (!k.ok())
                     co_return;
                 a.kind = k.keyword == "Move"    ? DynAction::Kind::Move
                          : k.keyword == "Scale" ? DynAction::Kind::Scale
+                         : k.keyword == "Array" ? DynAction::Kind::Array
                                                 : DynAction::Kind::Stretch;
                 break;
             }
@@ -380,6 +381,17 @@ public:
             const Vec2 m1 = t.map(f1.point), m2 = t.map(f2.point);
             a.frameMin = {std::min(m1.x, m2.x), std::min(m1.y, m2.y)};
             a.frameMax = {std::max(m1.x, m2.x), std::max(m1.y, m2.y)};
+        }
+        if (a.kind == DynAction::Kind::Array) {
+            auto d = co_await ctx.getReal("Specify the column distance (copy spacing)",
+                                          cmd::RealOptions{});
+            if (!d.ok())
+                co_return;
+            if (!(d.value > 0)) {
+                ctx.message("The column distance must be greater than zero");
+                co_return;
+            }
+            a.frameMin = {d.value, 0};
         }
         if (t.toBlock) {
             co_await pickInEditor(ctx, "Select the objects the action changes", a.objects);
