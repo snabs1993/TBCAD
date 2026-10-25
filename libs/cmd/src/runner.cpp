@@ -419,6 +419,18 @@ SubmitResult CommandRunner::submitInput(const Input& input) {
         }
         if (name.empty())
             return SubmitResult::Ignored;
+        // "(+ 1 2)" typed with no command running is a LISP expression, as in AutoCAD.
+        if (name.front() == '(' && registry_.find("LISP")) {
+            auto lisp = start("LISP");
+            if (!lisp) {
+                host_.print(lisp.error().message);
+                return SubmitResult::UnknownCommand;
+            }
+            if (stack_.empty())
+                return SubmitResult::CommandFinished;
+            (void)answerTop(Input::typed(name));
+            return stack_.empty() ? SubmitResult::CommandFinished : SubmitResult::CommandStarted;
+        }
         auto r = start(name);
         if (!r) {
             host_.print(r.error().message);
