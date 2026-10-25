@@ -140,9 +140,9 @@ private:
     std::unordered_map<LayerId, std::uint8_t> layerTransparency_{};
     bool showTransparency_ = true;
     double lwDefault_ = 0.25;  // LWDEFAULT, from the drawing header
-    bool fillMode_ = true;    // FILL, from the drawing header
-    int attDisplay_ = 0;      // ATTDISP, from the drawing header
-    bool quickText_ = false;  // QTEXT, from the drawing header
+    bool fillMode_ = true;     // FILL, from the drawing header
+    int attDisplay_ = 0;       // ATTDISP, from the drawing header
+    bool quickText_ = false;   // QTEXT, from the drawing header
     // Reads FILL and ATTDISP from the header; true when either changed.
     bool readDisplayModes();
     // Texts holding fields (%<...>%): they show other objects' values, so they are redrawn after
