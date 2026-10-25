@@ -172,11 +172,12 @@ std::vector<Entity> evaluateDynamic(const Document& doc, const BlockDef& def,
             const int count = std::clamp(static_cast<int>(std::floor(v / spacing + 1e-9)), 1, 1000);
             const std::size_t original = out.size();
             for (int i = 1; i < count; ++i)
-                for (EntityId id : a.objects) {
-                    auto it = slot.find(id);
-                    if (it == slot.end() || it->second >= original)
+                for (std::size_t k = 0; k < original; ++k) {
+                    // Copies made by an earlier array action count too (a two-way array).
+                    if (std::find(a.objects.begin(), a.objects.end(), out[k].common.id) ==
+                        a.objects.end())
                         continue;
-                    Entity copy = out[it->second];
+                    Entity copy = out[k];
                     applyTransform(copy, Transform2::translate(dir * (spacing * i)));
                     out.push_back(std::move(copy));
                 }
