@@ -2715,6 +2715,12 @@ TEST_CASE("Customize page: Quick Access buttons and own right-click menu command
 
     // Own commands at the end of the drawing's right-click menu.
     h.core().settings().setStrings("ui.contextMenu", {"ZOOM E"});
+    // An empty drawing shows the start page over the view; a drawn line takes it away.
+    h.core().submitText("LINE");
+    h.core().submitText("100,100");
+    h.core().submitText("400,100");
+    h.core().pressEscape();
+    h.frame(3);
     const ImVec2 at = screenOf(h, h.core().camera().center);
     h.click(at.x, at.y, 1);
     h.frame(3);
