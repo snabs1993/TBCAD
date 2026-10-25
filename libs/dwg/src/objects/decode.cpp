@@ -701,6 +701,14 @@ private:
         if (name.empty())
             name = "type " + std::to_string(type);
         ++out_.skippedTypes[name];
+        // Entities (proxy, OLE, custom classes) are drawn objects: the user is told they are
+        // missing.
+        bool isEntity = type == 498 || type == 74;  // ACAD_PROXY_ENTITY, OLE2FRAME
+        for (const ClassInfo& c : classes_)
+            if (c.number == static_cast<int>(type))
+                isEntity = isEntity || c.entity;
+        if (isEntity)
+            ++out_.skippedEntities[type == 498 ? std::string("ACAD_PROXY_ENTITY") : name];
     }
 
     // The exact bit where the main (non-string, non-handle) data of the current object must end

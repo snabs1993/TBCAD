@@ -159,6 +159,7 @@ struct Drawing {
     std::vector<EntityRec> entities{};  // in handle order
     std::size_t skipped = 0;            // objects of types not decoded
     std::map<std::string, std::size_t> skippedTypes{};
+    std::map<std::string, std::size_t> skippedEntities{};  // drawn objects that are not shown
     // Per object type: how often the main data ended exactly where the object says (0) and how
     // often not (1). R2007 and later only; a diagnostic for layout mistakes.
     std::map<std::uint32_t, std::array<std::size_t, 2>> layoutCheck{};
