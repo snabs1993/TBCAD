@@ -119,6 +119,8 @@ struct AppCore::Session {
     fs::path file{};
     std::uint64_t savedRevision = 0;
     std::string readOnlyFormat{};  // "DWG" while the drawing came from a read-only format
+    std::string openReportFormat{};
+    std::string openReport{};  // DWGREPORT text of the reader's notices (foreign files)
     // The drawing file is marked as open here; the stamp is its modification time when this
     // window last read or wrote it, to notice that another program changed it meanwhile.
     std::unique_ptr<platform::FileLock> lock{};
@@ -1534,6 +1536,13 @@ Result<void> AppCore::finishForeignOpen(const fs::path& path, const std::string&
         for (char& c : fmt)
             c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
         session_->readOnlyFormat = fmt;
+    }
+    if (!r.report.empty()) {
+        std::string text;
+        for (const auto& line : r.report)
+            text += line + "\n";
+        session_->openReport = std::move(text);
+        session_->openReportFormat = r.format;
     }
     for (const auto& m : r.messages)
         print(m);
@@ -3855,6 +3864,10 @@ double AppCore::ucsAngle() const {
 std::optional<std::string> AppCore::setting(std::string_view key) const {
     if (key == "document.file")
         return documentFile();
+    if (key == "open.report")  // the reader notices of the active drawing, for DWGREPORT
+        return session_ ? std::optional<std::string>(session_->openReport) : std::nullopt;
+    if (key == "open.report.format")
+        return session_ ? std::optional<std::string>(session_->openReportFormat) : std::nullopt;
     // The layout commands work on the sheet on screen, or on the one whose viewport is being
     // edited from model space.
     if (key == "layout.current") {
