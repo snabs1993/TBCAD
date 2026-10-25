@@ -17,6 +17,7 @@ so they are saved in the `.tbcad` file and changes are undoable.
 | `VPLEVEL` | Shows one level only in a viewport (empty name = every visible level again); plots follow it |
 | `TITLEBLOCK` | Inserts the `TITLEBLOCK` block (frame, labels and PROJECT, DRAWN BY, DATE, SCALE, SHEET attributes) on the sheet; edit the values with the attribute commands |
 | `MVSETUP` | One-step sheet setup: layout name, paper, orientation, scale (or Fit) and optional title block; makes the layout with one viewport inside the margins |
+| `EXPORTLAYOUT` | Writes the active layout as a new model-space drawing in millimetres (.tbcad, or .dxf by file name): every viewport's visible model objects scaled and placed as on the sheet (objects partly in a viewport are kept whole, not cut), then the sheet's own objects |
 
 Every viewport command asks "Click inside a viewport, or type its number".
 

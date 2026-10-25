@@ -10,6 +10,7 @@
 #include "tbcad/clipboard/clipboard.h"
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/dxf/reader.h"
+#include "tbcad/dxf/writer.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/layout/layout.h"
@@ -1163,6 +1164,138 @@ private:
     bool wizard_;
 };
 
+// The layout as a new drawing: see ExportLayoutCommand.
+Result<std::unique_ptr<Document>> layoutDrawing(const Document& doc, const std::string& name) {
+    const auto found = layout::findLayout(doc, name);
+    if (!found)
+        return Error{ErrorCode::NotFound, "No layout named \"" + name + "\""};
+    const layout::Layout& l = *found;
+    auto out = std::make_unique<Document>();
+    Transaction tx = out->begin("EXPORTLAYOUT");
+    const std::vector<EntityId> model = doc.modelSpace();
+    for (const layout::Viewport& vp : l.viewports) {
+        if (!vp.on || vp.paper.empty() || !(vp.scaleN > 0))
+            continue;
+        // The model window the viewport shows (the same one the plotter uses).
+        const Vec2 half{vp.paper.width() * vp.scaleN / 2, vp.paper.height() * vp.scaleN / 2};
+        BBox2 window;
+        window.expand(vp.center - half);
+        window.expand(vp.center + half);
+        const BBox2 reach = window.inflated(vp.scaleN);
+        std::vector<EntityId> ids;
+        for (EntityId id : model) {
+            const Entity* e = doc.find(id);
+            if (!e || !e->common.visible || !doc.effective(e->common).visible())
+                continue;
+            if (layout::frozenInViewport(doc, vp, e->common.layer) ||
+                (vp.level.value != 0 && e->common.level != vp.level))
+                continue;
+            if (e->common.annotative && !e->common.annoScales.empty() &&
+                std::find(e->common.annoScales.begin(), e->common.annoScales.end(), vp.scaleN) ==
+                    e->common.annoScales.end())
+                continue;  // made for other scales
+            const BBox2 box = geom::bounds(*e, doc);
+            if (!box.empty() && !box.intersects(reach))
+                continue;
+            ids.push_back(id);
+        }
+        clipboard::Clip clip = clipboard::capture(doc, ids, Vec2{0, 0});
+        if (clip.empty())
+            continue;
+        const Vec2 mid{(vp.paper.min.x + vp.paper.max.x) / 2,
+                       (vp.paper.min.y + vp.paper.max.y) / 2};
+        const Transform2 t = Transform2::translate(mid) *
+                             Transform2::scale(1 / vp.scaleN, 1 / vp.scaleN) *
+                             Transform2::translate({-vp.center.x, -vp.center.y});
+        std::vector<Entity> moved;
+        std::vector<std::string> styles;
+        for (std::size_t i = 0; i < clip.entities.size(); ++i)
+            if (auto m = geom::transformed(clip.entities[i], t)) {
+                moved.push_back(std::move(m.value()));
+                styles.push_back(i < clip.plotStyles.size() ? clip.plotStyles[i] : std::string());
+            }
+        clip.entities = std::move(moved);
+        clip.plotStyles = std::move(styles);
+        if (clip.empty())
+            continue;
+        clip.base = {0, 0};
+        if (auto r = clipboard::paste(tx, clip, clipboard::PasteOptions{}); !r)
+            return r.error();
+    }
+    clipboard::Clip sheet = clipboard::captureBlock(doc, l.content);
+    if (!sheet.empty()) {
+        sheet.base = {0, 0};
+        if (auto r = clipboard::paste(tx, sheet, clipboard::PasteOptions{}); !r)
+            return r.error();
+    }
+    tx.commit();
+    return out;
+}
+
+// EXPORTLAYOUT: the active layout as a new model-space drawing at paper size (millimetres). Each
+// viewport's visible model objects are copied through the viewport's scale and position; objects
+// that only partly reach a viewport are kept whole. The sheet's own objects come last, on top.
+// Written to .tbcad, or DXF when the name ends in .dxf.
+class ExportLayoutCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "EXPORTLAYOUT"; }
+    std::string_view description() const override {
+        return "Write the active layout as a new model-space drawing";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        std::string layoutName;
+        if (!requireLayout(ctx, layoutName))
+            co_return;
+        const std::string def = layoutName + ".tbcad";
+        auto f = co_await ctx.getString("Enter the file name <" + def + ">",
+                                        cmd::StringOptions{.defaultValue = def});
+        if (!f.ok())
+            co_return;
+        std::string file = cmd::trim(f.text);
+        std::filesystem::path path(std::u8string(file.begin(), file.end()));
+        if (path.extension().empty()) {
+            file += ".tbcad";
+            path = std::filesystem::path(std::u8string(file.begin(), file.end()));
+        }
+        const bool asDxf = lower(path.extension().string()) == ".dxf";
+
+        auto out = layoutDrawing(ctx.doc(), layoutName);
+        if (!out) {
+            ctx.message(out.error().message);
+            co_return;
+        }
+        if (out.value()->modelSpaceCount() == 0) {
+            ctx.message("Layout \"" + layoutName + "\" has nothing to write.");
+            co_return;
+        }
+        if (asDxf) {
+            dxf::Report report;
+            auto res = dxf::exportDxf(*out.value(), dxf::ExportOptions{}, report);
+            if (!res) {
+                ctx.message("Cannot write " + file + ": " + res.error().message);
+                co_return;
+            }
+            const auto& bytes = res.value().bytes;
+            auto saved = io::saveTbcadBytes(
+                std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(bytes.data()),
+                                              bytes.size()),
+                path, io::WriteOptions{.keepBackup = false});
+            if (!saved) {
+                ctx.message("Cannot write " + file + ": " + saved.error().message);
+                co_return;
+            }
+        } else if (auto r =
+                       io::writeTbcad(*out.value(), path, io::WriteOptions{.keepBackup = false});
+                   !r) {
+            ctx.message("Cannot write " + file + ": " + r.error().message);
+            co_return;
+        }
+        ctx.message("Layout \"" + layoutName + "\" written to " + file + " (" +
+                    std::to_string(out.value()->modelSpaceCount()) + " objects).");
+    }
+};
+
 }  // namespace
 
 std::string currentLayout(const cmd::IHost& host, const Document& doc) {
@@ -1189,6 +1322,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<TitleBlockCommand>());
     (void)registry.add(std::make_unique<MvsetupCommand>());
     (void)registry.add(std::make_unique<MvsetupCommand>(true));
+    (void)registry.add(std::make_unique<ExportLayoutCommand>());
 }
 
 }  // namespace tbcad::layoutcmd
