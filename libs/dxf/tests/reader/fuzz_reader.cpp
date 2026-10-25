@@ -41,6 +41,10 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
         (void)r.value().summary.toJson(report);
         // Whatever was read can be measured and drawn.
         const tbcad::Document& doc = *r.value().document;
+        // As the app does: one block cache for the whole drawing (without it every insert of a
+        // block that holds itself many times over is built again, which is minutes of work).
+        tbcad::blocks::BlockDisplayCache blockCache;
+        tbcad::blocks::BlockDisplayScope blockScope(blockCache);
         doc.forEachEntity([&](const tbcad::Entity& e) {
             (void)tbcad::geom::bounds(e, doc);
             tbcad::DisplayList list;
