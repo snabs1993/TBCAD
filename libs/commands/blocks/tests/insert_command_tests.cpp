@@ -238,3 +238,23 @@ TEST_CASE("INSERT in a window opens the Blocks palette when the drawing has bloc
     bare.run("INSERT", {});
     CHECK(bare.opened.empty());
 }
+
+TEST_CASE("INSERT Basepoint puts a chosen point of the block on the insertion point") {
+    Fixture f;
+    makeDoorBlock(f);
+    f.host->run("INSERT", {"Door", "Basepoint", "10,0", "R", "90", "100,50"});
+    const auto* ins = entityAs<InsertData>(*f.doc.find(f.modelSpace()[0]));
+    REQUIRE(ins);
+    // the block's (10,0) lands on 100,50, so its origin sits 10 below (rotated 90 degrees)
+    CHECK(ins->position.x == doctest::Approx(100));
+    CHECK(ins->position.y == doctest::Approx(40));
+}
+
+TEST_CASE("INSERT PScale works as Scale") {
+    Fixture f;
+    makeDoorBlock(f);
+    f.host->run("INSERT", {"Door", "PScale", "2", "0,0"});
+    const auto* ins = entityAs<InsertData>(*f.doc.find(f.modelSpace()[0]));
+    REQUIRE(ins);
+    CHECK(ins->scale == Vec2{2, 2});
+}

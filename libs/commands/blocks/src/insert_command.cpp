@@ -149,19 +149,30 @@ public:
         // dropping furniture symbols one after another.
         bool multiple = false;
         bool explodeAfter = false;  // place the parts, not the block
+        // Basepoint: a point of the block (in its own coordinates) that lands on the picked point
+        // instead of the block's own base point.
+        Vec2 baseShift{};
+        auto origin = [&baseShift](const InsertData& d, Vec2 pick) {
+            const double c = std::cos(d.rotation), sn = std::sin(d.rotation);
+            const Vec2 v{baseShift.x * d.scale.x, baseShift.y * d.scale.y};
+            return pick - Vec2{v.x * c - v.y * sn, v.x * sn + v.y * c};
+        };
+        Vec2 pickPoint{};
         for (std::size_t placed = 0;; ++placed) {
             data.attribs = blocks::defaultAttribs(doc, block);
             for (;;) {
                 cmd::PointOptions po;
-                po.keywords = {"Scale", "X", "Y", "Rotate"};
+                po.keywords = {
+                    "Basepoint", "Scale", "X",  "Y",      "Rotate",
+                    "PScale",    "PX",    "PY", "PRotate"};  // P...: presets, applied the same way
                 if (!array_) {
                     po.keywords.push_back("Multiple");
                     po.keywords.push_back("Explode");
                 }
                 po.allowNone = placed > 0;  // Enter ends a Multiple series
-                po.preview = [&doc, &ctx, data](Vec2 cursor, DisplayList& out) {
+                po.preview = [&doc, &ctx, data, origin](Vec2 cursor, DisplayList& out) {
                     InsertData d = data;
-                    d.position = cursor;
+                    d.position = origin(d, cursor);
                     Entity e;
                     e.common.layer = doc.header().currentLayer;
                     e.data = Indirect<InsertData>(d);
@@ -177,10 +188,21 @@ public:
                 if (p.status == cmd::Status::Cancel || p.status == cmd::Status::None)
                     co_return;
                 if (p.ok()) {
-                    data.position = p.point;
+                    pickPoint = p.point;
+                    data.position = origin(data, pickPoint);
                     break;
                 }
-                if (p.keyword == "Scale") {
+                std::string kw = p.keyword;
+                if (kw.size() > 1 && kw[0] == 'P')
+                    kw.erase(0, 1);  // PScale / PX / PY / PRotate behave as their plain forms
+                if (kw == "Basepoint") {
+                    auto b = co_await ctx.getPoint("Specify base point");
+                    if (!b.ok())
+                        co_return;
+                    baseShift = b.point;
+                    continue;
+                }
+                if (kw == "Scale") {
                     auto s = co_await ctx.getReal("Specify scale factor <1>",
                                                   cmd::RealOptions{.defaultValue = 1});
                     if (!s.ok())
@@ -190,8 +212,8 @@ public:
                         continue;
                     }
                     data.scale = {s.value, s.value};
-                } else if (p.keyword == "X" || p.keyword == "Y") {
-                    auto s = co_await ctx.getReal("Specify " + p.keyword + " scale factor <1>",
+                } else if (kw == "X" || kw == "Y") {
+                    auto s = co_await ctx.getReal("Specify " + kw + " scale factor <1>",
                                                   cmd::RealOptions{.defaultValue = 1});
                     if (!s.ok())
                         co_return;
@@ -199,17 +221,17 @@ public:
                         ctx.message("A scale factor cannot be zero");
                         continue;
                     }
-                    (p.keyword == "X" ? data.scale.x : data.scale.y) = s.value;
-                } else if (p.keyword == "Explode") {
+                    (kw == "X" ? data.scale.x : data.scale.y) = s.value;
+                } else if (kw == "Explode") {
                     explodeAfter = !explodeAfter;
                     ctx.message(explodeAfter ? "The block will be exploded when placed."
                                              : "The block will be placed as one object.");
-                } else if (p.keyword == "Multiple") {
+                } else if (kw == "Multiple") {
                     multiple = true;
                     ctx.commitOnCancel();  // Esc ends the series and keeps the copies already
                                            // placed
                     ctx.message("Placing several copies: Enter or Esc to finish.");
-                } else if (p.keyword == "Rotate") {
+                } else if (kw == "Rotate") {
                     auto a = co_await ctx.getAngle(
                         "Specify rotation angle <0>",
                         cmd::AngleOptions{.defaultValue = 0.0, .inUcs = true});
@@ -237,13 +259,14 @@ public:
             }
             if (askRotation) {
                 cmd::AngleOptions ao;
-                ao.base = data.position;
+                ao.base = pickPoint;
                 ao.defaultValue = normalizeAngle(data.rotation - ctx.host().ucsAngle());
                 ao.inUcs = true;
-                ao.preview = [&doc, &ctx, data](Vec2 cursor, DisplayList& out) {
+                ao.preview = [&doc, &ctx, data, origin, pickPoint](Vec2 cursor, DisplayList& out) {
                     InsertData d = data;
-                    if (distance(cursor, d.position) > 0)
-                        d.rotation = std::atan2(cursor.y - d.position.y, cursor.x - d.position.x);
+                    if (distance(cursor, pickPoint) > 0)
+                        d.rotation = std::atan2(cursor.y - pickPoint.y, cursor.x - pickPoint.x);
+                    d.position = origin(d, pickPoint);
                     Entity e;
                     e.common.layer = doc.header().currentLayer;
                     e.data = Indirect<InsertData>(d);
@@ -256,6 +279,7 @@ public:
                     co_return;
                 data.rotation = normalizeAngle(a.value);
             }
+            data.position = origin(data, pickPoint);
 
             if (array_) {
                 cmd::IntOptions io;
