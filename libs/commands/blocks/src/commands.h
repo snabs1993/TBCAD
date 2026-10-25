@@ -69,6 +69,8 @@ std::unique_ptr<cmd::Command> makeXReloadCommand();
 std::unique_ptr<cmd::Command> makeXDetachCommand();
 std::unique_ptr<cmd::Command> makeXBindCommand();
 std::unique_ptr<cmd::Command> makeXClipCommand();
+std::unique_ptr<cmd::Command> makeClipFrameCommand(bool pdf);
+std::unique_ptr<cmd::Command> makePdfClipCommand();
 std::unique_ptr<cmd::Command> makeXUnloadCommand();
 std::unique_ptr<cmd::Command> makeXListCommand();
 std::unique_ptr<cmd::Command> makeXrefTypeCommand();

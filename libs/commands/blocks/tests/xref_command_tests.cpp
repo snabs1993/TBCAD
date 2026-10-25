@@ -10,6 +10,7 @@
 #include "tbcad/io/zip.h"
 #include "tbcad/plotstyle/plotstyle.h"
 #include "tbcad/underlay/image.h"
+#include "tbcad/underlay/pdf.h"
 #include "tbcad/xref/xref.h"
 
 using namespace tbcad;
@@ -695,4 +696,44 @@ TEST_CASE(
     f.host->clearLog();
     f.host->run("XOPEN", {"plan"});
     CHECK(f.host->logContains("was not found"));
+}
+
+TEST_CASE("XCLIPFRAME and PDFFRAME draw the clip boundary and PDFCLIP clips only a PDF underlay") {
+    Dir dir;
+    fs::path file = writeSource(dir.path, "plan.tbcad", 10);
+    fs::path pdf = writePdf(dir.path, "a.pdf", "0 0 m 10 10 l S");
+    Fixture f;
+    f.host->run("XATTACH", {file.string(), "", "", "", "100,0"});
+    f.host->run("PDFATTACH", {pdf.string() + "#fade=0", "", "", "", "0,0"});
+    EntityId blockIns, pdfIns;
+    for (EntityId id : f.modelSpace()) {
+        const auto* d = entityAs<InsertData>(*f.doc.find(id));
+        (underlay::isPdfPath(f.doc.block(d->block)->xrefPath) ? pdfIns : blockIns) = id;
+    }
+    auto frames = [&](EntityId id, bool onlyPlotted) {
+        DisplayList out;
+        geom::DisplayContext ctx;
+        geom::buildDisplay(f.doc, *f.doc.find(id), ctx, out);
+        std::size_t n = 0;
+        for (const DisplayItem& it : out.items)
+            if (const auto* pl = std::get_if<DisplayPolyline>(&it))
+                n += pl->closed && pl->pts.size() == 4 && !(onlyPlotted && pl->style.noPlot);
+        return n;
+    };
+    f.host->run("XCLIP", {cmd::ScriptItem::pick(blockIns), "", "", "100,0", "104,10"});
+    f.host->run("PDFCLIP", {cmd::ScriptItem::pick(pdfIns), "", "", "0,0", "5,5"});
+    CHECK(entityAs<InsertData>(*f.doc.find(pdfIns))->clip.size() == 4);
+    CHECK(frames(blockIns, false) == 0);  // hidden by default
+    CHECK(frames(pdfIns, false) == 0);
+
+    f.host->run("XCLIPFRAME", {"1"});
+    CHECK(frames(blockIns, true) == 1);
+    CHECK(frames(pdfIns, false) == 0);  // PDFFRAME is separate
+    f.host->run("XCLIPFRAME", {"2"});
+    CHECK(frames(blockIns, false) == 1);
+    CHECK(frames(blockIns, true) == 0);  // on screen only
+    f.host->run("PDFFRAME", {"1"});
+    CHECK(frames(pdfIns, true) == 1);
+    CHECK(f.host->undo());
+    CHECK(frames(pdfIns, false) == 0);
 }
