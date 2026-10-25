@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "tbcad/cmd/help.h"
 #include "tbcad/cmd/host.h"
 #include "tbcad/cmd/registry.h"
 #include "tbcad/cmd/runner.h"
@@ -118,6 +119,13 @@ public:
     cmd::UndoStack& undoStack();
     cmd::CommandRunner& runner();
     cmd::Registry& registry() { return registry_; }
+    // ---- built-in help ----
+    // Offline command pages (assets/help/commands.md). HELP / ? on the command line prints a page
+    // or searches the pages; HELP with a name also asks the window to open that page.
+    cmd::HelpCatalog& help() { return help_; }
+    const cmd::HelpCatalog& help() const { return help_; }
+    // The command whose page HELP asked to show, once.
+    std::string takeHelpRequest() { return std::exchange(helpRequest_, std::string()); }
     // Incremented whenever a different document is loaded; lets the window drop caches.
     std::uint64_t documentGeneration() const { return generation_; }
 
@@ -239,6 +247,7 @@ public:
     // "#id" references the panels use, and answers to prompts are not echoed a second time.
     void submitPanelText(std::string_view text);
     void pressEscape();
+    void showHelp(const std::string& query);
     const std::vector<std::string>& history() const { return history_; }
     void print(std::string_view message) override;
     // Prompt line for the command line widget, e.g. "Specify next point or [Close/Undo]: ".
@@ -513,6 +522,8 @@ private:
     bool echoOpenFailures_ = true;
     void printOpenFailure(const std::string& text);
     cmd::Registry& registry_;
+    cmd::HelpCatalog help_{};
+    std::string helpRequest_{};
     cmd::PointFilterChain filterChain_{};
     cmd::CommandLineParser* lineParser_ = nullptr;
     PanelContext makePanelContext();

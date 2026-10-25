@@ -86,6 +86,8 @@ add_custom_command(TARGET tbcad POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:tbcad>/assets/help"
   COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/docs/quickstart.md"
           "$<TARGET_FILE_DIR:tbcad>/assets/help/quickstart.md"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_SOURCE_DIR}/docs/command-help.md"
+          "$<TARGET_FILE_DIR:tbcad>/assets/help/commands.md"
   COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_BINARY_DIR}/THIRD_PARTY_NOTICES.txt"
           "$<TARGET_FILE_DIR:tbcad>/THIRD_PARTY_NOTICES.txt"
   VERBATIM)

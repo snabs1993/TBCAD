@@ -1959,12 +1959,48 @@ void AppCore::submitText(std::string_view text) {
     std::vector<std::string> words = splitWords(trimmed);
     if (words.empty())
         return;
+    if (words[0] == "?" || cmd::toUpperAscii(words[0]) == "HELP") {
+        std::string query;
+        for (std::size_t i = 1; i < words.size(); ++i)
+            query += (query.empty() ? "" : " ") + words[i];
+        showHelp(query);
+        return;
+    }
     if (cmd::SubmitResult r = run.submit(cmd::Input::typed(words[0]));
         r == cmd::SubmitResult::UnknownCommand)
         return;
     // Remaining words answer the prompts of the command that just started.
     for (std::size_t i = 1; i < words.size() && run.active(); ++i)
         run.submit(cmd::Input::typed(words[i]));
+}
+
+// HELP / ?: a command name (or alias) shows its page; other words search the pages; nothing lists
+// every page that exists.
+void AppCore::showHelp(const std::string& query) {
+    if (help_.empty()) {
+        print("The help pages were not found (assets/help/commands.md).");
+        return;
+    }
+    std::string name = query;
+    if (const cmd::Command* c = registry_.find(query))
+        name = std::string(c->name());
+    if (const cmd::HelpEntry* e = query.empty() ? nullptr : help_.find(name)) {
+        for (const std::string& l : cmd::helpLines(*e))
+            print(l);
+        helpRequest_ = e->name;
+        return;
+    }
+    std::vector<const cmd::HelpEntry*> hits = help_.search(query);
+    if (hits.empty()) {
+        print("No help page matches \"" + query + "\". HELP lists the commands that have one.");
+        return;
+    }
+    std::string names;
+    for (const cmd::HelpEntry* e : hits)
+        names += (names.empty() ? "" : ", ") + e->name;
+    print((query.empty() ? "Commands with a help page: " : "Help pages for \"" + query + "\": ") +
+          names);
+    print("Type HELP followed by a command name to read its page, or press F1 while it runs.");
 }
 
 void AppCore::pressEscape() {

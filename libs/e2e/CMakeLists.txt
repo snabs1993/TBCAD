@@ -24,6 +24,7 @@ tbcad_add_tests(e2e
     tests/dim_perf_tests.cpp
     tests/ucs_world_tests.cpp
     tests/views_tests.cpp
+    tests/command_help_tests.cpp
     tests/align_snap_tests.cpp
     tests/stretch_assoc_tests.cpp
     tests/attrib_robust_tests.cpp
@@ -48,6 +49,7 @@ if(TARGET tbcad_e2e_tests)
   target_compile_definitions(tbcad_e2e_tests PRIVATE
     TBCAD_TEST_CORPUS_DIR="${CMAKE_SOURCE_DIR}/tests/corpus"
     TBCAD_FONTS_DIR="${CMAKE_SOURCE_DIR}/assets/fonts"
+    TBCAD_COMMAND_HELP_FILE="${CMAKE_SOURCE_DIR}/docs/command-help.md"
     TBCAD_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/samples")
 endif()
 
