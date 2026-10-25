@@ -16,6 +16,7 @@ so they are saved in the `.tbcad` file and changes are undoable.
 | `VPLAYER` | Freezes or thaws a layer in one viewport (sub-layers follow their parent) |
 | `VPLEVEL` | Shows one level only in a viewport (empty name = every visible level again); plots follow it |
 | `TITLEBLOCK` | Inserts the `TITLEBLOCK` block (frame, labels and PROJECT, DRAWN BY, DATE, SCALE, SHEET attributes) on the sheet; edit the values with the attribute commands |
+| `MVSETUP` | One-step sheet setup: layout name, paper, orientation, scale (or Fit) and optional title block; makes the layout with one viewport inside the margins |
 
 Every viewport command asks "Click inside a viewport, or type its number".
 
