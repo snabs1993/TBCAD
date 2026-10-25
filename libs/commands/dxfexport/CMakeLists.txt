@@ -2,7 +2,7 @@ tbcad_add_library(dxfexport
   SOURCES
     src/dxfexport.cpp
     src/merge.cpp
-  DEPENDS tbcad::cmd tbcad::dxf)
+  DEPENDS tbcad::cmd tbcad::dxf tbcad::io)
 
 tbcad_add_tests(dxfexport
   SOURCES
