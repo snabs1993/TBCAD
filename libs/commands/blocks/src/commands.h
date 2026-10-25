@@ -33,6 +33,7 @@ std::unique_ptr<cmd::Command> makeXplodeCommand();
 std::unique_ptr<cmd::Command> makeBurstCommand();
 std::unique_ptr<cmd::Command> makeNCopyCommand();
 std::unique_ptr<cmd::Command> makeArrayCommand();
+std::unique_ptr<cmd::Command> makeArrayLegacyCommand();
 std::unique_ptr<cmd::Command> makeArrayRectCommand();
 std::unique_ptr<cmd::Command> makeArrayPolarCommand();
 std::unique_ptr<cmd::Command> makeArrayPathCommand();

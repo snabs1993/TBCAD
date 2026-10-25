@@ -24,6 +24,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeGroup());
     (void)registry.add(makeUngroup());
     (void)registry.add(makeGroupEdit());
+    (void)registry.add(makeGroupLine());
     (void)registry.add(makeDrawOrder());
     (void)registry.add(makeTextToFront());
     (void)registry.add(makeHatchToBack());

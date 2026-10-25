@@ -569,6 +569,110 @@ private:
     Mode mode_;
 };
 
+// -ARRAY: the command-line form (no dialog, plain copies only). Rectangular asks for the rows,
+// columns and the distances; Polar for the centre, the item count, the angle to fill and whether
+// the items turn.
+class ArrayLegacyCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "-ARRAY"; }
+    std::vector<std::string> defaultAliases() const override { return {"-AR"}; }
+    std::string_view description() const override {
+        return "Rectangular or polar array of plain copies from the command line";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        Document& doc = ctx.doc();
+        auto sel =
+            co_await ctx.getSelection("Select objects to array",
+                                      cmd::SelectionOptions{.filter = detail::editableFilter(doc)});
+        if (!sel.ok() || sel.ids.empty())
+            co_return;
+        std::vector<Entity> source;
+        for (EntityId id : detail::inDrawOrder(doc, sel.ids))
+            source.push_back(*doc.find(id));
+        if (source.empty())
+            co_return;
+        auto type =
+            co_await ctx.getKeyword("Enter the type of array [Rectangular/Polar] <Rectangular>",
+                                    cmd::KeywordOptions{.keywords = {"Rectangular", "Polar"},
+                                                        .defaultKeyword = "Rectangular"});
+        if (!type.ok())
+            co_return;
+        Result<std::vector<Entity>> made = std::vector<Entity>{};
+        if (type.keyword == "Polar") {
+            auto center = co_await ctx.getPoint("Specify center point of array");
+            if (!center.ok())
+                co_return;
+            auto n = co_await ctx.getInteger(
+                "Enter the number of items in the array",
+                cmd::IntOptions{.defaultValue = 6, .min = 2, .max = blocks::kMaxArrayItems});
+            if (!n.ok())
+                co_return;
+            auto fill = co_await ctx.getAngle(
+                "Specify the angle to fill (+ = counterclockwise, - = clockwise) <360>",
+                cmd::AngleOptions{.base = center.point, .defaultValue = kTwoPi});
+            if (!fill.ok())
+                co_return;
+            auto rot = co_await ctx.getKeyword(
+                "Rotate arrayed objects? [Yes/No] <Yes>",
+                cmd::KeywordOptions{.keywords = {"Yes", "No"}, .defaultKeyword = "Yes"});
+            if (!rot.ok())
+                co_return;
+            made = blocks::arrayPolar(
+                source, blocks::PolarArray{center.point, static_cast<int>(n.value), fill.value,
+                                           rot.keyword == "Yes", std::nullopt});
+        } else {
+            auto rows = co_await ctx.getInteger(
+                "Enter the number of rows (---) <1>",
+                cmd::IntOptions{.defaultValue = 1, .min = 1, .max = blocks::kMaxArrayItems});
+            if (!rows.ok())
+                co_return;
+            auto cols = co_await ctx.getInteger(
+                "Enter the number of columns (|||) <1>",
+                cmd::IntOptions{.defaultValue = 1, .min = 1, .max = blocks::kMaxArrayItems});
+            if (!cols.ok())
+                co_return;
+            blocks::RectArray spec;
+            spec.angle = ctx.host().ucsAngle();
+            spec.rows = static_cast<int>(rows.value);
+            spec.columns = static_cast<int>(cols.value);
+            if (spec.rows > 1) {
+                auto d = co_await ctx.getDistance(
+                    "Specify the distance between rows (---)",
+                    cmd::DistanceOptions{.allowZero = false, .allowNegative = true});
+                if (!d.ok())
+                    co_return;
+                spec.rowSpacing = d.value;
+            }
+            if (spec.columns > 1) {
+                auto d = co_await ctx.getDistance(
+                    "Specify the distance between columns (|||)",
+                    cmd::DistanceOptions{.allowZero = false, .allowNegative = true});
+                if (!d.ok())
+                    co_return;
+                spec.columnSpacing = d.value;
+            }
+            made = blocks::arrayRectangular(source, spec);
+        }
+        if (!made) {
+            ctx.message(made.error().message);
+            co_return;
+        }
+        std::vector<EntityId> created;
+        for (Entity& e : made.value()) {
+            auto added = ctx.tx().add(std::move(e));
+            if (!added) {
+                ctx.message(added.error().message);
+                co_return;  // rolls the whole array back
+            }
+            created.push_back(added.value());
+        }
+        ctx.host().setSelection(created);
+        ctx.message("Created " + detail::objects(created.size()));
+        ctx.setUndoLabel("Array " + detail::objects(created.size()));
+    }
+};
+
 // Associative arrays near `p` in the drawing being edited (the host's own search when it has one).
 std::vector<EntityId> arraysNear(cmd::CommandContext& ctx, Vec2 p, double tol) {
     const Document& doc = ctx.doc();
@@ -1072,6 +1176,9 @@ public:
 
 std::unique_ptr<cmd::Command> makeArrayCommand() {
     return std::make_unique<ArrayCommand>();
+}
+std::unique_ptr<cmd::Command> makeArrayLegacyCommand() {
+    return std::make_unique<ArrayLegacyCommand>();
 }
 std::unique_ptr<cmd::Command> makeArrayRectCommand() {
     return std::make_unique<ArrayCommand>(ArrayCommand::Mode::Rect);
