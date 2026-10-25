@@ -5,6 +5,7 @@ set(_tbcad_app_sources
   src/main.cpp
   src/app.cpp
   src/viewport_target.cpp
+  src/gl_problem.cpp
   src/gate.cpp)
 # Everything drawn with Dear ImGui lives in a library so the window-less GUI tests can use it too.
 set(_tbcad_gui_sources

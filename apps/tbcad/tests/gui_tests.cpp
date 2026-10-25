@@ -2804,3 +2804,15 @@ TEST_CASE(
     CHECK(h.core().documentCount() == 1);
     CHECK(h.core().isPristine());
 }
+
+#include "gl_problem.h"
+
+TEST_CASE("OpenGL problem message names the GPU and the fix") {
+    const std::string a = tbcad::openGlProblemText("GDI Generic", "1.1.0");
+    CHECK(a.find("GDI Generic") != std::string::npos);
+    CHECK(a.find("1.1.0") != std::string::npos);
+    CHECK(a.find("basic display driver") != std::string::npos);
+    const std::string b = tbcad::openGlProblemText("", "");
+    CHECK(b.find("unknown") != std::string::npos);
+    CHECK(b.find("Update the graphics driver") != std::string::npos);
+}

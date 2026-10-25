@@ -73,6 +73,7 @@ public:
 
 private:
     bool initWindow(std::string& why);
+    void reportOpenGlProblem();
     void shutdownWindow();
     void runScript(const std::string& script);
     void runScriptFile(const std::string& file);

@@ -23,6 +23,7 @@
 #include <optional>
 #include <sstream>
 
+#include "gl_problem.h"
 #include "gui.h"
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/core/units.h"
@@ -128,6 +129,29 @@ App::~App() {
     shutdownWindow();
 }
 
+// Probe with a default (any version) context for the GPU name, then tell the user plainly instead
+// of leaving a blank window or a silent exit.
+void App::reportOpenGlProblem() {
+    std::string renderer, version;
+    glfwDefaultWindowHints();
+    glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+    if (GLFWwindow* probe = glfwCreateWindow(64, 64, "TBCAD", nullptr, nullptr)) {
+        glfwMakeContextCurrent(probe);
+        using GetString = const unsigned char* (*)(unsigned int);
+        if (auto get = reinterpret_cast<GetString>(glfwGetProcAddress("glGetString"))) {
+            if (const unsigned char* r = get(0x1F01))  // GL_RENDERER
+                renderer = reinterpret_cast<const char*>(r);
+            if (const unsigned char* v = get(0x1F02))  // GL_VERSION
+                version = reinterpret_cast<const char*>(v);
+        }
+        glfwMakeContextCurrent(nullptr);
+        glfwDestroyWindow(probe);
+    }
+    const std::string text = openGlProblemText(renderer, version);
+    std::fprintf(stderr, "tbcad: %s\n", text.c_str());
+    showOpenGlProblem(text);
+}
+
 bool App::initWindow(std::string& why) {
     glfwSetErrorCallback(glfwError);
     if (!glfwInit()) {
@@ -152,6 +176,8 @@ bool App::initWindow(std::string& why) {
                                capturing ? options_.captureH : 900, "TBCAD", nullptr, nullptr);
     if (!window_) {
         why = "could not create an OpenGL 3.3 window";
+        if (!hidden() && !options_.selfTest && options_.captureScript.empty() && !options_.gate)
+            reportOpenGlProblem();
         return false;
     }
     // Keep the window inside the usable screen (not behind the taskbar): scaled to a high-DPI
