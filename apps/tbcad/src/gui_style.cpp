@@ -1,5 +1,7 @@
 #include <backends/imgui_impl_opengl3.h>
 #include <imgui.h>
+#include <tbcad/text/text.h>
+#include <tbcad_imgui_items.h>
 
 #include <cstdlib>
 #include <filesystem>
@@ -76,6 +78,15 @@ std::string findBesideExecutable(const std::string& name) {
 }
 
 void buildFonts(float scale) {
+    // Left, Right, Delete and clicks in every text box step over whole Thai clusters.
+    TbcadImGuiClusterNext = [](const char* s, int len, int idx) {
+        return static_cast<int>(text::nextClusterStart(
+            std::string_view(s, static_cast<std::size_t>(len)), static_cast<std::size_t>(idx)));
+    };
+    TbcadImGuiClusterPrev = [](const char* s, int len, int idx) {
+        return static_cast<int>(text::prevClusterStart(
+            std::string_view(s, static_cast<std::size_t>(len)), static_cast<std::size_t>(idx)));
+    };
     ImGuiIO& io = ImGui::GetIO();
     if (io.BackendRendererUserData)  // none in the window-less GUI tests
         ImGui_ImplOpenGL3_DestroyFontsTexture();
