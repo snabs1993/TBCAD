@@ -637,6 +637,18 @@ void SettingsDialog::files(ui::AppCore& core) {
     if (ImGui::Combo("Default save format", &fmt, "TBCAD (.tbcad)\0DXF (.dxf)\0"))
         s.setString("files.defaultFormat", fmt == 1 ? "dxf" : "tbcad");
     ImGui::TextDisabled("A drawing opened from a .dxf file is saved back as DXF.");
+    {
+        static constexpr const char* kVer[] = {"auto", "r12", "r2000", "r2007"};
+        const std::string cur = s.getString("files.dxfVersion", "auto");
+        int v = 0;
+        for (int i = 0; i < 4; ++i)
+            if (cur == kVer[i])
+                v = i;
+        ImGui::SetNextItemWidth(260);
+        if (ImGui::Combo("DXF version", &v,
+                         "Automatic\0R12 (AC1009)\0R2000 (AC1015)\0R2007 (AC1021, UTF-8)\0"))
+            s.setString("files.dxfVersion", kVer[v]);
+    }
     ImGui::Spacing();
     {
         const std::vector<std::string> names = core.templateNames();

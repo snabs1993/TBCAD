@@ -26,13 +26,14 @@ Settings Settings::withDefaults() {
     o["drafting.osnap"] = true;
     o["pick.aperturePx"] = 6;
     o["files.defaultFormat"] = "tbcad";
-    o["files.backup"] = true;       // ISAVEBAK: keep the previous file as <name>.bak
-    o["view.crosshairSize"] = 100;  // CURSORSIZE: % of the drawing area
-    o["view.lockFade"] = 60;        // LAYLOCKFADECTL: % faded on locked layers
-    o["grips.size"] = 4;            // GRIPSIZE: half the side of a grip, pixels
-    o["osnap.markerSize"] = 12;     // AutoSnap marker size, pixels
-    o["osnap.marker"] = true;       // AutoSnap marker shown
-    o["osnap.apbox"] = false;       // APBOX: aperture box at point prompts
+    o["files.dxfVersion"] = "auto";  // auto | r12 | r2000 | r2007
+    o["files.backup"] = true;        // ISAVEBAK: keep the previous file as <name>.bak
+    o["view.crosshairSize"] = 100;   // CURSORSIZE: % of the drawing area
+    o["view.lockFade"] = 60;         // LAYLOCKFADECTL: % faded on locked layers
+    o["grips.size"] = 4;             // GRIPSIZE: half the side of a grip, pixels
+    o["osnap.markerSize"] = 12;      // AutoSnap marker size, pixels
+    o["osnap.marker"] = true;        // AutoSnap marker shown
+    o["osnap.apbox"] = false;        // APBOX: aperture box at point prompts
     return s;
 }
 
@@ -49,6 +50,7 @@ void Settings::resetToDefaults() {
                                                      "autosave.",
                                                      "drafting.",
                                                      "files.defaultFormat",
+                                                     "files.dxfVersion",
                                                      "files.backup",
                                                      "grips.",
                                                      "osnap.",

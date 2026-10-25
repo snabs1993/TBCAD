@@ -1236,16 +1236,49 @@ Result<void> AppCore::openDxf(const fs::path& path) {
     return {};
 }
 
-Result<void> AppCore::saveDxf(const fs::path& path) {
-    dxf::Report report;
+dxf::ExportOptions AppCore::dxfSaveOptions() const {
     dxf::ExportOptions options;
-    // A drawing that came in as AC1021 or later goes back out in that version, so its text
-    // keeps UTF-8 instead of being narrowed to a code page.
+    // files.dxfVersion picks R12 / R2000 / R2007 for every DXF save; "auto" (default) keeps a
+    // drawing that came in as AC1021 or later in that version, so its text keeps UTF-8 instead
+    // of being narrowed to a code page.
+    const std::string chosen = settings_.getString("files.dxfVersion", "auto");
+    if (chosen != "auto") {
+        if (auto v = dxf::parseVersion(chosen)) {
+            options.version = *v;
+            return options;
+        }
+    }
     const auto& custom = session_->doc.header().custom;
     if (auto it = custom.find("dxf.acadver"); it != custom.end() && it->second.size() == 6 &&
                                               it->second.compare(0, 2, "AC") == 0 &&
                                               std::atoi(it->second.c_str() + 2) >= 1021)
         options.version = dxf::DxfVersion::R2007;
+    return options;
+}
+
+std::vector<std::string> AppCore::dxfLossWarnings(dxf::DxfVersion version) const {
+    dxf::Report report;
+    dxf::ExportOptions options;
+    options.version = version;
+    std::vector<std::string> out;
+    auto r = dxf::exportDxf(session_->doc, options, report);
+    if (!r)
+        return {r.error().message};
+    for (const auto& d : report.diagnostics()) {
+        if (d.severity == dxf::Severity::Info)
+            continue;
+        if (out.size() >= 20) {
+            out.push_back("...and more (see the DXF export report).");
+            break;
+        }
+        out.push_back(d.message);
+    }
+    return out;
+}
+
+Result<void> AppCore::saveDxf(const fs::path& path) {
+    dxf::Report report;
+    const dxf::ExportOptions options = dxfSaveOptions();
     auto out = dxf::exportDxf(session_->doc, options, report);
     if (!out) {
         print("Cannot save " + path.string() + ": " + out.error().message);

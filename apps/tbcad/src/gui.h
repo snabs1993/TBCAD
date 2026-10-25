@@ -315,6 +315,12 @@ private:
     Pending pending_ = Pending::None;
     bool openSavePrompt_ = false;
     bool saveThenPending_ = false;
+    // Save As to a .dxf asks for the DXF version first.
+    std::filesystem::path pendingDxfPath_{};
+    bool openDxfVersionPrompt_ = false;
+    int dxfVersionChoice_ = 1;  // index into R12 / R2000 / R2007 as shown in the prompt
+    std::vector<std::string> dxfVersionWarnings_{};
+    void saveAsPath(const std::filesystem::path& path);
     std::string noticesText_{};
     bool noticesLoaded_ = false;
     bool showQuickStart_ = false;

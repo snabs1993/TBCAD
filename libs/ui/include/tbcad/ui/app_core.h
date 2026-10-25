@@ -15,6 +15,7 @@
 #include "tbcad/cmd/runner.h"
 #include "tbcad/cmd/undo.h"
 #include "tbcad/core/core.h"
+#include "tbcad/dxf/writer.h"
 #include "tbcad/index/document_indexer.h"
 #include "tbcad/index/spatial_index.h"
 #include "tbcad/platform/keybindings.h"
@@ -146,6 +147,9 @@ public:
     // (the window then asks for a name and calls saveAs).
     Result<void> save();
     Result<void> saveAs(const std::filesystem::path& path);
+    // What a DXF saved in `version` would lose or simplify (one line each; empty = nothing).
+    // Shown in the Save As version prompt.
+    std::vector<std::string> dxfLossWarnings(dxf::DxfVersion version) const;
     bool hasFile() const;
     const std::filesystem::path& file() const;
     // Foreign formats. `extension` is lower case with the dot (".dwg"). A read-only format
@@ -443,6 +447,7 @@ private:
     Result<void> openDxf(const std::filesystem::path& path);
     void storeCurrentUcs();
     Result<void> saveDxf(const std::filesystem::path& path);
+    dxf::ExportOptions dxfSaveOptions() const;
     void clearTransientState();
     // Background autosave: starts one (false if nothing to save or one is running), collects a
     // finished one (or waits for it), starts one per drawing without waiting.
