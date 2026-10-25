@@ -149,6 +149,9 @@ struct PayloadWriter {
             str(a.tag);
             str(a.prompt);
             str(a.defaultValue);
+            // Trailing byte (only when needed): 1 = multiple lines. Older readers stop before it.
+            if (a.multiLine)
+                w.u8(1);
         } else if (gen) {
             w.u8(gen);
         }
@@ -789,6 +792,8 @@ struct PayloadReader {
                         a.tag = str();
                         a.prompt = str();
                         a.defaultValue = str();
+                        if (r.remaining() > 0)
+                            a.multiLine = (r.u8() & 1) != 0;
                         d.attdef = std::move(a);
                     }
                 }

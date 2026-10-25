@@ -67,10 +67,11 @@ public:
                 "Attribute mode: Invisible=" + yn(info.invisible) +
                     " Constant=" + yn(info.constant) + " Verify=" + yn(info.verify) +
                     " Preset=" + yn(info.preset) + " Lock=" + yn(info.lockPosition) +
-                    " [Invisible/Constant/Verify/Preset/Lock position/Done] <Done>",
-                cmd::KeywordOptions{
-                    .keywords = {"Invisible", "Constant", "Verify", "Preset", "Lock", "Done"},
-                    .defaultKeyword = "Done"});
+                    " Multiple=" + yn(info.multiLine) +
+                    " [Invisible/Constant/Verify/Preset/Lock position/Multiple lines/Done] <Done>",
+                cmd::KeywordOptions{.keywords = {"Invisible", "Constant", "Verify", "Preset",
+                                                 "Lock", "Multiple", "Done"},
+                                    .defaultKeyword = "Done"});
             if (!m.ok())
                 co_return;
             if (m.keyword == "Done")
@@ -85,6 +86,8 @@ public:
                 info.preset = !info.preset;
             else if (m.keyword == "Lock")
                 info.lockPosition = !info.lockPosition;
+            else if (m.keyword == "Multiple")
+                info.multiLine = !info.multiLine;
         }
 
         for (; !dialog;) {
@@ -500,7 +503,7 @@ private:
             for (auto [on, name] :
                  {std::pair{a.invisible, "invisible"}, std::pair{a.constant, "constant"},
                   std::pair{a.verify, "verify"}, std::pair{a.preset, "preset"},
-                  std::pair{a.lockPosition, "locked"}})
+                  std::pair{a.lockPosition, "locked"}, std::pair{a.multiLine, "multiline"}})
                 if (on)
                     modes += std::string("  ") + name;
             ctx.message(a.tag + "  prompt \"" + a.prompt + "\"  default \"" + a.defaultValue +

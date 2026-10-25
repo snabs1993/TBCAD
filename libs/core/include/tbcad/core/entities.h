@@ -354,6 +354,7 @@ struct AttDefInfo {
     bool verify = false;         // ask twice (stored, not enforced by the data model)
     bool preset = false;         // takes the default without asking, editable later
     bool lockPosition = false;   // the attribute cannot be moved inside the block
+    bool multiLine = false;      // the value may hold several lines (stored with \n)
     friend bool operator==(const AttDefInfo&, const AttDefInfo&) = default;
 };
 

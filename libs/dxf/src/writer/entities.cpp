@@ -1109,6 +1109,10 @@ void Writer::writeTbcadFlags(const Entity& e) {
         for (const std::string& piece : fieldPieces(source))
             L().o->raw(1000, piece);
     }
+    if (const auto* t = entityAs<TextData>(e); t && t->attdef && t->attdef->multiLine) {
+        openTbcadXdata();
+        L().o->str(1000, "attmulti=1");
+    }
     writeCommonFlags(e.common);
 }
 
