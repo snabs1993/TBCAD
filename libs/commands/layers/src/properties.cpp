@@ -338,7 +338,7 @@ Result<void> setGeometryField(Transaction& tx, EntityId id, const std::string& f
         return makeError(ErrorCode::InvalidArgument, "Value is not a finite number.");
     auto bad = [](const std::string& m) { return makeError(ErrorCode::InvalidArgument, m); };
     std::optional<Error> failure;
-    auto r = tx.modify(id, [&](Entity& e) {
+    auto apply = [&](Entity& e) {
         auto fail = [&](Error err) { failure = std::move(err); };
         if (auto* l = entityAs<LineData>(e)) {
             Vec2 d = l->b - l->a;
@@ -593,6 +593,11 @@ Result<void> setGeometryField(Transaction& tx, EntityId id, const std::string& f
         } else {
             fail(bad("This kind of object has no geometry fields."));
         }
+    };
+    // A refused value declines the edit, so it leaves no empty step in the undo list.
+    auto r = tx.modifyIf(id, [&](Entity& e) {
+        apply(e);
+        return !failure.has_value();
     });
     if (failure)
         return *failure;
