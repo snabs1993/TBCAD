@@ -133,8 +133,8 @@ private:
     bool singleMode_ = false;    // SIngle: the first pick or window ends Select objects
     bool groupPending_ = false;  // Group: the next text is a group name
     // Typed point modifiers at a point prompt, as in AutoCAD: FROM (a base point, then an offset
-    // from it), M2P / MTP (the middle of two points) and TT (a temporary tracking point).
-    enum class PtMod { None, FromBase, FromOffset, Mid1, Mid2, Track };
+    // from it), M2P / MTP (the middle of two points) TT (a temporary tracking point) and TK (tracking: a chain of axis-aligned points).
+    enum class PtMod { None, FromBase, FromOffset, Mid1, Mid2, Track, TkFirst, TkNext };
     PtMod ptMod_ = PtMod::None;
     Vec2 ptModA_{};
     // The last segment picked in the running command (from its base to the point), for
