@@ -390,3 +390,13 @@ TEST_CASE("BATTMAN removes, reorders and changes the modes of attributes, in one
     CHECK(entityAs<InsertData>(*f.doc.find(i))->attribs.size() == 2);
     CHECK(entityAs<InsertData>(*f.doc.find(i))->attribs[0].value == "Zed");
 }
+
+TEST_CASE("ATTDEF Lock position is switched on from the mode prompt") {
+    Fixture f;
+    auto r = f.host->run("ATTDEF", {"Lock", "", "tag", "Tag", "V", "0,0", "2", "0"});
+    CHECK(r.finished);
+    REQUIRE(f.modelSpace().size() == 1);
+    const auto* t = entityAs<TextData>(*f.doc.find(f.modelSpace()[0]));
+    REQUIRE((t && t->attdef));
+    CHECK(t->attdef->lockPosition);
+}

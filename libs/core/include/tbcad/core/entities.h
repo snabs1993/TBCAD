@@ -353,6 +353,7 @@ struct AttDefInfo {
     bool constant = false;       // fixed value, never asked for or edited per insert
     bool verify = false;         // ask twice (stored, not enforced by the data model)
     bool preset = false;         // takes the default without asking, editable later
+    bool lockPosition = false;   // the attribute cannot be moved inside the block
     friend bool operator==(const AttDefInfo&, const AttDefInfo&) = default;
 };
 

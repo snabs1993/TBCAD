@@ -161,7 +161,8 @@ struct DataDumper {
             o << " default=";
             o.quoted(d.attdef->defaultValue);
             o << " flags" << (d.attdef->invisible ? "I" : "") << (d.attdef->constant ? "C" : "")
-              << (d.attdef->verify ? "V" : "") << (d.attdef->preset ? "P" : "");
+              << (d.attdef->verify ? "V" : "") << (d.attdef->preset ? "P" : "")
+              << (d.attdef->lockPosition ? "L" : "");
         }
     }
     void operator()(const MTextData& d) {

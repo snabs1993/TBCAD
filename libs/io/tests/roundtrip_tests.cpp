@@ -386,7 +386,7 @@ TEST_CASE("round trip: attribute definitions and attribute values") {
         blk = tx.addBlock(BlockDef{.name = "Tag"}).value();
         TextData t;
         t.utf8 = "TAG1";
-        t.attdef = AttDefInfo{"ROOM", "Room name?", "ห้องนอน", true, false, true, true};
+        t.attdef = AttDefInfo{"ROOM", "Room name?", "ห้องนอน", true, false, true, true, true};
         Entity e;
         e.data = Indirect<TextData>(t);
         (void)tx.add(std::move(e), blk);
@@ -419,6 +419,7 @@ TEST_CASE("round trip: attribute definitions and attribute values") {
     CHECK_FALSE(t->attdef->constant);
     CHECK(t->attdef->verify);
     CHECK(t->attdef->preset);
+    CHECK(t->attdef->lockPosition);
     int withAttribs = 0;
     back->forEachEntity([&](const Entity& e) {
         if (const auto* i = entityAs<InsertData>(e); i && !i->attribs.empty()) {
