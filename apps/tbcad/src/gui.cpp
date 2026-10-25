@@ -391,6 +391,8 @@ void Gui::runAction(const std::string& action) {
 
 void Gui::requestAction(Pending what) {
     pending_ = what;
+    combinedAsked_ = false;
+    discardAll_ = false;
     continuePending();
 }
 
@@ -414,6 +416,8 @@ void Gui::continuePending() {
         } else
             performPending();
     } else if (pending_ == Pending::Exit) {
+        if (askCombined(false))
+            return;
         for (std::size_t i = 0; i < core_.documentCount(); ++i) {
             if (!core_.documentModified(i))
                 continue;
@@ -431,8 +435,10 @@ void Gui::continuePending() {
         const auto target = [&](std::size_t i) {
             return !keepDocSet_ || core_.documentId(i) != keepDoc_;
         };
+        if (askCombined(keepDocSet_))
+            return;
         for (std::size_t i = 0; i < core_.documentCount(); ++i) {
-            if (!target(i) || !core_.documentModified(i))
+            if (!target(i) || discardAll_ || !core_.documentModified(i))
                 continue;
             if (!core_.activateDocument(i)) {
                 pending_ = Pending::None;  // a command is still running there
@@ -453,6 +459,24 @@ void Gui::continuePending() {
         keepDocSet_ = false;
         startPage_ = true;
     }
+}
+
+// With two or more unsaved drawings to close, one question (Save all / Discard all / Cancel)
+// replaces a prompt per drawing. Returns true while that question is showing.
+bool Gui::askCombined(bool skipActive) {
+    if (combinedAsked_ || discardAll_)
+        return false;
+    std::size_t n = 0;
+    const std::size_t active = core_.activeDocument();
+    for (std::size_t i = 0; i < core_.documentCount(); ++i)
+        if (core_.documentModified(i) && !(skipActive && i == active))
+            ++n;
+    if (n < 2)
+        return false;
+    combinedAsked_ = true;
+    openCombinedPrompt_ = true;
+    bringToFront();
+    return true;
 }
 
 void Gui::closeAllDrawings(bool keepActive) {
@@ -5050,6 +5074,38 @@ void Gui::dialogs() {
             crashReport_.clear();
             recovery_.reset();
             ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
+    if (openCombinedPrompt_) {
+        ImGui::OpenPopup("Unsaved drawings");
+        openCombinedPrompt_ = false;
+    }
+    if (ImGui::BeginPopupModal("Unsaved drawings", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted("Several drawings have unsaved changes.");
+        ImGui::Spacing();
+        if (ImGui::Button("Save all", ImVec2(110, 0))) {
+            ImGui::CloseCurrentPopup();
+            const ui::AppCore::SaveAllReport r = core_.saveAll();
+            for (const std::string& f : r.failed)
+                core_.print("Not saved: " + f);
+            continuePending();  // any left (no file name, failed) are asked one by one
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Discard all", ImVec2(110, 0))) {
+            ImGui::CloseCurrentPopup();
+            discardAll_ = true;
+            if (pending_ == Pending::Exit) {
+                pending_ = Pending::None;
+                exitRequested_ = true;
+            } else
+                continuePending();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(110, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            ImGui::CloseCurrentPopup();
+            pending_ = Pending::None;
         }
         ImGui::EndPopup();
     }
