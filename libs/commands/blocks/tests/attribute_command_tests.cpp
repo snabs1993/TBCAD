@@ -400,3 +400,14 @@ TEST_CASE("ATTDEF Lock position is switched on from the mode prompt") {
     REQUIRE((t && t->attdef));
     CHECK(t->attdef->lockPosition);
 }
+
+TEST_CASE("ATTDEF Multiple lines is switched on from the mode prompt") {
+    Fixture f;
+    auto r = f.host->run("ATTDEF", {"Multiple", "", "tag", "Tag", "V", "0,0", "2", "0"});
+    CHECK(r.finished);
+    REQUIRE(f.modelSpace().size() == 1);
+    const auto* t = entityAs<TextData>(*f.doc.find(f.modelSpace()[0]));
+    REQUIRE((t && t->attdef));
+    CHECK(t->attdef->multiLine);
+    CHECK_FALSE(t->attdef->lockPosition);
+}

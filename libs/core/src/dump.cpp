@@ -162,7 +162,7 @@ struct DataDumper {
             o.quoted(d.attdef->defaultValue);
             o << " flags" << (d.attdef->invisible ? "I" : "") << (d.attdef->constant ? "C" : "")
               << (d.attdef->verify ? "V" : "") << (d.attdef->preset ? "P" : "")
-              << (d.attdef->lockPosition ? "L" : "");
+              << (d.attdef->lockPosition ? "L" : "") << (d.attdef->multiLine ? "M" : "");
         }
     }
     void operator()(const MTextData& d) {
