@@ -308,8 +308,9 @@ struct DataDumper {
     }
     void operator()(const MLeaderData& d) {
         o << "MLEADER style" << d.style << " content" << static_cast<int>(d.content) << " landing"
-          << d.landing << " at" << d.contentPos << " dogleg" << d.dogleg << " th" << d.textHeight
-          << " block" << d.block << " bs" << d.blockScale << " br" << d.blockRotation << " ";
+          << d.landing << " at" << d.contentPos << " dogleg" << d.dogleg << " type"
+          << static_cast<int>(d.lineType) << " th" << d.textHeight << " block" << d.block << " bs"
+          << d.blockScale << " br" << d.blockRotation << " ";
         o.quoted(d.utf8);
         for (const auto& line : d.lines) {
             o << " line";

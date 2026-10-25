@@ -1205,3 +1205,30 @@ TEST_CASE("round trip fuzz: random entities, properties and extended data surviv
     CHECK(withXdata > 5);
     CHECK(withDict > 5);
 }
+
+TEST_CASE("round trip: multileader line type") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("mleader");
+        MLeaderData m;
+        m.lines = {{{0, 0}, {10, 5}, {20, 5}}};
+        m.landing = {20, 5};
+        m.contentPos = {23, 5};
+        m.utf8 = "note";
+        m.dogleg = false;
+        m.lineType = MLeaderData::LineType::Spline;
+        Entity e;
+        e.data = Indirect<MLeaderData>(m);
+        REQUIRE(tx.add(std::move(e)).ok());
+        tx.commit();
+    }
+    auto back = readOrFail(writeOrFail(doc));
+    const MLeaderData* got = nullptr;
+    back->forEachEntity([&](const Entity& e) {
+        if (const auto* x = entityAs<MLeaderData>(e))
+            got = x;
+    });
+    REQUIRE(got);
+    CHECK(got->lineType == MLeaderData::LineType::Spline);
+    CHECK_FALSE(got->dogleg);
+}

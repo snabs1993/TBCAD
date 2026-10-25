@@ -750,7 +750,8 @@ void Writer::mleaderNote(const MLeaderData& m, std::vector<DataItem>& items) {
         items.push_back(it);
     };
     items.push_back(noteText("c=" + std::to_string(static_cast<int>(m.content)) +
-                             ";d=" + (m.dogleg ? "1" : "0")));
+                             ";d=" + (m.dogleg ? "1" : "0") +
+                             ";t=" + std::to_string(static_cast<int>(m.lineType))));
     real(m.textHeight);
     real(m.blockScale);
     real(m.blockRotation);
@@ -979,7 +980,10 @@ bool Writer::writeMLeader(const Props& p, const Entity& e, const MLeaderData& m,
 
     o.h(340, mleaderStyleHandle(m.style));
     o.i(90, 2147483647);  // every property below overrides the style
-    o.i(170, 1);
+    // Leader line type: 0 invisible, 1 straight, 2 spline.
+    o.i(170, m.lineType == MLeaderData::LineType::None     ? 0
+             : m.lineType == MLeaderData::LineType::Spline ? 2
+                                                           : 1);
     o.i(91, kByBlock);
     o.h(341, byBlockLinetypeHandle());
     o.i(171, -2);

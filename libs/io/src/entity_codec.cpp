@@ -449,7 +449,9 @@ struct PayloadWriter {
             points(line);
         w.vec2(d.landing);
         w.vec2(d.contentPos);
-        w.u8(d.dogleg ? 1 : 0);
+        // bit 0: dogleg, bits 1-2: the leader line type (older files have 0 there: straight)
+        w.u8(static_cast<std::uint8_t>((d.dogleg ? 1 : 0) |
+                                       (static_cast<std::uint8_t>(d.lineType) << 1)));
         w.varint(d.style.value);
         w.u8(static_cast<std::uint8_t>(d.content));
         str(d.utf8);
@@ -1055,7 +1057,13 @@ struct PayloadReader {
                     line = points();
                 d.landing = r.vec2();
                 d.contentPos = r.vec2();
-                d.dogleg = r.boolean();
+                {
+                    const std::uint8_t flags = r.u8();
+                    d.dogleg = (flags & 1) != 0;
+                    const std::uint8_t type = (flags >> 1) & 3;
+                    d.lineType = type <= 2 ? static_cast<MLeaderData::LineType>(type)
+                                           : MLeaderData::LineType::Straight;
+                }
                 d.style = id<DimStyleId>();
                 d.content = enumeration<MLeaderData::Content>(2);
                 d.utf8 = str();
