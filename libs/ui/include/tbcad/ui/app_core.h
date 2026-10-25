@@ -476,6 +476,7 @@ private:
     std::unique_ptr<Session> makeSession(std::unique_ptr<Document> doc, std::filesystem::path file);
     Result<void> openDxf(const std::filesystem::path& path);
     void storeCurrentUcs();
+    void storeSnapAids();
     Result<void> saveDxf(const std::filesystem::path& path);
     dxf::ExportOptions dxfSaveOptions() const;
     void clearTransientState();
