@@ -96,6 +96,11 @@ public:
                 "There are no blocks in this drawing yet. Type a drawing file name to "
                 "insert it, or cancel and use BLOCK to make one.");
 
+        // In a window the Blocks palette (thumbnails of every block) opens to pick from, as the
+        // Insert gallery does; the name can still be typed.
+        if (!doc.blocks().empty() && source.empty() && ctx.host().dialogsAvailable())
+            ctx.host().openPanel("blocks");
+
         // Block name.
         const BlockDef* def = nullptr;
         std::filesystem::path wholeFile;  // the drawing file inserted as a block, if one was typed
