@@ -3895,13 +3895,6 @@ void Gui::viewportMenu() {
         } else {
             if (core_.registry().find("PASTECLIP") && ImGui::MenuItem("Paste"))
                 run("PASTECLIP");
-            if (core_.registry().find("PASTEBLOCK") && ImGui::MenuItem("Paste as Block"))
-                run("PASTEBLOCK");
-            if (core_.registry().find("PASTEORIG") &&
-                ImGui::MenuItem("Paste to Original Coordinates"))
-                run("PASTEORIG");
-            if (core_.registry().find("QSELECT") && ImGui::MenuItem("Quick Select"))
-                run("QSELECT");
             if (ImGui::MenuItem("Select All"))
                 core_.selectAll();
         }
