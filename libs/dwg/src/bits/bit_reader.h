@@ -22,8 +22,9 @@ struct HandleRef {
 };
 
 // Code page of the drawing being read (the DWG header index: 30 = ANSI_1252, 37 = ANSI_874 Thai,
-// 2 = ISO 8859-1, 38-42 = Shift-JIS, GBK, Korean, Big5, Johab). textBytes() turns the 8-bit strings of R2004 and older into UTF-8 with it.
-// Returns true when strings will be converted, so the DXF twin can be written as UTF-8.
+// 2 = ISO 8859-1, 38-42 = Shift-JIS, GBK, Korean, Big5, Johab). textBytes() turns the 8-bit strings
+// of R2004 and older into UTF-8 with it. Returns true when strings will be converted, so the DXF
+// twin can be written as UTF-8.
 bool setTextCodepage(int dwgCodepage);
 
 // Converts bytes in the given DWG code page to UTF-8; unknown pages return the input unchanged.

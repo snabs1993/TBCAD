@@ -163,9 +163,9 @@ public:
             cur.col = std::min(cur.col, table::colCount(*t) - 1);
 
             cmd::PointOptions po;
-            po.keywords = {"Text",      "RowBelow",  "RowAbove",   "ColRight", "ColLeft",
-                           "DeleteRow", "DeleteCol", "Merge",      "Unmerge",  "Width",
-                           "Height",    "Align",     "AlignColumn", "Next",      "Previous"};
+            po.keywords = {"Text",      "RowBelow",  "RowAbove",    "ColRight", "ColLeft",
+                           "DeleteRow", "DeleteCol", "Merge",       "Unmerge",  "Width",
+                           "Height",    "Align",     "AlignColumn", "Next",     "Previous"};
             auto pick = co_await ctx.getPoint(
                 "Click a cell, or [Text/RowBelow/RowAbove/ColRight/ColLeft/DeleteRow/DeleteCol/"
                 "Merge/Unmerge/Width/Height/Align/AlignColumn/Next/Previous] <done>",
@@ -185,10 +185,12 @@ public:
             }
             std::string k = pick.keyword;
             if (k == "Next" || k == "Previous") {
-                // Tab / Shift+Tab: step to the neighbouring cell (wrapping across rows), then edit it.
+                // Tab / Shift+Tab: step to the neighbouring cell (wrapping across rows), then edit
+                // it.
                 const std::size_t cols = table::colCount(*t), rows = table::rowCount(*t);
                 std::size_t idx = cur.row * cols + cur.col;
-                idx = k == "Next" ? (idx + 1) % (rows * cols) : (idx + rows * cols - 1) % (rows * cols);
+                idx = k == "Next" ? (idx + 1) % (rows * cols)
+                                  : (idx + rows * cols - 1) % (rows * cols);
                 cur.row = idx / cols;
                 cur.col = idx % cols;
                 k = "Text";
