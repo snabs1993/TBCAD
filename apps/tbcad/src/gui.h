@@ -227,6 +227,7 @@ private:
     float dpiScale_ = 1.0f;
     std::optional<ui::Recovery> recovery_{};
     std::size_t recoveryCount_ = 0;
+    std::vector<ui::Recovery> recoveries_{};  // the list in the start-up recovery prompt
     std::string pendingOpen_{};  // big file waiting for the "Opening ..." message to be shown
     bool pendingOpenShown_ = false;
     int pendingHistory_ = 0;  // 1 undo, 2 redo: waiting for its hint to be drawn

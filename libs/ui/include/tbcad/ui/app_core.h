@@ -46,8 +46,9 @@ struct PointerState {
 // An autosave left behind by a session that did not end cleanly.
 struct Recovery {
     std::filesystem::path autosaveFile{};
-    std::string originalPath{};  // empty = the drawing had never been saved
-    std::string savedAt{};       // when the backup was written, local time "2026-10-15 14:32"
+    std::string originalPath{};    // empty = the drawing had never been saved
+    std::string savedAt{};         // when the backup was written, local time "2026-10-15 14:32"
+    std::uintmax_t sizeBytes = 0;  // size of the autosave file
 };
 
 // Shown after a command put geometry outside the working area (non-blocking notice with "Zoom to"
