@@ -25,7 +25,7 @@ const std::vector<DoubleClickType>& doubleClickTypes() {
         {"Dimension", "Dimension", kOpenProperties},
         {"Leader", "Leader", kOpenProperties},
         {"MLeader", "Multileader", kOpenProperties},
-        {"Table", "Table", kOpenProperties},
+        {"Table", "Table", "TABLEEDIT"},
         {"Other", "Other objects", kOpenProperties},
     };
     return types;
