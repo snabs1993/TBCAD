@@ -511,7 +511,7 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
     ctx.paperSpace = lay.paperSpace;
     // A "pixel" on paper is a hairline: hatches denser than that are drawn as a tone.
     ctx.pixelSizeMm = s.hairlineMm / lay.paperPerUnit;
-    ctx.defaultLineweightMm = 0.25;
+    ctx.defaultLineweightMm = defaultLineweightMm(doc.header());
     ctx.byBlockLineweightMm = 0.25;
     ctx.showTransparency = s.transparency;
     ctx.fillMode = fillMode(doc.header());

@@ -2451,6 +2451,16 @@ bool fillMode(const Header& h) {
     return customFlag(h, kFillModeKey, true);
 }
 
+double defaultLineweightMm(const Header& h) {
+    auto it = h.custom.find(kLwDefaultKey);
+    if (it == h.custom.end())
+        return 0.25;
+    char* end = nullptr;
+    const double hundredths = std::strtod(it->second.c_str(), &end);
+    return end != it->second.c_str() && hundredths >= 0 && hundredths <= 211 ? hundredths / 100
+                                                                             : 0.25;
+}
+
 int attDisplay(const Header& h) {
     auto it = h.custom.find(kAttDispKey);
     if (it == h.custom.end())

@@ -103,7 +103,10 @@ bool SceneSync::readDisplayModes() {
     const bool fill = fillMode(doc_.header());
     const int att = attDisplay(doc_.header());
     const bool qt = quickText(doc_.header());
-    const bool changed = fill != fillMode_ || att != attDisplay_ || qt != quickText_;
+    const double lw = defaultLineweightMm(doc_.header());
+    const bool changed =
+        fill != fillMode_ || att != attDisplay_ || qt != quickText_ || lw != lwDefault_;
+    lwDefault_ = lw;
     quickText_ = qt;
     fillMode_ = fill;
     attDisplay_ = att;
@@ -135,6 +138,7 @@ void SceneSync::upsertEntity(const Entity& e, std::optional<std::uint32_t> drawO
     ctx.pixelSizeMm = pixelSizeMm_;
     ctx.showTransparency = showTransparency_;
     ctx.fillMode = fillMode_;
+    ctx.defaultLineweightMm = lwDefault_;
     ctx.attDisplay = attDisplay_;
     ctx.quickText = quickText_;
     const bool locked = doc_.effective(e.common).locked;
@@ -177,6 +181,7 @@ void SceneSync::prepare(const Entity& e, std::uint32_t order, Prepared& out) con
     ctx.pixelSizeMm = pixelSizeMm_;
     ctx.showTransparency = showTransparency_;
     ctx.fillMode = fillMode_;
+    ctx.defaultLineweightMm = lwDefault_;
     ctx.attDisplay = attDisplay_;
     ctx.quickText = quickText_;
     out.builtZoom = needsTessellation(e) ? 1.0 / pixelSizeMm_ : 0.0;
@@ -219,6 +224,7 @@ void SceneSync::packInserts(std::vector<Prepared>& chunk, std::size_t lanes) {
     ctx.pixelSizeMm = pixelSizeMm_;
     ctx.showTransparency = showTransparency_;
     ctx.fillMode = fillMode_;
+    ctx.defaultLineweightMm = lwDefault_;
     ctx.attDisplay = attDisplay_;
     ctx.quickText = quickText_;
     std::vector<Prepared*> todo;
@@ -681,6 +687,7 @@ void SceneSync::rebuildDrawOrder() {
         ctx.pixelSizeMm = pixelSizeMm_;
         ctx.showTransparency = showTransparency_;
         ctx.fillMode = fillMode_;
+        ctx.defaultLineweightMm = lwDefault_;
         ctx.attDisplay = attDisplay_;
         ctx.quickText = quickText_;
         DisplayList list;
