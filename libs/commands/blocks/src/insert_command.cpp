@@ -81,9 +81,6 @@ public:
         return array_ ? "Insert a block as a rectangular array" : "Insert a block";
     }
 
-#ifdef _MSC_VER
-#pragma optimize("", off)  // MSVC C4737 (tail call in this long coroutine) under /O2
-#endif
     cmd::Task run(cmd::CommandContext& ctx) override {
         Document& doc = ctx.doc();
         // What the block palette asked for this one run.
@@ -440,9 +437,6 @@ public:
                 co_return;
         }
     }
-#ifdef _MSC_VER
-#pragma optimize("", on)
-#endif
 
 private:
     bool array_;
