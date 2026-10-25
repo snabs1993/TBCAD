@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include "text_internal.h"
 
 namespace tbcad::text {
@@ -80,6 +82,59 @@ std::vector<std::size_t> clusterBoundaries(std::string_view s) {
     if (s.size() > 0)
         out.push_back(s.size());
     return out;
+}
+
+namespace {
+
+// Byte offset of the code point that ends at `end` (end > 0), stepping over UTF-8 continuation
+// bytes; an invalid sequence counts one byte, as decodeAt does.
+std::size_t codePointBefore(std::string_view s, std::size_t end) {
+    std::size_t i = end - 1;
+    for (std::size_t back = 0;
+         i > 0 && back < 3 && (static_cast<unsigned char>(s[i]) & 0xC0) == 0x80; ++back)
+        --i;
+    char32_t cp = 0;
+    if (i + detail::decodeAt(s, i, cp) != end)
+        return end - 1;
+    return i;
+}
+
+}  // namespace
+
+std::size_t nextClusterStart(std::string_view s, std::size_t idx) {
+    if (idx >= s.size())
+        return s.size();
+    char32_t cp = 0;
+    std::size_t i = idx + detail::decodeAt(s, idx, cp);
+    char32_t prev = (cp == 0x200D) ? char32_t{0x0E40} : cp;
+    while (i < s.size()) {
+        const std::size_t len = detail::decodeAt(s, i, cp);
+        if (!detail::isExtend(cp) && !detail::isPrepend(prev))
+            break;
+        prev = (cp == 0x200D) ? char32_t{0x0E40} : cp;
+        i += len;
+    }
+    return i;
+}
+
+std::size_t prevClusterStart(std::string_view s, std::size_t idx) {
+    if (idx == 0)
+        return 0;
+    idx = std::min(idx, s.size());
+    std::size_t p = codePointBefore(s, idx);
+    while (p > 0) {
+        char32_t cp = 0;
+        detail::decodeAt(s, p, cp);
+        const std::size_t before = codePointBefore(s, p);
+        char32_t pc = 0;
+        detail::decodeAt(s, before, pc);
+        if (pc == 0x200D)
+            pc = 0x0E40;
+        if (!detail::isExtend(cp) && !detail::isPrepend(pc))
+            break;
+        p = before;
+    }
+    return p;
 }
 
 }  // namespace tbcad::text

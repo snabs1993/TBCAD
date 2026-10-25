@@ -1652,6 +1652,46 @@ TEST_CASE("text editor: TEXT is typed in the box on the drawing, Thai included")
     });
 }
 
+// Thai clusters in the text box: Left and Delete step over a consonant with its tone mark, while
+// Backspace takes off one typed character (the tone mark) as in Windows.
+static std::string typedInTextBox(const std::vector<ImGuiKey>& keys) {
+    Harness h(1920, 1080);
+    h.frame(3);
+    h.core().submitText("TEXT");
+    h.core().submitText("0,0");
+    h.core().submitText("5");
+    h.core().submitText("0");
+    h.frame(8);
+    REQUIRE(h.windowOpen("##textedit"));
+    h.type("\xE0\xB8\x81\xE0\xB9\x89\xE0\xB8\x82");  // ก ้ ข
+    h.frame(3);
+    for (ImGuiKey k : keys) {
+        h.key(k);
+        h.frame(2);
+    }
+    h.type("x");
+    h.frame(3);
+    h.key(ImGuiKey_Enter);
+    h.frame(5);
+    std::string out;
+    h.core().document().forEachEntity([&](const Entity& e) {
+        if (const auto* t = std::get_if<Indirect<TextData>>(&e.data))
+            out = (*t)->utf8;
+    });
+    return out;
+}
+
+TEST_CASE("text box: Left steps over a whole Thai cluster") {
+    // Left, Left: before the consonant with its tone mark, not between the two.
+    CHECK(typedInTextBox({ImGuiKey_LeftArrow, ImGuiKey_LeftArrow}) ==
+          "x\xE0\xB8\x81\xE0\xB9\x89\xE0\xB8\x82");
+}
+
+TEST_CASE("text box: Delete removes a whole Thai cluster, Backspace one character") {
+    CHECK(typedInTextBox({ImGuiKey_Home, ImGuiKey_Delete}) == "x\xE0\xB8\x82");
+    CHECK(typedInTextBox({ImGuiKey_LeftArrow, ImGuiKey_Backspace}) == "\xE0\xB8\x81x\xE0\xB8\x82");
+}
+
 TEST_CASE("text editor: the MTEXT formatting bar wraps the selection and inserts symbols") {
     Harness h(1920, 1080);
     h.frame(3);

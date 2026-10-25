@@ -54,6 +54,52 @@ if(NOT TARGET tbcad_imgui)
     endif()
   endforeach()
 
+  # Text boxes step over whole character clusters (a Thai consonant with its vowel and tone mark)
+  # on Left, Right, Delete, word moves and clicks. The downloaded files are patched in place, once;
+  # the hooks are plain function pointers (tbcad_imgui_items.h) the program fills in, and without
+  # them every step is one code point as before. Backspace stays one code point, as in Windows.
+  set(_widgets "${_imgui_root}/imgui_widgets.cpp")
+  set(_textedit "${_imgui_root}/imstb_textedit.h")
+  file(READ "${_widgets}" _w)
+  if(NOT _w MATCHES "TbcadImGuiClusterNext")
+    string(REPLACE "// Wrapper for stb_textedit.h to edit text (our wrapper is for:"
+      "int (*TbcadImGuiClusterNext)(const char* s, int len, int idx) = nullptr;\nint (*TbcadImGuiClusterPrev)(const char* s, int len, int idx) = nullptr;\n// Wrapper for stb_textedit.h to edit text (our wrapper is for:" _w2 "${_w}")
+    string(REPLACE "#define IMSTB_TEXTEDIT_GETNEXTCHARINDEX  IMSTB_TEXTEDIT_GETNEXTCHARINDEX_IMPL
+#define IMSTB_TEXTEDIT_GETPREVCHARINDEX  IMSTB_TEXTEDIT_GETPREVCHARINDEX_IMPL"
+"static int IMSTB_TEXTEDIT_GETNEXTCHARINDEX_IMPL(ImGuiInputTextState* obj, int idx);
+static int IMSTB_TEXTEDIT_GETPREVCHARINDEX_IMPL(ImGuiInputTextState* obj, int idx);
+static int TbcadNextCharIndex(ImGuiInputTextState* obj, int idx)
+{
+    if (::TbcadImGuiClusterNext && idx >= 0 && idx < obj->TextLen && !(obj->Flags & ImGuiInputTextFlags_Password))
+        return ::TbcadImGuiClusterNext(obj->TextSrc, obj->TextLen, idx);
+    return IMSTB_TEXTEDIT_GETNEXTCHARINDEX_IMPL(obj, idx);
+}
+static int TbcadPrevCharIndex(ImGuiInputTextState* obj, int idx)
+{
+    if (::TbcadImGuiClusterPrev && idx > 0 && idx <= obj->TextLen && !(obj->Flags & ImGuiInputTextFlags_Password))
+        return ::TbcadImGuiClusterPrev(obj->TextSrc, obj->TextLen, idx);
+    return IMSTB_TEXTEDIT_GETPREVCHARINDEX_IMPL(obj, idx);
+}
+#define IMSTB_TEXTEDIT_GETNEXTCHARINDEX  TbcadNextCharIndex
+#define IMSTB_TEXTEDIT_GETPREVCHARINDEX  TbcadPrevCharIndex
+#define IMSTB_TEXTEDIT_GETPREVCODEPOINT  IMSTB_TEXTEDIT_GETPREVCHARINDEX_IMPL" _w3 "${_w2}")
+    if(_w3 STREQUAL _w2 OR _w2 STREQUAL _w)
+      message(FATAL_ERROR "imgui_widgets.cpp: the cluster patch did not apply")
+    endif()
+    file(WRITE "${_widgets}" "${_w3}")
+  endif()
+  file(READ "${_textedit}" _t)
+  if(NOT _t MATCHES "IMSTB_TEXTEDIT_GETPREVCODEPOINT")
+    string(REPLACE "#ifndef IMSTB_TEXTEDIT_GETPREVCHARINDEX"
+      "#ifndef IMSTB_TEXTEDIT_GETPREVCODEPOINT\n#define IMSTB_TEXTEDIT_GETPREVCODEPOINT(obj, idx) (idx - 1)\n#endif\n#ifndef IMSTB_TEXTEDIT_GETPREVCHARINDEX" _t2 "${_t}")
+    string(REPLACE "int prev = IMSTB_TEXTEDIT_GETPREVCHARINDEX(str, state->cursor);"
+      "int prev = IMSTB_TEXTEDIT_GETPREVCODEPOINT(str, state->cursor);" _t3 "${_t2}")
+    if(_t3 STREQUAL _t2 OR _t2 STREQUAL _t)
+      message(FATAL_ERROR "imstb_textedit.h: the cluster patch did not apply")
+    endif()
+    file(WRITE "${_textedit}" "${_t3}")
+  endif()
+
   add_library(tbcad_imgui STATIC
     "${_imgui_root}/imgui.cpp"
     "${_imgui_root}/imgui_draw.cpp"

@@ -27,3 +27,10 @@ void clear();
 const std::vector<Item>& items();
 
 }  // namespace tbcad::imgui_items
+
+// Cluster stepping in text boxes (see cmake/deps/imgui.cmake). Defined in the patched
+// imgui_widgets.cpp, null until the program sets them. `next` returns the byte offset of the next
+// cluster start after `idx` (idx < len); `prev` the one before `idx` (idx > 0). Both work on the
+// UTF-8 text of the box.
+extern int (*TbcadImGuiClusterNext)(const char* s, int len, int idx);
+extern int (*TbcadImGuiClusterPrev)(const char* s, int len, int idx);

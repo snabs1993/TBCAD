@@ -95,6 +95,13 @@ const TextStyle* styleFor(const Document& doc, TextStyleId id);
 // as one cluster each.
 std::vector<std::size_t> clusterBoundaries(std::string_view utf8);
 
+// The cluster boundary after / before byte offset `idx`, found by looking only at the neighbouring
+// characters (a text box calls this on every key press and click). Same clusters as
+// clusterBoundaries. nextClusterStart returns a value in (idx, size] (size when idx >= size);
+// prevClusterStart returns a value in [0, idx) (0 when idx == 0). `idx` need not be a boundary.
+std::size_t nextClusterStart(std::string_view utf8, std::size_t idx);
+std::size_t prevClusterStart(std::string_view utf8, std::size_t idx);
+
 // ---- Thai word breaking -------------------------------------------------------------------------
 
 // Directory searched for thai-words.txt. Defaults to the source tree's assets/dictionaries (set at
