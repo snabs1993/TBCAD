@@ -1409,6 +1409,10 @@ void Gui::layoutTabs(const ViewportRect& rect) {
             }
             if (active)
                 ImGui::PopStyleColor(2);
+            if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
+                tabPreviewTip(name.empty() ? "Model" : name,
+                              name.empty() ? core_.documentPreview(core_.activeDocument())
+                                           : core_.layoutPreview(name));
             const auto place = std::find(names.begin(), names.end(), name);
             const std::size_t at = static_cast<std::size_t>(place - names.begin());
             if (!name.empty() && !readOnly) {
@@ -2802,6 +2806,35 @@ void Gui::gripMenu(const ViewportRect& rect) {
     }
 }
 
+void Gui::tabPreviewTip(const std::string& title, const ui::TabPreview& preview) {
+    if (!ImGui::BeginItemTooltip())
+        return;
+    ImGui::TextUnformatted(title.c_str());
+    const float side = 200.0f * dpiScale_;
+    const ImVec2 at = ImGui::GetCursorScreenPos();
+    ImGui::Dummy(ImVec2(side, side));
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled(at, ImVec2(at.x + side, at.y + side), ImGui::GetColorU32(ImGuiCol_FrameBg));
+    if (preview.empty()) {
+        ImGui::SetCursorScreenPos(ImVec2(at.x + 8, at.y + 8));
+        ImGui::TextDisabled("Nothing to show");
+    } else {
+        const float w = static_cast<float>(preview.width) * side;
+        const float h = static_cast<float>(preview.height) * side;
+        const float ox = at.x + (side - w) / 2, oy = at.y + (side + h) / 2;
+        const ImU32 ink = ImGui::GetColorU32(ImGuiCol_Text);
+        std::vector<ImVec2> pts;
+        for (const auto& stroke : preview.strokes) {
+            pts.clear();
+            for (Vec2 p : stroke)
+                pts.emplace_back(ox + static_cast<float>(p.x) * side,
+                                 oy - static_cast<float>(p.y) * side);
+            dl->AddPolyline(pts.data(), static_cast<int>(pts.size()), ink, ImDrawFlags_None, 1.0f);
+        }
+    }
+    ImGui::EndTooltip();
+}
+
 void Gui::docTabs() {
     ImGuiViewport* vp = ImGui::GetMainViewport();
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
@@ -2831,6 +2864,8 @@ void Gui::docTabs() {
                 }
                 if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Middle))
                     open = false;  // middle-click closes a tab
+                if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
+                    tabPreviewTip(core_.documentTitle(i), core_.documentPreview(i));
                 if (ImGui::BeginPopupContextItem("##doctabmenu")) {
                     // The commands work on the active drawing, so the tab is made active first.
                     const bool here = i == active || (!external && core_.activateDocument(i));

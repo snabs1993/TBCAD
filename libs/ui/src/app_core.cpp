@@ -595,6 +595,14 @@ bool AppCore::activateDocument(std::size_t index) {
 }
 
 void AppCore::closeDocument(std::size_t index) {
+    if (index < slots_.size()) {
+        const std::string id = std::to_string(slots_[index].id);
+        const std::string layoutPrefix = "layout:" + id + ":";
+        previews_.erase("doc:" + id);
+        for (auto it = previews_.begin(); it != previews_.end();)
+            it = it->first.compare(0, layoutPrefix.size(), layoutPrefix) == 0 ? previews_.erase(it)
+                                                                              : std::next(it);
+    }
     if (index >= slots_.size())
         return;
     if (index == active_ && runner().active())
@@ -646,6 +654,31 @@ bool AppCore::anyDocumentModified() const {
 
 std::uint64_t AppCore::documentId(std::size_t index) const {
     return index < slots_.size() ? slots_[index].id : 0;
+}
+
+const TabPreview& AppCore::documentPreview(std::size_t index) {
+    static const TabPreview none;
+    if (index >= slots_.size())
+        return none;
+    const Document& doc = slots_[index].session->doc;
+    PreviewEntry& e = previews_["doc:" + std::to_string(slots_[index].id)];
+    if (e.revision != doc.revision()) {
+        e.preview = previewOfModel(doc);
+        e.revision = doc.revision();
+    }
+    return e.preview;
+}
+
+const TabPreview& AppCore::layoutPreview(const std::string& layoutName) {
+    static const TabPreview none;
+    if (!session_ || active_ >= slots_.size())
+        return none;
+    PreviewEntry& e = previews_["layout:" + std::to_string(slots_[active_].id) + ":" + layoutName];
+    if (e.revision != session_->doc.revision()) {
+        e.preview = previewOfLayout(session_->doc, layoutName);
+        e.revision = session_->doc.revision();
+    }
+    return e.preview;
 }
 
 bool AppCore::isPristine() const {

@@ -15,6 +15,7 @@ tbcad_add_library(appcore
     src/paper_view.cpp
     src/scene_sync.cpp
     src/selection.cpp
+    src/tab_preview.cpp
     src/workspace.cpp
     src/settings_model.cpp
   DEPENDS tbcad::ui tbcad::hatch tbcad::dxf tbcad::blocks tbcad::xref tbcad::underlay tbcad::platform tbcad::layout tbcad::export tbcad::geom tbcad::index tbcad::io tbcad::render tbcad::cmd tbcad::template tbcad::drafting)
