@@ -702,3 +702,25 @@ TEST_CASE("Properties edit attribute values, dimension override and style, table
     host.run("-PROP", {"Set", "att:room", "8", cmd::ScriptItem::enter()});
     CHECK(entityAs<MLeaderData>(*doc.find(tagged))->attribs[0].value == "8");
 }
+
+TEST_CASE(
+    "Properties flip text backward and upside down, and polyline linetype generation - undo") {
+    Document doc;
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    cmd::ScriptHost host(doc, reg);
+    const auto ids = sampleKinds(doc);
+    const EntityId pl = ids[3], tx = ids[6];
+    host.setSelection({tx});
+    host.run("-PROP", {"Set", "backward", "Yes", cmd::ScriptItem::enter()});
+    host.run("-PROP", {"Set", "upsidedown", "yes", cmd::ScriptItem::enter()});
+    CHECK(entityAs<TextData>(*doc.find(tx))->backward);
+    CHECK(entityAs<TextData>(*doc.find(tx))->upsideDown);
+    CHECK(host.undo());
+    CHECK_FALSE(entityAs<TextData>(*doc.find(tx))->upsideDown);
+    host.setSelection({pl});
+    host.run("-PROP", {"Set", "ltypegen", "Off", cmd::ScriptItem::enter()});
+    CHECK(entityAs<PolylineData>(*doc.find(pl))->restartLinetype);
+    CHECK(host.undo());
+    CHECK_FALSE(entityAs<PolylineData>(*doc.find(pl))->restartLinetype);
+}
