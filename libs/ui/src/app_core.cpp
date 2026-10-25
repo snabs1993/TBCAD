@@ -1414,6 +1414,23 @@ Result<void> AppCore::openDxf(const fs::path& path) {
         print("DXF: " + std::to_string(warnings - 5) + " more notice(s) not shown.");
     if (imported.summary.unitsAssumed)
         print("DXF: the file has no units; millimetres assumed.");
+    // One plain notice when part of the file is not in the view; the list by type is what
+    // DWGREPORT copies.
+    std::size_t notShown = 0;
+    std::string byType;
+    for (const auto& [name, count] : imported.summary.entities) {
+        if (count.skipped == 0)
+            continue;
+        notShown += count.skipped;
+        byType += (byType.empty() ? "" : ", ") + name + " x" + std::to_string(count.skipped);
+    }
+    if (notShown > 0) {
+        print(std::to_string(notShown) + " objects of unsupported types were not shown (" + byType +
+              "). Type DWGREPORT to copy the list.");
+        session_->openReport = std::to_string(notShown) +
+                               " object(s) of unsupported types were not shown: " + byType + "\n";
+        session_->openReportFormat = "DXF";
+    }
     settings_.addRecentFile(platform::pathToUtf8(path));
     wantThumbnail(path);
     (void)settings_.save(paths_.settingsFile());

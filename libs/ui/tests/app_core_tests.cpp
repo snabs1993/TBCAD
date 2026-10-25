@@ -1258,6 +1258,25 @@ TEST_CASE("DWGREPORT copies the reader notices of a foreign file to the clipboar
     CHECK(text->find("DWG R2018") != std::string::npos);
 }
 
+TEST_CASE("a DXF with unsupported objects says so once and DWGREPORT lists them by type") {
+    Fixture f("dxfnotshown");
+    const fs::path file = f.dir / "odd.dxf";
+    {
+        std::ofstream out(file);
+        out << "0\nSECTION\n2\nENTITIES\n0\nLINE\n8\n0\n10\n0\n20\n0\n11\n5\n21\n5\n"
+               "0\nWIPEOUT\n8\n0\n0\nWIPEOUT\n8\n0\n0\nENDSEC\n0\nEOF\n";
+    }
+    REQUIRE(f.core->openFile(file).ok());
+    bool notice = false;
+    for (const std::string& h : f.core->history())
+        notice = notice || h.find("unsupported types were not shown") != std::string::npos;
+    CHECK(notice);
+    f.core->submitText("DWGREPORT");
+    auto text = f.core->takeClipboardText();
+    REQUIRE(text.has_value());
+    CHECK(text->find("WIPEOUT x2") != std::string::npos);
+}
+
 TEST_CASE("COPYHIST copies the command history and LOGFILEON writes the command line to a file") {
     Fixture f("logfile");
     f.core->print("hello history");
