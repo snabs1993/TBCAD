@@ -949,7 +949,8 @@ Interp::Interp() {
         std::size_t from = 0;
         for (;;) {
             auto comma = pats.find(',', from);
-            if (wildcardMatch(pats.substr(from, comma == std::string::npos ? comma : comma - from), s))
+            if (wildcardMatch(pats.substr(from, comma == std::string::npos ? comma : comma - from),
+                              s))
                 return Value::t();
             if (comma == std::string::npos)
                 return Value::nil();
