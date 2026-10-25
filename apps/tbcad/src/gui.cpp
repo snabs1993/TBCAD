@@ -49,21 +49,25 @@ namespace {
 constexpr ImGuiID kDockId = 0x7BC4D001u;
 
 const std::vector<platform::FileFilter>& openFilters() {
-    static const std::vector<platform::FileFilter> f = {{"All drawings", "*.tbcad;*.dxf;*.dwg"},
-                                                        {"TBCAD drawings", "*.tbcad"},
-                                                        {"DXF drawings", "*.dxf"},
-                                                        {"DWG drawings (read-only)", "*.dwg"}};
+    static const std::vector<platform::FileFilter> f = {
+        {"All drawings", "*.tbcad;*.dxf;*.dwg;*.tbt"},
+        {"TBCAD drawings", "*.tbcad"},
+        {"DXF drawings", "*.dxf"},
+        {"DWG drawings (read-only)", "*.dwg"},
+        {"Drawing Template", "*.tbt;*.dwt"}};
     return f;
 }
 
 const std::vector<platform::FileFilter>& drawingFilters(bool dxfFirst = false) {
     static const std::vector<platform::FileFilter> tbcadFirst = {{"TBCAD drawings", "*.tbcad"},
                                                                  {"DXF drawings", "*.dxf"},
-                                                                 {"All drawings", "*.tbcad;*.dxf"}};
+                                                                 {"All drawings", "*.tbcad;*.dxf"},
+                                                                 {"Drawing Template", "*.tbt"}};
     static const std::vector<platform::FileFilter> dxfFirstList = {
         {"DXF drawings", "*.dxf"},
         {"TBCAD drawings", "*.tbcad"},
-        {"All drawings", "*.tbcad;*.dxf"}};
+        {"All drawings", "*.tbcad;*.dxf"},
+        {"Drawing Template", "*.tbt"}};
     return dxfFirst ? dxfFirstList : tbcadFirst;
 }
 
