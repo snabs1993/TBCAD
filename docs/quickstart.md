@@ -38,8 +38,11 @@ F3 object snap, F7 grid, F8 ortho, F9 grid snap, F10 polar tracking. Use `OSNAP`
 - **Settings** (Edit menu): command aliases (import an acad.pgp-style file with `ALIASIMPORT`) and keyboard shortcuts.
 - **Workspaces** (status bar, or `WORKSPACE`): save and switch panel layouts.
 
-### 8. Tell us what breaks
-Please note what you did, what you expected, and what happened. **Help > About** shows the version and build number to include.
+### 8. Common shortcuts
+`Ctrl+N` new, `Ctrl+O` open, `Ctrl+S` save, `Ctrl+Z` / `Ctrl+Y` undo / redo, `Ctrl+C` / `Ctrl+V` copy / paste, `Ctrl+A` select all, `Ctrl+L` command log, `F1` help for the running command (or this page), `F2` text window, `F11` clean screen. **Help > Command List** lists every command.
+
+### 9. Tell us what breaks
+Use **Help > Report a Problem...**: note what you did, what you expected, and what happened. **Help > About** shows the version and build number to include.
 
 ## ภาษาไทย
 
@@ -76,5 +79,8 @@ F3 จับจุด F7 ตาราง F8 วาดตั้งฉาก (Orth
 - **Settings** (เมนู Edit): ชื่อย่อคำสั่ง (นำเข้าไฟล์แบบ acad.pgp ด้วย `ALIASIMPORT`) และปุ่มลัด
 - **Workspaces** (แถบสถานะ หรือ `WORKSPACE`): บันทึกและสลับการจัดวางแผง
 
-### 8. ถ้าเจอปัญหา
-จดว่าทำอะไร คาดหวังอะไร และเกิดอะไรขึ้น แล้วดูเวอร์ชันและเลขบิลด์ได้ที่ **Help > About**
+### 8. ปุ่มลัดที่ใช้บ่อย
+`Ctrl+N` ใหม่, `Ctrl+O` เปิด, `Ctrl+S` บันทึก, `Ctrl+Z` / `Ctrl+Y` ย้อนกลับ / ทำซ้ำ, `Ctrl+C` / `Ctrl+V` คัดลอก / วาง, `Ctrl+A` เลือกทั้งหมด, `Ctrl+L` บันทึกคำสั่ง, `F1` วิธีใช้คำสั่งที่กำลังทำ (หรือหน้านี้), `F2` หน้าต่างข้อความ, `F11` ซ่อนแผงทั้งหมด **Help > Command List** แสดงคำสั่งทั้งหมด
+
+### 9. ถ้าเจอปัญหา
+ใช้ **Help > Report a Problem...** จดว่าทำอะไร คาดหวังอะไร และเกิดอะไรขึ้น แล้วดูเวอร์ชันและเลขบิลด์ได้ที่ **Help > About**
