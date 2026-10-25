@@ -394,6 +394,18 @@ struct PayloadWriter {
             for (EntityId id : d.breakWith)
                 w.varint(id.value);
         }
+        std::uint8_t onSheet = 0;
+        for (std::size_t i = 0; i < d.assoc.size(); ++i)
+            if (d.assoc[i].kind != DimAssoc::Kind::None && d.assoc[i].viewport != 0)
+                onSheet |= static_cast<std::uint8_t>(1u << i);
+        if (onSheet || d.modelScale != 0) {  // tag 7: trans-spatial dimension
+            w.u8(7);
+            w.u8(onSheet);
+            for (std::size_t i = 0; i < d.assoc.size(); ++i)
+                if (onSheet & (1u << i))
+                    w.varint(d.assoc[i].viewport);
+            w.f64(d.modelScale);
+        }
     }
     // Optional tail of a leader or multileader: u8 1, DIMBREAK gaps and the objects of the
     // automatic ones (format 1.18; an older reader warns and skips it).
@@ -971,6 +983,14 @@ struct PayloadReader {
                         d.breakWith.reserve(n);
                         for (std::size_t i = 0; i < n; ++i)
                             d.breakWith.push_back(id<EntityId>());
+                        continue;
+                    }
+                    if (tag == 7) {
+                        const std::uint8_t onSheet = r.u8();
+                        for (std::size_t i = 0; i < d.assoc.size(); ++i)
+                            if (onSheet & (1u << i))
+                                d.assoc[i].viewport = static_cast<std::uint16_t>(r.varint());
+                        d.modelScale = r.f64();
                         continue;
                     }
                     if (tag == 5) {
