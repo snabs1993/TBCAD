@@ -3,6 +3,7 @@
 
 #include "tbcad/clipboard/clipboard.h"
 #include "tbcad/io/tbcad.h"
+#include "tbcad/platform/clipboard_picture.h"
 #include "tbcad/table/table.h"
 #include "tbcad/ui/ui_registry.h"
 
@@ -60,8 +61,16 @@ public:
         }
         std::size_t n = clip.entities.size();
         setCurrent(std::move(clip));
-        // Replaces stale text on the system clipboard, so Ctrl+V pastes these objects.
-        ctx.host().setSetting("clipboard.text", "[TBCAD objects]");
+        // Also for other programs: the text of the selected TEXT / MTEXT (or a marker that
+        // Ctrl+V reads as "these objects") and a picture, both put on the system clipboard by the
+        // window. Cut does not leave a picture of what is gone.
+        std::string text = plainTextOf(ctx.doc(), sel.ids);
+        ctx.host().setSetting("clipboard.text", text.empty() ? "[TBCAD objects]" : text);
+        // An empty picture still tells the window this text came from an object copy.
+        std::optional<platform::ClipboardPicture> pic;
+        if (!cut_)
+            pic = renderPicture(ctx.doc(), sel.ids);
+        platform::stashClipboardPicture(pic ? std::move(*pic) : platform::ClipboardPicture{});
         if (cut_) {
             for (EntityId id : sel.ids)
                 (void)ctx.tx().erase(id);

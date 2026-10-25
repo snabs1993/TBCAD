@@ -90,4 +90,50 @@ std::optional<ClipboardPicture> parseDib(const std::uint8_t* data, std::size_t s
     return pic;
 }
 
+std::vector<std::uint8_t> buildDib(const ClipboardPicture& pic) {
+    const int w = pic.width, h = pic.height;
+    if (w <= 0 || h <= 0 || pic.rgba.size() < std::size_t{4} * w * h)
+        return {};
+    const std::size_t stride = ((static_cast<std::size_t>(w) * 24 + 31) / 32) * 4;
+    std::vector<std::uint8_t> out(40 + stride * static_cast<std::size_t>(h), 0);
+    auto put32 = [&](std::size_t at, std::uint32_t v) {
+        for (int i = 0; i < 4; ++i)
+            out[at + i] = static_cast<std::uint8_t>(v >> (8 * i));
+    };
+    put32(0, 40);
+    put32(4, static_cast<std::uint32_t>(w));
+    put32(8, static_cast<std::uint32_t>(h));  // positive: rows run bottom to top
+    out[12] = 1;
+    out[14] = 24;
+    put32(20, static_cast<std::uint32_t>(stride * static_cast<std::size_t>(h)));
+    for (int y = 0; y < h; ++y) {
+        const std::uint8_t* src = pic.rgba.data() + std::size_t{4} * w * (h - 1 - y);
+        std::uint8_t* dst = out.data() + 40 + stride * static_cast<std::size_t>(y);
+        for (int x = 0; x < w; ++x) {
+            const unsigned a = src[4 * x + 3];
+            for (int c = 0; c < 3; ++c)  // blend over white
+                dst[3 * x + (2 - c)] =
+                    static_cast<std::uint8_t>((src[4 * x + c] * a + 255 * (255 - a) + 127) / 255);
+        }
+    }
+    return out;
+}
+
+namespace {
+std::optional<ClipboardPicture>& stash() {
+    static std::optional<ClipboardPicture> slot;
+    return slot;
+}
+}  // namespace
+
+void stashClipboardPicture(ClipboardPicture pic) {
+    stash() = std::move(pic);
+}
+
+std::optional<ClipboardPicture> takeStashedClipboardPicture() {
+    std::optional<ClipboardPicture> out = std::move(stash());
+    stash().reset();
+    return out;
+}
+
 }  // namespace tbcad::platform
