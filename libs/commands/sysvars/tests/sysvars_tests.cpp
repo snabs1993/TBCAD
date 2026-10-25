@@ -299,6 +299,10 @@ TEST_CASE("the Options dialog's variables read and write its settings") {
     CHECK(f.host.setting("view.lockFade") == "-40");
     f.host.run("ISAVEBAK", {"0"});
     CHECK(f.host.setting("files.backup") == "0");
+    f.host.run("ISAVEPERCENT", {"0"});
+    CHECK(f.host.setting("files.isavePercent") == "0");
+    f.host.run("ISAVEPERCENT", {"101"});
+    CHECK(f.host.setting("files.isavePercent") == "0");
     f.host.run("APBOX", {"1"});
     CHECK(f.host.setting("osnap.apbox") == "1");
 

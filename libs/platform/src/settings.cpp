@@ -28,6 +28,7 @@ Settings Settings::withDefaults() {
     o["files.defaultFormat"] = "tbcad";
     o["files.dxfVersion"] = "auto";  // auto | r12 | r2000 | r2007
     o["files.backup"] = true;        // ISAVEBAK: keep the previous file as <name>.bak
+    o["files.isavePercent"] = 50;    // ISAVEPERCENT: accepted, saves are always whole files
     o["view.crosshairSize"] = 100;   // CURSORSIZE: % of the drawing area
     o["view.lockFade"] = 60;         // LAYLOCKFADECTL: % faded on locked layers
     o["grips.size"] = 4;             // GRIPSIZE: half the side of a grip, pixels
@@ -52,6 +53,7 @@ void Settings::resetToDefaults() {
                                                      "files.defaultFormat",
                                                      "files.dxfVersion",
                                                      "files.backup",
+                                                     "files.isavePercent",
                                                      "grips.",
                                                      "osnap.",
                                                      "ui.viewportBackground"};

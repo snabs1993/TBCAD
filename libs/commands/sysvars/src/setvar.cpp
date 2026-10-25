@@ -529,6 +529,9 @@ std::unique_ptr<cmd::Command> makeOptionVarCommand(std::string_view name) {
          "How much objects on locked layers fade, % (0 or less: not at all)"},
         {"TEXTEDITMODE", "textedit.mode", 0, 1, 0,
          "TEXTEDIT asks for another object after each edit (0) or ends (1)"},
+        {"ISAVEPERCENT", "files.isavePercent", 0, 100, 50,
+         "Allowed waste in a saved file, % (every save writes a whole new file, so this has no "
+         "effect yet)"},
     };
     if (name == "SAVETIME")
         return std::make_unique<SaveTimeCommand>();
