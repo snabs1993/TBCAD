@@ -116,8 +116,8 @@ private:
     void saveAllDrawings();
     // QVDRAWING / QVLAYOUT: cards of the open drawings (or of this drawing's layouts) to switch to.
     void quickView();
-    int quickView_ = 0;
-    int tabCloseAll_ = 0;  // from the tab menu: 1 close all, 2 close the others  // 0 closed, 1 drawings, 2 layouts of the active drawing
+    int quickView_ = 0;    // 0 closed, 1 drawings, 2 layouts of the active drawing
+    int tabCloseAll_ = 0;  // from the tab menu: 1 close all, 2 close the others
     enum class BrowserPurpose { Open, SaveAs, ImportDxf, ExportDxf, LayoutTemplate };
 
     void shortcuts();
