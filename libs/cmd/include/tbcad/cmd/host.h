@@ -9,6 +9,10 @@
 #include "tbcad/cmd/input.h"
 #include "tbcad/core/core.h"
 
+namespace tbcad::index {
+class SpatialIndex;
+}
+
 namespace tbcad::cmd {
 
 struct ViewState {
@@ -117,6 +121,12 @@ public:
     // Block that new objects go into when a command draws: null = model space. A host showing a
     // layout sheet returns the sheet's block so drawing commands annotate the sheet.
     virtual BlockId drawingOwner() const { return {}; }
+
+    // The layout whose sheet is shown (empty = model space), and the spatial index of model space
+    // (null when the host has none): object snap on a sheet reaches the model through the
+    // viewports with them.
+    virtual std::string activeLayoutName() const { return {}; }
+    virtual const index::SpatialIndex* modelSpatialIndex() const { return nullptr; }
 
     // Rubber-band preview from the active prompt; nullptr clears it.
     virtual void setPreview(const DisplayList* /*list*/) {}

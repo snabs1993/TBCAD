@@ -806,6 +806,10 @@ const index::SpatialIndex& AppCore::spatialIndex() const {
     return inPaperSpace() ? paperIndex_ : session_->index;
 }
 
+const index::SpatialIndex* AppCore::modelSpatialIndex() const {
+    return session_ ? &session_->index : nullptr;
+}
+
 BlockId AppCore::drawingOwner() const {
     if (!session_ || !inPaperSpace())
         return {};
