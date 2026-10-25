@@ -1,9 +1,9 @@
 name: Release
 
 # Builds the Windows installer and the portable ZIP.
-#  - push of a tag v*  : builds, tests, attaches both files to a GitHub Release. Tags with a
-#                        suffix (v0.1.0-preview.1) are published at once as a pre-release;
-#                        plain tags (v1.0.0) stay a DRAFT for the owner to publish.
+#  - push of a tag v*  : builds, tests, installs and uninstalls the setup once as a first-run
+#                        check, then attaches both files to a DRAFT GitHub Release (nothing is
+#                        public until the owner publishes it).
 #  - workflow_dispatch : same build without a release; the files are workflow artifacts. Use it
 #                        to try the pipeline. With publish=true it also makes a private DRAFT
 #                        release v<version> (tag created on the selected commit).
@@ -96,6 +96,11 @@ jobs:
           if ($built -ne $want) { Move-Item $built $want -Force }
           Get-ChildItem dist
 
+      - name: Installer first-run check
+        shell: pwsh
+        run: |
+          ./packaging/windows/installer-smoke.ps1 -Setup "$PWD/dist/TBCAD-${{ steps.ver.outputs.version }}-setup.exe" -Sample "$PWD/samples/thai-house.dxf"
+
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: tbcad-windows-release
@@ -113,14 +118,7 @@ jobs:
           $target = @('--verify-tag')
           $manual = -not ($tag -like 'v*')
           if ($manual) { $tag = 'v${{ steps.ver.outputs.version }}'; $target = @('--target', $env:GITHUB_SHA) }
-          if ($tag -like '*-*' -and -not $manual) {
-            gh release create $tag --prerelease @target `
-              --title "TBCAD ${{ steps.ver.outputs.version }} (test build)" `
-              --notes "Test build for trying TBCAD. Not code signed yet, so Windows SmartScreen may warn: click More info, then Run anyway. Files: the Setup .exe installs it; the portable .zip runs without installing." `
-              $files
-          } else {
-            gh release create $tag --draft @target `
-              --title "TBCAD ${{ steps.ver.outputs.version }}" `
-              --notes "Draft. Windows installer and portable ZIP. Not code signed yet: Windows SmartScreen may warn on first run." `
-              $files
-          }
+          gh release create $tag --draft --prerelease @target `
+            --title "TBCAD ${{ steps.ver.outputs.version }}" `
+            --notes "Draft. Windows installer and portable ZIP. Not code signed yet: Windows SmartScreen may warn on first run (More info, then Run anyway)." `
+            $files
