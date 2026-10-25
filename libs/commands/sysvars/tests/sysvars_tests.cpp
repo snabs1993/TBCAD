@@ -498,3 +498,9 @@ TEST_CASE("HPORIGIN is a command and a SETVAR name, a point") {
     CHECK(f.host.logContains("HPORIGIN is a point: x,y."));
     CHECK(hatchOrigin(f.doc.header()).x == doctest::Approx(12.5));
 }
+
+TEST_CASE("typing LWDEFAULT asks for the new value") {
+    Fixture f;
+    f.host.run("LWDEFAULT", {"35"});
+    CHECK(defaultLineweightMm(f.doc.header()) == doctest::Approx(0.35));
+}
