@@ -145,6 +145,25 @@ TEST_CASE("DIMTEDIT moves the text and Home puts it back") {
     CHECK(f.dims()[0]->textPos.x == doctest::Approx(50));
 }
 
+TEST_CASE("DIMFLIPARROW toggles one arrowhead and undoes") {
+    Chain f;
+    REQUIRE(f.host->run("DIMLINEAR", {"0,0", "100,0", "50,-30"}).finished);
+    EntityId id{};
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (kind(e) == EntityKind::Dimension)
+            id = e.common.id;
+    });
+    REQUIRE(f.host->run("DIMFLIPARROW", {ScriptItem::pick(id, {50, -30}), "Second"}).finished);
+    CHECK_FALSE(f.dims()[0]->flipArrow1);
+    CHECK(f.dims()[0]->flipArrow2);
+    REQUIRE(f.host->run("DIMFLIPARROW", {ScriptItem::pick(id, {50, -30}), ""}).finished);
+    CHECK(f.dims()[0]->flipArrow1);
+    REQUIRE(f.host->run("DIMFLIPARROW", {ScriptItem::pick(id, {50, -30}), "Second"}).finished);
+    CHECK_FALSE(f.dims()[0]->flipArrow2);
+    f.host->undo();
+    CHECK(f.dims()[0]->flipArrow2);
+}
+
 TEST_CASE("DIMSPACE evens out the gaps between parallel dimensions") {
     Chain f;
     REQUIRE(f.host->run("DIMLINEAR", {"0,0", "100,0", "50,-30"}).finished);

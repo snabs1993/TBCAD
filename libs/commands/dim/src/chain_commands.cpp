@@ -793,6 +793,40 @@ public:
     }
 };
 
+class FlipArrowCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "DIMFLIPARROW"; }
+    std::string_view description() const override {
+        return "Reverse the direction of one arrowhead of a dimension";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        cmd::EntityOptions eo;
+        eo.filter = isAnyDim;
+        auto o = co_await ctx.getEntity("Select dimension", eo);
+        if (!o.ok())
+            co_return;
+        cmd::KeywordOptions ko;
+        ko.keywords = {"First", "Second"};
+        ko.defaultKeyword = "First";
+        auto k = co_await ctx.getKeyword("Specify arrow to flip [First/Second] <First>", ko);
+        if (!k.ok())
+            co_return;
+        const bool second = k.keyword == "Second";
+        ctx.setUndoLabel("DIMFLIPARROW");
+        auto r = ctx.tx().modify(o.id, [&](Entity& ent) {
+            auto* d = entityAs<DimensionData>(ent);
+            if (!d)
+                return;
+            bool& flip = second ? d->flipArrow2 : d->flipArrow1;
+            flip = !flip;
+            dim::refresh(ctx.doc(), *d);
+        });
+        if (!r)
+            ctx.message(r.error().message);
+    }
+};
+
 class EditCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "DIMEDIT"; }
@@ -1504,6 +1538,10 @@ std::unique_ptr<cmd::Command> makeJogLineCommand() {
 
 std::unique_ptr<cmd::Command> makeBreakCommand() {
     return std::make_unique<BreakCommand>();
+}
+
+std::unique_ptr<cmd::Command> makeFlipArrowCommand() {
+    return std::make_unique<FlipArrowCommand>();
 }
 
 std::unique_ptr<cmd::Command> makeTextEditCommand() {

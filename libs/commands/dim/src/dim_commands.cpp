@@ -669,6 +669,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeContinueCommand());
     (void)registry.add(makeBaselineCommand());
     (void)registry.add(makeTextEditCommand());
+    (void)registry.add(makeFlipArrowCommand());
     (void)registry.add(makeEditCommand());
     (void)registry.add(makeBreakCommand());
     (void)registry.add(makeJogLineCommand());

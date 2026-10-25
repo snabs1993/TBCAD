@@ -54,6 +54,7 @@ std::string mleaderCompanionName(const std::string& name);
 std::unique_ptr<cmd::Command> makeContinueCommand();
 std::unique_ptr<cmd::Command> makeBaselineCommand();
 std::unique_ptr<cmd::Command> makeTextEditCommand();
+std::unique_ptr<cmd::Command> makeFlipArrowCommand();
 std::unique_ptr<cmd::Command> makeSpaceCommand();
 std::unique_ptr<cmd::Command> makeEditCommand();
 // Works the automatic DIMBREAK gaps of a dimension out again (installed as the document's
