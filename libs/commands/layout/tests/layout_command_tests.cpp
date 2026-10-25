@@ -755,3 +755,23 @@ TEST_CASE("MVIEW 2, 3 and 4 split an area into several viewports") {
     REQUIRE(l->viewports.size() == 9);
     CHECK(l->viewports[6].paper.width() == doctest::Approx(400));
 }
+
+TEST_CASE("LAYOUT SAveas writes a template with only that layout, and Template reads it back") {
+    Fixture f;
+    f.host->run("LAYOUT", {"New", "Plan", "A3", ""});
+    f.host->run("MVIEW", {"10,10", "200,200", "1:50", "0,0"});
+    f.host->run("LAYOUT", {"New", "Other", "A4", ""});
+    const std::string file =
+        (std::filesystem::temp_directory_path() / "tbcad_layout_saveas_test.tbcad").string();
+    std::filesystem::remove(file);
+    CHECK(f.host->run("LAYOUT", {"SAveas", "Plan", file}).finished);
+    REQUIRE(std::filesystem::exists(file));
+    io::IoReport rep;
+    auto r = io::readTbcad(std::filesystem::path(file), rep);
+    REQUIRE(r.ok());
+    auto all = layout::layouts(*r.value());
+    REQUIRE(all.size() == 1);
+    CHECK(all[0].name == "Plan");
+    CHECK(all[0].viewports.size() == 1);
+    std::filesystem::remove(file);
+}
