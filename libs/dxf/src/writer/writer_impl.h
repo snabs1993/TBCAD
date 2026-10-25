@@ -312,6 +312,10 @@ private:
     std::uint64_t mleaderStyleHandle(DimStyleId style);
     std::uint64_t textStyleHandle(TextStyleId id);
     std::uint64_t byBlockLinetypeHandle();
+    // BLOCK_RECORD handle of the named block of a built-in arrowhead (0: closed filled, which
+    // needs none); the block is added to the drawing the first time.
+    std::uint64_t arrowBlockHandle(ArrowType a);
+    std::map<int, std::uint64_t> arrowRec_{};
     std::uint64_t mleaderStdStyle_ = 0;                       // "Standard" MLEADERSTYLE
     std::map<std::uint32_t, std::uint64_t> mleaderStyles_{};  // dim style -> MLEADERSTYLE
     std::uint64_t byBlockLt_ = 0;  // the ByBlock LTYPE record, when named before the table
