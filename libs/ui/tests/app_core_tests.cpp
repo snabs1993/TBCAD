@@ -1289,6 +1289,8 @@ TEST_CASE("a .dxf file opens and saves back as DXF in place") {
     REQUIRE(g.core->save().ok());
     CHECK_FALSE(g.core->modified());
     CHECK(fs::exists(dxfFile.string() + ".bak"));
+    CHECK_FALSE(fs::exists(dxfFile.string() + ".tmp"));  // the safe write leaves no temporary file
+    CHECK(fs::file_size(dxfFile.string() + ".bak") > 0);
 
     Fixture h("dxfmain3");
     REQUIRE(h.core->openFile(dxfFile).ok());

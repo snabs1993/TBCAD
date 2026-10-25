@@ -14,6 +14,7 @@
 #include <map>
 #include <mutex>
 #include <set>
+#include <span>
 #include <sstream>
 #include <thread>
 #include <unordered_set>
@@ -1247,31 +1248,18 @@ Result<void> AppCore::saveDxf(const fs::path& path) {
         print("Cannot save " + path.string() + ": " + out.error().message);
         return makeError(ErrorCode::InvalidArgument, out.error().message);
     }
-    std::error_code ec;
-    fs::path tmp = path;
-    tmp += ".tmp";
-    {
-        std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
-        if (f)
-            f.write(out.value().bytes.data(),
-                    static_cast<std::streamsize>(out.value().bytes.size()));
-        if (!f) {
-            f.close();
-            fs::remove(tmp, ec);
-            print("Cannot save " + path.string());
-            return makeError(ErrorCode::Io, "Cannot write " + path.string());
-        }
-    }
-    if (settings_.getBool("files.backup", true) && fs::exists(path, ec)) {
-        fs::path bak = path;
-        bak += ".bak";
-        fs::remove(bak, ec);
-        fs::rename(path, bak, ec);
-    }
-    fs::rename(tmp, path, ec);
-    if (ec) {
-        print("Cannot save " + path.string() + ": " + ec.message());
-        return makeError(ErrorCode::Io, ec.message());
+    // Same safe write as .tbcad: temporary file synced, then swapped in (the old file only moves
+    // to .bak once the new one is ready), so a failed or killed save never leaves the path empty.
+    const auto& bytes = out.value().bytes;
+    io::WriteOptions wo;
+    wo.keepBackup = settings_.getBool("files.backup", true);
+    auto saved = io::saveTbcadBytes(
+        std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(bytes.data()),
+                                      bytes.size()),
+        path, wo);
+    if (!saved) {
+        print("Cannot save " + path.string() + ": " + saved.error().message);
+        return makeError(ErrorCode::Io, saved.error().message);
     }
     const auto& sum = out.value().summary;
     if (sum.skipped > 0)
