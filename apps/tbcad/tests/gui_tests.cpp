@@ -2805,6 +2805,35 @@ TEST_CASE(
     CHECK(h.core().isPristine());
 }
 
+TEST_CASE("CLOSEALL with several unsaved drawings asks one combined question") {
+    Harness h(1600, 900);
+    const auto edit = [&] {
+        h.core().submitText("CIRCLE");
+        h.core().submitText("0,0");
+        h.core().submitText("5");
+        h.frame(2);
+    };
+    edit();
+    h.core().newDocument();
+    edit();
+    h.core().newDocument();
+    edit();
+    h.frame(2);
+    REQUIRE(h.core().documentCount() == 3);
+    h.core().submitText("CLOSEALL");
+    h.frame(3);
+    REQUIRE(h.has("Discard all"));
+    REQUIRE(h.click("Cancel"));
+    h.frame(3);
+    CHECK(h.core().documentCount() == 3);
+    h.core().submitText("CLOSEALL");
+    h.frame(3);
+    REQUIRE(h.click("Discard all"));
+    h.frame(3);
+    CHECK(h.core().documentCount() == 1);
+    CHECK(h.core().isPristine());
+}
+
 #include "gl_problem.h"
 
 TEST_CASE("OpenGL problem message names the GPU and the fix") {

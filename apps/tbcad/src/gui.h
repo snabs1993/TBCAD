@@ -114,6 +114,7 @@ private:
     std::uint64_t keepDoc_ = 0;
     bool keepDocSet_ = false;
     void closeAllDrawings(bool keepActive);
+    bool askCombined(bool skipActive);
     void saveAllDrawings();
     // QVDRAWING / QVLAYOUT: cards of the open drawings (or of this drawing's layouts) to switch to.
     void quickView();
@@ -337,6 +338,9 @@ private:
     // Save prompt.
     Pending pending_ = Pending::None;
     bool openSavePrompt_ = false;
+    bool openCombinedPrompt_ = false;
+    bool combinedAsked_ = false;  // the one-question prompt was shown for this close request
+    bool discardAll_ = false;     // the user chose Discard all
     bool saveThenPending_ = false;
     // Save As to a .dxf asks for the DXF version first.
     std::filesystem::path pendingDxfPath_{};
