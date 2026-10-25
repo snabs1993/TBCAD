@@ -7,6 +7,7 @@ namespace tbcad::draw2 {
 void registerCommands(cmd::Registry& registry) {
     (void)registry.add(detail::makePoint());
     (void)registry.add(detail::makePointType());
+    (void)registry.add(detail::makePointStyleDialog());
     (void)registry.add(detail::makeDonut());
     (void)registry.add(detail::makeBreakLine());
     (void)registry.add(detail::makeRevCloud());
