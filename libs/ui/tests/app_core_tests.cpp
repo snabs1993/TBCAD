@@ -1328,6 +1328,28 @@ TEST_CASE("files.defaultFormat decides the extension of a name without one") {
     CHECK(f.core->file().extension() == ".tbcad");
 }
 
+TEST_CASE("files.dxfVersion picks the version a DXF is saved in") {
+    Fixture f("dxfversion");
+    f.line("0,0", "10,0");
+    const auto head = [&](const char* name) {
+        std::ifstream in(f.dir / name, std::ios::binary);
+        return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    };
+    f.core->settings().setString("files.dxfVersion", "r12");
+    REQUIRE(f.core->saveAs(f.dir / "a.dxf").ok());
+    CHECK(head("a.dxf").find("AC1009") != std::string::npos);
+    f.core->settings().setString("files.dxfVersion", "r2007");
+    REQUIRE(f.core->saveAs(f.dir / "b.dxf").ok());
+    CHECK(head("b.dxf").find("AC1021") != std::string::npos);
+    f.core->settings().setString("files.dxfVersion", "auto");
+    REQUIRE(f.core->saveAs(f.dir / "c.dxf").ok());
+    CHECK(head("c.dxf").find("AC1015") != std::string::npos);
+    // R12 has one paper space, so the prompt lists what a drawing with layouts would lose.
+    const auto lost = f.core->dxfLossWarnings(dxf::DxfVersion::R12);
+    REQUIRE_FALSE(lost.empty());
+    CHECK(lost.front().find("R12") != std::string::npos);
+}
+
 namespace {
 
 int gFakeXReloadRuns = 0;

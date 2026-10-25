@@ -915,6 +915,39 @@ void Gui::doSave() {
         toast("Saved " + platform::pathToUtf8(core_.file()));
 }
 
+static std::string lowerExt(const std::filesystem::path& p) {
+    std::string e = p.extension().string();
+    std::transform(e.begin(), e.end(), e.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return e;
+}
+
+static dxf::DxfVersion dxfChoice(int i) {
+    return i == 0 ? dxf::DxfVersion::R12
+                  : (i == 1 ? dxf::DxfVersion::R2000 : dxf::DxfVersion::R2007);
+}
+
+// A .dxf target first asks which DXF version to write (and what that version would lose).
+void Gui::saveAsPath(const std::filesystem::path& path) {
+    if (lowerExt(path) == ".dxf") {
+        pendingDxfPath_ = path;
+        const std::string cur = core_.settings().getString("files.dxfVersion", "auto");
+        dxfVersionChoice_ = cur == "r12" ? 0 : (cur == "r2007" ? 2 : 1);
+        dxfVersionWarnings_ = core_.dxfLossWarnings(dxfChoice(dxfVersionChoice_));
+        openDxfVersionPrompt_ = true;
+        return;
+    }
+    auto r = core_.saveAs(path);
+    if (!r)
+        lastError_ = r.error().message;
+    else {
+        toast("Saved " + platform::pathToUtf8(core_.file()));
+        if (saveThenPending_)
+            performPending(false);
+    }
+    saveThenPending_ = false;
+}
+
 void Gui::doSaveAs() {
     std::string ext = core_.settings().getString("files.defaultFormat", "tbcad");
     if (ext != "dxf")
@@ -948,14 +981,9 @@ void Gui::doSaveAs() {
         if (auto p = platform::showSaveDialog(nativeHandle(), drawingFilters(ext == "dxf"),
                                               "Save drawing as", ext, suggested, folder)) {
             rememberFolder(*p);
-            auto r = core_.saveAs(*p);
-            if (!r)
-                lastError_ = r.error().message;
-            else {
-                toast("Saved " + platform::pathToUtf8(core_.file()));
-                if (saveThenPending_)
-                    performPending(false);
-            }
+            saveAsPath(*p);
+            if (openDxfVersionPrompt_)
+                return;  // the version prompt finishes the save
         }
         saveThenPending_ = false;
         return;
@@ -4691,6 +4719,54 @@ void Gui::dialogs() {
         ImGui::OpenPopup("Recover drawing?");
         openRecoveryPrompt_ = false;
     }
+    if (openDxfVersionPrompt_) {
+        ImGui::OpenPopup("Save as DXF");
+        openDxfVersionPrompt_ = false;
+    }
+    if (ImGui::BeginPopupModal("Save as DXF", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted("DXF version:");
+        bool changed = false;
+        changed |= ImGui::RadioButton("R12 (AC1009) - oldest, simplest", &dxfVersionChoice_, 0);
+        changed |= ImGui::RadioButton("R2000 (AC1015) - read by everything", &dxfVersionChoice_, 1);
+        changed |=
+            ImGui::RadioButton("R2007 and later (AC1021) - UTF-8 text", &dxfVersionChoice_, 2);
+        if (changed)
+            dxfVersionWarnings_ = core_.dxfLossWarnings(dxfChoice(dxfVersionChoice_));
+        ImGui::Spacing();
+        if (dxfVersionWarnings_.empty()) {
+            ImGui::TextDisabled("Nothing in this drawing is lost in this version.");
+        } else {
+            ImGui::Text("Lost or simplified in this version (%zu):", dxfVersionWarnings_.size());
+            ImGui::BeginChild("##dxfloss", ImVec2(520, 140), true);
+            ImGui::PushTextWrapPos(0);
+            for (const std::string& w : dxfVersionWarnings_)
+                ImGui::BulletText("%s", w.c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::EndChild();
+        }
+        ImGui::Spacing();
+        if (ImGui::Button("Save", ImVec2(110, 0)) || ImGui::IsKeyPressed(ImGuiKey_Enter)) {
+            static constexpr const char* kVer[] = {"r12", "r2000", "r2007"};
+            core_.settings().setString("files.dxfVersion", kVer[dxfVersionChoice_]);
+            auto r = core_.saveAs(pendingDxfPath_);
+            if (!r)
+                lastError_ = r.error().message;
+            else {
+                toast("Saved " + platform::pathToUtf8(core_.file()));
+                if (saveThenPending_)
+                    performPending(false);
+            }
+            saveThenPending_ = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(110, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            saveThenPending_ = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
+
     if (openLinkPrompt_) {
         ImGui::OpenPopup("Open link?");
         openLinkPrompt_ = false;
@@ -5110,12 +5186,7 @@ void Gui::dialogs() {
             } else if (browserPurpose_ == BrowserPurpose::ExportDxf) {
                 dxfCommandWithPath("EXPORTDXF", *path);
             } else {
-                auto r = core_.saveAs(*path);
-                if (!r)
-                    lastError_ = r.error().message;
-                else if (saveThenPending_)
-                    performPending(false);
-                saveThenPending_ = false;
+                saveAsPath(*path);
             }
         }
     }
