@@ -12,6 +12,14 @@ code.
 > Status: early development (version 0.0.1). Only the build system exists so
 > far. There is nothing to run yet.
 
+## Trying a test build
+
+The test installer is not code-signed yet. If Windows shows "Windows protected
+your PC", click **More info**, then **Run anyway**. Settings are in
+`%APPDATA%\TBCAD`; autosave copies and crash reports are in
+`%LOCALAPPDATA%\TBCAD`. Use **Help > Report a Problem...** to tell us what broke.
+See [docs/quickstart.md](docs/quickstart.md).
+
 ## Technology
 
 - C++20, built with CMake and Ninja
