@@ -205,3 +205,23 @@ TEST_CASE("bounds measured once per block still follow each insert's own attribu
     CHECK(insertBounds(doc, *doc.find(one)).max.x == doctest::Approx(12));
     geom::DisplayRegistry::clear(EntityKind::Text);
 }
+
+TEST_CASE("attributeText of a multiple-line attribute with line breaks is multiline text") {
+    Document doc;
+    Entity def = attdef("A", "a0", {0, 1});
+    entityAs<TextData>(def)->attdef->multiLine = true;
+    BlockId b = addBlock(doc, "B", {def});
+    auto defs = attributeDefinitions(doc, b);
+    InsertData ins{b, {0, 0}, {1, 1}, 0};
+    ins.attribs = {{"A", "one\ntwo"}};
+    auto shown = attributeText(*defs[0], ins);
+    REQUIRE(shown);
+    const auto* m = entityAs<MTextData>(*shown);
+    REQUIRE(m);
+    CHECK(m->utf8 == "one\\Ptwo");
+    // one line stays plain text
+    ins.attribs = {{"A", "one"}};
+    CHECK(entityAs<TextData>(*attributeText(*defs[0], ins)) != nullptr);
+    CHECK(breaksFromPrompt(breaksToPrompt("a\nb")) == "a\nb");
+    CHECK(breaksFromPrompt("x\\Py") == "x\ny");
+}

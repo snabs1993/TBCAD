@@ -1109,10 +1109,6 @@ void Writer::writeTbcadFlags(const Entity& e) {
         for (const std::string& piece : fieldPieces(source))
             L().o->raw(1000, piece);
     }
-    if (const auto* t = entityAs<TextData>(e); t && t->attdef && t->attdef->multiLine) {
-        openTbcadXdata();
-        L().o->str(1000, "attmulti=1");
-    }
     writeCommonFlags(e.common);
 }
 
@@ -1497,7 +1493,18 @@ void Writer::writeTextRecord(const Props& p, const TextData& d, std::uint64_t ow
     Out& o = *L().o;
     o.pt(10, d.position);
     o.d(40, d.height);
-    o.str(1, type == "ATTDEF" ? d.attdef->defaultValue : shown);
+    const bool multi = d.attdef && d.attdef->multiLine;
+    std::string value = type == "ATTDEF" ? d.attdef->defaultValue : shown;
+    if (multi) {  // group 1 cannot hold a line break: \P, flagged in the TBCAD XDATA below
+        std::string joined;
+        for (char c : value)
+            if (c == '\n')
+                joined += "\\P";
+            else if (c != '\r')
+                joined += c;
+        value = std::move(joined);
+    }
+    o.str(1, value);
     if (d.rotation != 0)
         o.d(50, d.rotation * kDeg);
     {
@@ -1539,6 +1546,10 @@ void Writer::writeTextRecord(const Props& p, const TextData& d, std::uint64_t ow
             o.i(74, static_cast<int>(d.v));
         if (type == "ATTDEF" && a.lockPosition)
             o.i(280, 1);
+    }
+    if (multi) {
+        openTbcadXdata();
+        o.str(1000, "attmulti=1");
     }
     count(type);
 }

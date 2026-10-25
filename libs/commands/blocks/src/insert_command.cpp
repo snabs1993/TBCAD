@@ -11,6 +11,10 @@ namespace tbcad::block_cmds {
 
 namespace {
 
+std::string shownValue(const std::string& value, const AttDefInfo& info) {
+    return info.multiLine ? blocks::breaksToPrompt(value) : value;
+}
+
 constexpr const char* kLastBlockSetting = "block.lastinsert";
 // Folder of drawing files that INSERT accepts by name (the Library tab of the block palette).
 constexpr const char* kLibrarySetting = "block.library";
@@ -332,7 +336,7 @@ public:
                         continue;
                     for (const AttribValue& v : data.attribs)
                         if (v.tag == info.tag)
-                            fields += v.tag + "\x1f" +
+                            fields += v.tag + "\x1f" + (info.multiLine ? "\x1d" : "") +
                                       (info.prompt.empty() ? info.tag : info.prompt) + "\x1f" +
                                       v.value + "\x1e";
                 }
@@ -373,18 +377,24 @@ public:
                             continue;
                         const std::string label = info.prompt.empty() ? info.tag : info.prompt;
                         auto r = co_await ctx.getString(
-                            "Enter attribute value for " + label + " <" + v.value + ">",
-                            cmd::StringOptions{.defaultValue = v.value, .allowEmpty = true});
+                            "Enter attribute value for " + label + " <" +
+                                shownValue(v.value, info) + ">" +
+                                (info.multiLine ? " (\\P starts a new line)" : ""),
+                            cmd::StringOptions{.defaultValue = shownValue(v.value, info),
+                                               .allowEmpty = true});
                         if (!r.ok())
                             co_return;
-                        v.value = r.text;
+                        v.value = info.multiLine ? blocks::breaksFromPrompt(r.text) : r.text;
                         if (info.verify) {
                             auto again = co_await ctx.getString(
-                                "Verify attribute value for " + label + " <" + v.value + ">",
-                                cmd::StringOptions{.defaultValue = v.value, .allowEmpty = true});
+                                "Verify attribute value for " + label + " <" +
+                                    shownValue(v.value, info) + ">",
+                                cmd::StringOptions{.defaultValue = shownValue(v.value, info),
+                                                   .allowEmpty = true});
                             if (!again.ok())
                                 co_return;
-                            v.value = again.text;
+                            v.value =
+                                info.multiLine ? blocks::breaksFromPrompt(again.text) : again.text;
                         }
                     }
                 }

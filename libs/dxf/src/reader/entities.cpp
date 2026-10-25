@@ -1454,27 +1454,36 @@ bool Importer::convText(const Record& r, const Frame& f, TextKind kind, std::vec
         return true;  // invisible attribute: nothing to show
     TextData d;
     std::string text = replacePercentCodes(dec(r.raw(1)), true);
+    bool multiLine = false;  // TBCAD XDATA: the value holds line breaks, written as \P in group 1
+    if (kind != TextKind::Text) {
+        bool mine = false;
+        for (const Group& g : r.g) {
+            if (g.code == 1001)
+                mine = g.str() == "TBCAD";
+            else if (mine && g.code == 1000 && g.str() == "attmulti=1")
+                multiLine = true;
+        }
+    }
+    auto breaks = [&](std::string s) {
+        if (!multiLine)
+            return s;
+        for (std::size_t at = s.find("\\P"); at != std::string::npos; at = s.find("\\P", at + 1))
+            s.replace(at, 2, "\n");
+        return s;
+    };
     if (kind == TextKind::AttDef) {
         // The definition shows its tag in the block; the default value lives in group 1.
         AttDefInfo info;
         info.tag = upperAscii(dec(r.raw(2)));
         info.prompt = replacePercentCodes(dec(r.raw(3)));
-        info.defaultValue = text;
+        info.defaultValue = breaks(text);
         const std::int64_t flags = r.integer(70);
         info.invisible = (flags & 1) != 0;
         info.constant = (flags & 2) != 0;
         info.verify = (flags & 4) != 0;
         info.preset = (flags & 8) != 0;
         info.lockPosition = r.integer(280) != 0;
-        {
-            bool mine = false;
-            for (const Group& g : r.g) {
-                if (g.code == 1001)
-                    mine = g.str() == "TBCAD";
-                else if (mine && g.code == 1000 && g.str() == "attmulti=1")
-                    info.multiLine = true;
-            }
-        }
+        info.multiLine = multiLine;
         if (info.tag.empty() || info.tag.find_first_of(" \t\r\n") != std::string::npos) {
             bad(r, "ATTDEF", "attribute tag is empty or has spaces; imported as text");
             d.utf8 = text;
@@ -1485,6 +1494,8 @@ bool Importer::convText(const Record& r, const Frame& f, TextKind kind, std::vec
             d.attdef = std::move(info);
         }
         text = d.utf8;
+    } else if (kind == TextKind::Attrib) {
+        text = breaks(std::move(text));
     } else if (kind == TextKind::Text) {
         pendingField_ = fieldNoteOf(r, r.raw(1));
     }
@@ -1715,6 +1726,15 @@ bool Importer::convInsert(const Record& r, RecordReader& rr, const Frame& f,
         std::string tag = upperAscii(dec(a.raw(2)));
         std::string value = replacePercentCodes(dec(a.raw(1)), true);
         if (blockHasAttDef(block, tag)) {
+            bool mine = false, multi = false;  // TBCAD XDATA: line breaks written as \P
+            for (const Group& g : a.g) {
+                if (g.code == 1001)
+                    mine = g.str() == "TBCAD";
+                else if (mine && g.code == 1000 && g.str() == "attmulti=1")
+                    multi = true;
+            }
+            for (std::size_t at; multi && (at = value.find("\\P")) != std::string::npos;)
+                value.replace(at, 2, "\n");
             bool seen = false;
             for (const AttribValue& v : values)
                 seen = seen || v.tag == tag;
