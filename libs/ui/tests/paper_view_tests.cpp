@@ -319,6 +319,13 @@ TEST_CASE("ZOOM nXP sets the viewport scale, from the sheet and from model space
     core.updateFrame(std::chrono::steady_clock::now());
     REQUIRE(layout::findLayout(core.document(), "A")->viewports.front().scaleN ==
             doctest::Approx(100));
+    // Ctrl+Z puts the old scale back and Ctrl+Y the new one.
+    REQUIRE(core.undoStack().undo(core.document()));
+    CHECK(layout::findLayout(core.document(), "A")->viewports.front().scaleN ==
+          doctest::Approx(50));
+    REQUIRE(core.undoStack().redo(core.document()));
+    CHECK(layout::findLayout(core.document(), "A")->viewports.front().scaleN ==
+          doctest::Approx(100));
     // From model space the view follows the new scale: 200 mm at 1:200 is 40 m across.
     core.submitText("MSPACE");
     core.submitText("ZOOM");

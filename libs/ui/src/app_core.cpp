@@ -2651,7 +2651,8 @@ void AppCore::applyZoomXp() {
         print(r.error().message);
         return;
     }
-    (void)tx.commit();
+    if (ChangeSet cs = tx.commit(); !cs.empty())
+        undoStack().push("ZOOM XP", {std::move(cs)});
     char buf[48];
     std::snprintf(buf, sizeof buf, "%.6g", 1.0 / n);
     print("Viewport " + std::to_string(id) + " is now 1:" + buf + " (" + std::to_string(n) +
