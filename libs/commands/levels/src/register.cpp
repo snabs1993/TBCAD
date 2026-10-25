@@ -17,8 +17,8 @@ void registerCommands(cmd::Registry& registry) {
 void registerUi(ui::UiRegistry& ui) {
     ui.addPanel("levels", "Levels", drawLevelsPanel, /*visibleByDefault=*/true);
     ui.addMenuItem("Format/Levels", "LEVEL", "levels.panel", "Ctrl+Shift+E");
-    ui.addMenuItem("Format/Level Up", "LEVELUP", "levels.up", "Ctrl+PageUp");
-    ui.addMenuItem("Format/Level Down", "LEVELDOWN", "levels.down", "Ctrl+PageDown");
+    ui.addMenuItem("Format/Level Up", "LEVELUP", "levels.up", "Ctrl+Alt+PageUp");
+    ui.addMenuItem("Format/Level Down", "LEVELDOWN", "levels.down", "Ctrl+Alt+PageDown");
     ui.addMenuItem("Modify/Move to Level", "CHLEVEL", "levels.move");
     ui.addMenuItem("Modify/Copy to Level", "COPYTOLEVEL", "levels.copy");
 }

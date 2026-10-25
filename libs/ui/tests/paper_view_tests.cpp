@@ -178,6 +178,37 @@ TEST_CASE("a hatch on the sheet over a viewport does not stop a double click ent
     CHECK(core.editingViewport() == 1);
 }
 
+TEST_CASE("TILEMODE switches between Model and a layout, LAYOUTNEXT/LAYOUTPREV step the tabs") {
+    auto registry = makeRegistry();
+    AppCore core(*registry,
+                 platform::AppPaths{tempDir("paper_tile") / "cfg", tempDir("paper_tile") / "data"});
+    core.setViewportSize(1000, 800);
+    {
+        auto tx = core.document().begin("layout");
+        REQUIRE(layout::createLayout(tx, "A", "A3").ok());
+        REQUIRE(layout::createLayout(tx, "B", "A3").ok());
+        tx.commit();
+    }
+    CHECK_FALSE(core.inPaperSpace());
+    core.submitText("TILEMODE");
+    core.submitText("0");
+    CHECK(core.activeLayout() == core.layoutNames().front());
+    core.submitText("TILEMODE");
+    core.submitText("1");
+    CHECK_FALSE(core.inPaperSpace());
+    core.submitText("TILEMODE");  // back to the layout we left
+    core.submitText("0");
+    CHECK(core.inPaperSpace());
+    core.submitText("TILEMODE");
+    core.submitText("1");
+    core.submitText("LAYOUTPREV");  // Model wraps to the last layout
+    CHECK(core.activeLayout() == core.layoutNames().back());
+    core.submitText("LAYOUTNEXT");  // and the last layout wraps to Model
+    CHECK_FALSE(core.inPaperSpace());
+    core.submitText("LAYOUTNEXT");
+    CHECK(core.activeLayout() == core.layoutNames().front());
+}
+
 TEST_CASE("MSPACE enters the model through a viewport and PSPACE returns to the sheet") {
     auto registry = makeRegistry();
     AppCore core(*registry,

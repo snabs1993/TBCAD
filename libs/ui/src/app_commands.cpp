@@ -826,6 +826,47 @@ private:
     const char* description_;
 };
 
+// TILEMODE 1 = model tab, 0 = the last (else first) layout; LAYOUTNEXT / LAYOUTPREV step through
+// the tab strip (Model, Layout1, ...) like Ctrl+PageDown / Ctrl+PageUp in AutoCAD.
+class TileModeCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "TILEMODE"; }
+    std::string_view description() const override {
+        return "1 = work on the Model tab, 0 = work on a layout sheet";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        const std::string cur = ctx.host().setting("plot.layout").value_or("").empty() ? "1" : "0";
+        cmd::StringOptions so;
+        so.defaultValue = cur;
+        auto r = co_await ctx.getString("New value for TILEMODE <" + cur + ">", so);
+        if (!r.ok())
+            co_return;
+        const std::string t = cmd::trim(r.text);
+        if (t != "0" && t != "1") {
+            ctx.message("Type 0 or 1.");
+            co_return;
+        }
+        ctx.host().requestUi(t == "1" ? "space:tile1" : "space:tile0");
+    }
+};
+
+class LayoutStepCommand final : public cmd::Command {
+public:
+    LayoutStepCommand(const char* name, const char* dir, const char* description)
+        : name_(name), dir_(dir), description_(description) {}
+    std::string_view name() const override { return name_; }
+    std::string_view description() const override { return description_; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().requestUi(std::string("space:") + dir_);
+        co_return;
+    }
+
+private:
+    const char* name_;
+    const char* dir_;
+    const char* description_;
+};
+
 class SaveAsTemplateCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "SAVEASTEMPLATE"; }
@@ -1228,6 +1269,11 @@ void registerAppCommands(cmd::Registry& registry) {
         "MSPACE", "MS", "model", "Edit the model through the selected viewport of a layout"));
     (void)registry.add(std::make_unique<SpaceCommand>(
         "PSPACE", "PS", "paper", "Go back to the layout sheet from model space"));
+    (void)registry.add(std::make_unique<TileModeCommand>());
+    (void)registry.add(std::make_unique<LayoutStepCommand>(
+        "LAYOUTNEXT", "next", "Go to the next tab (Model, then the layouts)"));
+    (void)registry.add(std::make_unique<LayoutStepCommand>(
+        "LAYOUTPREV", "prev", "Go to the previous tab (Model, then the layouts)"));
     (void)registry.add(std::make_unique<SpaceCommand>(
         "VPMAX", "", "model", "Maximise the selected viewport of a layout to the whole window"));
     (void)registry.add(std::make_unique<SpaceCommand>(

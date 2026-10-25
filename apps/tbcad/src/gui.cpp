@@ -329,6 +329,10 @@ void Gui::runAction(const std::string& action) {
         quickView_ = 2;
     else if (action == "view.nextDocument")
         core_.activateDocument((core_.activeDocument() + 1) % core_.documentCount());
+    else if (action == "view.nextLayout")
+        core_.submitText("LAYOUTNEXT");
+    else if (action == "view.prevLayout")
+        core_.submitText("LAYOUTPREV");
     else if (action == "view.prevDocument")
         core_.activateDocument((core_.activeDocument() + core_.documentCount() - 1) %
                                core_.documentCount());
@@ -2145,7 +2149,7 @@ void Gui::statusBar() {
             }
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip(
-                    "Level you work on. Ctrl+PageUp / Ctrl+PageDown steps through levels.");
+                    "Level you work on. Ctrl+Alt+PageUp / Ctrl+Alt+PageDown steps through levels.");
         }
 
         // Annotation scale for new objects, and whether new objects are annotative.
