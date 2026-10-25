@@ -117,6 +117,7 @@ TEST_CASE(
             for (const auto& c : drafting::findSnapCandidates(w.doc, w.idx, rq)) {
                 // A centre, an insertion point and an apparent intersection are not on the curve.
                 if (c.mode == drafting::SnapMode::Center ||
+                    c.mode == drafting::SnapMode::GeometricCenter ||
                     c.mode == drafting::SnapMode::Insertion ||
                     c.mode == drafting::SnapMode::ApparentIntersection)
                     continue;

@@ -1,5 +1,8 @@
 #include "tbcad/drafting/snap_geometry.h"
 
+#include <cmath>
+#include <optional>
+
 #include "tbcad/geom/entity.h"
 
 namespace tbcad::drafting {
@@ -10,7 +13,51 @@ void appendAll(std::vector<Vec2>& dst, std::vector<Vec2>&& src) {
     dst.insert(dst.end(), src.begin(), src.end());
 }
 
+// Area centroid of a closed polyline, arc segments (bulges) included. nullopt when it has no area.
+std::optional<Vec2> polylineCentroid(const PolylineData& pl) {
+    const auto& v = pl.v;
+    if (v.size() < 3)
+        return std::nullopt;
+    double area = 0, cx = 0, cy = 0;
+    for (std::size_t i = 0; i < v.size(); ++i) {
+        const Vec2 a = v[i].p, b = v[(i + 1) % v.size()].p;
+        const double cr = a.x * b.y - b.x * a.y;
+        area += cr / 2;
+        cx += (a.x + b.x) * cr / 6;
+        cy += (a.y + b.y) * cr / 6;
+        const double bulge = v[i].bulge;
+        const double len = distance(a, b);
+        if (bulge == 0 || len <= 0)
+            continue;
+        // Circular segment between the chord and the arc; a positive bulge lies right of a->b.
+        const double th = 4 * std::atan(std::fabs(bulge));
+        const double r = len / (2 * std::sin(th / 2));
+        const double segArea = r * r / 2 * (th - std::sin(th));
+        if (segArea <= 0)
+            continue;
+        const double fromCentre = 4 * r * std::pow(std::sin(th / 2), 3) / (3 * (th - std::sin(th)));
+        const double h = fromCentre - r * std::cos(th / 2);
+        const Vec2 dir = (b - a) * (1 / len);
+        const Vec2 right{dir.y, -dir.x};
+        const double sgn = bulge > 0 ? 1 : -1;
+        const Vec2 c = (a + b) * 0.5 + right * (sgn * h);
+        area += sgn * segArea;
+        cx += sgn * segArea * c.x;
+        cy += sgn * segArea * c.y;
+    }
+    if (std::fabs(area) < 1e-12)
+        return std::nullopt;
+    return Vec2{cx / area, cy / area};
+}
+
 void curveProvider(const Document&, const Entity& e, SnapGeometry& out) {
+    if (const auto* pl = entityAs<PolylineData>(e); pl && pl->closed) {
+        if (auto c = polylineCentroid(*pl))
+            out.geometricCenters.push_back(*c);
+    } else if (entityAs<CircleData>(e) || entityAs<EllipseData>(e)) {
+        for (const Vec2& c : geom::centers(e))
+            out.geometricCenters.push_back(c);
+    }
     appendAll(out.endpoints, geom::endpoints(e));
     appendAll(out.midpoints, geom::midpoints(e));
     appendAll(out.centers, geom::centers(e));

@@ -114,7 +114,7 @@ std::optional<std::string> TypedPointParser::snapOverride(std::string_view word)
         {"per", "perpendicular"}, {"perp", "perpendicular"}, {"tan", "tangent"},
         {"nea", "nearest"},       {"near", "nearest"},       {"nod", "node"},
         {"ins", "insertion"},     {"ext", "extension"},      {"par", "parallel"},
-        {"non", "none"},          {"none", "none"}};
+        {"gce", "geometric"},     {"non", "none"},           {"none", "none"}};
     for (const auto& [shortForm, mode] : kShort)
         if (w == shortForm)
             return std::string(mode);
