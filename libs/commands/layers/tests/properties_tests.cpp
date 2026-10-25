@@ -4,6 +4,7 @@
 
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/register_all.h"
+#include "tbcad/dim/dim.h"
 #include "tbcad/layers/layer_ops.h"
 #include "tbcad/layers/properties.h"
 
@@ -603,6 +604,40 @@ TEST_CASE("Properties edit the line spacing of multiline text - range checked - 
     CHECK(entityAs<MTextData>(*doc.find(id))->lineSpacing == doctest::Approx(1.5));
     CHECK(host.undo());
     CHECK(entityAs<MTextData>(*doc.find(id))->lineSpacing == doctest::Approx(1.0));
+}
+
+TEST_CASE("Properties give a dimension its own text height, arrow, precision and affixes - undo") {
+    Document doc;
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    cmd::ScriptHost host(doc, reg);
+    const auto ids = sampleKinds(doc);
+    const EntityId dimId = ids[9];
+    const DimStyleId base = entityAs<DimensionData>(*doc.find(dimId))->style;
+    auto style = [&]() -> const DimStyle& {
+        return dim::drawStyleOf(doc, *entityAs<DimensionData>(*doc.find(dimId)));
+    };
+    host.setSelection({dimId});
+    host.run("-PROP", {"Set", "dimtextheight", "5", cmd::ScriptItem::enter()});
+    host.run("-PROP", {"Set", "dimarrowsize", "3", cmd::ScriptItem::enter()});
+    host.run("-PROP", {"Set", "dimprecision", "1", cmd::ScriptItem::enter()});
+    host.run("-PROP", {"Set", "dimsuffix", "mm", cmd::ScriptItem::enter()});
+    host.run("-PROP", {"Set", "dimarrow", "Dot", cmd::ScriptItem::enter()});
+    CHECK(style().textHeight == doctest::Approx(5));
+    CHECK(style().arrowSize == doctest::Approx(3));
+    CHECK(style().precision == 1);
+    CHECK(style().suffix == "mm");
+    CHECK(style().arrowType == ArrowType::Dot);
+    // The base style itself is untouched; the dimension has a style of its own.
+    CHECK(entityAs<DimensionData>(*doc.find(dimId))->style != base);
+    CHECK(dim::styleOf(doc, base).textHeight != doctest::Approx(5));
+    // A bad value is refused.
+    host.run("-PROP", {"Set", "dimprecision", "2.5", cmd::ScriptItem::enter()});
+    CHECK(style().precision == 1);
+    while (host.undo()) {
+    }
+    CHECK(entityAs<DimensionData>(*doc.find(dimId))->style == base);
+    CHECK(style().suffix != "mm");
 }
 
 TEST_CASE("Properties edit attribute values, dimension override and style, table text style") {

@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
+#include <functional>
 
 #include "tbcad/dim/dim.h"
 #include "tbcad/geom/entity.h"
@@ -664,6 +666,30 @@ std::string dimStyleNameOf(const Document& doc, DimStyleId id) {
     return dim::styleOf(doc, id).name;
 }
 
+const char* arrowLabel(ArrowType a) {
+    switch (a) {
+        case ArrowType::ClosedFilled:
+            return "Closed filled";
+        case ArrowType::Open30:
+            return "Open";
+        case ArrowType::ArchTick:
+            return "Architectural tick";
+        case ArrowType::Dot:
+            return "Dot";
+        case ArrowType::None:
+            return "None";
+    }
+    return "Closed filled";
+}
+
+std::vector<std::string> arrowLabels() {
+    std::vector<std::string> out;
+    for (ArrowType a : {ArrowType::ClosedFilled, ArrowType::Open30, ArrowType::ArchTick,
+                        ArrowType::Dot, ArrowType::None})
+        out.push_back(arrowLabel(a));
+    return out;
+}
+
 }  // namespace
 
 std::vector<StringField> stringFields(const Document& doc, const Entity& e) {
@@ -708,6 +734,20 @@ std::vector<StringField> stringFields(const Document& doc, const Entity& e) {
         out.push_back({"textoverride", "Text override", d->textOverride, true, {}});
         out.push_back(
             {"dimstyle", "Dim style", dimStyleNameOf(doc, d->style), true, dimStyleNames(doc)});
+        // What this dimension draws with; editing one gives it a style of its own ("<style>$N",
+        // AutoCAD's dimension override), so it is saved, shared and undone like any style change.
+        const DimStyle& st = dim::drawStyleOf(doc, *d);
+        auto numText = [](double v) {
+            char buf[32];
+            std::snprintf(buf, sizeof buf, "%.6g", v);
+            return std::string(buf);
+        };
+        out.push_back({"dimtextheight", "Text height", numText(st.textHeight), true, {}});
+        out.push_back({"dimarrowsize", "Arrow size", numText(st.arrowSize), true, {}});
+        out.push_back({"dimarrow", "Arrow type", arrowLabel(st.arrowType), true, arrowLabels()});
+        out.push_back({"dimprecision", "Precision", numText(st.precision), true, {}});
+        out.push_back({"dimprefix", "Text prefix", st.prefix, true, {}});
+        out.push_back({"dimsuffix", "Text suffix", st.suffix, true, {}});
     } else if (const auto* ld = entityAs<LeaderData>(e)) {
         out.push_back({"contents", "Contents", ld->utf8, true, {}});
         out.push_back(
@@ -857,6 +897,54 @@ Result<void> setStringField(const Document& doc, Transaction& tx, EntityId id, c
             d->textOverride = chosen;
         else if (f == "dimstyle")
             sub = dimStyleId(d->style);
+        else if (f.rfind("dim", 0) == 0) {
+            // textheight, arrowsize, arrow, precision, prefix, suffix: a style of its own.
+            auto number = [&](double lo, double hi) -> std::optional<double> {
+                char* end = nullptr;
+                const double x = std::strtod(chosen.c_str(), &end);
+                if (end == chosen.c_str() || *end != '\0' || !std::isfinite(x) || x < lo || x > hi)
+                    return std::nullopt;
+                return x;
+            };
+            std::function<void(DimStyle&)> change;
+            if (f == "dimtextheight" || f == "dimarrowsize") {
+                const auto x = number(1e-6, 1e6);
+                if (!x)
+                    return makeError(ErrorCode::InvalidArgument, "Enter a size greater than zero.");
+                if (f == "dimtextheight")
+                    change = [x](DimStyle& st) { st.textHeight = *x; };
+                else
+                    change = [x](DimStyle& st) { st.arrowSize = *x; };
+            } else if (f == "dimprecision") {
+                const auto x = number(0, 8);
+                if (!x || *x != std::floor(*x))
+                    return makeError(ErrorCode::InvalidArgument,
+                                     "Precision is a whole number from 0 to 8.");
+                const int n = static_cast<int>(*x);
+                change = [n](DimStyle& st) { st.precision = n; };
+            } else if (f == "dimarrow") {
+                ArrowType want = ArrowType::ClosedFilled;
+                for (ArrowType a : {ArrowType::ClosedFilled, ArrowType::Open30, ArrowType::ArchTick,
+                                    ArrowType::Dot, ArrowType::None})
+                    if (chosen == arrowLabel(a))
+                        want = a;
+                change = [want](DimStyle& st) {
+                    st.arrowType = want;
+                    st.arrowType2.reset();
+                };
+            } else if (f == "dimprefix") {
+                change = [chosen](DimStyle& st) { st.prefix = chosen; };
+            } else if (f == "dimsuffix") {
+                change = [chosen](DimStyle& st) { st.suffix = chosen; };
+            } else {
+                return makeError(ErrorCode::InvalidArgument,
+                                 "A dimension has no field \"" + f + "\".");
+            }
+            const DimStyleId sid = dim::overrideStyle(tx, dim::drawStyleOf(doc, *d).id, change);
+            if (!sid.value)
+                return makeError(ErrorCode::Conflict, "The dimension style could not be added.");
+            d->style = sid;
+        }
     } else if (auto* ld = entityAs<LeaderData>(next)) {
         if (f == "contents")
             ld->utf8 = chosen;
