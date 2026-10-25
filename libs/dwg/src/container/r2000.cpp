@@ -252,7 +252,8 @@ void parseHeaderVariables(BitReader& r, const Format& fmt, HeaderVars& v,
     };
     auto skipSpace = [&] {  // one set of paper or model space variables
         skipBd(9);          // INSBASE, EXTMIN, EXTMAX
-        skipBd(4);          // LIMMIN, LIMMAX (2RD each)
+        for (int i = 0; i < 4; ++i)
+            r.rd();         // LIMMIN, LIMMAX (2RD each)
         r.bd();             // ELEVATION
         skipBd(9);          // UCSORG, UCSXDIR, UCSYDIR
         skipH(2);           // UCSNAME, UCSORTHOREF
