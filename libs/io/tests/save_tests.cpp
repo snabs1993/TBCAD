@@ -86,6 +86,32 @@ TEST_CASE("save: a crash between the temporary write and the replace leaves the 
     CHECK_FALSE(fs::exists(dir.path() / "a.tbcad.tmp"));
 }
 
+TEST_CASE("save: a killed write of an autosave-style file keeps the last good copy") {
+    TempDir dir;
+    fs::path file = dir.path() / "recovery-1.tbcad";
+    io::WriteOptions opt;
+    opt.keepBackup = false;
+    auto one = docWith(1);
+    auto two = docWith(2);
+    REQUIRE(io::writeTbcad(*one, file, opt).ok());
+
+    // Killed while the temporary file is half written: the real file is not touched.
+    {
+        std::ofstream tmp(dir.path() / "recovery-1.tbcad.tmp", std::ios::binary);
+        tmp << "TBCAD half written";
+    }
+    CHECK(dumpOf(file) == canonicalDump(*one));
+
+    // The next write replaces the stale temporary file and wins.
+    io::WriteOptions crash = opt;
+    crash.simulateCrashBeforeReplace = true;
+    CHECK_FALSE(io::writeTbcad(*two, file, crash).ok());
+    CHECK(dumpOf(file) == canonicalDump(*one));
+    REQUIRE(io::writeTbcad(*two, file, opt).ok());
+    CHECK(dumpOf(file) == canonicalDump(*two));
+    CHECK_FALSE(fs::exists(dir.path() / "recovery-1.tbcad.tmp"));
+}
+
 TEST_CASE("save: errors are reported, not thrown") {
     TempDir dir;
     auto doc = docWith(1);

@@ -572,6 +572,46 @@ TEST_CASE("a damaged autosave is reported, can be discarded, and does not stop t
     CHECK(second.document().modelSpaceCount() == 0);
 }
 
+TEST_CASE("a save that fails keeps the autosave and the unsaved state") {
+    Fixture f("save_fails_keeps_autosave");
+    f.line("0,0", "100,0");
+    REQUIRE(f.core->saveAs(f.dir / "keep.tbcad").ok());
+    const auto goodSize = fs::file_size(f.dir / "keep.tbcad");
+    f.line("0,10", "100,10");
+    REQUIRE(f.core->autosaveNow());
+    // The target folder does not exist: the write stops before anything is replaced.
+    CHECK_FALSE(f.core->saveAs(f.dir / "no-such-folder" / "x.tbcad").ok());
+    CHECK(f.core->modified());
+    CHECK(fs::file_size(f.dir / "keep.tbcad") == goodSize);
+    auto registry2 = makeRegistry();
+    AppCore second(*registry2, platform::AppPaths{f.dir / "cfg", f.dir / "data"});
+    CHECK(second.pendingRecovery().has_value());  // still offered after a crash
+}
+
+TEST_CASE("an autosave killed in the middle leaves the previous autosave offered") {
+    Fixture f("autosave_killed");
+    f.line("0,0", "100,0");
+    REQUIRE(f.core->autosaveNow());
+    fs::path saved;
+    for (const auto& e : fs::recursive_directory_iterator(f.dir / "data"))
+        if (e.path().extension() == ".tbcad")
+            saved = e.path();
+    REQUIRE_FALSE(saved.empty());
+    // A kill during the next autosave leaves half-written temporary files beside the good ones.
+    for (const char* ext : {".tbcad.tmp", ".json.tmp"}) {
+        fs::path tmp = saved;
+        tmp.replace_extension(ext);
+        std::ofstream(tmp, std::ios::binary) << "TBCAD half written";
+    }
+    auto registry2 = makeRegistry();
+    AppCore second(*registry2, platform::AppPaths{f.dir / "cfg", f.dir / "data"});
+    const auto all = second.pendingRecoveries();
+    REQUIRE(all.size() == 1);  // the temporary files are not offered as drawings
+    CHECK(all[0].autosaveFile == saved);
+    REQUIRE(second.recover(all[0]).ok());
+    CHECK(second.document().modelSpaceCount() == 1);
+}
+
 TEST_CASE("a changed setting is written to settings.json without waiting for a clean exit") {
     Fixture f("settings_write");
     const auto now = std::chrono::steady_clock::now();
