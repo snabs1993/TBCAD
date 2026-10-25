@@ -550,6 +550,10 @@ public:
     void setDefaultOwner(BlockId owner) { defaultOwner_ = owner; }
     BlockId defaultOwner() const { return defaultOwner_; }
     Result<void> modify(EntityId id, const std::function<void(Entity&)>& fn);
+    // Like modify, but `fn` returns false to decline the edit: the object is put back as it was
+    // and leaves no trace in the transaction (no empty undo step). Returns an InvalidArgument
+    // error.
+    Result<void> modifyIf(EntityId id, const std::function<bool(Entity&)>& fn);
     Result<void> erase(EntityId id);
     // Erases all of them (ids that are not there are skipped) and returns how many went. For a
     // big erase this is one pass over the drawing instead of a lookup and a fix-up per object.

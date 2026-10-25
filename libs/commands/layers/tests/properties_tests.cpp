@@ -596,9 +596,10 @@ TEST_CASE("Properties edit the line spacing of multiline text - range checked - 
     registerAllCommands(reg);
     cmd::ScriptHost host(doc, reg);
     host.setSelection({id});
-    host.run("-PROP", {"Set", "linespacing", "9", cmd::ScriptItem::enter()});
-    CHECK(entityAs<MTextData>(*doc.find(id))->lineSpacing == doctest::Approx(1.0));
     host.run("-PROP", {"Set", "linespacing", "1.5", cmd::ScriptItem::enter()});
+    CHECK(entityAs<MTextData>(*doc.find(id))->lineSpacing == doctest::Approx(1.5));
+    // A refused value leaves no step behind: one undo takes back the 1.5.
+    host.run("-PROP", {"Set", "linespacing", "9", cmd::ScriptItem::enter()});
     CHECK(entityAs<MTextData>(*doc.find(id))->lineSpacing == doctest::Approx(1.5));
     CHECK(host.undo());
     CHECK(entityAs<MTextData>(*doc.find(id))->lineSpacing == doctest::Approx(1.0));

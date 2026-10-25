@@ -83,6 +83,9 @@ ToolResult layerByObjects(ToolContext& ctx, const Json& a) {
             return ToolResult::fail(ids.error().message);
         in.push_back(selectInput(ids.value()));
         in.emplace_back("");
+        // These four ask for more objects until Enter.
+        if (action == "off" || action == "freeze" || action == "lock" || action == "unlock")
+            in.emplace_back("");
     }
     if (row->needsTarget) {
         auto t = needOne(doc, a, "target");

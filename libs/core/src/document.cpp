@@ -1642,6 +1642,13 @@ Result<EntityId> Transaction::add(Entity entity, BlockId owner) {
 }
 
 Result<void> Transaction::modify(EntityId id, const std::function<void(Entity&)>& fn) {
+    return modifyIf(id, [&fn](Entity& e) {
+        fn(e);
+        return true;
+    });
+}
+
+Result<void> Transaction::modifyIf(EntityId id, const std::function<bool(Entity&)>& fn) {
     refs_.reset();
     Document& d = doc();
     Entity* live = d.findMutable(id);
@@ -1653,7 +1660,12 @@ Result<void> Transaction::modify(EntityId id, const std::function<void(Entity&)>
         // First touch: the snapshot is the copy that keeps the original, so the entity is edited
         // in place and put back from the snapshot if the edit is not valid.
         touchEntity(id);
-        fn(*live);
+        if (!fn(*live)) {
+            *live = std::move(beforeSnaps_.back());
+            beforeSnaps_.pop_back();
+            touched_.erase(id);
+            return makeError(ErrorCode::InvalidArgument, "the edit was declined");
+        }
         live->common.id = id;
         ext = validateEntity(d, *live, d.ownerBlock(id));
         if (!ext) {
@@ -1669,7 +1681,8 @@ Result<void> Transaction::modify(EntityId id, const std::function<void(Entity&)>
 #endif
     } else {
         Entity work = *live;
-        fn(work);
+        if (!fn(work))
+            return makeError(ErrorCode::InvalidArgument, "the edit was declined");
         work.common.id = id;
         ext = validateEntity(d, work, d.ownerBlock(id));
         if (!ext)
