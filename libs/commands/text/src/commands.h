@@ -29,6 +29,8 @@ std::unique_ptr<cmd::Command> makeSpellCommand();
 std::unique_ptr<cmd::Command> makeMTextFormatCommand();
 std::unique_ptr<cmd::Command> makeTxtExpCommand();
 std::unique_ptr<cmd::Command> makeTextAlignCommand();
+std::unique_ptr<cmd::Command> makeTextFitCommand();
+std::unique_ptr<cmd::Command> makeMTextPropCommand();
 void registerMTextExplode();
 std::unique_ptr<cmd::Command> makeArcTextCommand();
 

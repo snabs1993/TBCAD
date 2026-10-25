@@ -9,6 +9,7 @@ set(_textcmd_sources
   src/txtexp.cpp
   src/arctext.cpp
   src/textalign.cpp
+  src/textfit.cpp
   src/tcount.cpp
   src/spell.cpp
   src/mtext_format.cpp

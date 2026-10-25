@@ -681,3 +681,20 @@ TEST_CASE("EXPLODE of empty multiline text changes nothing and says so") {
     CHECK(texts == 0);
     CHECK(f.host.logContains("empty"));
 }
+
+TEST_CASE("TEXTFIT stretches single-line text between two points and undoes") {
+    Fixture f;
+    f.host.run("TEXT", {"0,0", "2.5", "0", "ABC"});
+    const EntityId id = f.doc.modelSpace()[0];
+    REQUIRE(f.host
+                .run("TEXTFIT",
+                     {cmd::ScriptItem::select({id}), cmd::ScriptItem::enter(), "10,10", "10,60"})
+                .finished);
+    const TextData* t = entityAs<TextData>(*f.doc.find(id));
+    CHECK(t->h == HAlign::Fit);
+    CHECK(t->position.x == doctest::Approx(10));
+    CHECK(t->alignPoint.y == doctest::Approx(60));
+    CHECK(t->rotation == doctest::Approx(1.5707963267948966));
+    f.host.undo();
+    CHECK(entityAs<TextData>(*f.doc.find(id))->h != HAlign::Fit);
+}

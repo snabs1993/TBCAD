@@ -28,12 +28,15 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeTxtExpCommand());
     (void)registry.add(makeArcTextCommand());
     (void)registry.add(makeTextAlignCommand());
+    (void)registry.add(makeTextFitCommand());
+    (void)registry.add(makeMTextPropCommand());
 }
 
 void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Draw/Text/Single-line Text", "TEXT");
     ui.addMenuItem("Draw/Text/Multiline Text", "MTEXT");
     ui.addMenuItem("Modify/Text/Edit Text", "TEXTEDIT");
+    ui.addMenuItem("Modify/Text/Fit Text", "TEXTFIT");
     ui.addMenuItem("Format/Text Style Manager", "STYLE", "format.textstyles");
     ui.addMenuItem("Draw/Text/Field", "FIELD");
     ui.addMenuItem("Format/Annotative Objects", "ANNOTATIVE");
