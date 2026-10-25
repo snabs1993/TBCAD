@@ -46,10 +46,14 @@ public:
         // Repeats until Enter, as in AutoCAD; Undo puts back the layers of the last pick.
         ctx.commitOnCancel();
         std::vector<std::vector<LayerId>> history;
+        bool firstAsk = true;
         for (;;) {
             cmd::SelectionOptions so;
             so.keywords = {"Undo"};
-            so.allowPreselection = history.empty();  // else a kept selection would answer forever
+            // Only the first question takes the kept selection: a pick that changed nothing (the
+            // current layer, a locked layer) must not make the same selection answer forever.
+            so.allowPreselection = firstAsk;
+            firstAsk = false;
             auto sel =
                 co_await ctx.getSelection("Select objects on the layers to change or [Undo]", so);
             if (sel.status == cmd::Status::Keyword && sel.keyword == "Undo") {
