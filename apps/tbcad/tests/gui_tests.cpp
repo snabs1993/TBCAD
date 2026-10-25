@@ -878,7 +878,8 @@ TEST_CASE("every panel survives a click on each of its widgets") {
                        P{"plotstyle", "Plot Styles"}, P{"laywalk", "Layer Walk"},
                        P{"text_editor", "Text"}, P{"mleaderstyles", "Multileader Style Manager"},
                        P{"tablestyles", "Table Style"}, P{"mlstyles", "Multiline Style"},
-                       P{"views", "View Manager"}, P{"ucsman", "UCS"}, P{"vports", "Viewports"}}) {
+                       P{"views", "View Manager"}, P{"ucsman", "UCS"}, P{"vports", "Viewports"},
+                       P{"pointstyle", "Point Style"}}) {
         CAPTURE(p.id);
         Harness h(1920, 1080);
         h.core().submitText("CIRCLE");
@@ -2286,7 +2287,8 @@ TEST_CASE("panels on a full drawing: every widget clicked, with each kind of obj
                         {"mlstyles", "Multiline Style"},
                         {"views", "View Manager"},
                         {"ucsman", "UCS"},
-                        {"vports", "Viewports"}};
+                        {"vports", "Viewports"},
+                        {"pointstyle", "Point Style"}};
     for (const P& p : panels) {
         const std::string panelId = p.id;
         CAPTURE(panelId);

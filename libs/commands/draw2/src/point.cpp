@@ -83,8 +83,22 @@ public:
     }
 };
 
+// DDPTYPE: opens the Point Style dialog; the dialog applies the choice through PTYPE.
+class PointStyleDialogCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "DDPTYPE"; }
+    std::string_view description() const override { return "Open the Point Style dialog"; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().openPanel("pointstyle");
+        co_return;
+    }
+};
+
 }  // namespace
 
+std::unique_ptr<cmd::Command> makePointStyleDialog() {
+    return std::make_unique<PointStyleDialogCommand>();
+}
 std::unique_ptr<cmd::Command> makePoint() {
     return std::make_unique<PointCommand>();
 }
