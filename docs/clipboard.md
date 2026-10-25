@@ -43,3 +43,13 @@ the other objects; `HATCHTOBACK` sends every hatch behind them. Their order amon
 inertia and radii of gyration of a closed polyline, circle, ellipse or closed spline.
 
 `DWGPROPS` shows and sets the title, subject, author, keywords and comments of the drawing (saved in the file header).
+
+## Paste Special from the system clipboard (Q131)
+
+`PASTESPEC` also takes what other programs put on the Windows clipboard:
+
+- **Text**: the clipboard text becomes one MTEXT (line ends become `\P`).
+- **Table**: tab-separated cells copied from Excel (or CSV text) become a TABLE, each column as wide as its longest text.
+- **Image**: the clipboard bitmap is saved as a PNG in the `pasted` folder of the settings folder and `IMAGEATTACH` starts on it.
+
+The window hands the clipboard text to the command by a `clipboardsnapshot` request; the command works the same without a window (tests set `tmp.clipboard.system`).
