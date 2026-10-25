@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <string>
 
 #include "tbcad/platform/crash.h"
 
@@ -44,6 +45,8 @@ TEST_CASE("a segfault writes a report with a stack trace") {
     REQUIRE(pid >= 0);
     if (pid == 0) {
         installCrashHandler(d, "test-1.0");
+        for (int i = 0; i < 250; ++i)
+            recordCommandLine("line " + std::to_string(i));
         std::raise(SIGSEGV);
         _exit(0);
     }
@@ -56,5 +59,9 @@ TEST_CASE("a segfault writes a report with a stack trace") {
     std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     CHECK(text.find("TBCAD test-1.0 crashed") != std::string::npos);
     CHECK(text.find("signal 11") != std::string::npos);
+    CHECK(text.find("Last command lines:") != std::string::npos);
+    CHECK(text.find("line 249") != std::string::npos);
+    CHECK(text.find("line 50\n") != std::string::npos);
+    CHECK(text.find("line 49\n") == std::string::npos);  // only the last 200 are kept
 }
 #endif

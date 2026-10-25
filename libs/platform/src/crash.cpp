@@ -26,6 +26,20 @@ char g_dir[1024] = {};
 char g_version[64] = {};
 bool g_installed = false;
 
+constexpr int kRingLines = 200;
+constexpr int kRingWidth = 256;
+char g_ring[kRingLines][kRingWidth] = {};
+unsigned g_ringNext = 0;  // total lines recorded; slot = g_ringNext % kRingLines
+
+// Writes the ring, oldest first, using only stdio on a preallocated buffer.
+void dumpRing(FILE* f) {
+    std::fprintf(f, "Last command lines:\n");
+    unsigned total = g_ringNext;
+    unsigned count = total < kRingLines ? total : kRingLines;
+    for (unsigned i = total - count; i < total; ++i)
+        std::fprintf(f, "  %s\n", g_ring[i % kRingLines]);
+}
+
 void makeStamp(char* out, size_t n) {
     std::time_t t = std::time(nullptr);
     std::tm tmv{};
@@ -68,6 +82,7 @@ LONG WINAPI onException(EXCEPTION_POINTERS* info) {
         USHORT n = CaptureStackBackTrace(0, 48, frames, nullptr);
         for (USHORT i = 0; i < n; ++i)
             std::fprintf(f, "  #%u %p\n", static_cast<unsigned>(i), frames[i]);
+        dumpRing(f);
         std::fclose(f);
     }
 
@@ -122,6 +137,14 @@ void onSignal(int sig) {
         void* frames[48];
         int n = ::backtrace(frames, 48);
         ::backtrace_symbols_fd(frames, n, fd);
+        writeAll(fd, "Last command lines:\n");
+        unsigned total = g_ringNext;
+        unsigned count = total < kRingLines ? total : kRingLines;
+        for (unsigned i = total - count; i < total; ++i) {
+            writeAll(fd, "  ");
+            writeAll(fd, g_ring[i % kRingLines]);
+            writeAll(fd, "\n");
+        }
         ::close(fd);
     }
     // Restore the default action and re-raise so the system still sees the crash.
@@ -142,6 +165,7 @@ void onTerminate() {
 #endif
     if (FILE* f = openForWrite(path)) {
         std::fprintf(f, "TBCAD %s crashed\nuncaught C++ exception (std::terminate)\n", g_version);
+        dumpRing(f);
         std::fclose(f);
     }
     std::abort();
@@ -163,6 +187,18 @@ void installCrashHandler(const std::filesystem::path& dir, const std::string& ap
     for (int sig : {SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT})
         ::signal(sig, onSignal);
 #endif
+}
+
+void recordCommandLine(const std::string& line) {
+    char* slot = g_ring[g_ringNext % kRingLines];
+    size_t n = 0;
+    for (char c : line) {
+        if (n + 1 >= kRingWidth)
+            break;
+        slot[n++] = (c == '\n' || c == '\r') ? ' ' : c;
+    }
+    slot[n] = '\0';
+    ++g_ringNext;
 }
 
 std::vector<std::filesystem::path> pendingCrashReports(const std::filesystem::path& dir) {
