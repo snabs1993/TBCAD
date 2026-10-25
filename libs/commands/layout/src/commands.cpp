@@ -1037,6 +1037,107 @@ public:
     }
 };
 
+// MVSETUP: one-step sheet setup. Makes a layout, one viewport inside the margins at a scale (or
+// fitted to the drawing) and, if asked, a title block.
+class MvsetupCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "MVSETUP"; }
+    std::string_view description() const override {
+        return "Set up a new sheet: paper size, one viewport at a scale, optional title block";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        cmd::StringOptions no;
+        const std::string defName =
+            "Sheet " + std::to_string(layout::layouts(ctx.doc()).size() + 1);
+        no.defaultValue = defName;
+        auto name = co_await ctx.getString("Layout name <" + defName + ">", no);
+        if (!name.ok())
+            co_return;
+        cmd::StringOptions po;
+        po.defaultValue = "A3";
+        auto paper = co_await ctx.getString("Paper size (A0-A4, ANSI A-E) <A3>", po);
+        if (!paper.ok())
+            co_return;
+        std::string paperName = paper.text;
+        for (const auto& p : exportlib::paperSizes())
+            if (lower(p.name) == lower(paper.text))
+                paperName = p.name;
+        cmd::KeywordOptions ko;
+        ko.keywords = {"Landscape", "Portrait"};
+        ko.defaultKeyword = "Landscape";
+        auto orient = co_await ctx.getKeyword("Orientation [Landscape/Portrait] <Landscape>", ko);
+        if (!orient.ok())
+            co_return;
+        cmd::StringOptions so;
+        so.defaultValue = "Fit";
+        auto scale = co_await ctx.getString("Viewport scale (1:N) or [Fit] <Fit>", so);
+        if (!scale.ok())
+            co_return;
+        const bool fit = lower(scale.text) == "fit" || lower(scale.text) == "f";
+        double n = 0;
+        if (!fit && !parseScaleN(scale.text, n)) {
+            ctx.message("Not a scale: \"" + scale.text + "\". Use 1:N.");
+            co_return;
+        }
+        cmd::KeywordOptions to;
+        to.keywords = {"Yes", "No"};
+        to.defaultKeyword = "No";
+        auto tb = co_await ctx.getKeyword("Add a title block [Yes/No] <No>", to);
+        if (!tb.ok())
+            co_return;
+        layout::TitleBlockFields f;
+        if (tb.keyword == "Yes") {
+            cmd::StringOptions eo;
+            eo.allowEmpty = true;
+            auto project = co_await ctx.getString("Project", eo);
+            if (!project.ok())
+                co_return;
+            auto drawing = co_await ctx.getString("Drawing", eo);
+            if (!drawing.ok())
+                co_return;
+            f.project = project.text;
+            f.drawing = drawing.text;
+            f.scale = fit ? std::string() : scale.text;
+        }
+
+        const bool landscape = orient.keyword == "Landscape";
+        auto made = layout::createLayout(ctx.tx(), name.text, paperName, landscape);
+        if (!made) {
+            ctx.message(made.error().message);
+            co_return;
+        }
+        const auto lay = layout::findLayout(ctx.doc(), name.text);
+        if (!lay)
+            co_return;
+        const double m = std::min({10.0, lay->widthMm / 4, lay->heightMm / 4});
+        BBox2 rect;
+        rect.expand({m, m});
+        rect.expand({lay->widthMm - m, lay->heightMm - m});
+        const BBox2 box = modelExtents(ctx.doc());
+        Vec2 centre{};
+        if (!box.empty())
+            centre = {(box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2};
+        if (fit) {
+            n = box.empty() ? 1
+                            : std::max(box.width() / rect.width(), box.height() / rect.height());
+            if (!(n > 0))
+                n = 1;
+        }
+        if (auto id = layout::addViewport(ctx.tx(), name.text, rect, centre, n); !id) {
+            ctx.message(id.error().message);
+            co_return;
+        }
+        if (tb.keyword == "Yes")
+            if (auto r = layout::addTitleBlock(ctx.tx(), name.text, f); !r)
+                ctx.message(r.error().message);
+        ctx.host().setSetting("layout.current", name.text);
+        ctx.host().setSetting("layout.show", name.text);
+        char buf[32];
+        std::snprintf(buf, sizeof buf, "%.4g", n);
+        ctx.message("Sheet \"" + name.text + "\" set up with a viewport at 1:" + buf + ".");
+    }
+};
+
 }  // namespace
 
 std::string currentLayout(const cmd::IHost& host, const Document& doc) {
@@ -1061,6 +1162,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<VpCenterCommand>());
     (void)registry.add(std::make_unique<ChSpaceCommand>());
     (void)registry.add(std::make_unique<TitleBlockCommand>());
+    (void)registry.add(std::make_unique<MvsetupCommand>());
 }
 
 }  // namespace tbcad::layoutcmd
