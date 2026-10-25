@@ -558,6 +558,35 @@ TEST_CASE("Properties show hatch area, dimension measurement, table size and mul
     CHECK(d->textRotation == doctest::Approx(kPi / 6));
 }
 
+TEST_CASE("Properties edit a hatch pattern, scale, angle and origin - and undo") {
+    Document doc;
+    HatchData h;
+    h.solid = false;
+    h.pattern = "LINE45";
+    HatchLoop loop;
+    loop.edges.push_back(HatchPolylineEdge{
+        {{{0, 0}, 0, 0, 0}, {{4, 0}, 0, 0, 0}, {{4, 4}, 0, 0, 0}, {{0, 4}, 0, 0, 0}}, true});
+    h.loops.push_back(loop);
+    const EntityId id = addEntity(doc, Indirect<HatchData>(h));
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    cmd::ScriptHost host(doc, reg);
+    host.setSelection({id});
+    host.run("-PROP", {"Set", "patternscale", "2.5", cmd::ScriptItem::enter()});
+    host.run("-PROP", {"Set", "patternangle", "30", cmd::ScriptItem::enter()});
+    host.run("-PROP", {"Set", "originx", "1", cmd::ScriptItem::enter()});
+    host.run("-PROP", {"Set", "pattern", "CROSS45", cmd::ScriptItem::enter()});
+    const auto* now = entityAs<HatchData>(*doc.find(id));
+    CHECK(now->patternScale == doctest::Approx(2.5));
+    CHECK(now->patternAngle == doctest::Approx(kPi / 6));
+    CHECK(now->patternOrigin.x == doctest::Approx(1));
+    CHECK(now->pattern == "CROSS45");
+    CHECK(host.undo());
+    CHECK(entityAs<HatchData>(*doc.find(id))->pattern == "LINE45");
+    host.run("-PROP", {"Set", "patternscale", "0", cmd::ScriptItem::enter()});
+    CHECK(entityAs<HatchData>(*doc.find(id))->patternScale == doctest::Approx(2.5));
+}
+
 TEST_CASE("Properties edit attribute values, dimension override and style, table text style") {
     Document doc;
     cmd::Registry reg;

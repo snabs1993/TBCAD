@@ -8,6 +8,7 @@
 #include "tbcad/dim/dim.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/hatch/fill.h"
+#include "tbcad/hatch/pattern.h"
 #include "tbcad/text/text.h"
 
 namespace tbcad::layers {
@@ -252,6 +253,13 @@ std::vector<GeometryField> geometryFields(const Entity& e, int vertex) {
         out.push_back(
             {"loops", "Boundaries", FieldType::Count, false, static_cast<double>(h->loops.size())});
         num("area", "Area", hatch::hatchArea(*h), false);
+        if (!h->solid && !h->gradient) {
+            num("patternscale", "Pattern scale", h->patternScale);
+            out.push_back(
+                {"patternangle", "Pattern angle", FieldType::Angle, true, deg(h->patternAngle)});
+            num("originx", "Origin X", h->patternOrigin.x);
+            num("originy", "Origin Y", h->patternOrigin.y);
+        }
     } else if (const auto* d = entityAs<DimensionData>(e)) {
         const bool angular = d->kind == DimKind::Angular2Line || d->kind == DimKind::Angular3Point;
         const double m = dim::measurement(*d);
@@ -498,6 +506,19 @@ Result<void> setGeometryField(Transaction& tx, EntityId id, const std::string& f
                 in->rotation = rad(v);
             else
                 return fail(bad("A block reference has no editable field \"" + f + "\"."));
+        } else if (auto* hh = entityAs<HatchData>(e)) {
+            if (f == "patternscale") {
+                if (v <= 0)
+                    return fail(bad("The pattern scale must be greater than zero."));
+                hh->patternScale = v;
+            } else if (f == "patternangle")
+                hh->patternAngle = rad(v);
+            else if (f == "originx")
+                hh->patternOrigin.x = v;
+            else if (f == "originy")
+                hh->patternOrigin.y = v;
+            else
+                return fail(bad("A hatch has no editable field \"" + f + "\"."));
         } else if (auto* ray = entityAs<RayData>(e)) {
             if (f == "x")
                 ray->origin.x = v;
@@ -685,6 +706,18 @@ std::vector<StringField> stringFields(const Document& doc, const Entity& e) {
             {"dimstyle", "Style", dimStyleNameOf(doc, ml->style), true, dimStyleNames(doc)});
     } else if (const auto* tb = entityAs<TableData>(e)) {
         out.push_back({"style", "Text style", styleNameOf(doc, tb->style), true, styleNames(doc)});
+    } else if (const auto* h = entityAs<HatchData>(e)) {
+        if (!h->solid && !h->gradient) {
+            std::vector<std::string> names = hatch::PatternRegistry::names();
+            names.erase(std::remove_if(names.begin(), names.end(),
+                                       [](const std::string& n) {
+                                           const hatch::Pattern* p =
+                                               hatch::PatternRegistry::find(n);
+                                           return !p || p->solid;
+                                       }),
+                        names.end());
+            out.push_back({"pattern", "Pattern", h->pattern, true, std::move(names)});
+        }
     }
     return out;
 }
@@ -821,6 +854,13 @@ Result<void> setStringField(const Document& doc, Transaction& tx, EntityId id, c
         for (AttribValue& a : ml->attribs)
             if ("att:" + lowerWord(a.tag) == f)
                 a.value = chosen;
+    } else if (auto* hh = entityAs<HatchData>(next)) {
+        if (f == "pattern") {
+            const hatch::Pattern* pat = hatch::PatternRegistry::find(chosen);
+            if (!pat || pat->solid)
+                return makeError(ErrorCode::NotFound, "No such line pattern.");
+            hh->pattern = pat->name;
+        }
     } else if (auto* tb = entityAs<TableData>(next)) {
         const TextStyle* st = doc.textStyleByName(chosen);
         if (!st)
