@@ -710,6 +710,15 @@ std::vector<StringField> stringFields(const Document& doc, const Entity& e) {
         for (const JustRow& r : kJustify)
             names.push_back(r.name);
         out.push_back({"justify", "Justify", j, true, names});
+        out.push_back({"backward", "Backward", t->backward ? "Yes" : "No", true, {"No", "Yes"}});
+        out.push_back(
+            {"upsidedown", "Upside down", t->upsideDown ? "Yes" : "No", true, {"No", "Yes"}});
+    } else if (const auto* pl = entityAs<PolylineData>(e)) {
+        out.push_back({"ltypegen",
+                       "Linetype generation",
+                       pl->restartLinetype ? "Off" : "On",
+                       true,
+                       {"On", "Off"}});
     } else if (const auto* m = entityAs<MTextData>(e)) {
         out.push_back({"contents", "Contents", m->utf8, true, {}});
         out.push_back({"style", "Style", styleNameOf(doc, m->style), true, styleNames(doc)});
@@ -823,6 +832,10 @@ Result<void> setStringField(const Document& doc, Transaction& tx, EntityId id, c
             if (!st)
                 return makeError(ErrorCode::NotFound, "No such text style.");
             t->style = st->id;
+        } else if (f == "backward") {
+            t->backward = chosen == "Yes";
+        } else if (f == "upsidedown") {
+            t->upsideDown = chosen == "Yes";
         } else if (f == "justify") {
             for (const JustRow& r : kJustify) {
                 if (chosen != r.name)
@@ -865,6 +878,9 @@ Result<void> setStringField(const Document& doc, Transaction& tx, EntityId id, c
                 break;
             }
         }
+    } else if (auto* pl = entityAs<PolylineData>(next)) {
+        if (f == "ltypegen")
+            pl->restartLinetype = chosen == "Off";
     } else if (auto* m = entityAs<MTextData>(next)) {
         if (f == "contents") {
             m->utf8 = chosen;
