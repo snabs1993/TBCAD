@@ -6,6 +6,7 @@
 
 #include "commands.h"
 #include "tbcad/cmd/cmd.h"
+#include "tbcad/dim/dim.h"
 #include "tbcad/text/annotation_size.h"
 #include "tbcad/text/text.h"
 #include "tbcad/textcmd/textcmd.h"
@@ -124,6 +125,13 @@ std::optional<TextStyleId> styleByName(CommandContext& ctx, const std::string& n
 bool isTextEntity(const Entity& e) {
     EntityKind k = kind(e);
     return k == EntityKind::Text || k == EntityKind::MText;
+}
+
+// What TEXTEDIT (and a double-click) can edit: text, multiline text, the replaced text of a
+// dimension and the note of a multileader.
+bool isEditableAnnotation(const Entity& e) {
+    EntityKind k = kind(e);
+    return isTextEntity(e) || k == EntityKind::Dimension || k == EntityKind::MLeader;
 }
 
 // ---- TEXT -----------------------------------------------------------------------------------
@@ -577,7 +585,7 @@ public:
         for (bool first = true;; first = false) {
             cmd::SelectionOptions so;
             so.single = true;
-            so.filter = isTextEntity;
+            so.filter = isEditableAnnotation;
             so.allowPreselection = first;
             so.keywords = done.empty() ? std::vector<std::string>{"Mode"}
                                        : std::vector<std::string>{"Undo", "Mode"};
@@ -586,8 +594,8 @@ public:
                 if (sel.keyword == "Undo" && !done.empty()) {
                     const Done last = done.back();
                     done.pop_back();
-                    (void)ctx.tx().modify(last.id,
-                                          [&](Entity& en) { setContent(en, last.before); });
+                    (void)ctx.tx().modify(
+                        last.id, [&](Entity& en) { setContent(ctx.doc(), en, last.before); });
                 } else if (sel.keyword == "Mode") {
                     cmd::KeywordOptions ko{.keywords = {"Single", "Multiple"},
                                            .defaultKeyword = multiple ? "Multiple" : "Single"};
@@ -603,13 +611,17 @@ public:
                 co_return;
             const bool preselected = first && !ctx.usedPreselection().empty();
             const Entity* e = ctx.doc().find(sel.ids.front());
-            if (!e || !isTextEntity(*e))
+            if (!e || !isEditableAnnotation(*e))
                 co_return;
             std::string current;
             if (const auto* t = entityAs<TextData>(*e))
                 current = t->utf8;
+            else if (const auto* m = entityAs<MTextData>(*e))
+                current = m->utf8;
+            else if (const auto* d = entityAs<DimensionData>(*e))
+                current = d->textOverride.empty() ? "<>" : d->textOverride;
             else
-                current = entityAs<MTextData>(*e)->utf8;
+                current = entityAs<MLeaderData>(*e)->utf8;
 
             cmd::StringOptions o;
             o.defaultValue = current;
@@ -618,11 +630,15 @@ public:
             else if (const auto* t = entityAs<TextData>(*e))
                 o.editor =
                     cmd::TextEditorHint{{t->position.x, t->position.y + t->height}, 0, 0, false};
-            auto r = co_await ctx.getString("Enter new text", o);
+            auto r = co_await ctx.getString(kind(*e) == EntityKind::Dimension
+                                                ? "Dimension text, <> is the measurement"
+                                                : "Enter new text",
+                                            o);
             if (!r.ok())
                 co_return;
             const std::string value = r.text;
-            auto res = ctx.tx().modify(sel.ids.front(), [&](Entity& en) { setContent(en, value); });
+            auto res = ctx.tx().modify(sel.ids.front(),
+                                       [&](Entity& en) { setContent(ctx.doc(), en, value); });
             if (!res)
                 ctx.message(res.error().message);
             else
@@ -633,11 +649,16 @@ public:
     }
 
 private:
-    static void setContent(Entity& en, const std::string& value) {
+    static void setContent(const Document& doc, Entity& en, const std::string& value) {
         if (auto* t = entityAs<TextData>(en))
             t->utf8 = value;
         else if (auto* m = entityAs<MTextData>(en))
             m->utf8 = value;
+        else if (auto* d = entityAs<DimensionData>(en)) {
+            d->textOverride = value == "<>" ? std::string() : value;
+            dim::refresh(doc, *d);
+        } else if (auto* l = entityAs<MLeaderData>(en))
+            l->utf8 = value;
     }
 };
 

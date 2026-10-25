@@ -22,9 +22,9 @@ const std::vector<DoubleClickType>& doubleClickTypes() {
         {"Block", "Block reference", "BEDIT"},
         {"AttributeBlock", "Block with attributes", "EATTEDIT"},
         {"Xref", "External reference", kOpenProperties},
-        {"Dimension", "Dimension", kOpenProperties},
+        {"Dimension", "Dimension", "TEXTEDIT"},
         {"Leader", "Leader", kOpenProperties},
-        {"MLeader", "Multileader", kOpenProperties},
+        {"MLeader", "Multileader", "TEXTEDIT"},
         {"Table", "Table", "TABLEEDIT"},
         {"Other", "Other objects", kOpenProperties},
     };
