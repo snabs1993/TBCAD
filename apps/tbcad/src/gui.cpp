@@ -1035,10 +1035,10 @@ void Gui::menuBar() {
         if (ImGui::MenuItem("Clean Screen", keys.label("view.cleanScreen").c_str(), cleanScreen_))
             cleanScreen_ = !cleanScreen_;
         for (const auto& p : registry_.panels())
-            ImGui::MenuItem(p.title.c_str(),
-                            p.id == "properties" ? keys.label("view.toggleProperties").c_str()
-                                                 : nullptr,
-                            &panelOpen_[p.id]);
+            ImGui::MenuItem(
+                p.title.c_str(),
+                p.id == "properties" ? keys.label("view.toggleProperties").c_str() : nullptr,
+                &panelOpen_[p.id]);
         ImGui::Separator();
         workspaceMenu();
         if (ImGui::BeginMenu("Theme")) {
