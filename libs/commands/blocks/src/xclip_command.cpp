@@ -40,12 +40,40 @@ public:
             co_return;
         const bool has = ins->clip.size() >= 3;
         auto opt = co_await ctx.getKeyword(
-            std::string("Clip option [ON/OFF/Delete/New/Invert] <") + (has ? "ON" : "New") + ">",
-            cmd::KeywordOptions{.keywords = {"ON", "OFF", "Delete", "New", "Invert"},
-                                .defaultKeyword = has ? "ON" : "New"});
+            std::string(pdf_ ? "Clip option [ON/OFF/Delete/New/Invert] <"
+                             : "Clip option [ON/OFF/Delete/New/Invert/generate Polyline] <") +
+                (has ? "ON" : "New") + ">",
+            cmd::KeywordOptions{
+                .keywords = pdf_ ? std::vector<std::string>{"ON", "OFF", "Delete", "New", "Invert"}
+                                 : std::vector<std::string>{"ON", "OFF", "Delete", "New", "Invert",
+                                                            "Polyline"},
+                .defaultKeyword = has ? "ON" : "New"});
         if (!opt.ok())
             co_return;
 
+        if (opt.keyword == "Polyline") {
+            // A closed polyline on the current layer along the clip boundary, in world space.
+            const BlockDef* bdef = doc.block(ins->block);
+            if (!has || !bdef) {
+                ctx.message("This object has no clipping boundary");
+                co_return;
+            }
+            const auto xf = blocks::instanceTransform(*ins, bdef->base);
+            PolylineData pl;
+            pl.closed = true;
+            for (const Vec2& q : ins->clip)
+                pl.v.push_back(PolyVertex{.p = xf.apply(q)});
+            Entity ne{{}, EntityData{std::move(pl)}};
+            applyCurrentProperties(doc.header(), ne);
+            auto added = ctx.tx().add(std::move(ne));
+            if (!added) {
+                ctx.message(added.error().message);
+                co_return;
+            }
+            ctx.setUndoLabel("Clip polyline");
+            ctx.message("Polyline created along the clipping boundary");
+            co_return;
+        }
         if (opt.keyword == "Invert") {
             if (!has) {
                 ctx.message("This object has no clipping boundary");

@@ -43,19 +43,38 @@ struct Fixture {
 TEST_CASE("LAYOFF, LAYFRZ and LAYLCK act on the layers of the selected objects") {
     Fixture f;
     f.setup();
-    CHECK(f.run("LAYOFF", {cmd::ScriptItem::select({f.ea}), cmd::ScriptItem::enter()}).finished);
+    CHECK(f.run("LAYOFF",
+                {cmd::ScriptItem::select({f.ea}), cmd::ScriptItem::enter(), cmd::ScriptItem::esc()})
+              .finished);
     CHECK_FALSE(f.doc.layer(f.a)->on);
     CHECK(f.doc.layer(f.b)->on);
-    CHECK(f.run("LAYFRZ", {cmd::ScriptItem::select({f.eb}), cmd::ScriptItem::enter()}).finished);
+    CHECK(f.run("LAYFRZ",
+                {cmd::ScriptItem::select({f.eb}), cmd::ScriptItem::enter(), cmd::ScriptItem::esc()})
+              .finished);
     CHECK(f.doc.layer(f.b)->frozen);
-    CHECK(f.run("LAYLCK", {cmd::ScriptItem::select({f.ea}), cmd::ScriptItem::enter()}).finished);
+    CHECK(f.run("LAYLCK",
+                {cmd::ScriptItem::select({f.ea}), cmd::ScriptItem::enter(), cmd::ScriptItem::esc()})
+              .finished);
     CHECK(f.doc.layer(f.a)->locked);
-    CHECK(f.run("LAYULK", {cmd::ScriptItem::select({f.ea}), cmd::ScriptItem::enter()}).finished);
+    CHECK(f.run("LAYULK",
+                {cmd::ScriptItem::select({f.ea}), cmd::ScriptItem::enter(), cmd::ScriptItem::esc()})
+              .finished);
     CHECK_FALSE(f.doc.layer(f.a)->locked);
     CHECK(f.run("LAYON", {}).finished);
     CHECK(f.doc.layer(f.a)->on);
     CHECK(f.run("LAYTHW", {}).finished);
     CHECK_FALSE(f.doc.layer(f.b)->frozen);
+}
+
+TEST_CASE("LAYOFF repeats and Undo puts back the last picked layers") {
+    Fixture f;
+    f.setup();
+    CHECK(f.run("LAYOFF", {cmd::ScriptItem::select({f.ea}), cmd::ScriptItem::enter(),
+                           cmd::ScriptItem::select({f.eb}), cmd::ScriptItem::enter(), "Undo",
+                           cmd::ScriptItem::esc()})
+              .finished);
+    CHECK_FALSE(f.doc.layer(f.a)->on);
+    CHECK(f.doc.layer(f.b)->on);
 }
 
 TEST_CASE("LAYFRZ refuses the current layer but still freezes the others") {
@@ -66,7 +85,8 @@ TEST_CASE("LAYFRZ refuses the current layer but still freezes the others") {
         REQUIRE(layers::setCurrentLayer(f.doc, tx, f.a).ok());
         tx.commit();
     }
-    CHECK(f.run("LAYFRZ", {cmd::ScriptItem::select({f.ea, f.eb}), cmd::ScriptItem::enter()})
+    CHECK(f.run("LAYFRZ", {cmd::ScriptItem::select({f.ea, f.eb}), cmd::ScriptItem::enter(),
+                           cmd::ScriptItem::esc()})
               .finished);
     CHECK_FALSE(f.doc.layer(f.a)->frozen);
     CHECK(f.doc.layer(f.b)->frozen);
