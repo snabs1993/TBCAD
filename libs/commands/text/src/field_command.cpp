@@ -5,6 +5,7 @@
 #include "commands.h"
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/text/field.h"
+#include "tbcad/text/text.h"
 
 namespace tbcad::textcmd {
 
@@ -130,7 +131,52 @@ public:
     }
 };
 
+// FONTALT: the font that stands in for a missing .shx font. FONTMAP: a font mapping file
+// ("old;new" per line) that says which font replaces which.
+class FontSubstitutionCommand final : public cmd::Command {
+public:
+    explicit FontSubstitutionCommand(bool map) : map_(map) {}
+    std::string_view name() const override { return map_ ? "FONTMAP" : "FONTALT"; }
+    std::string_view description() const override {
+        return map_ ? "Set the font mapping file that replaces fonts (old;new per line)"
+                    : "Set the font that replaces a missing .shx font";
+    }
+
+    Task run(CommandContext& ctx) override {
+        const char* key = map_ ? "text.fontmap.file" : "text.fontalt";
+        cmd::StringOptions so;
+        so.allowEmpty = true;
+        so.defaultValue = ctx.host().setting(key).value_or("");
+        auto v = co_await ctx.getString(
+            map_ ? "Font mapping file, . for none" : "Alternate font, . for none", so);
+        if (!v.ok() && v.status != cmd::Status::None)
+            co_return;
+        std::string value = cmd::trim(v.text);
+        if (value.empty())
+            value = so.defaultValue.value_or("");
+        if (value == ".")
+            value.clear();
+        ctx.host().setSetting(key, value);
+        std::string error;
+        text::setFontSubstitutionsFromFile(ctx.host().setting("text.fontmap.file").value_or(""),
+                                           ctx.host().setting("text.fontalt").value_or(""), &error);
+        ctx.message(error.empty() ? std::string(name()) + " = " + (value.empty() ? "." : value)
+                                  : error);
+    }
+
+private:
+    bool map_;
+};
+
 }  // namespace
+
+std::unique_ptr<cmd::Command> makeFontAltCommand() {
+    return std::make_unique<FontSubstitutionCommand>(false);
+}
+
+std::unique_ptr<cmd::Command> makeFontMapCommand() {
+    return std::make_unique<FontSubstitutionCommand>(true);
+}
 
 std::unique_ptr<cmd::Command> makeFieldCommand() {
     return std::make_unique<FieldCommand>();
