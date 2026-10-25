@@ -67,6 +67,7 @@ std::unique_ptr<cmd::Command> makePdfOsnapCommand();
 std::unique_ptr<cmd::Command> makeUnderlayFadeCommand();
 std::unique_ptr<cmd::Command> makeXReloadCommand();
 std::unique_ptr<cmd::Command> makeXDetachCommand();
+std::unique_ptr<cmd::Command> makeXrefLineCommand();
 std::unique_ptr<cmd::Command> makeXBindCommand();
 std::unique_ptr<cmd::Command> makeXClipCommand();
 std::unique_ptr<cmd::Command> makeClipFrameCommand(bool pdf);

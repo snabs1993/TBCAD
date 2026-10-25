@@ -737,3 +737,16 @@ TEST_CASE("XCLIPFRAME and PDFFRAME draw the clip boundary and PDFCLIP clips only
     CHECK(f.host->undo());
     CHECK(frames(pdfIns, false) == 0);
 }
+
+TEST_CASE("-XREF Overlay then Detach works from the command line") {
+    Dir dir;
+    fs::path file = writeSource(dir.path, "plan.tbcad", 2);
+    Fixture f;
+    f.host->run("-XREF", {"Overlay", file.string(), "Relative", "", "0,0"});
+    const BlockDef* def = f.doc.blockByName("plan");
+    REQUIRE(def);
+    CHECK(def->xrefOverlay);
+    f.host->run("-XREF", {"?", "Detach", "plan"});
+    CHECK(f.host->logContains("Xrefs: plan"));
+    CHECK(f.doc.blockByName("plan") == nullptr);
+}
