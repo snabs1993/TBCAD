@@ -53,6 +53,12 @@ struct ExportOptions {
     // Threads a big drawing may be written on (0 = the machine's). The bytes written do not depend
     // on it.
     std::size_t maxThreads = 0;
+    // Write TABLEs as ACAD_TABLE objects (R2007 only) with their cells and a TABLESTYLE, beside
+    // the block that draws them, so other programs can edit them as tables. Off by default: it
+    // has not been checked against AutoCAD yet. Without it (or in any other version, or when the
+    // drawing keeps table styles from its source file) a table is written as a block of lines and
+    // text, with the table itself in extended data for TBCAD.
+    bool nativeTables = false;
 };
 
 struct ExportSummary {

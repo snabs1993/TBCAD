@@ -1139,11 +1139,29 @@ void Writer::writeCommonFlags(const EntityCommon& c) {
 // A table is an INSERT of an anonymous *T block that holds its drawn grid and texts, so any
 // program shows it. Our own extended data carries the table itself; the importer rebuilds the
 // table from it.
+// True when TABLEs go out as ACAD_TABLE: asked for, R2007 (UTF-8 cell text), and no table styles
+// kept from the source file (the Standard style written here would clash with theirs).
+bool Writer::nativeTables() const {
+    if (!opt_.nativeTables || r12_ || opt_.version != DxfVersion::R2007)
+        return false;
+    const auto& custom = doc_.header().custom;
+    if (const auto it = custom.find(kKeptObjectRootKey); it != custom.end()) {
+        const std::string& roots = it->second;
+        if (roots.rfind("ACAD_TABLESTYLE\t", 0) == 0 ||
+            roots.find("\nACAD_TABLESTYLE\t") != std::string::npos)
+            return false;
+    }
+    return true;
+}
+
 void Writer::writeTable(const Props& p, const Entity& e, std::uint64_t owner) {
     const TableData& t = *entityAs<TableData>(e);
+    const bool native = nativeTables();
     DimBlock block;
     do {
-        block.name = "*TB" + std::to_string(++dimCounter_);  // ours: the reader skips it
+        // AutoCAD calls a table's block *T<n>; ours (*TB<n>) is skipped by the reader.
+        block.name =
+            native ? "*T" + std::to_string(++tableCounter_) : "*TB" + std::to_string(++dimCounter_);
     } while (blockSet_.has(block.name));
     blockSet_.add(block.name);
     block.rec = newHandle();
@@ -1153,8 +1171,14 @@ void Writer::writeTable(const Props& p, const Entity& e, std::uint64_t owner) {
         L().o = &bo;
         auto parts = table::explodeTable(doc_, e);
         if (parts) {
-            for (const Entity& part : parts.value())
+            for (Entity& part : parts.value()) {
+                if (native) {  // drawn from the table's insertion point
+                    auto moved = geom::transformed(part, Transform2::translate(-t.origin));
+                    if (moved)
+                        part = std::move(moved.value());
+                }
                 writeEntity(part, block.rec);
+            }
         }
         L().o = saved;
         block.body = std::move(bo.buf);
@@ -1162,14 +1186,91 @@ void Writer::writeTable(const Props& p, const Entity& e, std::uint64_t owner) {
     const std::string blockName = block.name;
     dimBlocks_.push_back(std::move(block));
 
-    head("INSERT", p, owner, "AcDbBlockReference");
+    if (!native) {
+        head("INSERT", p, owner, "AcDbBlockReference");
+        Out& o = *L().o;
+        o.str(2, blockName);
+        o.pt(10, Vec2{0, 0});
+        o.d(41, 1);
+        o.d(42, 1);
+        o.d(43, 1);
+        count("INSERT");
+    } else {
+        if (!tableStdStyle_)
+            tableStdStyle_ = newHandle();
+        head("ACAD_TABLE", p, owner, "AcDbBlockReference");
+        Out& o = *L().o;
+        o.str(2, blockName);
+        o.pt(10, t.origin);
+        o.raw(100, "AcDbTable");
+        o.i(280, 0);
+        o.h(342, tableStdStyle_);
+        o.h(343, dimBlocks_.back().rec);
+        o.d(11, std::cos(t.rotation));
+        o.d(21, std::sin(t.rotation));
+        o.d(31, 0);
+        const std::size_t rows = table::rowCount(t), cols = table::colCount(t);
+        o.i(90, 0);
+        o.i(91, static_cast<long long>(rows));
+        o.i(92, static_cast<long long>(cols));
+        o.i(93, 0);
+        o.i(94, 0);
+        o.i(95, 0);
+        o.i(96, 0);
+        for (double h : t.rowHeights)
+            o.d(141, h);
+        for (double w : t.colWidths)
+            o.d(142, w);
+        for (std::size_t r = 0; r < rows; ++r) {
+            for (std::size_t c = 0; c < cols; ++c) {
+                const TableCell& cell = table::cellAt(t, r, c);
+                const TableCellStyle& cs = table::cellStyleOfRow(t, r);
+                o.i(171, 1);  // text cell
+                o.i(172, 0);
+                o.i(173, cell.covered ? 1 : 0);  // part of a merged range
+                o.i(174, 0);
+                o.i(175, cell.covered ? 1 : cell.colSpan);
+                o.i(176, cell.covered ? 1 : cell.rowSpan);
+                o.i(178, 0);
+                o.d(145, 0);
+                // 1..9 top-left to bottom-right: the middle row, left / centre / right
+                const auto align = table::cellAlign(cell);
+                int col3 = align
+                               ? static_cast<int>(*align)
+                               : (cs.align >= 0 && cs.align <= 2 ? cs.align
+                                                                 : (t.titleRow && r == 0 ? 1 : 0));
+                o.i(170, 4 + col3);
+                o.d(140, cs.textHeight > 0 ? cs.textHeight : t.textHeight);
+                o.raw(301, "CELL_VALUE");
+                o.i(90, 4);  // a string
+                o.i(91, 0);
+                std::string text;
+                if (!cell.covered)
+                    text = text::plainText(table::displayText(t, r, c));
+                std::string packed;
+                for (char ch : text) {
+                    if (ch == '\n')
+                        packed += "\\P";
+                    else if (ch != '\r')
+                        packed += ch;
+                }
+                constexpr std::size_t kPiece = 250;
+                std::size_t at = 0;
+                while (packed.size() - at > kPiece) {
+                    std::size_t cut = at + kPiece;
+                    while (cut > at && (static_cast<unsigned char>(packed[cut]) & 0xC0) == 0x80)
+                        --cut;  // not inside a UTF-8 sequence
+                    o.str(3, packed.substr(at, cut - at));
+                    at = cut;
+                }
+                o.str(1, packed.substr(at));
+                o.raw(304, "ACVALUE_END");
+            }
+        }
+        count("ACAD_TABLE");
+        tableNative_ = true;
+    }
     Out& o = *L().o;
-    o.str(2, blockName);
-    o.pt(10, Vec2{0, 0});
-    o.d(41, 1);
-    o.d(42, 1);
-    o.d(43, 1);
-    count("INSERT");
     o.raw(1001, "TBCAD");
     const std::string text = table::serialize(t);
     for (std::size_t at = 0; at < text.size(); at += 200)

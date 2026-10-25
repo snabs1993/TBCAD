@@ -61,6 +61,8 @@ const char* kUsage =
     "export options (.tbcad -> DXF):\n"
     "  --version V             r2000 (default, AC1015), r12 (AC1009) or r2007 (AC1021, UTF-8)\n"
     "  --utf8                  same as --version r2007\n"
+    "  --native-tables         write tables as ACAD_TABLE (r2007 only; not yet checked in "
+    "AutoCAD)\n"
     "  --layer-separator SEP   joins sub-layer names in DXF (default ~), e.g. S-FLOOR~edge\n"
     "\n"
     "exit codes: 0 converted, 1 converted with warnings, 2 failed\n";
@@ -334,6 +336,8 @@ int runCli(const std::vector<std::string>& args, std::ostream& out, std::ostream
             exportOptions.version = *version;
         } else if (a == "--utf8") {
             exportOptions.version = dxf::DxfVersion::R2007;
+        } else if (a == "--native-tables") {
+            exportOptions.nativeTables = true;
         } else if (a == "--layer-separator") {
             auto v = value("a separator");
             if (!v)
