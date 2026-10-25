@@ -21,6 +21,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeFieldCommand());
     (void)registry.add(makeScaleListCommand());
     (void)registry.add(makeObjectScaleCommand());
+    (void)registry.add(makeAnnoResetCommand());
+    (void)registry.add(makeAnnoUpdateCommand());
     (void)registry.add(makeTxt2MTxtCommand());
     (void)registry.add(makeTCountCommand());
     (void)registry.add(makeSpellCommand());

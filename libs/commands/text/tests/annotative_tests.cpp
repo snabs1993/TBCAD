@@ -281,3 +281,42 @@ TEST_CASE("a selected annotative object shows its other scales (SELECTIONANNODIS
     f.host.run("SELECTIONANNODISPLAY", {"0"});
     CHECK(geom::annotationGhosts(f.doc, sel, ctx).empty());
 }
+
+TEST_CASE("ANNORESET makes the current scale the drawn one, ANNOUPDATE follows the text style") {
+    Fixture f;
+    f.host.run("LINE", {"0,0", "1,0", ""});
+    EntityId line{};
+    f.doc.forEachEntity([&](const Entity& e) { line = e.common.id; });
+    f.host.setSelection({line});
+    f.host.run("BLOCK", {"Mark", "0,0", "D"});
+    f.host.run("INSERT", {"Mark", "10,0"});
+    EntityId ins{};
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (kind(e) == EntityKind::Insert)
+            ins = e.common.id;
+    });
+    f.host.setSelection({ins});
+    f.host.run("ANNOTATIVE", {"Scales", "50,100"});
+    f.host.run("CANNOSCALE", {"100"});
+    f.host.setSelection({ins});
+    f.host.run("ANNORESET", {});
+    CHECK(f.doc.find(ins)->common.annoScales.get() == std::vector<double>{100, 50});
+    CHECK(entityAs<InsertData>(*f.doc.find(ins))->scale.x == doctest::Approx(100));
+    f.host.run("CANNOSCALE", {"20"});
+    f.host.setSelection({ins});
+    f.host.run("ANNORESET", {});
+    CHECK(f.host.logContains("do not list that scale"));
+    CHECK(f.doc.find(ins)->common.annoScales.get() == std::vector<double>{100, 50});
+    CHECK(f.host.undo());
+
+    f.host.run("TEXT", {"0,0", "2.5", "0", "Hi"});
+    EntityId txt{};
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (kind(e) == EntityKind::Text)
+            txt = e.common.id;
+    });
+    CHECK_FALSE(f.doc.find(txt)->common.annotative);
+    f.host.setSelection({txt});
+    f.host.run("ANNOUPDATE", {});
+    CHECK(f.host.logContains("0 object(s) updated"));
+}
