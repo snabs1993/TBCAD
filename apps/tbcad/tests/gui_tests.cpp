@@ -984,6 +984,59 @@ TEST_CASE("keyboard map: shortcuts, function keys and typing anywhere") {
     h.key(ImGuiKey_Escape);
 }
 
+TEST_CASE("command line focus: edit chords act on the text, Esc clears text then selection") {
+    Harness h(1920, 1080);
+    h.core().submitText("LINE");
+    h.core().submitText("0,0");
+    h.core().submitText("100,0");
+    h.core().pressEscape();
+    h.frame(2);
+    REQUIRE(entityCount(h) == 1);
+
+    // Text typed in the command line: Ctrl+A selects the text, Ctrl+Z edits it; the drawing is
+    // kept.
+    REQUIRE(h.click("##command", "Command"));
+    h.type("abc");
+    h.key(ImGuiKey_A, true);
+    h.frame(2);
+    CHECK(h.core().selection().empty());
+    h.key(ImGuiKey_Z, true);
+    h.frame(2);
+    CHECK(entityCount(h) == 1);
+
+    // Empty command line: the same chords reach the drawing.
+    h.key(ImGuiKey_Escape);
+    h.frame(2);
+    h.key(ImGuiKey_A, true);
+    h.frame(2);
+    CHECK(h.core().selection().size() == 1);
+
+    // Esc closes the suggestion list, then clears the typed text, then clears the selection.
+    REQUIRE(h.click("##command", "Command"));
+    h.type("xyz");
+    h.key(ImGuiKey_Escape);
+    h.frame(2);
+    CHECK(h.core().selection().size() == 1);
+    h.key(ImGuiKey_Escape);
+    h.frame(2);
+    CHECK(h.core().selection().size() == 1);  // the first Esc closed the suggestion list, the
+                                              // second cleared the text
+    h.key(ImGuiKey_Escape);
+    h.frame(2);
+    CHECK(h.core().selection().empty());
+
+    // Enter and Space repeat the last command from an empty line.
+    h.command("CIRCLE");
+    h.core().pressEscape();
+    h.frame(2);
+    h.moveMouse(600, 400);
+    h.key(ImGuiKey_Enter);
+    h.frame(2);
+    CHECK(h.core().runner().active());
+    CHECK(runningName(h) == "CIRCLE");
+    h.core().pressEscape();
+}
+
 TEST_CASE("clean screen, command log and document tabs from the keyboard") {
     Harness h(1920, 1080);
     CHECK(h.has("Layers", "Layers"));
