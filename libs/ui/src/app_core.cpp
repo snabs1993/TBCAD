@@ -23,6 +23,7 @@
 #include "tbcad/blocks/blocks.h"
 #include "tbcad/blocks/index_refresh.h"
 #include "tbcad/core/profile.h"
+#include "tbcad/drafting/settings.h"
 #include "tbcad/drafting/ucs.h"
 #include "tbcad/dxf/reader.h"
 #include "tbcad/dxf/writer.h"
@@ -133,6 +134,9 @@ struct AppCore::Session {
     std::size_t xrefNoticeDismissedFor = 0;  // the notice was closed at this many missing xrefs
     // The current UCS (the "drafting.ucs" setting) of this drawing while it is in the background.
     std::optional<std::string> ucsSetting{};
+    // SNAPANG and SNAPBASE ("angle" and "x,y" settings) of this drawing while it is in the
+    // background.
+    std::optional<std::pair<std::string, std::string>> snapSetting{};
 };
 
 struct AppCore::DocSlot {
@@ -261,6 +265,39 @@ bool changedOnDisk(const Sess& s) {
 namespace {
 
 constexpr const char* kCurrentUcsKey = "tbcad.ucs.current";
+
+constexpr const char* kSnapAngVar = "dxf.hv.$SNAPANG";    // DXF $SNAPANG, radians (group 50)
+constexpr const char* kSnapBaseVar = "dxf.hv.$SNAPBASE";  // DXF $SNAPBASE (groups 10, 20)
+constexpr double kDegToRad = 3.14159265358979323846 / 180.0;
+
+// The snap angle (degrees) and snap base ("x,y") a drawing was saved with; defaults when absent.
+std::pair<std::string, std::string> snapFromHeader(const Document& doc) {
+    const auto& custom = doc.header().custom;
+    std::pair<std::string, std::string> r{"0", "0,0"};
+    auto field = [](const std::string& text, int code) -> std::optional<double> {
+        const std::string tag = std::to_string(code) + "\t";
+        std::size_t at = text.rfind(tag, 0) == 0 ? 0 : text.find("\n" + tag);
+        if (at == std::string::npos)
+            return std::nullopt;
+        at += at == 0 && text.rfind(tag, 0) == 0 ? tag.size() : tag.size() + 1;
+        const double v = std::strtod(text.c_str() + at, nullptr);
+        return std::isfinite(v) ? std::optional<double>(v) : std::nullopt;
+    };
+    char buf[96];
+    if (auto it = custom.find(kSnapAngVar); it != custom.end())
+        if (auto a = field(it->second, 50)) {
+            std::snprintf(buf, sizeof buf, "%.17g", *a / kDegToRad);
+            r.first = buf;
+        }
+    if (auto it = custom.find(kSnapBaseVar); it != custom.end()) {
+        const auto x = field(it->second, 10), y = field(it->second, 20);
+        if (x && y) {
+            std::snprintf(buf, sizeof buf, "%.17g,%.17g", *x, *y);
+            r.second = buf;
+        }
+    }
+    return r;
+}
 
 // The "drafting.ucs" setting a drawing was saved with (name TAB x TAB y TAB angle in the header).
 std::string ucsFromHeader(const Document& doc) {
@@ -467,14 +504,24 @@ void AppCore::enterSlot(std::size_t index, bool fitView) {
     if (tiles_.size() > 1)
         setTileLayout("1");
     clearTransientState();
-    if (session_ && session_ != slots_[index].session.get())
+    if (session_ && session_ != slots_[index].session.get()) {
         session_->ucsSetting = settings_.getString(drafting::kUcsSettingKey, "World");
+        session_->snapSetting =
+            std::make_pair(settings_.getString(drafting::keys::snapAngle, "0"),
+                           settings_.getString(drafting::keys::snapBase, "0,0"));
+    }
     active_ = index;
     DocSlot& slot = slots_[index];
     session_ = slot.session.get();
     settings_.setString(drafting::kUcsSettingKey, session_->ucsSetting
                                                       ? *session_->ucsSetting
                                                       : ucsFromHeader(session_->doc));
+    {
+        const auto snap =
+            session_->snapSetting ? *session_->snapSetting : snapFromHeader(session_->doc);
+        settings_.setString(drafting::keys::snapAngle, snap.first);
+        settings_.setString(drafting::keys::snapBase, snap.second);
+    }
     if (slot.viewSaved && !fitView) {
         const int w = camera_.viewportW, h = camera_.viewportH;
         camera_ = slot.camera;
@@ -1684,6 +1731,30 @@ void AppCore::storeCurrentUcs() {
     tx.commit();
 }
 
+// Puts SNAPANG and SNAPBASE into the header (the DXF variables of those names) so that the
+// rotated snap comes back when the file is reopened.
+void AppCore::storeSnapAids() {
+    const std::string angText = settings_.getString(drafting::keys::snapAngle, "0");
+    const std::string baseText = settings_.getString(drafting::keys::snapBase, "0,0");
+    const auto cur = snapFromHeader(session_->doc);
+    auto num = [](const std::string& t) { return std::strtod(t.c_str(), nullptr); };
+    if (num(angText) == num(cur.first) && baseText == cur.second)
+        return;
+    const double bx = std::strtod(baseText.c_str(), nullptr);
+    const auto comma = baseText.find(',');
+    const double by =
+        comma == std::string::npos ? 0 : std::strtod(baseText.c_str() + comma + 1, nullptr);
+    char buf[160];
+    auto tx = session_->doc.begin("SNAP");
+    (void)tx.modifyHeader([&](Header& h) {
+        std::snprintf(buf, sizeof buf, "50\t%.17g\n", num(angText) * kDegToRad);
+        h.custom[kSnapAngVar] = buf;
+        std::snprintf(buf, sizeof buf, "10\t%.17g\n20\t%.17g\n", bx, by);
+        h.custom[kSnapBaseVar] = buf;
+    });
+    tx.commit();
+}
+
 Result<void> AppCore::saveAs(const fs::path& requested) {
     fs::path path = requested;
     if (!path.has_extension())
@@ -1715,6 +1786,7 @@ Result<void> AppCore::saveAs(const fs::path& requested) {
                          "TBCAD can save as .tbcad or .dxf; it never writes " + ext + " files.");
     }
     storeCurrentUcs();
+    storeSnapAids();
     // Relative xref paths must keep finding their files from the new folder.
     const fs::path oldFile = session_->file;
     bool rebased = false;

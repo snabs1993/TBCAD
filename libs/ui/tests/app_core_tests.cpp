@@ -1871,3 +1871,22 @@ TEST_CASE("saveAll saves the changed drawings with a file and lists the untitled
     CHECK_FALSE(f.core->documentModified(0));
     CHECK(f.core->documentModified(2));
 }
+
+TEST_CASE("snap angle and snap base are saved with the drawing and come back on reopen") {
+    for (const char* ext : {".tbcad", ".dxf"}) {
+        Fixture f(std::string("snap_persist") + ext);
+        f.line("0,0", "100,0");
+        f.core->setSetting("drafting.snap.angle", "30");
+        f.core->setSetting("drafting.snap.base", "5,7");
+        const fs::path file = f.dir / (std::string("snap") + ext);
+        REQUIRE(f.core->saveAs(file));
+        Fixture g(std::string("snap_persist2") + ext);
+        g.core->setSetting("drafting.snap.angle", "0");
+        g.core->setSetting("drafting.snap.base", "0,0");
+        REQUIRE(g.core->openFile(file));
+        CHECK(std::stod(*g.core->setting("drafting.snap.angle")) == doctest::Approx(30));
+        const std::string base = *g.core->setting("drafting.snap.base");
+        CHECK(std::stod(base) == doctest::Approx(5));
+        CHECK(std::stod(base.substr(base.find(',') + 1)) == doctest::Approx(7));
+    }
+}
