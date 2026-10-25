@@ -472,3 +472,22 @@ TEST_CASE("a layout whose viewport lies off the paper opens with the viewport in
         CHECK(s.y <= 800);
     }
 }
+
+TEST_CASE("tab previews: the drawing and its layouts give a line picture") {
+    auto registry = makeRegistry();
+    AppCore core(*registry,
+                 platform::AppPaths{tempDir("tabprev") / "cfg", tempDir("tabprev") / "data"});
+    CHECK(core.documentPreview(0).empty());  // nothing drawn yet
+    CHECK(core.documentPreview(7).empty());  // no such tab
+    CHECK(core.layoutPreview("No such layout").empty());
+    addLine(core.document(), {0, 0}, {100, 50});
+    const ui::TabPreview& model = core.documentPreview(0);
+    REQUIRE_FALSE(model.empty());
+    CHECK(model.width == doctest::Approx(1.0));
+    CHECK(model.height == doctest::Approx(0.5));
+    // A layout always shows its sheet outline.
+    const ui::TabPreview& sheet = core.layoutPreview("Layout1");
+    REQUIRE_FALSE(sheet.empty());
+    CHECK(sheet.width > 0);
+    CHECK(sheet.height > 0);
+}
