@@ -116,8 +116,28 @@ std::optional<fs::path> FileBrowser::draw() {
             ImGui::SetKeyboardFocusHere();  // type the name straight away
         ImGui::InputText("File name", &name_);
         ImGui::SameLine();
-        if (ImGui::Button(mode_ == Mode::Open ? "Open" : "Save") && !name_.empty())
-            result = dir_ / name_;
+        if (ImGui::Button(mode_ == Mode::Open ? "Open" : "Save") && !name_.empty()) {
+            std::error_code ec;
+            if (mode_ == Mode::Save && fs::exists(dir_ / name_, ec))
+                confirmOverwrite_ = true;  // ask before replacing a file
+            else
+                result = dir_ / name_;
+        }
+        if (confirmOverwrite_) {
+            ImGui::OpenPopup("Replace file?");
+            confirmOverwrite_ = false;
+        }
+        if (ImGui::BeginPopupModal("Replace file?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text("%s already exists. Replace it?", name_.c_str());
+            if (ImGui::Button("Replace")) {
+                result = dir_ / name_;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Keep existing"))
+                ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
         ImGui::SameLine();
         if (ImGui::Button("Cancel"))
             keepOpen = false;

@@ -115,7 +115,13 @@ TEST_CASE("EXPORTDXF adds .dxf and asks before replacing a file") {
     CHECK(std::filesystem::file_size(file) == 10);
     host.run("EXPORTDXF", {file.string(), "Yes", ""});
     CHECK(std::filesystem::file_size(file) == size);
+    // The replaced file stays as <name>.dxf.bak, like any other save.
+    auto bak = file;
+    bak += ".bak";
+    REQUIRE(std::filesystem::exists(bak));
+    CHECK(std::filesystem::file_size(bak) == 10);
     std::filesystem::remove(file);
+    std::filesystem::remove(bak);
 }
 
 TEST_CASE("IMPORTDXF reports a missing file and changes nothing") {

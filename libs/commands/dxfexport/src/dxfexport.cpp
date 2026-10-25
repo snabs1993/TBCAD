@@ -1,13 +1,16 @@
 #include "tbcad/dxfexport/dxfexport.h"
 
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <span>
 
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/dxf/reader.h"
 #include "tbcad/dxf/writer.h"
+#include "tbcad/io/tbcad.h"
 
 namespace tbcad::dxfexport {
 
@@ -71,21 +74,17 @@ public:
             co_return;
         }
         const fs::path out = pathOf(fileName);
-        const fs::path tmp = fs::path(out).concat(".tmp");
-        {
-            std::ofstream f(tmp, std::ios::binary);
-            f.write(res.value().bytes.data(),
-                    static_cast<std::streamsize>(res.value().bytes.size()));
-            if (!f) {
-                ctx.message("Cannot write " + fileName);
-                co_return;
-            }
-        }
-        std::error_code ec;
-        fs::rename(tmp, out, ec);
-        if (ec) {
-            fs::remove(tmp, ec);
-            ctx.message("Cannot write " + fileName);
+        // Same safe write as Save: synced temporary file, then swapped in, the old file kept as
+        // .bak when ISAVEBAK is on.
+        io::WriteOptions wo;
+        wo.keepBackup = ctx.host().setting("files.backup").value_or("1") != "0";
+        const auto& bytes = res.value().bytes;
+        auto saved = io::saveTbcadBytes(
+            std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(bytes.data()),
+                                          bytes.size()),
+            out, wo);
+        if (!saved) {
+            ctx.message("Cannot write " + fileName + ": " + saved.error().message);
             co_return;
         }
         ctx.message("Saved " + fileName + " (" + std::string(dxf::versionCode(opt.version)) +
