@@ -321,6 +321,8 @@ private:
     // Command log (Ctrl+L) and clean-screen mode (F11).
     bool logExpanded_ = false;
     bool cleanScreen_ = false;
+    std::vector<std::string> hiddenPanels_{};  // panels HIDEPALETTES closed, for SHOWPALETTES
+    void windowCommand(const std::string& what);
     // Real-time ZOOM / PAN (Enter at ZOOM, PAN, the navigation bar): left drag zooms or pans until
     // Esc, Enter or a right click.
     enum class Realtime { Off, Zoom, Pan };
