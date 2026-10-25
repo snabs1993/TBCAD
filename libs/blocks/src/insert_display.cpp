@@ -79,6 +79,12 @@ std::shared_ptr<DisplayList> buildBlockSpace(const Document& doc, const BlockDef
         Entity resolved = *e;
         if (resolved.common.layer == kLayerZero)
             resolved.common.layer = insert.common.layer;
+        // A member on a layer that is off or frozen is not drawn, whatever the insert's layer says
+        // (layer 0 took the insert's layer just above, which is shown or the insert would not be
+        // here).
+        if (resolved.common.layer != insert.common.layer &&
+            !doc.effective(resolved.common.layer).visible())
+            continue;
         if (kind(resolved) == EntityKind::Insert) {
             buildInsertDisplay(doc, resolved, child, *list);
         } else {
