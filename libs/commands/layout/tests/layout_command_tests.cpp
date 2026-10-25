@@ -719,3 +719,22 @@ TEST_CASE("EXPORTLAYOUT writes the viewport geometry at paper scale plus the she
     CHECK(sheetLine);
     std::filesystem::remove(file);
 }
+
+TEST_CASE("ALIGNSPACE pans and scales a viewport so model points land on sheet points") {
+    Fixture f;
+    f.host->run("LAYOUT", {"New", "Plan", "A3", ""});
+    f.host->run("MVIEW", {"10,10", "410,287", "1:50", "2500,1000"});
+    // Viewport middle on the sheet is (210,148.5). Put model (0,0) there.
+    f.host->run("ALIGNSPACE", {"1", "0,0", "210,148.5", ""});
+    auto v = layout::findLayout(f.doc, "Plan")->viewports[0];
+    CHECK(v.center.x == doctest::Approx(0));
+    CHECK(v.center.y == doctest::Approx(0));
+    CHECK(v.scaleN == doctest::Approx(50));
+    // Two pairs: 1000 model units = 10 mm on the sheet -> 1:100; model (0,0) at sheet (110,148.5).
+    f.host->run("ALIGNSPACE", {"1", "0,0", "110,148.5", "1000,0", "120,148.5"});
+    v = layout::findLayout(f.doc, "Plan")->viewports[0];
+    CHECK(v.scaleN == doctest::Approx(100));
+    CHECK(v.center.x == doctest::Approx(10000));
+    CHECK(f.host->undo());
+    CHECK(layout::findLayout(f.doc, "Plan")->viewports[0].scaleN == doctest::Approx(50));
+}
