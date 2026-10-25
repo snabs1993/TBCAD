@@ -824,6 +824,121 @@ private:
     }
 };
 
+// -DIMSTYLE: the command-line form, as in AutoCAD: Save the current settings under a name,
+// Restore a style as the current one, show the Status of the current style, list the Variables
+// of a named one, Apply the current style to dimensions, or "?" to list the styles.
+class DimStyleLineCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "-DIMSTYLE"; }
+    std::vector<std::string> defaultAliases() const override { return {"-D"}; }
+    std::string_view description() const override {
+        return "Dimension styles from the command line: Save, Restore, Status, Variables, Apply";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.commitOnCancel();
+        ctx.setUndoLabel("Dimension style");
+        cmd::KeywordOptions ko;
+        ko.keywords = {"Save", "Restore", "STatus", "Variables", "Apply", "?"};
+        ko.defaultKeyword = "Restore";
+        auto k = co_await ctx.getKeyword(
+            "Enter a dimension style option [Save/Restore/STatus/Variables/Apply/?] <Restore>", ko);
+        if (!k.ok())
+            co_return;
+        const DimStyle cur = dim::styleOf(ctx.doc(), ctx.doc().header().currentDimStyle);
+        if (k.keyword == "STatus") {
+            show(ctx, cur);
+        } else if (k.keyword == "?") {
+            for (const auto& [id, st] : ctx.doc().dimStyles())
+                ctx.message((id == ctx.doc().header().currentDimStyle ? "* " : "  ") + st.name);
+        } else if (k.keyword == "Apply") {
+            auto sel = co_await ctx.getSelection(
+                "Select dimensions or leaders",
+                cmd::SelectionOptions{.filter = [](const Entity& e) {
+                    return kind(e) == EntityKind::Dimension || kind(e) == EntityKind::Leader ||
+                           kind(e) == EntityKind::MLeader;
+                }});
+            if (!sel.ok() || sel.ids.empty())
+                co_return;
+            std::size_t n = 0;
+            for (EntityId e : sel.ids)
+                n += ctx.tx().modify(e,
+                                     [&](Entity& x) {
+                                         if (auto* d = entityAs<DimensionData>(x))
+                                             d->style = cur.id;
+                                         else if (auto* l = entityAs<LeaderData>(x))
+                                             l->style = cur.id;
+                                         else if (auto* m = entityAs<MLeaderData>(x))
+                                             m->style = cur.id;
+                                     })
+                             .ok()
+                         ? 1
+                         : 0;
+            ctx.message(std::to_string(n) + " changed");
+        } else {
+            cmd::StringOptions so;
+            so.defaultValue = cur.name;
+            auto n = co_await ctx.getString(k.keyword == "Save"
+                                                ? "Name for the new dimension style or [?]"
+                                                : "Dimension style name or [?]",
+                                            so);
+            if (!n.ok())
+                co_return;
+            const std::string name = cmd::trim(n.text);
+            if (name == "?") {
+                for (const auto& [id, st] : ctx.doc().dimStyles())
+                    ctx.message((id == ctx.doc().header().currentDimStyle ? "* " : "  ") + st.name);
+                co_return;
+            }
+            const DimStyle* have = ctx.doc().dimStyleByName(name);
+            if (k.keyword == "Save") {
+                if (name.empty()) {
+                    ctx.message("The name cannot be empty.");
+                } else if (have) {
+                    // Saving under an existing name replaces its settings with the current ones.
+                    const DimStyleId id = have->id;
+                    const std::string keep = have->name;
+                    if (id != cur.id)
+                        report(ctx, ctx.tx().modifyDimStyle(id, [&](DimStyle& row) {
+                            const DimStyleId rid = row.id;
+                            row = cur;
+                            row.id = rid;
+                            row.name = keep;
+                        }));
+                } else {
+                    DimStyle copy = cur;
+                    copy.id = {};
+                    copy.name = name;
+                    auto id = ctx.tx().addDimStyle(std::move(copy));
+                    if (!id)
+                        ctx.message(id.error().message);
+                    else
+                        report(ctx, ctx.tx().modifyHeader(
+                                        [i = id.value()](Header& h) { h.currentDimStyle = i; }));
+                }
+            } else if (!have) {
+                ctx.message("No dimension style named \"" + name + "\".");
+            } else if (k.keyword == "Restore") {
+                report(ctx, ctx.tx().modifyHeader(
+                                [id = have->id](Header& h) { h.currentDimStyle = id; }));
+            } else {  // Variables
+                show(ctx, *have);
+            }
+        }
+    }
+
+private:
+    static void show(cmd::CommandContext& ctx, const DimStyle& st) {
+        ctx.message("Dimension style " + st.name);
+        for (const auto& [key, value] : describe(ctx.doc(), st))
+            ctx.message(key + ": " + value);
+    }
+    static void report(cmd::CommandContext& ctx, const Result<void>& r) {
+        if (!r)
+            ctx.message(r.error().message);
+    }
+};
+
 // DIMSETUP: gives the selected dimensions and leaders a style, or an overall scale, in one step.
 // A scale is a style of its own ("<style>-1to<N>", made from the style they use), so only the
 // selected objects change.
@@ -1038,6 +1153,10 @@ std::unique_ptr<cmd::Command> makeDimStylesPanelCommand() {
 
 std::unique_ptr<cmd::Command> makeDimOverrideCommand() {
     return std::make_unique<DimOverrideCommand>();
+}
+
+std::unique_ptr<cmd::Command> makeDimStyleLineCommand() {
+    return std::make_unique<DimStyleLineCommand>();
 }
 
 std::unique_ptr<cmd::Command> makeDimSetupCommand() {
