@@ -618,6 +618,14 @@ TEST_CASE("MTEXT: the Columns option cuts the rectangle into columns") {
     CHECK(m->width == doctest::Approx((100 - 2 * 4) / 3.0));
 }
 
+TEST_CASE("MTEXT: the Line spacing option sets the line pitch factor") {
+    Fixture f;
+    f.host.run("MTEXT", {"L", "E", "1.5", "H", "2", "0,100", "100,50", "a\\Pb"});
+    const MTextData* m = f.firstMText();
+    REQUIRE(m);
+    CHECK(m->lineSpacing == doctest::Approx(1.5));
+}
+
 TEST_CASE("EXPLODE turns multiline text into one single-line text per line - undo restores it") {
     Fixture f;
     Transaction tx = f.doc.begin("add");

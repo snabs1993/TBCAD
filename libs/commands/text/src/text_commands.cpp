@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <string>
 
@@ -260,7 +261,14 @@ struct MTextState {
     Attachment attach = Attachment::TopLeft;
     TextStyleId style{};
     int columns = 1;  // > 1: the corners give the whole width, split into this many columns
+    double lineSpacing = 1.0;  // multiple of the usual line pitch (0.25 to 4)
 };
+
+std::string fmtFactor(double v) {
+    char buf[32];
+    std::snprintf(buf, sizeof buf, "%g", v);
+    return buf;
+}
 
 // Handles one of the MTEXT options at the corner prompts.
 Task mtextOption(CommandContext& ctx, MTextState& st, const std::string& option, Vec2 base) {
@@ -305,6 +313,24 @@ Task mtextOption(CommandContext& ctx, MTextState& st, const std::string& option,
         auto r = co_await ctx.getInteger("Number of columns", o);
         if (r.ok())
             st.columns = static_cast<int>(r.value);
+    } else if (option == "Line spacing") {
+        // "At least" and "Exactly" both set the pitch as a multiple of the usual one: the
+        // layout always spaces lines by that factor.
+        cmd::KeywordOptions ko;
+        ko.keywords = {"At least", "Exactly"};
+        ko.defaultKeyword = "At least";
+        auto type =
+            co_await ctx.getKeyword("Enter line spacing type [At least/Exactly] <At least>", ko);
+        if (!type.ok())
+            co_return;
+        cmd::RealOptions o;
+        o.defaultValue = st.lineSpacing;
+        o.min = 0.25;
+        o.max = 4.0;
+        auto r = co_await ctx.getReal(
+            "Enter line spacing factor (0.25 to 4) <" + fmtFactor(st.lineSpacing) + ">", o);
+        if (r.ok())
+            st.lineSpacing = r.value;
     } else if (option == "Width") {
         cmd::DistanceOptions o;
         o.base = base;
@@ -330,7 +356,7 @@ public:
                 if (*s == a.name)
                     st.attach = a.a;
 
-        const std::vector<std::string> keywords{"Height", "Justify", "Rotation",
+        const std::vector<std::string> keywords{"Height", "Justify", "Rotation", "Line spacing",
                                                 "Style",  "Width",   "Columns"};
         Vec2 first{};
         for (;;) {
@@ -414,6 +440,7 @@ public:
         const double fixed = st.heightChosen ? 0 : fixedStyleHeight(ctx, st.style);
         d.height = fixed > 0 ? fixed : st.height;
         d.style = st.style;
+        d.lineSpacing = st.lineSpacing;
         d.width = st.width >= 0 ? st.width : (xmax - xmin);
         if (d.width < tol::kLinear)
             d.width = 0;
