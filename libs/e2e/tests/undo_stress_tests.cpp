@@ -464,3 +464,38 @@ TEST_CASE("the undo history stays inside its memory limit and what is left still
     }
     CHECK(canonicalDump(*doc) == states[states.size() - 1 - left]);
 }
+
+namespace {
+
+// Runs `name` with `items` on `doc` and checks that it changed the drawing, that undo gives the
+// old drawing back exactly and that redo gives the new one.
+void checkEditUndoes(Document& doc, cmd::ScriptHost& host, const std::string& name,
+                     const std::vector<ScriptItem>& items) {
+    INFO("command " << name);
+    const std::string before = canonicalDump(doc);
+    (void)host.run(name, items);
+    (void)host.feed({ScriptItem::esc(), ScriptItem::esc()});
+    const std::string after = canonicalDump(doc);
+    CHECK(after != before);
+    REQUIRE(host.undo());
+    CHECK(canonicalDump(doc) == before);
+    REQUIRE(host.redo());
+    CHECK(canonicalDump(doc) == after);
+}
+
+}  // namespace
+
+TEST_CASE("layer panel edits (colour, freeze, lock, rename, delete) each undo and redo exactly") {
+    cmd::Registry reg;
+    registerAllCommands(reg);
+    std::unique_ptr<Document> doc = loadSample();
+    cmd::ScriptHost host(*doc, reg);
+    (void)host.run("-LAYER", {"New", "UNDOT", ScriptItem::enter()});
+    checkEditUndoes(*doc, host, "-LAYER", {"Color", "red", "UNDOT", ScriptItem::enter()});
+    checkEditUndoes(*doc, host, "-LAYER", {"Freeze", "UNDOT", ScriptItem::enter()});
+    checkEditUndoes(*doc, host, "-LAYER", {"Thaw", "UNDOT", ScriptItem::enter()});
+    checkEditUndoes(*doc, host, "-LAYER", {"Lock", "UNDOT", ScriptItem::enter()});
+    checkEditUndoes(*doc, host, "-LAYER", {"Description", "note", "UNDOT", ScriptItem::enter()});
+    checkEditUndoes(*doc, host, "-LAYER", {"Rename", "UNDOT", "UNDOT2", ScriptItem::enter()});
+    checkEditUndoes(*doc, host, "-LAYER", {"Delete", "UNDOT2", ScriptItem::enter()});
+}
