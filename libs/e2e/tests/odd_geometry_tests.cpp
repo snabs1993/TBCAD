@@ -18,6 +18,19 @@
 using namespace tbcad;
 using cmd::ScriptItem;
 
+#if defined(__SANITIZE_ADDRESS__)
+#define TBCAD_ODD_SANITIZED 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define TBCAD_ODD_SANITIZED 1
+#endif
+#endif
+#ifdef TBCAD_ODD_SANITIZED
+constexpr double kSlowest = 120.0;  // ASan/UBSan builds run several times slower
+#else
+constexpr double kSlowest = 20.0;
+#endif
+
 namespace {
 
 Entity make(auto data) {
@@ -179,7 +192,8 @@ TEST_CASE("editing commands survive zero-length, huge, tiny and deeply nested ge
             (void)host.run(name, script(rng, ids, round));
             const auto secs =
                 std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-            CHECK_MESSAGE(secs < 20.0, cmdName << " round " << round << " took " << secs << " s");
+            CHECK_MESSAGE(secs < kSlowest,
+                          cmdName << " round " << round << " took " << secs << " s");
             const auto file = dir / (std::string(name) + ".tbcad");
             REQUIRE(io::writeTbcad(doc, file).ok());
             io::IoReport report;
