@@ -6,7 +6,7 @@
 What it shows:
 
 - **Levels:** `ชั้น 1`, `ชั้น 2` and `หลังคา` hold the three plans at the same position. Switch with the
-  Levels panel (Ctrl+Shift+E) or Ctrl+PageUp / Ctrl+PageDown.
+  Levels panel (Ctrl+Shift+E) or Ctrl+Alt+PageUp / Ctrl+Alt+PageDown.
 - **Sub-layers:** `A-WALL` has `exterior` and `interior`, `A-FURN` has `bed` and `living`.
 - **Annotative text and dimensions:** the annotation scale is 1:100; the dimensions and room names
   keep the same size on paper at any scale (`CANNOSCALE`).

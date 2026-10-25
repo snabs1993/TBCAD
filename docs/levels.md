@@ -15,8 +15,8 @@ settings across levels.
 * **Levels panel** (Format > Levels, `LEVEL`, `Ctrl+Shift+E`): New Level, Delete, Move Selection
   Here, a radio button for the level you work on, show / hide, lock, elevation (mm) and the object
   count per level. Double-click a name to rename it.
-* **Status bar**: the *Level* drop-down switches the level you work on. `Ctrl+PageUp` and
-  `Ctrl+PageDown` (`LEVELUP`, `LEVELDOWN`) step to the next level up or down by elevation.
+* **Status bar**: the *Level* drop-down switches the level you work on. `Ctrl+Alt+PageUp` and
+  `Ctrl+Alt+PageDown` (`LEVELUP`, `LEVELDOWN`) step to the next level up or down by elevation.
 * New objects always go on the current level.
 * **Other levels** (panel drop-down, `-LEVEL View`):
   * *Dimmed* (default): faded reference, cannot be picked, snapped to or edited, so a ground-floor

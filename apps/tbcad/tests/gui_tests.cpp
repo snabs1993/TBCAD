@@ -1405,6 +1405,19 @@ TEST_CASE("layout tabs: copy and move from the right-click menu") {
     CHECK(h.has("Two (2)", "##layouttabs"));
 }
 
+TEST_CASE("layout tabs: Ctrl+PageDown and Ctrl+PageUp step Model and the layouts") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    REQUIRE(h.core().layoutNames().size() >= 1);
+    CHECK_FALSE(h.core().inPaperSpace());
+    h.key(ImGuiKey_PageDown, true);
+    h.frame(3);
+    CHECK(h.core().activeLayout() == h.core().layoutNames().front());
+    h.key(ImGuiKey_PageUp, true);
+    h.frame(3);
+    CHECK_FALSE(h.core().inPaperSpace());
+}
+
 TEST_CASE("drawing tabs: Ctrl+Tab and Ctrl+Shift+Tab switch") {
     Harness h(1920, 1080);
     h.frame(3);

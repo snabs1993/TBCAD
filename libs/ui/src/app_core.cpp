@@ -178,6 +178,8 @@ AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
     keybindings_.declare("file.exit", "Ctrl+Q");  // as in AutoCAD
     keybindings_.declare("view.nextDocument", "Ctrl+Tab");
     keybindings_.declare("view.prevDocument", "Ctrl+Shift+Tab");
+    keybindings_.declare("view.nextLayout", "Ctrl+PageDown");  // Model, Layout1, ... as in AutoCAD
+    keybindings_.declare("view.prevLayout", "Ctrl+PageUp");
     keybindings_.declare("edit.undo", "Ctrl+Z");
     keybindings_.declare("edit.redo", "Ctrl+Y");
     keybindings_.declare("edit.selectAll", "Ctrl+A");
@@ -2644,6 +2646,32 @@ void AppCore::applyPendingSpace() {
         return;
     const std::string what = std::move(pendingSpace_);
     pendingSpace_.clear();
+    if (what == "tile1" || what == "tile0" || what == "next" || what == "prev") {
+        const auto all = layout::layouts(session_->doc);
+        if (what == "tile1") {
+            setActiveLayout("");
+        } else if (what == "tile0") {
+            std::string name = lastLayout_;
+            if (name.empty() || !layout::findLayout(session_->doc, name))
+                name = all.empty() ? std::string() : all.front().name;
+            if (name.empty())
+                print("This drawing has no layouts. Use LAYOUT > New.");
+            else if (!inPaperSpace())
+                setActiveLayout(name);
+        } else {
+            // Tab strip order: Model first, then the layouts; it wraps round.
+            std::vector<std::string> tabs{std::string()};
+            for (const layout::Layout& l : all)
+                tabs.push_back(l.name);
+            size_t at = 0;
+            for (size_t i = 0; i < tabs.size(); ++i)
+                if (tabs[i] == activeLayout_)
+                    at = i;
+            at = what == "next" ? (at + 1) % tabs.size() : (at + tabs.size() - 1) % tabs.size();
+            setActiveLayout(tabs[at]);
+        }
+        return;
+    }
     if (what == "paper") {
         if (inPaperSpace()) {
             print("Already on the sheet.");
