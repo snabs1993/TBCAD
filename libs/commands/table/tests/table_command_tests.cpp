@@ -321,3 +321,28 @@ TEST_CASE("TABLEEDIT: Next and Previous step through cells like Tab and Shift+Ta
     CHECK(table::cellAt(*t, 0, 1).utf8 == "D");
     CHECK(table::cellAt(*t, 1, 0).utf8 == "C");
 }
+
+TEST_CASE("TABLEEDIT: a row grows to hold text that wraps in its cell, and undoes with the edit") {
+    Fx f;
+    REQUIRE(f.host->run("TABLE", {"2", "2", "30", "8", ScriptItem::enter(), "0,0"}).finished);
+    const EntityId id = f.tableId();
+    REQUIRE(id);
+    const double before = f.table()->rowHeights[0];
+    // a short text fits and leaves the row alone
+    REQUIRE(
+        f.host
+            ->run("TABLEEDIT", {ScriptItem::pick(id, {15, -4}), "15,-4", "Hi", ScriptItem::enter()})
+            .finished);
+    CHECK(f.table()->rowHeights[0] == doctest::Approx(before));
+    // a long text wraps to several lines in the 30 mm column
+    REQUIRE(
+        f.host
+            ->run("TABLEEDIT", {ScriptItem::pick(id, {15, -4}), "15,-4",
+                                "Reinforced concrete column with a long description that must wrap",
+                                ScriptItem::enter()})
+            .finished);
+    CHECK(f.table()->rowHeights[0] > before * 2);
+    CHECK(f.table()->rowHeights[1] == doctest::Approx(before));
+    CHECK(f.host->undo());
+    CHECK(f.table()->rowHeights[0] == doctest::Approx(before));
+}

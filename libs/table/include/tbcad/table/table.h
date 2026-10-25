@@ -168,6 +168,10 @@ void registerDisplay();
 void buildTableDisplay(const Document& doc, const Entity& e, const geom::DisplayContext& ctx,
                        DisplayList& out);
 // Lines for the grid and one MText per non-empty cell, with the table's own properties.
+// Makes a row taller when the text of a cell, wrapped to the cell's width, does not fit (as
+// AutoCAD does when text is typed into a cell). Rows never shrink. True when a row grew.
+bool fitRowHeights(const Document& doc, TableData& t);
+
 Result<std::vector<Entity>> explodeTable(const Document& doc, const Entity& e);
 
 }  // namespace tbcad::table
