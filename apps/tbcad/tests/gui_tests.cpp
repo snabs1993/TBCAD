@@ -12,6 +12,7 @@
 #include <fstream>
 #include <sstream>
 
+#include "gui.h"
 #include "gui_harness.h"
 #include "tbcad/block_cmds/palette.h"
 #include "tbcad/layers/layer_states.h"
@@ -2516,6 +2517,20 @@ TEST_CASE("Ctrl+1 toggles Object Properties and Ctrl+9 the command line, as in A
     h.key(ImGuiKey_9, true);
     h.frame(3);
     CHECK(h.windowOpen("Command"));
+}
+
+TEST_CASE("Ctrl+Q exits and Ctrl+B toggles snap, as in AutoCAD") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    const auto snap = [&] { return h.core().setting("drafting.snap").value_or("0") == "1"; };
+    CHECK_FALSE(snap());
+    h.key(ImGuiKey_B, true);
+    h.frame(3);
+    CHECK(snap());
+    CHECK_FALSE(h.gui().wantsExit());
+    h.key(ImGuiKey_Q, true);
+    h.frame(3);
+    CHECK(h.gui().wantsExit());
 }
 
 TEST_CASE("Publish dialog: the drawing's sheets, save the list, publish one PDF") {
