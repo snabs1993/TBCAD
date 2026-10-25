@@ -15,6 +15,10 @@ namespace tbcad::hatch {
 // whatever direction the loop travels them; splines and polyline edges are expanded.
 std::vector<geom::CurveRef> loopCurves(const HatchLoop& loop);
 
+// A hatch loop as a closed polyline: lines stay lines, circular arcs become bulges, everything
+// else is flattened.
+PolylineData loopPolyline(const HatchLoop& loop);
+
 struct FillOptions {
     // Chord tolerance (mm) used when flattening arcs for a solid fill.
     double tolerance = 0.01;
