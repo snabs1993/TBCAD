@@ -51,6 +51,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeBParamCommand());
     (void)registry.add(makeBActionCommand());
     (void)registry.add(makeDynSetCommand());
+    (void)registry.add(makeResetBlockCommand());
     (void)registry.add(makeAsmDefCommand());
     (void)registry.add(makeAsmSetCommand());
     (void)registry.add(makeAsmInfoCommand());
@@ -121,6 +122,7 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Draw/Block/Dynamic Parameter...", "BPARAM", "block.bparam");
     ui.addMenuItem("Draw/Block/Dynamic Action...", "BACTION", "block.baction");
     ui.addMenuItem("Modify/Set Dynamic Value...", "DYNSET", "modify.dynset");
+    ui.addMenuItem("Modify/Reset Block", "RESETBLOCK", "modify.resetblock");
     ui.addMenuItem("Modify/Array...", "ARRAY", "modify.array");
     ui.addMenuItem("Modify/Array/Rectangular", "ARRAYRECT", "modify.arrayrect");
     ui.addMenuItem("Modify/Array/Polar", "ARRAYPOLAR", "modify.arraypolar");
