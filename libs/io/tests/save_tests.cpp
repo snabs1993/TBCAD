@@ -7,6 +7,7 @@
 #include "../src/bytes.h"
 #include "helpers.h"
 #include "tbcad/core/dump.h"
+#include "tbcad/platform/paths.h"
 
 using namespace tbcad;
 using namespace tbcad::testing;
@@ -285,7 +286,8 @@ TEST_CASE("save: Thai names, spaces and a long folder path save, back up and reo
     for (int i = 0; i < 6; ++i)
         folder /=
             u8Path("โฟลเดอร์ยาวมากๆ ทดสอบ " + std::to_string(i) + " abcdefghijklmnopqrstuvwxyz");
-    REQUIRE(fs::create_directories(folder));
+    // The folder is longer than MAX_PATH; Windows needs the extended-length form.
+    REQUIRE(fs::create_directories(platform::longPath(folder)));
     fs::path file = folder / u8Path("แปลน ชั้น 1 final.tbcad");
     auto one = docWith(1);
     auto two = docWith(2);
@@ -295,5 +297,5 @@ TEST_CASE("save: Thai names, spaces and a long folder path save, back up and reo
     fs::path bak = file;
     bak += ".bak";
     CHECK(dumpOf(bak) == canonicalDump(*one));
-    CHECK_FALSE(fs::exists(fs::path(file) += ".tmp"));
+    CHECK_FALSE(fs::exists(platform::longPath(fs::path(file) += ".tmp")));
 }
