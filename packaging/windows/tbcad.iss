@@ -73,7 +73,7 @@ Name: "{autodesktop}\TBCAD"; Filename: "{app}\tbcad.exe"; Tasks: desktopicon
 
 [Registry]
 ; .tbcad: default program with our icon.
-Root: HKA; Subkey: "Software\Classes\.tbcad"; ValueType: string; ValueName: ""; ValueData: "TBCAD.Drawing"; Flags: uninsdeletevalue; Tasks: assoc_tbcad
+Root: HKA; Subkey: "Software\Classes\.tbcad"; ValueType: string; ValueName: ""; ValueData: "TBCAD.Drawing"; Flags: uninsdeletevalue uninsdeletekeyifempty; Tasks: assoc_tbcad
 Root: HKA; Subkey: "Software\Classes\TBCAD.Drawing"; ValueType: string; ValueName: ""; ValueData: "TBCAD drawing"; Flags: uninsdeletekey; Tasks: assoc_tbcad
 Root: HKA; Subkey: "Software\Classes\TBCAD.Drawing\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\tbcad.exe,0"; Tasks: assoc_tbcad
 Root: HKA; Subkey: "Software\Classes\TBCAD.Drawing\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\tbcad.exe"" ""%1"""; Tasks: assoc_tbcad
