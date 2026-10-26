@@ -283,7 +283,7 @@ struct Builder {
 
 void rotateSheet180(PlotSheet& sheet) {
     const double w = sheet.layout.pageWidthMm, h = sheet.layout.pageHeightMm;
-    constexpr double kPi = 3.14159265358979323846;
+    constexpr double kHalfTurn = 3.14159265358979323846;
     const Transform2 flip{-1, 0, w, 0, -1, h};
     auto pt = [&](Vec2& v) { v = flip.apply(v); };
     for (PlotPrimitive& prim : sheet.prims) {
@@ -295,8 +295,8 @@ void rotateSheet180(PlotSheet& sheet) {
                         pt(v);
                 } else if constexpr (std::is_same_v<T, PlotArc>) {
                     pt(p.center);
-                    p.start += kPi;
-                    p.end += kPi;
+                    p.start += kHalfTurn;
+                    p.end += kHalfTurn;
                 } else if constexpr (std::is_same_v<T, PlotFill>) {
                     for (auto& ring : p.rings)
                         for (Vec2& v : ring)
