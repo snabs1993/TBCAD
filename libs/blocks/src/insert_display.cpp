@@ -18,6 +18,55 @@ namespace {
 thread_local BlockDisplayCache* g_active = nullptr;
 thread_local int g_depth = 0;
 
+// What one top-level insert may cost to draw, counted in Vec2 (16 bytes) of everything built or
+// copied while expanding its blocks: an item is 8, a ring 2, a vertex 1. Counting objects alone let
+// blocks of dimensions and text (thousands of vertices each) hold each other until memory ran out.
+constexpr std::size_t kMaxWeight = std::size_t{1} << 25;
+
+struct Meter {
+    bool active = false;
+    bool over = false;
+    std::size_t used = 0;
+};
+thread_local Meter g_meter;
+
+std::size_t weightOf(const DisplayItem& item) {
+    return std::visit(
+        [](const auto& v) -> std::size_t {
+            if constexpr (std::is_same_v<std::decay_t<decltype(v)>, DisplayFill>) {
+                std::size_t w = 8;
+                for (const auto& ring : v.rings)
+                    w += 2 + ring.size();
+                return w;
+            } else {
+                return 8 + v.pts.size();
+            }
+        },
+        item);
+}
+
+void charge(const DisplayList& list, std::size_t from = 0) {
+    if (!g_meter.active)
+        return;
+    for (std::size_t i = from; i < list.items.size(); ++i)
+        g_meter.used += weightOf(list.items[i]);
+    if (g_meter.used > kMaxWeight)
+        g_meter.over = true;
+}
+
+// Measures one top-level insert; a nested call joins the meter already running.
+struct MeterScope {
+    bool owner;
+    MeterScope() : owner(!g_meter.active) {
+        if (owner)
+            g_meter = Meter{true, false, 0};
+    }
+    ~MeterScope() {
+        if (owner)
+            g_meter = Meter{};
+    }
+};
+
 struct DepthGuard {
     DepthGuard() { ++g_depth; }
     ~DepthGuard() { --g_depth; }
@@ -39,6 +88,11 @@ double quantizeTolerance(double tol) {
 void transformList(const DisplayList& in, const Transform2& t, DisplayList& out) {
     // Grows by doubling: reserving the exact size on every call (once per array item or nested
     // reference) moved the whole list each time, quadratic in the number of items.
+    if (g_meter.over)
+        return;
+    charge(in);
+    if (g_meter.over)
+        return;
     if (out.items.capacity() < out.items.size() + in.items.size())
         out.items.reserve(std::max(out.items.size() + in.items.size(), out.items.capacity() * 2));
     for (const DisplayItem& item : in.items) {
@@ -69,6 +123,8 @@ std::shared_ptr<DisplayList> buildBlockSpace(const Document& doc, const BlockDef
     auto list = std::make_shared<DisplayList>();
     std::vector<Entity> storage;
     for (const Entity* e : blockItems(doc, def, effective, storage, nested)) {
+        if (g_meter.over)
+            break;
         if (!e->common.visible)
             continue;
         // Attribute definitions show per-insert values and are added by buildInsertDisplay.
@@ -88,7 +144,9 @@ std::shared_ptr<DisplayList> buildBlockSpace(const Document& doc, const BlockDef
         if (kind(resolved) == EntityKind::Insert) {
             buildInsertDisplay(doc, resolved, child, *list);
         } else {
+            const std::size_t before = list->items.size();
             geom::buildDisplay(doc, resolved, child, *list);
+            charge(*list, before);
         }
     }
     return list;
@@ -162,6 +220,7 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
     if (hiddenImageFrame(doc, *def))
         return;
     DepthGuard guard;
+    MeterScope meter;
     const std::size_t firstItem = out.items.size();
     // Without a cache from the caller, one for this insert: each nested block is built once, not
     // once per path that reaches it.
@@ -213,8 +272,10 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
                ctx.quickText};
         blockSpace = cache->find(key);
     }
-    if (!blockSpace && g_depth == 1 && expandedCount(doc, insert) > kMaxExpanded) {
-        // Far too many objects to draw (blocks that hold each other many times over): the outline.
+    // Far too much to draw (blocks that hold each other many times over): the outline.
+    const auto outline = [&] {
+        out.items.erase(out.items.begin() + static_cast<std::ptrdiff_t>(firstItem),
+                        out.items.end());
         const BBox2 box = insertBounds(doc, insert);
         if (!box.empty()) {
             DisplayPolyline frame;
@@ -223,15 +284,24 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
             frame.style = self;
             out.items.emplace_back(std::move(frame));
         }
+    };
+    if (!blockSpace && g_depth == 1 && expandedCount(doc, insert) > kMaxExpanded) {
+        outline();
         return;
     }
     if (!blockSpace) {
         blockSpace = buildBlockSpace(doc, *def, insert, shown,
                                      resolved ? &resolved->nested : nullptr, child);
-        if (cache) {
+        // (what was cut short is not kept for the next insert)
+        if (cache && !g_meter.over) {
             cache->countBuild();
             cache->put(key, blockSpace);
         }
+    }
+    if (g_meter.over) {
+        if (g_depth == 1)
+            outline();
+        return;
     }
     const bool clipped = ins->clipOn && ins->clip.size() >= 3;
     if (clipped) {
@@ -342,7 +412,10 @@ bool buildInsertInstance(const Document& doc, const Entity& insert, const geom::
     if (!blockSpace && expandedCount(doc, insert) > kMaxExpanded)
         return false;  // drawn as its outline by buildInsertDisplay
     if (!blockSpace) {
+        MeterScope meter;
         blockSpace = buildBlockSpace(doc, *def, insert, ins, nullptr, child);
+        if (g_meter.over)
+            return false;  // drawn as its outline by buildInsertDisplay
         cache->countBuild();
         cache->put(key, blockSpace);
     }

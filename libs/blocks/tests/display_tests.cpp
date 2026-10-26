@@ -233,6 +233,48 @@ TEST_CASE("blocks that hold the next one twice, sixty levels deep, draw and meas
     CHECK(displayOf(doc, s).items.size() == 4);
 }
 
+TEST_CASE("blocks that hold heavy items many times over are drawn as an outline by weight") {
+    registerInsertDisplay();
+    // A polyline of 40000 vertices at the bottom of nested blocks that each hold the next one
+    // twice: few objects (2^levels), but millions of vertices to copy and keep.
+    const auto nest = [](Document& doc, int levels) {
+        Entity heavy;
+        PolylineData pl;
+        for (int i = 0; i < 40000; ++i)
+            pl.v.push_back(PolyVertex{{static_cast<double>(i), (i % 2) ? 1.0 : 0.0}});
+        heavy.data = pl;
+        BlockId next = addBlock(doc, "H0", {heavy});
+        for (int i = 1; i <= levels; ++i)
+            next = addBlock(doc, ("H" + std::to_string(i)).c_str(),
+                            {insertOf(next, {0, 0}), insertOf(next, {0, 1})});
+        return addEntity(doc, insertOf(next, {0, 0}));
+    };
+    {
+        Document doc;
+        const EntityId top = nest(doc, 10);  // 1024 copies: 41 M vertices
+        CHECK(expandedCount(doc, *doc.find(top)) < kMaxExpanded);
+        for (bool cached : {false, true}) {
+            BlockDisplayCache cache;
+            std::optional<BlockDisplayScope> scope;
+            if (cached)
+                scope.emplace(cache);
+            const DisplayList l = displayOf(doc, top);
+            REQUIRE(l.items.size() == 1);
+            CHECK(poly(l, 0).closed);
+            CHECK(poly(l, 0).pts.size() == 4);
+            InsertInstance inst;
+            CHECK_FALSE(buildInsertInstance(doc, *doc.find(top), geom::DisplayContext{}, inst));
+        }
+    }
+    {
+        Document doc;
+        const EntityId top = nest(doc, 3);  // 8 copies: drawn in full
+        const DisplayList l = displayOf(doc, top);
+        REQUIRE(l.items.size() == 8);
+        CHECK(poly(l, 0).pts.size() == 40000);
+    }
+}
+
 TEST_CASE("the index follows block edits, undo and redo") {
     registerInsertDisplay();
     Document doc;
