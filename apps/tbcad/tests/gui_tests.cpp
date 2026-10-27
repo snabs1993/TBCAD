@@ -2562,6 +2562,36 @@ TEST_CASE("contextual tab: tools for a text selection, gone for a mixed one") {
     CHECK_FALSE(h.windowOpen("contexttab"));
 }
 
+TEST_CASE("option bar: options of the running command are buttons, and can be hidden") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    CHECK_FALSE(h.windowOpen("optionbar"));
+    h.core().submitText("PLINE");
+    h.core().submitText("0,0");
+    h.core().submitText("10,0");
+    h.frame(3);
+    REQUIRE(h.windowOpen("optionbar"));
+    REQUIRE(h.has("Undo", "optionbar"));
+    const auto lines = h.core().history().size();
+    REQUIRE(h.click("Undo", "optionbar"));
+    h.frame(3);
+    CHECK(h.core().history().size() > lines);
+    // Selection prompts offer the selection modes.
+    h.core().pressEscape();
+    h.core().pressEscape();
+    h.core().submitText("ERASE");
+    h.frame(3);
+    CHECK(h.has("Crossing", "optionbar"));
+    h.core().pressEscape();
+    h.core().setSetting("ui.optionBar", "0");
+    h.core().submitText("PLINE");
+    h.core().submitText("0,0");
+    h.core().submitText("10,0");
+    h.frame(3);
+    CHECK_FALSE(h.windowOpen("optionbar"));
+    h.core().pressEscape();
+}
+
 TEST_CASE("status bar: VIS and ISO buttons, items hidden from the customization menu") {
     Harness h(1920, 1080);
     h.frame(3);
