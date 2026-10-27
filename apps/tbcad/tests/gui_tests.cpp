@@ -19,6 +19,7 @@
 #include "tbcad/render/overlay.h"
 #include "tbcad/ui/app_core.h"
 #include "tbcad/xref/xref.h"
+#include "window_link.h"
 
 using namespace tbcad;
 using namespace tbcad::guitest;
@@ -3022,4 +3023,75 @@ TEST_CASE("first run: the start page opens the sample or a new drawing in one cl
     CHECK(h.core().documentCount() >= 1);
     CHECK_FALSE(h.windowOpen("Open"));
     CHECK_FALSE(h.windowOpen("Save"));
+}
+
+TEST_CASE("window link: windows find each other and pass drawings on") {
+    const fs::path dir = fs::temp_directory_path() / "tbcad-window-link-test";
+    fs::remove_all(dir);
+    {
+        app::WindowLink a(dir, 4001), b(dir, 4002);
+        CHECK(a.others().empty());
+        a.publish({10, 20, 300, 200}, true);
+        b.publish({500, 0, 400, 300}, true);
+        const auto seen = a.others();
+        REQUIRE(seen.size() == 1);
+        CHECK(seen[0].pid == 4002);
+        CHECK(seen[0].rect.contains(600, 100));
+        CHECK_FALSE(seen[0].rect.contains(100, 100));
+        CHECK(a.send(4002, fs::path("/tmp/some drawing.dxf")));
+        CHECK(a.takeIncoming().empty());  // not for a
+        const auto got = b.takeIncoming();
+        REQUIRE(got.size() == 1);
+        CHECK(got[0] == "/tmp/some drawing.dxf");
+        CHECK(b.takeIncoming().empty());  // each only once
+    }
+    CHECK(app::WindowLink(dir, 4003).others().empty());  // a window that closed is gone
+    fs::remove_all(dir);
+}
+
+TEST_CASE("drawing tab dragged onto another window moves the drawing there") {
+    const fs::path dir = fs::temp_directory_path() / "tbcad-tab-move-test";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    Harness h(1600, 900);
+    app::WindowLink me(dir / "link", 5001), other(dir / "link", 5002);
+    other.publish({4000, 0, 800, 600}, true);  // far off the harness window
+    h.gui().setWindowLink(&me);
+    const fs::path file = dir / "move me.tbcad";
+    REQUIRE(h.core().saveAs(file));
+    h.frame(3);
+    const std::string title = h.core().documentTitle(0);
+
+    // A modified drawing stays: it would have to be saved first.
+    h.core().submitText("LINE");
+    h.core().submitText("0,0");
+    h.core().submitText("10,0");
+    h.core().pressEscape();
+    h.frame(2);
+    REQUIRE(h.core().documentModified(0));
+    {
+        const auto* tab = h.find(title);
+        REQUIRE(tab);
+        const imgui_items::Item t = *tab;
+        h.drag((t.min.x + t.max.x) * 0.5f, (t.min.y + t.max.y) * 0.5f, 4300, 300);
+        h.frame(3);
+        CHECK(h.core().documentFile(0) == file);
+        CHECK(other.takeIncoming().empty());
+    }
+    REQUIRE(h.core().saveAs(file));
+    h.frame(3);
+    REQUIRE_FALSE(h.core().documentModified(0));
+    h.moveMouse(700, 400);
+    h.frame(2);
+    const auto* tab = h.find(title);
+    REQUIRE(tab);
+    const imgui_items::Item t = *tab;
+    h.drag((t.min.x + t.max.x) * 0.5f, (t.min.y + t.max.y) * 0.5f, 4300, 300);
+    h.frame(3);
+    CHECK(h.core().documentFile(0).empty());  // closed here: an empty Untitled is left
+    const auto got = other.takeIncoming();
+    REQUIRE(got.size() == 1);
+    CHECK(fs::path(got[0]) == file);
+    CHECK(h.imguiErrors().empty());
+    fs::remove_all(dir);
 }
