@@ -3688,9 +3688,10 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
     if (feedback_.active) {
         if (feedback_.guide) {
             render::OverlayStyle g;
-            g.color = {120, 220, 120, 200};
-            g.dashPx = 8;
-            g.gapPx = 5;
+            g.color = (theme_.bgViewport.r < 128) ? Rgba{0x3C, 0xE6, 0x3C, 255} : Rgba{0x00, 0x96, 0x00, 255};
+            g.widthPx = 1.0;
+            g.dashPx = 6;
+            g.gapPx = 4;
             overlay.line(render::Space::World, feedback_.guide->first, feedback_.guide->second, g);
         }
         // With a UI registry the drafting module draws the snap marker itself.

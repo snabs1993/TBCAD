@@ -102,17 +102,17 @@ void registerUi(ui::UiRegistry& ui) {
         // is snapped to.
         if (st.otrack && pc.commandActive && drafting::DraftingSettings::read(*pc.host).otrack) {
             render::OverlayStyle ts;
-            ts.color = dark ? Rgba{0xF2, 0xA9, 0x3B, 255} : Rgba{0xC7, 0x77, 0x00, 255};
+            ts.color = dark ? Rgba{0x3C, 0xE6, 0x3C, 255} : Rgba{0x00, 0x96, 0x00, 255};
             ts.widthPx = 1.5;
             for (const Vec2& a : st.otrack->acquired()) {
                 const Vec2 c = pc.camera->worldToScreen(a);
                 overlay.line(render::Space::Screen, {c.x - 4, c.y}, {c.x + 4, c.y}, ts);
                 overlay.line(render::Space::Screen, {c.x, c.y - 4}, {c.x, c.y + 4}, ts);
             }
-            // The tracking rays are dotted, like the guide of polar tracking, so that they read as
-            // construction lines and not as objects.
+            // The tracking rays are green and dashed, like the guide of polar tracking, so that they
+            // read as construction lines and not as objects.
             ts.widthPx = 1.0;
-            ts.dashPx = 3;
+            ts.dashPx = 6;
             ts.gapPx = 4;
             for (const auto& r : st.otrack->rays())
                 overlay.line(render::Space::World, r.first, r.second, ts);

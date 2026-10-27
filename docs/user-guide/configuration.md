@@ -66,7 +66,9 @@ current workspace's name unless you type another; the built-in ones cannot be ov
 The `...` button at the right end of the status bar lists everything the bar can show; untick
 what you do not need. While only hatches, text, dimensions or blocks are selected, a strip of
 tools for them appears above the drawing (the contextual tab); set `ui.contextTabs` to `0` to
-turn it off. Ctrl+0 (or F11) is Clean Screen: only the drawing and the command line.
+turn it off. While a command asks a question with options (Close, Undo, Width ...), the option
+bar over the drawing shows each option as a button; View > Option Bar or the setting
+`ui.optionBar` (`0`) hides it. Ctrl+0 (or F11) is Clean Screen: only the drawing and the command line.
 
 Your workspaces are `.json` files in the `workspaces` folder next to `settings.json`. The
 workspace you used last is restored on start.

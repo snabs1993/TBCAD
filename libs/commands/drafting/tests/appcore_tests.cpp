@@ -150,6 +150,7 @@ TEST_CASE("the status toggles keep ortho and polar exclusive") {
 TEST_CASE("snap markers and the grid are drawn by the overlay - the F-keys are bound") {
     App app;
     app.line({100, 100}, {300, 100});
+    app.core->submitText("TOGGLEOTRACK");  // an acquired point would add a mark of its own
     app.core->submitText("TWOLINE");
     app.core->pointerMoved(app.at({301, 101}));
     render::Overlay plain;
