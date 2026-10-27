@@ -25,7 +25,7 @@ Settings Settings::withDefaults() {
     o["drafting.polar"] = false;
     o["drafting.osnap"] = true;
     o["pick.aperturePx"] = 6;
-    o["files.defaultFormat"] = "tbcad";
+    o["files.defaultFormat"] = "dxf";
     o["files.dxfVersion"] = "auto";  // auto | r12 | r2000 | r2007
     o["files.backup"] = true;        // ISAVEBAK: keep the previous file as <name>.bak
     o["files.isavePercent"] = 50;    // ISAVEPERCENT: accepted, saves are always whole files

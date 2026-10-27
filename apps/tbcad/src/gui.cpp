@@ -51,9 +51,9 @@ constexpr ImGuiID kDockId = 0x7BC4D001u;
 
 const std::vector<platform::FileFilter>& openFilters() {
     static const std::vector<platform::FileFilter> f = {
-        {"All drawings", "*.tbcad;*.dxf;*.dwg;*.tbt"},
-        {"TBCAD drawings", "*.tbcad"},
+        {"All drawings", "*.dxf;*.dwg;*.tbcad;*.tbt"},
         {"DXF drawings", "*.dxf"},
+        {"TBCAD drawings", "*.tbcad"},
         {"DWG drawings (read-only)", "*.dwg"},
         {"Drawing Template", "*.tbt;*.dwt"}};
     return f;
@@ -995,7 +995,7 @@ void Gui::saveAsPath(const std::filesystem::path& path) {
 }
 
 void Gui::doSaveAs() {
-    std::string ext = core_.settings().getString("files.defaultFormat", "tbcad");
+    std::string ext = core_.settings().getString("files.defaultFormat", "dxf");
     if (ext != "dxf")
         ext = "tbcad";
     if (core_.hasFile()) {
@@ -1009,8 +1009,8 @@ void Gui::doSaveAs() {
     }
     std::string suggested = core_.hasFile() ? core_.file().filename().string() : "Drawing1." + ext;
     if (core_.readOnlyOrigin()) {  // never suggest the original (read-only) name
-        ext = "tbcad";
-        suggested = core_.file().stem().string() + ".tbcad";
+        ext = "dxf";
+        suggested = core_.file().stem().string() + ".dxf";
     }
     // Very long names and folders make the shell dialog unusable, so keep both short. A drawing
     // opened read-only from a project archive starts in the last folder used for saving (or

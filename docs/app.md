@@ -51,7 +51,7 @@ Owns the `Document`, `UndoStack`, `SpatialIndex` (kept current by `DocumentIndex
 `Scene` (kept current by `SceneSync`), the `CommandRunner`, settings and key bindings, and is the
 `cmd::IHost` the commands talk to.
 
-- **Files**: `newDocument`, `openFile`, `save`, `saveAs` (adds the extension of `files.defaultFormat`, `.tbcad` unless set to `dxf`; atomic with a `.bak`; a `.dxf` path is read and written with `libs/dxf`, so a drawing opened from DXF is saved back as DXF),
+- **Files**: `newDocument`, `openFile`, `save`, `saveAs` (adds the extension of `files.defaultFormat`, `.dxf` unless set to `tbcad`; atomic with a `.bak`; a `.dxf` path is read and written with `libs/dxf`, so a drawing opened from DXF is saved back as DXF),
   recent files, `windowTitle()` (`name.tbcad* - TBCAD`), `modified()`.
 - **Command line**: `submitText("LINE 0,0 100,0")`. The first word names a command (aliases work),
   the other words answer its prompts. Empty text repeats the last command or takes the default.

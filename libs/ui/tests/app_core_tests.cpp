@@ -515,8 +515,8 @@ TEST_CASE("a damaged .tbcad opens with what could be read, as an unsaved drawing
 TEST_CASE("saveAs adds the extension") {
     Fixture f("ext");
     REQUIRE(f.core->saveAs(f.dir / "plain").ok());
-    CHECK(f.core->file().extension() == ".tbcad");
-    CHECK(fs::exists(f.dir / "plain.tbcad"));
+    CHECK(f.core->file().extension() == ".dxf");
+    CHECK(fs::exists(f.dir / "plain.dxf"));
 }
 
 TEST_CASE("autosave is written for unsaved changes and offered after a crash") {
@@ -1421,6 +1421,8 @@ TEST_CASE("a DXF opened as AC1021 saves back as AC1021") {
 TEST_CASE("files.defaultFormat decides the extension of a name without one") {
     Fixture f("dxfdefault");
     f.line("0,0", "10,0");
+    REQUIRE(f.core->saveAs(f.dir / "plain").ok());  // DXF is the default format
+    CHECK(f.core->file().extension() == ".dxf");
     f.core->settings().setString("files.defaultFormat", "dxf");
     REQUIRE(f.core->saveAs(f.dir / "noext").ok());
     CHECK(f.core->file().extension() == ".dxf");

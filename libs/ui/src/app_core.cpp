@@ -1818,7 +1818,7 @@ void AppCore::storeSnapAids() {
 Result<void> AppCore::saveAs(const fs::path& requested) {
     fs::path path = requested;
     if (!path.has_extension())
-        path += settings_.getString("files.defaultFormat", "tbcad") == "dxf" ? ".dxf" : ".tbcad";
+        path += settings_.getString("files.defaultFormat", "dxf") == "dxf" ? ".dxf" : ".tbcad";
     if (runner().active()) {
         // Saving is an explicit request: end the waiting command (as Esc would) rather than
         // refuse and leave the work unsaved.
