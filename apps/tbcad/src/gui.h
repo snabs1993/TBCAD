@@ -43,6 +43,11 @@ ImFont* monoFont();
 void applyTheme(const ui::Theme& theme, float scale);
 // True when Windows is set to dark app mode (always true elsewhere).
 bool systemPrefersDark();
+// Whether releasing the left button after a press that already took a point answers the next point
+// prompt too (press-drag-release). A click with a shaky hand moves a few pixels while the button
+// is down and must not add a second point: it counts only after a long travel, or a short travel
+// held for a moment. `scale` is the DPI scale.
+bool releaseTakesPoint(double travelPx, double heldSeconds, double scale);
 // Where bundled assets live: next to the executable, then ./assets, then the source tree.
 std::string findAsset(const std::string& relative);
 // A drawing from the samples folder (next to the executable, ./samples, or the source tree), or
@@ -373,6 +378,7 @@ private:
     ui::PointerState cycleListAt_{};
     bool openCycleList_ = false;
     Vec2 pressPos_{};
+    double pressTime_ = 0;  // ImGui time of the left press
     bool panning_ = false;
     bool rightDown_ = false;  // right button pressed in the drawing, wheel or menu pending
     ui::RightClick rightAction_ = ui::RightClick::Menu;  // what releasing it soon will do

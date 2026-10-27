@@ -4022,6 +4022,7 @@ void Gui::viewportInput(const ViewportRect& rect) {
         dragging_ = false;
         doubleClick_ = ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
         pressPos_ = mouse;
+        pressTime_ = ImGui::GetTime();
         // A point is taken when the button goes down, so the rubber band follows the pointer
         // while it is dragged; releasing after a drag answers the next point prompt.
         pressTookPoint_ = pointPrompt && !io.KeyAlt;
@@ -4055,7 +4056,9 @@ void Gui::viewportInput(const ViewportRect& rect) {
             const bool nextIsPoint = next && (next->kind == cmd::PromptInfo::Kind::Point ||
                                               next->kind == cmd::PromptInfo::Kind::Distance ||
                                               next->kind == cmd::PromptInfo::Kind::Angle);
-            if (nextIsPoint && std::hypot(mouse.x - pressPos_.x, mouse.y - pressPos_.y) > 4.0 * s)
+            if (nextIsPoint &&
+                releaseTakesPoint(std::hypot(mouse.x - pressPos_.x, mouse.y - pressPos_.y),
+                                  ImGui::GetTime() - pressTime_, s))
                 core_.click(ps);
             pressTookPoint_ = leftDown_ = dragging_ = false;
         } else {

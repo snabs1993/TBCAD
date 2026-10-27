@@ -145,6 +145,12 @@ ImVec4 toVec(Rgba c, double alpha = 1.0) {
 
 }  // namespace
 
+bool releaseTakesPoint(double travelPx, double heldSeconds, double scale) {
+    if (travelPx > 40.0 * scale)
+        return true;  // a plain drag
+    return travelPx > 8.0 * scale && heldSeconds >= 0.3;
+}
+
 bool systemPrefersDark() {
 #if defined(_WIN32)
     DWORD value = 1;

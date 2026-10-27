@@ -3023,3 +3023,14 @@ TEST_CASE("first run: the start page opens the sample or a new drawing in one cl
     CHECK_FALSE(h.windowOpen("Open"));
     CHECK_FALSE(h.windowOpen("Save"));
 }
+
+TEST_CASE("point prompts: a shaky click does not add a second point on release") {
+    // Hand jitter while the button is down made a stray short segment at the start of a LINE.
+    CHECK_FALSE(tbcad::app::releaseTakesPoint(6, 0.08, 1.0));
+    CHECK_FALSE(tbcad::app::releaseTakesPoint(30, 0.1, 1.0));
+    CHECK_FALSE(tbcad::app::releaseTakesPoint(5, 1.0, 1.0));
+    // A deliberate press-drag-release still answers the next point.
+    CHECK(tbcad::app::releaseTakesPoint(200, 0.1, 1.0));
+    CHECK(tbcad::app::releaseTakesPoint(20, 0.5, 1.0));
+    CHECK_FALSE(tbcad::app::releaseTakesPoint(14, 0.5, 2.0));
+}
