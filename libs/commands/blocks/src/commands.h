@@ -13,6 +13,7 @@
 namespace tbcad::block_cmds {
 
 std::unique_ptr<cmd::Command> makeBlockCommand();
+std::unique_ptr<cmd::Command> makeBlockLineCommand();
 std::unique_ptr<cmd::Command> makeAttredefCommand();
 std::unique_ptr<cmd::Command> makeBaseCommand();
 std::unique_ptr<cmd::Command> makeBEditCommand();

@@ -90,8 +90,10 @@ public:
         // What the block palette asked for this one run.
         const std::string ask = ctx.host().setting(kAskSetting).value_or("");
         const std::string source = ctx.host().setting(kSourceSetting).value_or("");
+        const bool fromPanel = ctx.host().setting("tmp.insert.panel").value_or("") == "1";
         ctx.host().setSetting(kAskSetting, "");
         ctx.host().setSetting(kSourceSetting, "");
+        ctx.host().setSetting("tmp.insert.panel", "");
         const bool askScale = ask.find('S') != std::string::npos;
         const bool askRotation = ask.find('R') != std::string::npos;
         // (With no blocks yet a drawing file can still be typed: it becomes the first block.)
@@ -100,10 +102,11 @@ public:
                 "There are no blocks in this drawing yet. Type a drawing file name to "
                 "insert it, or cancel and use BLOCK to make one.");
 
-        // In a window the Blocks palette (thumbnails of every block) opens to pick from, as the
-        // Insert gallery does; the name can still be typed.
-        if (!doc.blocks().empty() && source.empty() && ctx.host().dialogsAvailable())
-            ctx.host().openPanel("blocks");
+        // In a window the Insert dialog (list of blocks with a preview, scale and rotation) opens
+        // to pick from; the name can still be typed. (Not when a panel started this run.)
+        if (!doc.blocks().empty() && source.empty() && !fromPanel &&
+            ctx.host().dialogsAvailable())
+            ctx.host().openPanel("insertdlg");
 
         // Block name.
         const BlockDef* def = nullptr;

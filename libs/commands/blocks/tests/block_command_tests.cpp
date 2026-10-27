@@ -201,3 +201,55 @@ TEST_CASE(
         }
     CHECK(inserts == 3);
 }
+
+namespace {
+
+struct MakeBlockHost : cmd::ScriptHost {
+    using cmd::ScriptHost::ScriptHost;
+    std::vector<std::string> opened;
+    bool dialogsAvailable() const override { return true; }
+    void openPanel(std::string_view id) override { opened.emplace_back(id); }
+};
+
+}  // namespace
+
+TEST_CASE("BLOCK in a window opens the Make Block dialog, which makes the block on OK") {
+    Fixture f;
+    EntityId a = f.addLine(10, 10, 20, 10);
+    MakeBlockHost host(f.doc, f.reg);
+    host.setSelection({a});
+    CHECK(host.run("BLOCK", {}).finished);
+    REQUIRE(host.opened.size() == 1);
+    CHECK(host.opened[0] == "makeblock");
+    CHECK(f.doc.blocks().empty());
+
+    host.setSetting("tmp.block.name", "Door");
+    host.setSetting("tmp.block.base", "12,5");
+    host.setSetting("tmp.block.mode", "Delete");
+    host.setSetting("tmp.block.go", "1");
+    CHECK(host.run("BLOCK", {}).finished);
+    const BlockDef* def = f.doc.blockByName("Door");
+    REQUIRE(def);
+    CHECK(def->base == Vec2{12, 5});
+    CHECK(def->entities.size() == 1);
+    CHECK(f.modelSpace().empty());
+}
+
+TEST_CASE("the Make Block dialog's pick buttons ask for the base point on the drawing") {
+    Fixture f;
+    MakeBlockHost host(f.doc, f.reg);
+    host.setSetting("tmp.block.pick", "base");
+    CHECK(host.run("BLOCK", {"3,4"}).finished);
+    CHECK(host.setting("tmp.block.base").value_or("") == "3,4");
+    CHECK(host.opened.back() == "makeblock");
+}
+
+TEST_CASE("-BLOCK asks everything on the command line even in a window") {
+    Fixture f;
+    EntityId a = f.addLine(0, 0, 1, 0);
+    MakeBlockHost host(f.doc, f.reg);
+    host.setSelection({a});
+    CHECK(host.run("-BLOCK", {"Line1", "0,0", "R"}).finished);
+    CHECK(host.opened.empty());
+    CHECK(f.doc.blockByName("Line1"));
+}

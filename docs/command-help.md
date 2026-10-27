@@ -214,9 +214,9 @@ Example: -LAYER M WALLS Enter makes WALLS and sets it current.
 
 ## BLOCK
 Turns objects into a named block (alias B).
-Usage: Enter a name, pick a base point, select objects, Enter.
-Options: -BLOCK works from the command line.
-Example: BLOCK DOOR 0,0, select, Enter.
+Usage: In the window the Make Block panel opens: type a name, select the objects, pick a base point (or keep the lower-left corner), choose Retain, Convert or Delete, press OK.
+Options: -BLOCK asks the same on the command line: name, base point, select objects, Enter.
+Example: -BLOCK DOOR 0,0, select, Enter.
 
 ## INSERT
 Places a block or a drawing file in the drawing (alias I).

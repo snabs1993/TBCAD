@@ -143,9 +143,9 @@ void saveOptions(cmd::IHost* host, const PaletteOptions& o) {
     host->setSetting("block.palette.askRotation", o.askRotation ? "1" : "0");
 }
 
-void drawOptions(ui::PanelContext& ctx) {
+void drawOptions(ui::PanelContext& ctx, bool open = false) {
     PaletteOptions& o = options(ctx.host);
-    if (!ImGui::CollapsingHeader("Options"))
+    if (!ImGui::CollapsingHeader("Options", open ? ImGuiTreeNodeFlags_DefaultOpen : 0))
         return;
     bool changed = false;
     ImGui::BeginDisabled(o.askScale);
@@ -185,6 +185,7 @@ void placeBlock(ui::PanelContext& ctx, const std::string& name, const std::strin
         io.scale = 1;
     if (o.askRotation)
         io.rotationDeg = 0;
+    ctx.host->setSetting("tmp.insert.panel", "1");  // INSERT need not open the dialog again
     ctx.host->setSetting("tmp.insert.ask",
                          std::string(o.askScale ? "S" : "") + (o.askRotation ? "R" : ""));
     if (whole) {
@@ -813,6 +814,186 @@ void drawAttDefPanel(ui::PanelContext& ctx) {
         ctx.host->closePanel("attdef");
 }
 
+
+// The Make Block dialog (BLOCK): name, objects, base point and what happens to the originals.
+// OK stores the answers in the "tmp.block.*" settings and runs BLOCK again to make the block;
+// the pick buttons run BLOCK to ask for the objects or the point on the drawing.
+void drawMakeBlockPanel(ui::PanelContext& ctx) {
+    static std::string name, error;
+    static double bx = 0, by = 0;
+    static bool autoBase = true;
+    static int mode = 1;  // 0 Retain, 1 Convert, 2 Delete
+    if (!ctx.host || !ctx.doc)
+        return;
+    // A point picked on the drawing arrives in a setting.
+    if (auto b = ctx.host->setting("tmp.block.base"); b && !b->empty()) {
+        if (const auto comma = b->find(','); comma != std::string::npos) {
+            bx = std::strtod(b->c_str(), nullptr);
+            by = std::strtod(b->c_str() + comma + 1, nullptr);
+            autoBase = false;
+        }
+        ctx.host->setSetting("tmp.block.base", "");
+    }
+    if (ImGui::IsWindowAppearing()) {
+        error.clear();
+        ImGui::SetKeyboardFocusHere();
+    }
+    bool ok = false;
+    ImGui::TextUnformatted("Name");
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputText("##blockname", &name, ImGuiInputTextFlags_AutoSelectAll);
+    ok = enterPressed() || ok;
+    const auto rows = blockRows(*ctx.doc);
+    if (!rows.empty()) {
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::BeginCombo("##blockexisting", "Choose an existing block to redefine")) {
+            for (const BlockRow& r : rows)
+                if (ImGui::Selectable(r.name.c_str(), r.name == name))
+                    name = r.name;
+            ImGui::EndCombo();
+        }
+    }
+    if (!name.empty() && ctx.doc->blockByName(name))
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f),
+                           "A block with this name exists: OK redefines it.");
+    ImGui::Separator();
+    ImGui::TextUnformatted("Base point");
+    ImGui::Checkbox("Lower-left of the objects", &autoBase);
+    ImGui::BeginDisabled(autoBase);
+    ImGui::SetNextItemWidth(110);
+    ImGui::InputDouble("X##blockbase", &bx, 0, 0, "%.6g");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(110);
+    ImGui::InputDouble("Y##blockbase", &by, 0, 0, "%.6g");
+    ImGui::EndDisabled();
+    if (ImGui::Button("Pick point <") && ctx.runCommand) {
+        if (ctx.cancelCommand)
+            ctx.cancelCommand();
+        ctx.host->setSetting("tmp.block.pick", "base");
+        ctx.runCommand("BLOCK");
+    }
+    ImGui::Separator();
+    ImGui::TextUnformatted("Objects");
+    const std::size_t picked = ctx.selection ? ctx.selection->size() : 0;
+    if (picked > 0)
+        ImGui::Text("%zu selected", picked);
+    else
+        ImGui::TextDisabled("None selected");
+    ImGui::SameLine();
+    if (ImGui::Button("Select objects <") && ctx.runCommand) {
+        if (ctx.cancelCommand)
+            ctx.cancelCommand();
+        ctx.host->setSetting("tmp.block.pick", "objects");
+        ctx.runCommand("BLOCK");
+    }
+    ImGui::RadioButton("Retain", &mode, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("Convert to block", &mode, 1);
+    ImGui::SameLine();
+    ImGui::RadioButton("Delete", &mode, 2);
+    if (!error.empty())
+        ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "%s", error.c_str());
+    ImGui::Separator();
+    if (ImGui::Button("OK"))
+        ok = true;
+    if (ok) {
+        const std::string n = cmd::trim(name);
+        if (n.empty()) {
+            error = "Type a name for the block.";
+        } else if (!ctx.doc->blockByName(n) && !blocks::validateBlockName(*ctx.doc, n).ok()) {
+            error = blocks::validateBlockName(*ctx.doc, n).error().message;
+        } else if (picked == 0) {
+            error = "Select the objects of the block first.";
+        } else {
+            error.clear();
+            char buf[96];
+            std::snprintf(buf, sizeof buf, "%.10g,%.10g", bx, by);
+            ctx.host->setSetting("tmp.block.name", n);
+            ctx.host->setSetting("tmp.block.base", autoBase ? std::string() : std::string(buf));
+            ctx.host->setSetting("tmp.block.mode",
+                                 mode == 0 ? "Retain" : mode == 2 ? "Delete" : "Convert");
+            ctx.host->setSetting("tmp.block.go", "1");
+            ctx.host->closePanel("makeblock");
+            name.clear();
+            autoBase = true;
+            if (ctx.cancelCommand)
+                ctx.cancelCommand();
+            if (ctx.runCommand)
+                ctx.runCommand("BLOCK");
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel") || (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+                                    ImGui::IsKeyPressed(ImGuiKey_Escape)))
+        ctx.host->closePanel("makeblock");
+}
+
+// The Insert dialog (INSERT): the blocks of the drawing as a list with a preview, and the scale,
+// rotation and repeat options; OK (or a double-click) places the chosen block.
+void drawInsertDialogPanel(ui::PanelContext& ctx) {
+    static std::string filter, chosen;
+    static std::map<BlockId, std::pair<std::uint64_t, Thumbnail>> cache;
+    static const Document* cachedDoc = nullptr;
+    if (!ctx.doc || !ctx.host) {
+        ImGui::TextUnformatted("No drawing open");
+        return;
+    }
+    if (cachedDoc != ctx.doc) {
+        cache.clear();
+        cachedDoc = ctx.doc;
+    }
+    const auto rows = blockRows(*ctx.doc, filter);
+    if (chosen.empty() && !rows.empty())
+        chosen = rows.front().name;
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputTextWithHint("##insfilter", "Filter blocks", &filter);
+    const float listW = 170.0f;
+    bool insert = false;
+    ImGui::BeginChild("##inslist", ImVec2(listW, 220), ImGuiChildFlags_Borders);
+    for (const BlockRow& r : rows) {
+        if (ImGui::Selectable(r.name.c_str(), r.name == chosen,
+                              ImGuiSelectableFlags_AllowDoubleClick)) {
+            chosen = r.name;
+            if (ImGui::IsMouseDoubleClicked(0))
+                insert = true;
+        }
+    }
+    if (rows.empty())
+        ImGui::TextDisabled(filter.empty() ? "No blocks yet. Select objects and type B."
+                                           : "No block matches");
+    ImGui::EndChild();
+    ImGui::SameLine();
+    ImGui::BeginChild("##inspreview", ImVec2(0, 220), ImGuiChildFlags_Borders);
+    if (const BlockDef* def = ctx.doc->blockByName(chosen)) {
+        auto& slot = cache[def->id];
+        const std::uint64_t rev = ctx.doc->revision();
+        if (slot.first != rev + 1)
+            slot = {rev + 1, thumbnailOfBlock(*ctx.doc, def->id)};
+        const float size = std::min(ImGui::GetContentRegionAvail().x, 190.0f);
+        const ImVec2 top = ImGui::GetCursorScreenPos();
+        drawThumbnail(ImGui::GetWindowDrawList(), top, size, slot.second,
+                      ImGui::GetColorU32(ImGuiCol_Text));
+        ImGui::Dummy(ImVec2(size, size));
+        ImGui::TextUnformatted(def->name.c_str());
+    }
+    ImGui::EndChild();
+    drawOptions(ctx, true);
+    if (ImGui::Button("OK") || (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+                                ImGui::IsKeyPressed(ImGuiKey_Enter)))
+        insert = true;
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel") || (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+                                    ImGui::IsKeyPressed(ImGuiKey_Escape))) {
+        ctx.host->closePanel("insertdlg");
+        if (ctx.cancelCommand)
+            ctx.cancelCommand();
+    }
+    if (insert && ctx.doc->blockByName(chosen)) {
+        ctx.host->closePanel("insertdlg");
+        placeBlock(ctx, chosen);
+    }
+}
+
 // The attribute values INSERT asks for after the block is placed: one field per attribute. OK
 // stores "tag<US>value<RS>..." in tmp.insatt.result and presses Enter for INSERT; Cancel ends it.
 void drawAttValuesPanel(ui::PanelContext& ctx) {
@@ -885,6 +1066,8 @@ void registerBlockPanel(ui::UiRegistry& ui) {
     ui.addPanel("blocks", "Blocks", drawBlockPanel, false);
     ui.addContextualTab("block", "Block", {EntityKind::Insert}, drawBlockContextTab);
     ui.addPanel("attdef", "Define Attribute", drawAttDefPanel, false);
+    ui.addPanel("makeblock", "Make Block", drawMakeBlockPanel, false);
+    ui.addPanel("insertdlg", "Insert Block", drawInsertDialogPanel, false);
     ui.addPanel("attvalues", "Attribute Values", drawAttValuesPanel, false);
 #else
     (void)ui;

@@ -225,13 +225,13 @@ struct WindowHost : cmd::ScriptHost {
 
 }  // namespace
 
-TEST_CASE("INSERT in a window opens the Blocks palette when the drawing has blocks") {
+TEST_CASE("INSERT in a window opens the Insert dialog when the drawing has blocks") {
     Fixture f;
     makeDoorBlock(f);
     WindowHost host(f.doc, f.reg);
     CHECK(host.run("INSERT", {"Door", "0,0"}).finished);
     REQUIRE(host.opened.size() == 1);
-    CHECK(host.opened[0] == "blocks");
+    CHECK(host.opened[0] == "insertdlg");
 
     Fixture empty;  // no blocks: nothing to pick from
     WindowHost bare(empty.doc, empty.reg);
