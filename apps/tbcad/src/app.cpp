@@ -212,6 +212,11 @@ bool App::initWindow(std::string& why) {
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     io.ConfigDockingWithShift = false;
+    if (!hidden()) {
+        // Panels can be dragged out of the window into their own OS windows and back in.
+        io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+        io.ConfigViewportsNoTaskBarIcon = true;
+    }
     iniPath_ = (paths_.configDir / "imgui.ini").string();
     platform::ensureDirectory(paths_.configDir);
     io.IniFilename = hidden() ? nullptr : iniPath_.c_str();
@@ -1662,6 +1667,12 @@ void App::frame() {
     glClearColor(bg.r / 255.0f, bg.g / 255.0f, bg.b / 255.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+        GLFWwindow* backup = glfwGetCurrentContext();
+        ImGui::UpdatePlatformWindows();
+        ImGui::RenderPlatformWindowsDefault();
+        glfwMakeContextCurrent(backup);
+    }
     if (PhaseTimer::enabled()) {
         gPhase[2] += pt.lap();
         if (!PhaseTimer::forced() && ++gPhaseFrames == 60) {

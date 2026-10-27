@@ -1430,10 +1430,10 @@ void Gui::toolStrip() {
           {Icon::Rectangle, "Rectangle", nullptr, "RECTANGLE"},
           {Icon::Hatch, "Hatch", nullptr, "HATCH"},
           {Icon::Ellipse, "Ellipse", nullptr, "ELLIPSE"},
-         {Icon::Spline, "Spline", nullptr, "SPLINE"},
-         {Icon::Polygon, "Polygon", nullptr, "POLYGON"},
-         {Icon::Point, "Point", nullptr, "POINT"},
-         {Icon::Text, "Text", nullptr, "TEXT"}}},
+          {Icon::Spline, "Spline", nullptr, "SPLINE"},
+          {Icon::Polygon, "Polygon", nullptr, "POLYGON"},
+          {Icon::Point, "Point", nullptr, "POINT"},
+          {Icon::Text, "Text", nullptr, "TEXT"}}},
         {"Annotate & Blocks",
          {{Icon::Dimension, "Linear Dimension", nullptr, "DIMLINEAR"},
           {Icon::Block, "Make Block", nullptr, "BLOCK"},
@@ -1448,11 +1448,11 @@ void Gui::toolStrip() {
           {Icon::Trim, "Trim", nullptr, "TRIM"},
           {Icon::Offset, "Offset", nullptr, "OFFSET"},
           {Icon::Fillet, "Fillet", nullptr, "FILLET"},
-         {Icon::Chamfer, "Chamfer", nullptr, "CHAMFER"},
-         {Icon::Extend, "Extend", nullptr, "EXTEND"},
-         {Icon::Join, "Join", nullptr, "JOIN"},
-         {Icon::Array, "Array", nullptr, "ARRAY"},
-         {Icon::Explode, "Explode", nullptr, "EXPLODE"},
+          {Icon::Chamfer, "Chamfer", nullptr, "CHAMFER"},
+          {Icon::Extend, "Extend", nullptr, "EXTEND"},
+          {Icon::Join, "Join", nullptr, "JOIN"},
+          {Icon::Array, "Array", nullptr, "ARRAY"},
+          {Icon::Explode, "Explode", nullptr, "EXPLODE"},
           {Icon::Erase, "Erase", nullptr, "ERASE"}}},
         {"View", {{Icon::ZoomExtents, "Zoom Extents", "view.zoomExtents", nullptr}}}};
 
@@ -1730,8 +1730,8 @@ void Gui::optionBar() {
                 ImGui::CalcTextSize(word.c_str()).x + 2 * ImGui::GetStyle().FramePadding.x;
             if (ImGui::GetItemRectMax().x + ImGui::GetStyle().ItemSpacing.x + width < maxX)
                 ImGui::SameLine();  // else the button starts a new row
-            const bool isDefault = info->defaultText && cmd::toUpperAscii(*info->defaultText) ==
-                                                            cmd::toUpperAscii(word);
+            const bool isDefault = info->defaultText &&
+                                   cmd::toUpperAscii(*info->defaultText) == cmd::toUpperAscii(word);
             ImGui::PushID(static_cast<int>(i));
             if (isDefault)
                 ImGui::PushStyleColor(ImGuiCol_Button,
@@ -2485,7 +2485,8 @@ void Gui::dockLayout(ImGuiID ds) {
 void Gui::keepOnScreen() {
     ImGuiContext& g = *ImGui::GetCurrentContext();
     ImGuiWindow* w = g.CurrentWindow;
-    if (!w || w->DockId != 0 || g.MovingWindow == w || (w->Flags & ImGuiWindowFlags_ChildWindow))
+    if (!w || w->DockId != 0 || g.MovingWindow == w || w->Viewport != ImGui::GetMainViewport() ||
+        (w->Flags & ImGuiWindowFlags_ChildWindow))
         return;
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     const float keep = 60.0f * dpiScale_;
@@ -2514,10 +2515,10 @@ void Gui::dockEdgeDrop() {
                 ImGui::DockContextQueueUndockWindow(&g, w);
             } else {
                 const ImGuiViewport* vp = ImGui::GetMainViewport();
-                const float ratio = std::clamp(
-                    std::min(vp->WorkSize.x * 0.25f, 360.0f * dpiScale_) /
-                        std::max(vp->WorkSize.x, 1.0f),
-                    0.1f, 0.4f);
+                const float ratio =
+                    std::clamp(std::min(vp->WorkSize.x * 0.25f, 360.0f * dpiScale_) /
+                                   std::max(vp->WorkSize.x, 1.0f),
+                               0.1f, 0.4f);
                 ImGuiID dock = ImGui::DockBuilderSplitNode(
                     kDockId, side < 0 ? ImGuiDir_Left : ImGuiDir_Right, ratio, nullptr, nullptr);
                 ImGui::DockBuilderDockWindow(name.c_str(), dock);
