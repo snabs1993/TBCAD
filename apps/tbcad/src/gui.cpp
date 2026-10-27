@@ -1297,6 +1297,8 @@ void Gui::menuBar() {
         ImGui::Separator();
         ImGui::MenuItem("Command Line", keys.label("view.toggleCommandLine").c_str(),
                         &showCommandLine_);
+        if (bool ob = flag("ui.optionBar", true); ImGui::MenuItem("Option Bar", nullptr, ob))
+            core_.setSetting("ui.optionBar", ob ? "0" : "1");
         if (bool qp = core_.setting("ui.quickProps").value_or("0") == "1";
             ImGui::MenuItem("Quick Properties", nullptr, qp))
             core_.setSetting("ui.quickProps", qp ? "0" : "1");
@@ -1633,6 +1635,73 @@ void Gui::contextualBar() {
             ImGui::SetTooltip("Clear the selection (Esc)");
     }
     ImGui::End();
+}
+
+// The option bar: while a command asks a question that has options, a strip over the top of the
+// drawing names the command and shows every option as a button, so a beginner never has to know
+// what to type. Object-selection prompts also offer Window, Crossing, Fence, All, Last and
+// Previous. Setting ui.optionBar ("0" hides it; View > Option Bar).
+void Gui::optionBar() {
+    const cmd::PromptInfo* info = core_.promptInfo();
+    if (!info || !flag("ui.optionBar", true) || lastRect_.w < 200 || lastRect_.h < 100)
+        return;
+    std::vector<std::string> words = info->keywords;
+    if (info->kind == cmd::PromptInfo::Kind::Selection) {
+        for (const char* extra : {"Window", "Crossing", "Fence", "All", "Last", "Previous"})
+            if (std::none_of(words.begin(), words.end(), [&](const std::string& w) {
+                    return cmd::toUpperAscii(w) == cmd::toUpperAscii(extra);
+                }))
+                words.emplace_back(extra);
+    }
+    if (words.empty())
+        return;
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                   ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+                                   ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking |
+                                   ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing |
+                                   ImGuiWindowFlags_AlwaysAutoResize;
+    const float maxW = std::max(200.0f, lastRect_.w - 16);
+    ImGui::SetNextWindowPos(ImVec2(lastRect_.x + 8, lastRect_.y + 6));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(maxW, 400));
+    ImGui::SetNextWindowBgAlpha(0.92f);
+    if (ImGui::Begin("##optionbar", nullptr, flags)) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextColored(ImVec4(0.35f, 0.65f, 1.0f, 1.0f), "%s",
+                           info->command.empty() ? "Options" : info->command.c_str());
+        ImGui::SameLine(0, 14);
+        ImGui::TextDisabled("Options:");
+        const float maxX = ImGui::GetWindowPos().x + maxW - ImGui::GetStyle().WindowPadding.x;
+        for (std::size_t i = 0; i < words.size(); ++i) {
+            const std::string& word = words[i];
+            const float width =
+                ImGui::CalcTextSize(word.c_str()).x + 2 * ImGui::GetStyle().FramePadding.x;
+            if (ImGui::GetItemRectMax().x + ImGui::GetStyle().ItemSpacing.x + width < maxX)
+                ImGui::SameLine();  // else the button starts a new row
+            const bool isDefault = info->defaultText && cmd::toUpperAscii(*info->defaultText) ==
+                                                            cmd::toUpperAscii(word);
+            ImGui::PushID(static_cast<int>(i));
+            if (isDefault)
+                ImGui::PushStyleColor(ImGuiCol_Button,
+                                      ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+            if (ImGui::Button(word.c_str())) {
+                core_.submitText(word);
+                refocusInput_ = true;
+                anyActivity_ = true;
+            }
+            if (isDefault)
+                ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered() && isDefault)
+                ImGui::SetTooltip("Default: press Enter");
+            ImGui::PopID();
+        }
+        ImGui::SameLine(0, 14);
+        if (ImGui::SmallButton("Hide")) {
+            core_.setSetting("ui.optionBar", "0");
+            toast("Option bar hidden. View > Option Bar turns it back on.");
+        }
+    }
+    ImGui::End();
+    anyActivity_ = true;
 }
 
 float Gui::layoutTabsHeight() const {
@@ -4593,6 +4662,7 @@ ViewportRect Gui::frame() {
     lastRect_ = rect;
     startPage(rect);
     cursorHud(rect);
+    optionBar();
     gripMenu(rect);
     // The drawing origin: a small X (red) / Y (green) axis pair, so a new drawing has a landmark.
     if (!core_.inPaperSpace() && flag("display.originIcon", true) && !ucsIconShown()) {
