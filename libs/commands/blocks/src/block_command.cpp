@@ -12,12 +12,18 @@ namespace {
 // BLOCK [B]: turns the selected objects into a named block definition. ATTREDEF is the same
 // for a block that exists: it is redefined from the objects (attribute definitions included),
 // the inserts keep their attribute values by tag, and the objects are used up.
+// In the window BLOCK opens the Make Block dialog (name, objects, base point, what happens to the
+// originals); its buttons run BLOCK again with the answers in "tmp.block.*" settings. -BLOCK (and
+// any host without a window) asks everything on the command line.
 class BlockCommand final : public cmd::Command {
 public:
-    explicit BlockCommand(bool redefine = false) : redefine_(redefine) {}
-    std::string_view name() const override { return redefine_ ? "ATTREDEF" : "BLOCK"; }
+    explicit BlockCommand(bool redefine = false, bool lineOnly = false)
+        : redefine_(redefine), lineOnly_(lineOnly || redefine) {}
+    std::string_view name() const override {
+        return redefine_ ? "ATTREDEF" : lineOnly_ ? "-BLOCK" : "BLOCK";
+    }
     std::vector<std::string> defaultAliases() const override {
-        return redefine_ ? std::vector<std::string>{} : std::vector<std::string>{"B", "-BLOCK"};
+        return redefine_ || lineOnly_ ? std::vector<std::string>{} : std::vector<std::string>{"B"};
     }
     std::string_view description() const override {
         return redefine_ ? "Redefine a block and update its attributes"
@@ -26,11 +32,51 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         Document& doc = ctx.doc();
+        cmd::IHost& host = ctx.host();
+        const bool dialog = !lineOnly_ && host.dialogsAvailable();
+        auto setting = [&host](const char* key) { return host.setting(key).value_or(""); };
+        if (dialog) {
+            const std::string pick = setting("tmp.block.pick");
+            host.setSetting("tmp.block.pick", "");
+            if (pick == "base") {
+                auto p = co_await ctx.getPoint("Specify base point");
+                if (p.ok())
+                    host.setSetting("tmp.block.base", blockPointText(p.point));
+                host.openPanel("makeblock");
+                co_return;
+            }
+            if (pick == "objects") {
+                auto sel = co_await ctx.getSelection(
+                    "Select objects", cmd::SelectionOptions{.filter = detail::editableFilter(doc)});
+                if (sel.status != cmd::Status::Cancel && !sel.ids.empty())
+                    host.setSelection(sel.ids);
+                host.openPanel("makeblock");
+                co_return;
+            }
+            if (setting("tmp.block.go") != "1") {
+                host.openPanel("makeblock");
+                ctx.message(
+                    "Use the Make Block panel (name, objects, base point), then press OK. Type "
+                    "-BLOCK to answer on the command line instead.");
+                co_return;
+            }
+            host.setSetting("tmp.block.go", "0");
+        }
 
         // 1. Name. An existing name may be redefined.
         std::string blockName;
         BlockId existing{};
-        for (;;) {
+        if (dialog) {
+            blockName = cmd::trim(setting("tmp.block.name"));
+            if (const BlockDef* def = doc.blockByName(blockName)) {
+                existing = def->id;
+                blockName = def->name;
+            } else if (auto ok = blocks::validateBlockName(doc, blockName); !ok.ok()) {
+                ctx.message(ok.error().message);
+                co_return;
+            }
+        }
+        for (; !dialog;) {
             auto n = co_await ctx.getString(redefine_ ? "Enter name of the block to redefine"
                                                       : "Enter block name");
             if (!n.ok())
@@ -66,8 +112,16 @@ public:
         }
 
         // 2. Objects.
-        auto sel = co_await ctx.getSelection(
-            "Select objects", cmd::SelectionOptions{.filter = detail::editableFilter(doc)});
+        cmd::SelectionResult sel;
+        if (dialog) {
+            for (EntityId id : host.selection())
+                if (const Entity* e = doc.find(id); e && detail::editableFilter(doc)(*e))
+                    sel.ids.push_back(id);
+            sel.status = cmd::Status::Ok;
+        } else {
+            sel = co_await ctx.getSelection(
+                "Select objects", cmd::SelectionOptions{.filter = detail::editableFilter(doc)});
+        }
         if (sel.status == cmd::Status::Cancel)
             co_return;
         if (sel.ids.empty()) {
@@ -101,12 +155,20 @@ public:
                 }
                 return t == "-0" ? std::string("0") : t;
             };
-            auto base =
-                co_await ctx.getPoint("Specify base point <" + fmt(lowerLeft.x) + "," +
-                                      fmt(lowerLeft.y) + ", the lower-left of the objects>");
-            if (base.status == cmd::Status::Cancel)
-                co_return;
-            basePoint = base.ok() ? base.point : lowerLeft;
+            if (dialog) {
+                basePoint = lowerLeft;  // the dialog's base point, when it has one
+                const std::string bx = setting("tmp.block.base");
+                if (const auto comma = bx.find(','); comma != std::string::npos)
+                    basePoint = {std::strtod(bx.c_str(), nullptr),
+                                 std::strtod(bx.c_str() + comma + 1, nullptr)};
+            } else {
+                auto base =
+                    co_await ctx.getPoint("Specify base point <" + fmt(lowerLeft.x) + "," +
+                                          fmt(lowerLeft.y) + ", the lower-left of the objects>");
+                if (base.status == cmd::Status::Cancel)
+                    co_return;
+                basePoint = base.ok() ? base.point : lowerLeft;
+            }
         }
 
         // 4. Cycle check: a block cannot end up containing itself.
@@ -136,7 +198,10 @@ public:
 
         // 5. What happens to the originals.
         cmd::KeywordResult what{cmd::Status::Keyword, "Delete"};
-        if (!redefine_) {
+        if (dialog) {
+            const std::string m = setting("tmp.block.mode");
+            what.keyword = m == "Retain" || m == "Delete" ? m : "Convert";
+        } else if (!redefine_) {
             what = co_await ctx.getKeyword(
                 "Original objects [Retain/Convert/Delete] <Convert>",
                 cmd::KeywordOptions{.keywords = {"Retain", "Convert", "Delete"},
@@ -201,7 +266,14 @@ public:
     }
 
 private:
+    static std::string blockPointText(Vec2 p) {
+        char buf[96];
+        std::snprintf(buf, sizeof buf, "%.10g,%.10g", p.x, p.y);
+        return buf;
+    }
+
     bool redefine_;
+    bool lineOnly_;
 };
 
 // BASE: the point of this drawing that lands on the insertion point when it is inserted into
@@ -247,6 +319,10 @@ std::unique_ptr<cmd::Command> makeAttredefCommand() {
 
 std::unique_ptr<cmd::Command> makeBlockCommand() {
     return std::make_unique<BlockCommand>();
+}
+
+std::unique_ptr<cmd::Command> makeBlockLineCommand() {
+    return std::make_unique<BlockCommand>(false, true);
 }
 
 }  // namespace tbcad::block_cmds

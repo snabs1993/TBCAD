@@ -2443,7 +2443,7 @@ TEST_CASE("block editor: BEDIT opens Block Authoring, its buttons run the editor
     for (const char* s : {"LINE", "0,0", "10,0", ""})
         h.core().submitText(s);
     h.core().selectAll();
-    for (const char* s : {"BLOCK", "Sym", "0,0", "C"})
+    for (const char* s : {"-BLOCK", "Sym", "0,0", "C"})
         h.core().submitText(s);
     h.frame(3);
     REQUIRE(h.core().document().blockByName("Sym"));
@@ -2475,7 +2475,7 @@ TEST_CASE(
     for (const char* s : {"LINE", "0,0", "10,0", ""})
         h.core().submitText(s);
     h.core().selectAll();
-    for (const char* s : {"BLOCK", "Sym", "0,0", "R"})
+    for (const char* s : {"-BLOCK", "Sym", "0,0", "R"})
         h.core().submitText(s);
     h.core().submitText("ZOOM");
     h.core().submitText("W");
