@@ -30,6 +30,18 @@ enum class Icon {
     Fillet,
     Erase,
     ZoomExtents,
+    Ellipse,
+    Spline,
+    Polygon,
+    Point,
+    Dimension,
+    Block,
+    Insert,
+    Array,
+    Explode,
+    Chamfer,
+    Extend,
+    Join,
     Count
 };
 

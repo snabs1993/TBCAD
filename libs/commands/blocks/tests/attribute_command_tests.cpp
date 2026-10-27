@@ -203,7 +203,7 @@ TEST_CASE("INSERT in a window asks the attribute values in one dialog") {
     auto r = host.run("INSERT", {"Tag", "50,50"});
     CHECK_FALSE(r.finished);
     REQUIRE(host.opened.size() == 2);
-    CHECK(host.opened[0] == "blocks");  // the palette opens with the name prompt
+    CHECK(host.opened[0] == "insertdlg");  // the Insert Block dialog opens with the name prompt
     CHECK(host.opened[1] == "attvalues");
     const std::string fields = host.setting("tmp.insatt.fields").value_or("");
     CHECK(fields.find("NAME") != std::string::npos);
