@@ -180,6 +180,78 @@ void drawIcon(ImDrawList* dl, Icon icon, ImVec2 min, float size, ImU32 color) {
             g.poly({{7, 17}, {3, 17}, {3, 13}});
             g.rect(7, 7, 13, 13);
             break;
+        case Icon::Ellipse:
+            g.dl->PathClear();
+            for (int i = 0; i <= 32; ++i) {
+                const float a = 2.0f * kPi * static_cast<float>(i) / 32.0f;
+                g.dl->PathLineTo(g.p(10 + 7.5f * std::cos(a), 10 + 4.5f * std::sin(a)));
+            }
+            g.dl->PathStroke(g.color, 0, g.thick);
+            break;
+        case Icon::Spline:
+            g.dl->AddBezierCubic(g.p(2.5f, 14), g.p(6, 3), g.p(11, 18), g.p(17.5f, 6), g.color,
+                                 g.thick);
+            g.dot(2.5f, 14, 1);
+            g.dot(17.5f, 6, 1);
+            break;
+        case Icon::Polygon:
+            g.poly({{10, 2.5f}, {16.5f, 7.5f}, {14, 16}, {6, 16}, {3.5f, 7.5f}}, true);
+            break;
+        case Icon::Point:
+            g.line(10, 4, 10, 16);
+            g.line(4, 10, 16, 10);
+            g.circle(10, 10, 4.5f);
+            break;
+        case Icon::Dimension:
+            g.line(3, 6, 3, 15);
+            g.line(17, 6, 17, 15);
+            g.line(3, 11, 17, 11);
+            g.poly({{6, 9.5f}, {3, 11}, {6, 12.5f}});
+            g.poly({{14, 9.5f}, {17, 11}, {14, 12.5f}});
+            break;
+        case Icon::Block:
+            g.rect(3.5f, 3.5f, 16.5f, 16.5f);
+            g.rect(7, 7, 13, 13);
+            break;
+        case Icon::Insert:
+            g.rect(8, 8, 16.5f, 16.5f);
+            g.arrow(3, 3, 8, 8);
+            break;
+        case Icon::Array:
+            for (float x : {3.5f, 11.0f})
+                for (float y : {3.5f, 11.0f})
+                    g.rect(x, y, x + 5.5f, y + 5.5f);
+            break;
+        case Icon::Explode:
+            g.line(10, 10, 10, 3);
+            g.line(10, 10, 17, 10);
+            g.line(10, 10, 10, 17);
+            g.line(10, 10, 3, 10);
+            g.dot(10, 10, 1.4f);
+            g.line(5, 5, 7, 7);
+            g.line(15, 5, 13, 7);
+            g.line(5, 15, 7, 13);
+            g.line(15, 15, 13, 13);
+            break;
+        case Icon::Chamfer:
+            g.line(3, 3.5f, 3, 10);
+            g.line(3, 10, 10, 17);
+            g.line(10, 17, 17, 17);
+            break;
+        case Icon::Extend:
+            g.line(16, 3, 16, 17);
+            g.line(3, 10, 11, 10);
+            g.poly({{11, 10}, {12.5f, 10}});
+            g.line(13, 10, 16, 10);
+            g.poly({{12.5f, 8}, {15.5f, 10}, {12.5f, 12}});
+            break;
+        case Icon::Join:
+            g.line(2.5f, 13, 8.5f, 13);
+            g.line(11.5f, 7, 17.5f, 7);
+            g.line(8.5f, 13, 11.5f, 7);
+            g.dot(8.5f, 13, 1.2f);
+            g.dot(11.5f, 7, 1.2f);
+            break;
         case Icon::Count:
             break;
     }

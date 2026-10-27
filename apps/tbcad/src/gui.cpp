@@ -1295,20 +1295,39 @@ void Gui::menuBar() {
             core_.zoomAtScreen({core_.camera().viewportW / 2.0, core_.camera().viewportH / 2.0},
                                -1);
         ImGui::Separator();
-        ImGui::MenuItem("Command Line", keys.label("view.toggleCommandLine").c_str(),
-                        &showCommandLine_);
-        if (bool qp = core_.setting("ui.quickProps").value_or("0") == "1";
-            ImGui::MenuItem("Quick Properties", nullptr, qp))
-            core_.setSetting("ui.quickProps", qp ? "0" : "1");
-        if (ImGui::MenuItem("Command Log", keys.label("view.expandLog").c_str(), logExpanded_))
-            logExpanded_ = !logExpanded_;
-        if (ImGui::MenuItem("Clean Screen", keys.label("view.cleanScreen").c_str(), cleanScreen_))
-            cleanScreen_ = !cleanScreen_;
-        for (const auto& p : registry_.panels())
-            ImGui::MenuItem(
-                p.title.c_str(),
-                p.id == "properties" ? keys.label("view.toggleProperties").c_str() : nullptr,
-                &panelOpen_[p.id]);
+        // User Interface: every window and bar in one place, each a check box.
+        if (ImGui::BeginMenu("User Interface")) {
+            auto toggle = [&](const char* label, const char* key, bool fallback) {
+                const bool on = flag(key, fallback);
+                if (ImGui::MenuItem(label, nullptr, on))
+                    core_.setSetting(key, on ? "0" : "1");
+            };
+            toggle("Toolbar", "ui.toolstrip", true);
+            toggle("Status Bar", "ui.statusbar", true);
+            toggle("Navigation Bar", "ui.navbar", true);
+            toggle("Contextual Tabs", "ui.contextTabs", true);
+            ImGui::Separator();
+            ImGui::MenuItem("Command Line", keys.label("view.toggleCommandLine").c_str(),
+                            &showCommandLine_);
+            if (ImGui::MenuItem("Command Log", keys.label("view.expandLog").c_str(), logExpanded_))
+                logExpanded_ = !logExpanded_;
+            if (bool qp = core_.setting("ui.quickProps").value_or("0") == "1";
+                ImGui::MenuItem("Quick Properties", nullptr, qp))
+                core_.setSetting("ui.quickProps", qp ? "0" : "1");
+            ImGui::Separator();
+            for (const auto& p : registry_.panels())
+                ImGui::MenuItem(
+                    p.title.c_str(),
+                    p.id == "properties" ? keys.label("view.toggleProperties").c_str() : nullptr,
+                    &panelOpen_[p.id]);
+            ImGui::Separator();
+            if (ImGui::MenuItem("Clean Screen", keys.label("view.cleanScreen").c_str(),
+                                cleanScreen_))
+                cleanScreen_ = !cleanScreen_;
+            if (ImGui::MenuItem("Reset Window Layout"))
+                rebuildDock_ = true;
+            ImGui::EndMenu();
+        }
         ImGui::Separator();
         workspaceMenu();
         if (ImGui::BeginMenu("Theme")) {
@@ -1387,7 +1406,15 @@ void Gui::toolStrip() {
           {Icon::Arc, "Arc", nullptr, "ARC"},
           {Icon::Rectangle, "Rectangle", nullptr, "RECTANGLE"},
           {Icon::Hatch, "Hatch", nullptr, "HATCH"},
-          {Icon::Text, "Text", nullptr, "TEXT"}}},
+          {Icon::Ellipse, "Ellipse", nullptr, "ELLIPSE"},
+         {Icon::Spline, "Spline", nullptr, "SPLINE"},
+         {Icon::Polygon, "Polygon", nullptr, "POLYGON"},
+         {Icon::Point, "Point", nullptr, "POINT"},
+         {Icon::Text, "Text", nullptr, "TEXT"}}},
+        {"Annotate & Blocks",
+         {{Icon::Dimension, "Linear Dimension", nullptr, "DIMLINEAR"},
+          {Icon::Block, "Make Block", nullptr, "BLOCK"},
+          {Icon::Insert, "Insert Block", nullptr, "INSERT"}}},
         {"Modify",
          {{Icon::Move, "Move", nullptr, "MOVE"},
           {Icon::Copy, "Copy", nullptr, "COPY"},
@@ -1398,6 +1425,11 @@ void Gui::toolStrip() {
           {Icon::Trim, "Trim", nullptr, "TRIM"},
           {Icon::Offset, "Offset", nullptr, "OFFSET"},
           {Icon::Fillet, "Fillet", nullptr, "FILLET"},
+         {Icon::Chamfer, "Chamfer", nullptr, "CHAMFER"},
+         {Icon::Extend, "Extend", nullptr, "EXTEND"},
+         {Icon::Join, "Join", nullptr, "JOIN"},
+         {Icon::Array, "Array", nullptr, "ARRAY"},
+         {Icon::Explode, "Explode", nullptr, "EXPLODE"},
           {Icon::Erase, "Erase", nullptr, "ERASE"}}},
         {"View", {{Icon::ZoomExtents, "Zoom Extents", "view.zoomExtents", nullptr}}}};
 
@@ -4546,13 +4578,15 @@ ViewportRect Gui::frame() {
     }
     if (!cleanScreen_) {  // F11 hides everything but the viewport and the command line
         menuBar();
-        toolStrip();
+        if (flag("ui.toolstrip", true))
+            toolStrip();
         docTabs();
         readOnlyBanner();
         blockEditBar();
         contextualBar();
         xrefNotice();  // the list window the bar opens
-        statusBar();
+        if (flag("ui.statusbar", true))
+            statusBar();
     }
     ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::DockSpaceOverViewport(kDockId, vp, ImGuiDockNodeFlags_PassthruCentralNode);
