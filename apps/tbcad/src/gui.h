@@ -149,6 +149,9 @@ private:
     void layoutTabs(const ViewportRect& rect);
     void dockLayout(ImGuiID dockspace);
     void dockEdgeDrop();
+    // View > Dock Panel: a panel to the far left or right edge of the window, or back to a float.
+    std::string dockRequestPanel_;
+    int dockRequestSide_ = 0;  // -1 left, 1 right, 0 float
     void keepOnScreen();
     // Workspaces (saved window layouts). Switching applies the panels at once and the docking
     // layout through Dear ImGui's ini data.
