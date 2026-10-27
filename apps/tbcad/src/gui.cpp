@@ -1311,6 +1311,28 @@ void Gui::menuBar() {
                 p.title.c_str(),
                 p.id == "properties" ? keys.label("view.toggleProperties").c_str() : nullptr,
                 &panelOpen_[p.id]);
+        if (ImGui::BeginMenu("Dock Panel")) {
+            for (const auto& p : registry_.panels()) {
+                if (!panelOpen_[p.id])
+                    continue;
+                if (ImGui::BeginMenu(p.title.c_str())) {
+                    if (ImGui::MenuItem("Left")) {
+                        dockRequestPanel_ = p.title;
+                        dockRequestSide_ = -1;
+                    }
+                    if (ImGui::MenuItem("Right")) {
+                        dockRequestPanel_ = p.title;
+                        dockRequestSide_ = 1;
+                    }
+                    if (ImGui::MenuItem("Float")) {
+                        dockRequestPanel_ = p.title;
+                        dockRequestSide_ = 0;
+                    }
+                    ImGui::EndMenu();
+                }
+            }
+            ImGui::EndMenu();
+        }
         ImGui::Separator();
         workspaceMenu();
         if (ImGui::BeginMenu("Theme")) {
@@ -2452,6 +2474,26 @@ void Gui::dockEdgeDrop() {
     static std::string armedWindow;
     static bool armedLeft = false;
     ImGuiContext& g = *ImGui::GetCurrentContext();
+    if (!dockRequestPanel_.empty()) {
+        const std::string name = dockRequestPanel_;
+        const int side = dockRequestSide_;
+        dockRequestPanel_.clear();
+        if (ImGuiWindow* w = ImGui::FindWindowByName(name.c_str())) {
+            if (side == 0) {
+                ImGui::DockContextQueueUndockWindow(&g, w);
+            } else {
+                const ImGuiViewport* vp = ImGui::GetMainViewport();
+                const float ratio = std::clamp(
+                    std::min(vp->WorkSize.x * 0.25f, 360.0f * dpiScale_) /
+                        std::max(vp->WorkSize.x, 1.0f),
+                    0.1f, 0.4f);
+                ImGuiID dock = ImGui::DockBuilderSplitNode(
+                    kDockId, side < 0 ? ImGuiDir_Left : ImGuiDir_Right, ratio, nullptr, nullptr);
+                ImGui::DockBuilderDockWindow(name.c_str(), dock);
+                ImGui::DockBuilderFinish(kDockId);
+            }
+        }
+    }
     ImGuiWindow* moving = g.MovingWindow;
     if (!moving && !armedWindow.empty()) {
         const ImGuiViewport* vp = ImGui::GetMainViewport();
