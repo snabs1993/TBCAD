@@ -64,7 +64,9 @@ void printUsage() {
         "(default: stdout)\n"
         "  --self-test          hidden window; exit code 77 when no display or OpenGL 3.3\n"
         "  --mcp                turn the MCP server on (AI access to the drawing)\n"
-        "  --no-vsync           do not wait for the monitor\n");
+        "  --no-vsync           do not wait for the monitor\n"
+        "  --child              a window opened by another TBCAD window (own autosave folder)\n"
+        "  --window-pos X,Y     put the window here (with --window-size W,H: this big)\n");
 }
 
 void glfwError(int code, const char* description) {
@@ -115,6 +117,12 @@ Options parseOptions(int argc, char** argv) {
             o.mcp = true;
         else if (a == "--no-vsync")
             o.vsync = false;
+        else if (a == "--child")
+            o.child = true;
+        else if (a == "--window-pos")
+            std::sscanf(next().c_str(), "%d,%d", &o.windowX, &o.windowY);
+        else if (a == "--window-size")
+            std::sscanf(next().c_str(), "%d,%d", &o.windowW, &o.windowH);
         else if (a == "--help" || a == "-h")
             o.help = true;
         else if (!a.empty() && a[0] != '-')
@@ -182,7 +190,9 @@ bool App::initWindow(std::string& why) {
     }
     // Keep the window inside the usable screen (not behind the taskbar): scaled to a high-DPI
     // monitor 1440x900 can be larger than the work area.
-    if (!hidden() && !options_.gate) {
+    if (!hidden() && !options_.gate && options_.child && options_.windowW > 0) {
+        placeChildWindow();
+    } else if (!hidden() && !options_.gate) {
         int wx = 0, wy = 0, ww = 0, wh = 0;
         glfwGetMonitorWorkarea(glfwGetPrimaryMonitor(), &wx, &wy, &ww, &wh);
         int fl = 0, ft = 0, fr = 0, fb = 0;
@@ -212,6 +222,11 @@ bool App::initWindow(std::string& why) {
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     io.ConfigDockingWithShift = false;
+    if (!hidden()) {
+        // Panels can be dragged out of the window into their own OS windows and back in.
+        io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+        io.ConfigViewportsNoTaskBarIcon = true;
+    }
     iniPath_ = (paths_.configDir / "imgui.ini").string();
     platform::ensureDirectory(paths_.configDir);
     io.IniFilename = hidden() ? nullptr : iniPath_.c_str();
@@ -220,6 +235,37 @@ bool App::initWindow(std::string& why) {
     imguiReady_ = true;
     windowReady_ = true;
     return true;
+}
+
+// A window another window opened: on the screen where the tab was let go, as big as the window
+// it came from (maximized when that fills the screen).
+void App::placeChildWindow() {
+    int count = 0;
+    GLFWmonitor** monitors = glfwGetMonitors(&count);
+    GLFWmonitor* mon = glfwGetPrimaryMonitor();
+    for (int i = 0; i < count; ++i) {
+        int x = 0, y = 0, w = 0, h = 0;
+        glfwGetMonitorWorkarea(monitors[i], &x, &y, &w, &h);
+        if (options_.windowX >= x && options_.windowX < x + w && options_.windowY >= y &&
+            options_.windowY < y + h)
+            mon = monitors[i];
+    }
+    int wx = 0, wy = 0, ww = 0, wh = 0;
+    glfwGetMonitorWorkarea(mon, &wx, &wy, &ww, &wh);
+    int fl = 0, ft = 0, fr = 0, fb = 0;
+    glfwGetWindowFrameSize(window_, &fl, &ft, &fr, &fb);
+    const int w = std::max(480, options_.windowW), h = std::max(320, options_.windowH);
+    if (ww <= 0 || wh <= 0)
+        return;
+    if (w + fl + fr >= ww * 9 / 10 || h + ft + fb >= wh * 9 / 10) {
+        glfwSetWindowPos(window_, wx + fl, wy + ft);
+        glfwMaximizeWindow(window_);
+        return;
+    }
+    glfwSetWindowSize(window_, w, h);
+    const int x = std::clamp(options_.windowX - 120, wx + fl, std::max(wx + fl, wx + ww - w - fr));
+    const int y = std::clamp(options_.windowY - 20, wy + ft, std::max(wy + ft, wy + wh - h - fb));
+    glfwSetWindowPos(window_, x, y);
 }
 
 void App::shutdownWindow() {
@@ -1662,6 +1708,12 @@ void App::frame() {
     glClearColor(bg.r / 255.0f, bg.g / 255.0f, bg.b / 255.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+        GLFWwindow* backup = glfwGetCurrentContext();
+        ImGui::UpdatePlatformWindows();
+        ImGui::RenderPlatformWindowsDefault();
+        glfwMakeContextCurrent(backup);
+    }
     if (PhaseTimer::enabled()) {
         gPhase[2] += pt.lap();
         if (!PhaseTimer::forced() && ++gPhaseFrames == 60) {
@@ -1805,6 +1857,13 @@ int App::run() {
     }
     paths_ = platform::defaultAppPaths();
     platform::installCrashHandler(paths_.crashDir(), TBCAD_VERSION);
+    const std::filesystem::path linkDir = paths_.dataDir / "windows";
+    if (options_.child) {
+        // Another window of the program already uses the autosave folder; this one gets its own so
+        // neither takes the other's drawings for leftovers of a crash.
+        childDataDir_ = linkDir / ("data-" + std::to_string(WindowLink::currentProcessId()));
+        paths_.dataDir = childDataDir_;
+    }
     registry_ = std::make_unique<cmd::Registry>();
     registerAllCommands(*registry_);
     startupMark("commands");
@@ -1874,6 +1933,11 @@ int App::run() {
         return options_.selfTest && !required ? 77 : 1;
     }
     gui_ = std::make_unique<Gui>(*core_, *uiRegistry_, window_);
+    if (!hidden()) {
+        // Drawing tabs can be dragged to other windows of the program (and out to a new one).
+        windowLink_ = std::make_unique<WindowLink>(linkDir);
+        gui_->setWindowLink(windowLink_.get());
+    }
     gui_->setThumbnailLoader(
         [this](const std::filesystem::path& png) { return thumbnailTexture(png); });
     {
@@ -1963,8 +2027,17 @@ int App::run() {
         }
     }
     mcp_.reset();
+    windowLink_.reset();
     core_->shutdown();
+    removeChildData();
     return status;
+}
+
+void App::removeChildData() {
+    if (childDataDir_.empty())
+        return;
+    std::error_code ec;
+    std::filesystem::remove_all(childDataDir_, ec);
 }
 
 }  // namespace tbcad::app

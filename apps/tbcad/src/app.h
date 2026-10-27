@@ -18,6 +18,7 @@
 #include "tbcad/ui/app_core.h"
 #include "tbcad/ui/ui_registry.h"
 #include "viewport_target.h"
+#include "window_link.h"
 
 struct GLFWwindow;
 
@@ -44,6 +45,9 @@ struct Options {
     bool vsync = true;
     bool mcp = false;  // --mcp: turn the MCP server on (and remember it)
     bool help = false;
+    bool child = false;  // --child: a window another TBCAD window opened (own autosave folder)
+    int windowX = 0, windowY = 0;  // --window-pos X,Y: where to put the window (screen points)
+    int windowW = 0, windowH = 0;  // --window-size W,H: its size (0: the default)
     std::string listCommands{};  // --list-commands F: write the command list (Markdown) and exit
 };
 
@@ -75,6 +79,8 @@ private:
     bool initWindow(std::string& why);
     void reportOpenGlProblem();
     void shutdownWindow();
+    void placeChildWindow();
+    void removeChildData();
     void runScript(const std::string& script);
     void runScriptFile(const std::string& file);
     void frame();
@@ -106,6 +112,8 @@ private:
     std::unique_ptr<ui::AppCore> core_;
     std::unique_ptr<mcpapp::McpController> mcp_;
     std::unique_ptr<Gui> gui_;
+    std::unique_ptr<WindowLink> windowLink_;  // the other TBCAD windows
+    std::filesystem::path childDataDir_{};    // a --child window's own autosave folder
     GLFWwindow* window_ = nullptr;
     render::Renderer renderer_;
     ViewportTarget target_;

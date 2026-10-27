@@ -24,6 +24,7 @@
 #include "tbcad/ui/ui_registry.h"
 #include "tbcad/ui/workspace.h"
 #include "wheel_menu.h"
+#include "window_link.h"
 
 struct GLFWwindow;
 struct ImFont;
@@ -100,6 +101,8 @@ public:
 
     // Files dropped on the window; opened at the start of the next frame.
     void queueDroppedFile(std::string path);
+    // Lets drawing tabs move between TBCAD windows (null: the tabs stay in this window).
+    void setWindowLink(WindowLink* link) { link_ = link; }
     void pasteClipboardPicture();
 
     // Command-line widget callback (public so the ImGui callback trampoline can reach it).
@@ -127,6 +130,16 @@ private:
     // QVDRAWING / QVLAYOUT: cards of the open drawings (or of this drawing's layouts) to switch to.
     void quickView();
     int quickView_ = 0;    // 0 closed, 1 drawings, 2 layouts of the active drawing
+    WindowLink* link_ = nullptr;
+    std::uint64_t tabDragId_ = 0;  // the drawing whose tab is being dragged (0: none)
+    struct TearOff {
+        std::uint64_t id = 0;
+        ImVec2 at{};  // where the tab was let go, screen points
+    };
+    std::optional<TearOff> tearOff_{};  // a tab let go outside this window: moved next frame
+    void linkTick();
+    void tabDragTick();
+    void runTearOff();
     int tabCloseAll_ = 0;  // from the tab menu: 1 close all, 2 close the others
     enum class BrowserPurpose { Open, SaveAs, ImportDxf, ExportDxf, LayoutTemplate };
 
@@ -154,6 +167,9 @@ private:
     void layoutTabs(const ViewportRect& rect);
     void dockLayout(ImGuiID dockspace);
     void dockEdgeDrop();
+    // View > Dock Panel: a panel to the far left or right edge of the window, or back to a float.
+    std::string dockRequestPanel_;
+    int dockRequestSide_ = 0;  // -1 left, 1 right, 0 float
     void keepOnScreen();
     // Workspaces (saved window layouts). Switching applies the panels at once and the docking
     // layout through Dear ImGui's ini data.

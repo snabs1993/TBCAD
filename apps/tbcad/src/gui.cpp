@@ -1325,6 +1325,28 @@ void Gui::menuBar() {
             if (ImGui::MenuItem("Clean Screen", keys.label("view.cleanScreen").c_str(),
                                 cleanScreen_))
                 cleanScreen_ = !cleanScreen_;
+            if (ImGui::BeginMenu("Dock Panel")) {
+                for (const auto& p : registry_.panels()) {
+                    if (!panelOpen_[p.id])
+                        continue;
+                    if (ImGui::BeginMenu(p.title.c_str())) {
+                        if (ImGui::MenuItem("Left")) {
+                            dockRequestPanel_ = p.title;
+                            dockRequestSide_ = -1;
+                        }
+                        if (ImGui::MenuItem("Right")) {
+                            dockRequestPanel_ = p.title;
+                            dockRequestSide_ = 1;
+                        }
+                        if (ImGui::MenuItem("Float")) {
+                            dockRequestPanel_ = p.title;
+                            dockRequestSide_ = 0;
+                        }
+                        ImGui::EndMenu();
+                    }
+                }
+                ImGui::EndMenu();
+            }
             if (ImGui::MenuItem("Reset Window Layout"))
                 rebuildDock_ = true;
             ImGui::EndMenu();
@@ -1408,10 +1430,10 @@ void Gui::toolStrip() {
           {Icon::Rectangle, "Rectangle", nullptr, "RECTANGLE"},
           {Icon::Hatch, "Hatch", nullptr, "HATCH"},
           {Icon::Ellipse, "Ellipse", nullptr, "ELLIPSE"},
-         {Icon::Spline, "Spline", nullptr, "SPLINE"},
-         {Icon::Polygon, "Polygon", nullptr, "POLYGON"},
-         {Icon::Point, "Point", nullptr, "POINT"},
-         {Icon::Text, "Text", nullptr, "TEXT"}}},
+          {Icon::Spline, "Spline", nullptr, "SPLINE"},
+          {Icon::Polygon, "Polygon", nullptr, "POLYGON"},
+          {Icon::Point, "Point", nullptr, "POINT"},
+          {Icon::Text, "Text", nullptr, "TEXT"}}},
         {"Annotate & Blocks",
          {{Icon::Dimension, "Linear Dimension", nullptr, "DIMLINEAR"},
           {Icon::Block, "Make Block", nullptr, "BLOCK"},
@@ -1426,11 +1448,11 @@ void Gui::toolStrip() {
           {Icon::Trim, "Trim", nullptr, "TRIM"},
           {Icon::Offset, "Offset", nullptr, "OFFSET"},
           {Icon::Fillet, "Fillet", nullptr, "FILLET"},
-         {Icon::Chamfer, "Chamfer", nullptr, "CHAMFER"},
-         {Icon::Extend, "Extend", nullptr, "EXTEND"},
-         {Icon::Join, "Join", nullptr, "JOIN"},
-         {Icon::Array, "Array", nullptr, "ARRAY"},
-         {Icon::Explode, "Explode", nullptr, "EXPLODE"},
+          {Icon::Chamfer, "Chamfer", nullptr, "CHAMFER"},
+          {Icon::Extend, "Extend", nullptr, "EXTEND"},
+          {Icon::Join, "Join", nullptr, "JOIN"},
+          {Icon::Array, "Array", nullptr, "ARRAY"},
+          {Icon::Explode, "Explode", nullptr, "EXPLODE"},
           {Icon::Erase, "Erase", nullptr, "ERASE"}}},
         {"View", {{Icon::ZoomExtents, "Zoom Extents", "view.zoomExtents", nullptr}}}};
 
@@ -1708,8 +1730,8 @@ void Gui::optionBar() {
                 ImGui::CalcTextSize(word.c_str()).x + 2 * ImGui::GetStyle().FramePadding.x;
             if (ImGui::GetItemRectMax().x + ImGui::GetStyle().ItemSpacing.x + width < maxX)
                 ImGui::SameLine();  // else the button starts a new row
-            const bool isDefault = info->defaultText && cmd::toUpperAscii(*info->defaultText) ==
-                                                            cmd::toUpperAscii(word);
+            const bool isDefault = info->defaultText &&
+                                   cmd::toUpperAscii(*info->defaultText) == cmd::toUpperAscii(word);
             ImGui::PushID(static_cast<int>(i));
             if (isDefault)
                 ImGui::PushStyleColor(ImGuiCol_Button,
@@ -2463,7 +2485,8 @@ void Gui::dockLayout(ImGuiID ds) {
 void Gui::keepOnScreen() {
     ImGuiContext& g = *ImGui::GetCurrentContext();
     ImGuiWindow* w = g.CurrentWindow;
-    if (!w || w->DockId != 0 || g.MovingWindow == w || (w->Flags & ImGuiWindowFlags_ChildWindow))
+    if (!w || w->DockId != 0 || g.MovingWindow == w || w->Viewport != ImGui::GetMainViewport() ||
+        (w->Flags & ImGuiWindowFlags_ChildWindow))
         return;
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     const float keep = 60.0f * dpiScale_;
@@ -2483,6 +2506,26 @@ void Gui::dockEdgeDrop() {
     static std::string armedWindow;
     static bool armedLeft = false;
     ImGuiContext& g = *ImGui::GetCurrentContext();
+    if (!dockRequestPanel_.empty()) {
+        const std::string name = dockRequestPanel_;
+        const int side = dockRequestSide_;
+        dockRequestPanel_.clear();
+        if (ImGuiWindow* w = ImGui::FindWindowByName(name.c_str())) {
+            if (side == 0) {
+                ImGui::DockContextQueueUndockWindow(&g, w);
+            } else {
+                const ImGuiViewport* vp = ImGui::GetMainViewport();
+                const float ratio =
+                    std::clamp(std::min(vp->WorkSize.x * 0.25f, 360.0f * dpiScale_) /
+                                   std::max(vp->WorkSize.x, 1.0f),
+                               0.1f, 0.4f);
+                ImGuiID dock = ImGui::DockBuilderSplitNode(
+                    kDockId, side < 0 ? ImGuiDir_Left : ImGuiDir_Right, ratio, nullptr, nullptr);
+                ImGui::DockBuilderDockWindow(name.c_str(), dock);
+                ImGui::DockBuilderFinish(kDockId);
+            }
+        }
+    }
     ImGuiWindow* moving = g.MovingWindow;
     if (!moving && !armedWindow.empty()) {
         const ImGuiViewport* vp = ImGui::GetMainViewport();
@@ -3282,7 +3325,104 @@ void Gui::tabPreviewTip(const std::string& title, const ui::TabPreview& preview)
     ImGui::EndTooltip();
 }
 
+// Tells the other TBCAD windows where this one is and opens the drawings they sent here.
+void Gui::linkTick() {
+    if (!link_)
+        return;
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+    link_->publish({vp->Pos.x, vp->Pos.y, vp->Size.x, vp->Size.y});
+    const std::vector<std::string> incoming = link_->takeIncoming();
+    for (const std::string& path : incoming)
+        queueDroppedFile(path);
+    if (!incoming.empty()) {
+        anyActivity_ = true;
+        glfwRequestWindowAttention(window_);
+    }
+}
+
+// While a drawing tab is dragged outside every window of this program, says what letting go does;
+// when it is let go there, the drawing moves to another window (runTearOff, next frame).
+void Gui::tabDragTick() {
+    if (!link_ || tabDragId_ == 0)
+        return;
+    if (!ImGui::IsMousePosValid()) {
+        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
+            tabDragId_ = 0;
+        return;
+    }
+    const ImVec2 m = ImGui::GetMousePos();
+    bool inside = false;
+    for (const ImGuiViewport* v : ImGui::GetPlatformIO().Viewports) {
+        if ((v->Flags & (ImGuiViewportFlags_NoInputs | ImGuiViewportFlags_IsMinimized)) != 0)
+            continue;  // tooltips and the like
+        if (m.x >= v->Pos.x && m.y >= v->Pos.y && m.x < v->Pos.x + v->Size.x &&
+            m.y < v->Pos.y + v->Size.y)
+            inside = true;
+    }
+    if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        if (!inside) {
+            bool onOther = false;
+            for (const OtherWindow& o : link_->others())
+                onOther = onOther || o.rect.contains(m.x, m.y);
+            ImGui::SetTooltip("%s", onOther ? "Release to move the drawing into that window"
+                                            : "Release to open the drawing in a new window");
+        }
+        return;
+    }
+    const std::uint64_t id = tabDragId_;
+    tabDragId_ = 0;
+    if (!inside)
+        tearOff_ = TearOff{id, m};
+}
+
+// A tab was let go outside this window: the drawing leaves this window for the TBCAD window under
+// the pointer, or for a new one. It is saved already (the other window opens it from the file).
+void Gui::runTearOff() {
+    const TearOff t = *tearOff_;
+    tearOff_.reset();
+    if (!link_)
+        return;
+    const std::size_t n = core_.documentCount();
+    std::size_t idx = n;
+    for (std::size_t i = 0; i < n; ++i)
+        if (core_.documentId(i) == t.id)
+            idx = i;
+    if (idx >= n)
+        return;
+    const std::filesystem::path file = core_.documentFile(idx);
+    if (file.empty() || core_.documentModified(idx)) {
+        toast("Save the drawing first (Ctrl+S), then drag its tab out.");
+        return;
+    }
+    if (idx == core_.activeDocument() && core_.runner().active()) {
+        toast("Finish the current command first.");
+        return;
+    }
+    std::optional<OtherWindow> target;
+    for (const OtherWindow& o : link_->others())
+        if (o.rect.contains(t.at.x, t.at.y))
+            target = o;
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+    const std::string path = platform::pathToUtf8(file);
+    // Closed first: the other window must be able to take the file's lock.
+    core_.closeDocument(idx);
+    shownActive_ = static_cast<std::size_t>(-1);
+    const bool ok = target ? link_->send(target->pid, file)
+                           : WindowLink::spawn(path, static_cast<int>(t.at.x),
+                                               static_cast<int>(t.at.y),
+                                               static_cast<int>(vp->Size.x),
+                                               static_cast<int>(vp->Size.y));
+    if (!ok) {
+        doOpenPath(path);  // back where it was
+        toast("Could not open another window.");
+    } else {
+        toast(target ? "Moved to the other window." : "Opened in a new window.");
+    }
+}
+
 void Gui::docTabs() {
+    if (tearOff_)
+        runTearOff();
     if (tabCloseAll_ != 0) {
         const bool others = tabCloseAll_ == 2;
         tabCloseAll_ = 0;
@@ -3317,6 +3457,9 @@ void Gui::docTabs() {
                 }
                 if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Middle))
                     open = false;  // middle-click closes a tab
+                if (link_ && ImGui::IsItemActive() &&
+                    ImGui::IsMouseDragging(ImGuiMouseButton_Left, 8.0f * dpiScale_))
+                    tabDragId_ = core_.documentId(i);  // may leave the window: see tabDragTick
                 if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
                     tabPreviewTip(core_.documentTitle(i), core_.documentPreview(i));
                 // One popup per tab: the same id for every tab would open them all at once.
@@ -3365,6 +3508,7 @@ void Gui::docTabs() {
             if (ImGui::TabItemButton("+", ImGuiTabItemFlags_Trailing | ImGuiTabItemFlags_NoTooltip))
                 runAction("file.new");
             ImGui::EndTabBar();
+            tabDragTick();
             shownActive_ = active;
             if (toActivate && !core_.activateDocument(*toActivate))
                 shownActive_ = static_cast<std::size_t>(-1);  // put the selection back
@@ -4531,6 +4675,7 @@ void Gui::queueDroppedFile(std::string path) {
 }
 
 ViewportRect Gui::frame() {
+    linkTick();
     for (const std::string& path : droppedFiles_)
         doOpenPath(path);
     droppedFiles_.clear();
