@@ -257,6 +257,49 @@ void drawIcon(ImDrawList* dl, Icon icon, ImVec2 min, float size, ImU32 color) {
     }
 }
 
+bool iconFromId(std::string_view id, Icon& out) {
+    struct Entry {
+        std::string_view id;
+        Icon icon;
+    };
+    static constexpr Entry kIds[] = {{"line", Icon::Line},
+                                     {"polyline", Icon::Polyline},
+                                     {"circle", Icon::Circle},
+                                     {"arc", Icon::Arc},
+                                     {"rectangle", Icon::Rectangle},
+                                     {"hatch", Icon::Hatch},
+                                     {"text", Icon::Text},
+                                     {"move", Icon::Move},
+                                     {"copy", Icon::Copy},
+                                     {"rotate", Icon::Rotate},
+                                     {"scale", Icon::Scale},
+                                     {"mirror", Icon::Mirror},
+                                     {"stretch", Icon::Stretch},
+                                     {"trim", Icon::Trim},
+                                     {"offset", Icon::Offset},
+                                     {"fillet", Icon::Fillet},
+                                     {"erase", Icon::Erase},
+                                     {"ellipse", Icon::Ellipse},
+                                     {"spline", Icon::Spline},
+                                     {"polygon", Icon::Polygon},
+                                     {"point", Icon::Point},
+                                     {"dimension", Icon::Dimension},
+                                     {"block", Icon::Block},
+                                     {"insert", Icon::Insert},
+                                     {"array", Icon::Array},
+                                     {"explode", Icon::Explode},
+                                     {"chamfer", Icon::Chamfer},
+                                     {"extend", Icon::Extend},
+                                     {"join", Icon::Join}};
+    for (const Entry& e : kIds) {
+        if (e.id == id) {
+            out = e.icon;
+            return true;
+        }
+    }
+    return false;
+}
+
 bool iconButton(const char* id, Icon icon, float size, bool enabled) {
     ImGui::BeginDisabled(!enabled);
     const bool pressed = ImGui::InvisibleButton(id, ImVec2(size, size));

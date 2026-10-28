@@ -37,6 +37,7 @@
 #include "tbcad/ui/radial_wheel.h"
 #include "tbcad/ui/selection.h"
 #include "tbcad/ui/status_items.h"
+#include "tbcad/ui/toolbox.h"
 
 #if defined(_WIN32)
 #define GLFW_EXPOSE_NATIVE_WIN32
@@ -1303,6 +1304,7 @@ void Gui::menuBar() {
                     core_.setSetting(key, on ? "0" : "1");
             };
             toggle("Toolbar", "ui.toolstrip", true);
+            toggle("Toolbox", "ui.toolbox", true);
             toggle("Status Bar", "ui.statusbar", true);
             toggle("Navigation Bar", "ui.navbar", true);
             toggle("Contextual Tabs", "ui.contextTabs", true);
@@ -1422,38 +1424,6 @@ void Gui::toolStrip() {
           {Icon::Save, "Save (Ctrl+S)", "file.save", nullptr}}},
         {"Edit",
          {{Icon::Undo, "Undo", "edit.undo", nullptr}, {Icon::Redo, "Redo", "edit.redo", nullptr}}},
-        {"Draw",
-         {{Icon::Line, "Line", nullptr, "LINE"},
-          {Icon::Polyline, "Polyline", nullptr, "POLYLINE"},
-          {Icon::Circle, "Circle", nullptr, "CIRCLE"},
-          {Icon::Arc, "Arc", nullptr, "ARC"},
-          {Icon::Rectangle, "Rectangle", nullptr, "RECTANGLE"},
-          {Icon::Hatch, "Hatch", nullptr, "HATCH"},
-          {Icon::Ellipse, "Ellipse", nullptr, "ELLIPSE"},
-          {Icon::Spline, "Spline", nullptr, "SPLINE"},
-          {Icon::Polygon, "Polygon", nullptr, "POLYGON"},
-          {Icon::Point, "Point", nullptr, "POINT"},
-          {Icon::Text, "Text", nullptr, "TEXT"}}},
-        {"Annotate & Blocks",
-         {{Icon::Dimension, "Linear Dimension", nullptr, "DIMLINEAR"},
-          {Icon::Block, "Make Block", nullptr, "BLOCK"},
-          {Icon::Insert, "Insert Block", nullptr, "INSERT"}}},
-        {"Modify",
-         {{Icon::Move, "Move", nullptr, "MOVE"},
-          {Icon::Copy, "Copy", nullptr, "COPY"},
-          {Icon::Rotate, "Rotate", nullptr, "ROTATE"},
-          {Icon::Scale, "Scale", nullptr, "SCALE"},
-          {Icon::Mirror, "Mirror", nullptr, "MIRROR"},
-          {Icon::Stretch, "Stretch", nullptr, "STRETCH"},
-          {Icon::Trim, "Trim", nullptr, "TRIM"},
-          {Icon::Offset, "Offset", nullptr, "OFFSET"},
-          {Icon::Fillet, "Fillet", nullptr, "FILLET"},
-          {Icon::Chamfer, "Chamfer", nullptr, "CHAMFER"},
-          {Icon::Extend, "Extend", nullptr, "EXTEND"},
-          {Icon::Join, "Join", nullptr, "JOIN"},
-          {Icon::Array, "Array", nullptr, "ARRAY"},
-          {Icon::Explode, "Explode", nullptr, "EXPLODE"},
-          {Icon::Erase, "Erase", nullptr, "ERASE"}}},
         {"View", {{Icon::ZoomExtents, "Zoom Extents", "view.zoomExtents", nullptr}}}};
 
     ImGuiViewport* vp = ImGui::GetMainViewport();
@@ -1582,6 +1552,167 @@ void Gui::toolStrip() {
             if (ImGui::MenuItem("Customize..."))
                 core_.requestUi("settings:Customize");
             ImGui::EndPopup();
+        }
+    }
+    ImGui::End();
+}
+
+// The Toolbox: tabs by kind of work, each a row of named groups of big labelled buttons. Double
+// click a tab to fold it down to the tab row; the mouse wheel scrolls a row that is too wide.
+void Gui::toolbox() {
+    const auto& tabs = ui::toolboxTabs();
+    const std::string cur = core_.settings().getString("ui.toolbox.tab", tabs.front().id);
+    const ui::ToolTab* tab = &tabs.front();
+    for (const ui::ToolTab& t : tabs)
+        if (t.id == cur)
+            tab = &t;
+    const bool folded = flag("ui.toolbox.folded", false);
+    const float scale = dpiScale_ * static_cast<float>(core_.settings().getNumber("ui.scale", 1.0));
+    const float iconSize = std::round(30.0f * scale);
+    const ImGuiStyle& st = ImGui::GetStyle();
+    const float line = ImGui::GetTextLineHeight();
+    const float tabH = ImGui::GetFrameHeight();
+    const float bodyH = iconSize + line * 2.0f + st.ItemSpacing.y * 3.0f;
+    const float h = tabH + (folded ? 0.0f : bodyH) + st.WindowPadding.y * 2.0f;
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
+                                   ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoScrollWithMouse;
+    if (ImGui::BeginViewportSideBar("##toolbox", vp, ImGuiDir_Up, h, flags)) {
+        for (const ui::ToolTab& t : tabs) {
+            const bool sel = &t == tab;
+            ImGui::PushID(t.id.c_str());
+            if (ImGui::Selectable(
+                    t.name.c_str(), sel, 0,
+                    ImVec2(ImGui::CalcTextSize(t.name.c_str()).x + 20.0f * scale, 0))) {
+                core_.settings().setString("ui.toolbox.tab", t.id);
+                if (folded)
+                    core_.setSetting("ui.toolbox.folded", "0");
+            }
+            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+                core_.setSetting("ui.toolbox.folded", folded ? "0" : "1");
+            ImGui::PopID();
+            ImGui::SameLine(0, 2);
+        }
+        ImGui::NewLine();
+        if (!folded) {
+            if (ImGui::IsWindowHovered() && ImGui::GetIO().MouseWheel != 0.0f)
+                ImGui::SetScrollX(ImGui::GetScrollX() - ImGui::GetIO().MouseWheel * 60.0f);
+            const float baseW = std::round(iconSize * 1.9f);
+            bool firstGroup = true;
+            for (const ui::ToolGroup& g : tab->groups) {
+                if (!firstGroup) {
+                    ImGui::SameLine(0, st.ItemSpacing.x * 2);
+                    const ImVec2 p = ImGui::GetCursorScreenPos();
+                    ImGui::GetWindowDrawList()->AddLine(ImVec2(p.x - st.ItemSpacing.x, p.y),
+                                                        ImVec2(p.x - st.ItemSpacing.x, p.y + bodyH),
+                                                        ImGui::GetColorU32(ImGuiCol_Separator));
+                }
+                firstGroup = false;
+                ImGui::BeginGroup();
+                bool firstTool = true;
+                for (const ui::ToolDef& t : g.tools) {
+                    if (!core_.registry().find(t.command))
+                        continue;
+                    if (!firstTool)
+                        ImGui::SameLine(0, 2);
+                    firstTool = false;
+                    ImGui::PushID(t.command.c_str());
+                    ImGui::BeginGroup();
+                    const float cellW =
+                        std::max(baseW, std::ceil(ImGui::CalcTextSize(t.label.c_str()).x + 10.0f));
+                    const ImVec2 lo = ImGui::GetCursorScreenPos();
+                    const bool hit =
+                        ImGui::InvisibleButton("##tool", ImVec2(cellW, iconSize + line + 4));
+                    const bool hover = ImGui::IsItemHovered();
+                    ImDrawList* dl = ImGui::GetWindowDrawList();
+                    if (hover)
+                        dl->AddRectFilled(lo, ImGui::GetItemRectMax(),
+                                          ImGui::GetColorU32(ImGuiCol_ButtonHovered), 3.0f);
+                    const float pad = iconSize * 0.14f;
+                    const ImVec2 iconLo(lo.x + (cellW - iconSize) * 0.5f + pad, lo.y + 2 + pad);
+                    Icon icon{};
+                    if (iconFromId(t.icon, icon)) {
+                        drawIcon(dl, icon, iconLo, iconSize - 2 * pad,
+                                 ImGui::GetColorU32(ImGuiCol_Text));
+                    } else {
+                        // No icon drawn for this one yet: its initials in a frame.
+                        const ImVec2 a(iconLo.x, iconLo.y);
+                        const ImVec2 b(iconLo.x + iconSize - 2 * pad,
+                                       iconLo.y + iconSize - 2 * pad);
+                        dl->AddRect(a, b, ImGui::GetColorU32(ImGuiCol_TextDisabled), 4.0f, 0, 1.5f);
+                        std::string ini;
+                        for (std::size_t i = 0; i < t.label.size() && ini.size() < 2; ++i)
+                            if (i == 0 || t.label[i - 1] == ' ')
+                                ini += static_cast<char>(
+                                    std::toupper(static_cast<unsigned char>(t.label[i])));
+                        if (ini.size() < 2 && t.label.size() > 1)
+                            ini += t.label[1];
+                        const ImVec2 ts = ImGui::CalcTextSize(ini.c_str());
+                        dl->AddText(ImVec2((a.x + b.x - ts.x) * 0.5f, (a.y + b.y - ts.y) * 0.5f),
+                                    ImGui::GetColorU32(ImGuiCol_Text), ini.c_str());
+                    }
+                    // Name under the button, cut to the cell.
+                    std::string name = t.label;
+                    while (name.size() > 3 && ImGui::CalcTextSize(name.c_str()).x > cellW - 4)
+                        name.pop_back();
+                    const float nw = ImGui::CalcTextSize(name.c_str()).x;
+                    dl->AddText(ImVec2(lo.x + (cellW - nw) * 0.5f, lo.y + iconSize + 4),
+                                ImGui::GetColorU32(ImGuiCol_Text), name.c_str());
+                    // A small arrow at the corner marks a button with alternatives.
+                    bool onArrow = false;
+                    if (!t.variants.empty()) {
+                        const float ax = lo.x + cellW - 8 * scale;
+                        const float ay = lo.y + iconSize - 2 * scale;
+                        dl->AddTriangleFilled(ImVec2(ax - 3 * scale, ay - 2 * scale),
+                                              ImVec2(ax + 3 * scale, ay - 2 * scale),
+                                              ImVec2(ax, ay + 2 * scale),
+                                              ImGui::GetColorU32(ImGuiCol_TextDisabled));
+                        onArrow = ImGui::GetIO().MousePos.x > ax - 6 * scale;
+                    }
+                    if (hit) {
+                        if (onArrow) {
+                            ImGui::OpenPopup("##variants");
+                        } else {
+                            if (t.command == "HATCH")
+                                core_.openPanel("hatch");
+                            core_.submitText(t.command);
+                        }
+                    }
+                    if (ImGui::BeginPopup("##variants")) {
+                        for (const ui::ToolVariant& v : t.variants)
+                            if (ImGui::MenuItem(v.label.c_str()))
+                                core_.submitText(v.command);
+                        ImGui::EndPopup();
+                    }
+                    if (ImGui::BeginPopupContextItem("##toolboxCtx")) {
+                        std::vector<std::string> q =
+                            core_.settings().getStrings(ui::kQuickAccessKey);
+                        const bool has = std::find(q.begin(), q.end(), t.command) != q.end();
+                        if (!has && ImGui::MenuItem("Add to Quick Access")) {
+                            q.push_back(t.command);
+                            core_.settings().setStrings(ui::kQuickAccessKey, q);
+                        }
+                        if (has)
+                            ImGui::TextDisabled("Already on Quick Access");
+                        ImGui::EndPopup();
+                    }
+                    ImGui::EndGroup();
+                    if (hover && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+                        std::string tip = t.label;
+                        if (cmd::Command* c = core_.registry().find(t.command)) {
+                            auto aliases = core_.registry().aliasesOf(c->name());
+                            if (!aliases.empty())
+                                tip += " (" + aliases.front() + ")";
+                            if (!c->description().empty())
+                                tip += "\n" + std::string(c->description());
+                        }
+                        ImGui::SetTooltip("%s", tip.c_str());
+                    }
+                    ImGui::PopID();
+                }
+                ImGui::TextDisabled("%s", g.name.c_str());
+                ImGui::EndGroup();
+            }
         }
     }
     ImGui::End();
@@ -2688,7 +2819,9 @@ int Gui::inputCallback(ImGuiInputTextCallbackData* d) {
             const bool text = prompt && prompt->kind == cmd::PromptInfo::Kind::String;
             if (d->EventChar == ' ' && !text) {
                 // Space ends a typed command name or answer like Enter; a text prompt keeps it.
-                if (d->BufTextLen > 0)
+                // BufTextLen is not set for a char filter, so ask the edit state how much is typed.
+                const ImGuiInputTextState* st = ImGui::GetInputTextState(ImGui::GetID("##command"));
+                if (st && st->TextLen > 0)
                     spaceSubmit_ = true;
                 else
                     spaceAsEnter_ = true;
@@ -3415,11 +3548,10 @@ void Gui::runTearOff() {
     // Closed first: the other window must be able to take the file's lock.
     core_.closeDocument(idx);
     shownActive_ = static_cast<std::size_t>(-1);
-    const bool ok = target ? link_->send(target->pid, file)
-                           : WindowLink::spawn(path, static_cast<int>(t.at.x),
-                                               static_cast<int>(t.at.y),
-                                               static_cast<int>(vp->Size.x),
-                                               static_cast<int>(vp->Size.y));
+    const bool ok =
+        target ? link_->send(target->pid, file)
+               : WindowLink::spawn(path, static_cast<int>(t.at.x), static_cast<int>(t.at.y),
+                                   static_cast<int>(vp->Size.x), static_cast<int>(vp->Size.y));
     if (!ok) {
         doOpenPath(path);  // back where it was
         toast("Could not open another window.");
@@ -4804,6 +4936,8 @@ ViewportRect Gui::frame() {
         menuBar();
         if (flag("ui.toolstrip", true))
             toolStrip();
+        if (flag("ui.toolbox", true))
+            toolbox();
         docTabs();
         readOnlyBanner();
         blockEditBar();

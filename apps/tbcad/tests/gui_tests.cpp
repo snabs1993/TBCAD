@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <set>
 #include <sstream>
 
 #include "gui.h"
@@ -18,6 +19,7 @@
 #include "tbcad/layers/layer_states.h"
 #include "tbcad/render/overlay.h"
 #include "tbcad/ui/app_core.h"
+#include "tbcad/ui/toolbox.h"
 #include "tbcad/xref/xref.h"
 #include "window_link.h"
 
@@ -473,7 +475,7 @@ TEST_CASE("external references panel: tree, details, type switch, row menu and c
 }
 
 TEST_CASE("plot panel: options change the exported PDF") {
-    Harness h(1920, 1080);
+    Harness h(1920, 1200);
     h.core().submitText("LINE");
     h.core().submitText("0,0");
     h.core().submitText("200,100");
@@ -596,7 +598,8 @@ namespace {
 // Where a world point is in the harness window (the viewport starts below the menu and tabs).
 ImVec2 screenOf(Harness& h, Vec2 world) {
     const Vec2 s = h.core().camera().worldToScreen(world);
-    return ImVec2(static_cast<float>(s.x), static_cast<float>(s.y) + 92.0f);
+    return ImVec2(static_cast<float>(s.x),
+                  static_cast<float>(s.y) + ImGui::GetMainViewport()->WorkPos.y);
 }
 
 std::size_t entityCount(Harness& h) {
@@ -1610,12 +1613,12 @@ TEST_CASE("every menu item can be clicked without trouble") {
     }
 }
 
-TEST_CASE("tool strip: every button starts its command or action") {
+TEST_CASE("toolbox: every button on the first tab starts its command") {
     int total = 0;
     {
         Harness h(1920, 1080);
         h.frame(3);
-        while (h.has("##tool", "##toolstrip") && h.find("##tool", "##toolstrip", total))
+        while (h.has("##tool", "##toolbox") && h.find("##tool", "##toolbox", total))
             ++total;
     }
     REQUIRE(total >= 20);
@@ -1627,7 +1630,7 @@ TEST_CASE("tool strip: every button starts its command or action") {
         h.core().submitText("0,0");
         h.core().submitText("10");
         h.frame(3);
-        REQUIRE(h.click("##tool", "##toolstrip", i));
+        REQUIRE(h.click("##tool", "##toolbox", i));
         h.frame(4);
         if (h.core().runner().active()) {
             ++started;
@@ -1636,8 +1639,8 @@ TEST_CASE("tool strip: every button starts its command or action") {
         h.key(ImGuiKey_Escape);  // a file picker or dialog
         h.frame(2);
     }
-    // Draw and Modify tools run commands: at least those 17 are waiting for input after a click.
-    CHECK(started >= 15);
+    // The Draw tab's tools all run commands that wait for input after a click.
+    CHECK(started >= 18);
 }
 
 TEST_CASE("text editor: TEXT is typed in the box on the drawing, Thai included") {
@@ -3116,4 +3119,39 @@ TEST_CASE("drawing tab dragged onto another window moves the drawing there") {
     CHECK(fs::path(got[0]) == file);
     CHECK(h.imguiErrors().empty());
     fs::remove_all(dir);
+}
+
+TEST_CASE("toolbox: every tool runs a command the program has") {
+    Harness h(1280, 720);
+    std::set<std::string> seen;
+    for (const ui::ToolTab& tab : ui::toolboxTabs()) {
+        CHECK_FALSE(tab.groups.empty());
+        for (const ui::ToolGroup& g : tab.groups) {
+            for (const ui::ToolDef& t : g.tools) {
+                INFO(tab.id << " / " << g.name << " / " << t.command);
+                CHECK(h.core().registry().find(t.command) != nullptr);
+                CHECK_FALSE(t.label.empty());
+                for (const ui::ToolVariant& v : t.variants) {
+                    const std::string name = v.command.substr(0, v.command.find(' '));
+                    CHECK(h.core().registry().find(name) != nullptr);
+                }
+                seen.insert(t.command);
+            }
+        }
+    }
+    CHECK(seen.size() > 100);
+}
+
+TEST_CASE("toolbox: tabs switch, fold and keep the drawing area clear") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    CHECK(matchesGolden(h.windowShot("##toolbox"), "toolbox_draw"));
+    const float open = ImGui::GetMainViewport()->WorkPos.y;
+    REQUIRE(h.click("Modify", "##toolbox"));
+    h.frame(3);
+    CHECK(h.core().settings().getString("ui.toolbox.tab") == "modify");
+    CHECK(matchesGolden(h.windowShot("##toolbox"), "toolbox_modify"));
+    h.core().setSetting("ui.toolbox.folded", "1");
+    h.frame(3);
+    CHECK(ImGui::GetMainViewport()->WorkPos.y < open - 40.0f);
 }

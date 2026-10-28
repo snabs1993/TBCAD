@@ -146,6 +146,7 @@ private:
     void shortcuts();
     void menuBar();
     void toolStrip();
+    void toolbox();
     void readOnlyBanner();
     void blockEditBar();
     void contextualBar();
