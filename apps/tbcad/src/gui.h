@@ -21,6 +21,7 @@
 #include "tbcad/ui/input_history.h"
 #include "tbcad/ui/radial_wheel.h"
 #include "tbcad/ui/theme.h"
+#include "tbcad/ui/toolbox.h"
 #include "tbcad/ui/ui_registry.h"
 #include "tbcad/ui/workspace.h"
 #include "wheel_menu.h"
@@ -129,7 +130,7 @@ private:
     void saveAllDrawings();
     // QVDRAWING / QVLAYOUT: cards of the open drawings (or of this drawing's layouts) to switch to.
     void quickView();
-    int quickView_ = 0;    // 0 closed, 1 drawings, 2 layouts of the active drawing
+    int quickView_ = 0;  // 0 closed, 1 drawings, 2 layouts of the active drawing
     WindowLink* link_ = nullptr;
     std::uint64_t tabDragId_ = 0;  // the drawing whose tab is being dragged (0: none)
     struct TearOff {
@@ -147,6 +148,9 @@ private:
     void menuBar();
     void toolStrip();
     void toolbox();
+    void toolCell(const ui::ToolDef& t, float iconSize, float scale, bool iconOnly);
+    void quickRail();
+    std::vector<std::string> quickRailCommands() const;
     void readOnlyBanner();
     void blockEditBar();
     void contextualBar();
@@ -298,6 +302,7 @@ private:
     std::string textEditorSent_{};
     textcmd::FormatBar formatBar_{};  // the MTEXT editor's formatting bar
     bool spaceAsEnter_ = false;
+    std::string lastToolSeen_;  // the command the Toolbox last saw running
     bool spaceSubmit_ = false;  // Space typed after text: run the line like Enter
     std::string typedWhileUnfocused_{};
     std::size_t lastHistorySize_ = 0;

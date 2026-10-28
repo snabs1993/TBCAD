@@ -600,7 +600,7 @@ namespace {
 // Where a world point is in the harness window (the viewport starts below the menu and tabs).
 ImVec2 screenOf(Harness& h, Vec2 world) {
     const Vec2 s = h.core().camera().worldToScreen(world);
-    return ImVec2(static_cast<float>(s.x),
+    return ImVec2(static_cast<float>(s.x) + ImGui::GetMainViewport()->WorkPos.x,
                   static_cast<float>(s.y) + ImGui::GetMainViewport()->WorkPos.y);
 }
 
@@ -3250,4 +3250,34 @@ TEST_CASE("icon sheet: every icon draws inside its square, and no two are alike"
         MESSAGE("icon problem: " << p);
     CHECK(problems.empty());
     CHECK(h.imguiErrors().empty());
+}
+
+TEST_CASE("toolbox: Recent group fills as commands run, and Quick rail buttons run their command") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    CHECK(h.core().settings().getStrings("ui.toolbox.recent").empty());
+    h.core().submitText("CIRCLE");
+    h.frame(3);
+    h.core().pressEscape();
+    h.core().submitText("LINE");
+    h.frame(3);
+    h.core().pressEscape();
+    h.frame(3);
+    const auto recent = h.core().settings().getStrings("ui.toolbox.recent");
+    REQUIRE(recent.size() == 2);
+    CHECK(recent[0] == "LINE");
+    CHECK(recent[1] == "CIRCLE");
+    CHECK(matchesGolden(h.windowShot("##toolbox"), "toolbox_recent"));
+
+    // The rail: six default buttons; clicking one starts its command.
+    int rail = 0;
+    while (h.has("##tool", "##quickrail") && h.find("##tool", "##quickrail", rail))
+        ++rail;
+    CHECK(rail == 6);
+    REQUIRE(h.click("##tool", "##quickrail", 3));  // Move
+    h.frame(3);
+    CHECK(runningName(h) == "MOVE");
+    h.core().pressEscape();
+    h.frame(2);
+    CHECK(matchesGolden(h.windowShot("##quickrail"), "quickrail"));
 }
