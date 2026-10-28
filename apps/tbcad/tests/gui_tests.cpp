@@ -21,6 +21,7 @@
 #include "tbcad/layers/layer_states.h"
 #include "tbcad/render/overlay.h"
 #include "tbcad/ui/app_core.h"
+#include "tbcad/ui/thai_words.h"
 #include "tbcad/ui/toolbox.h"
 #include "tbcad/xref/xref.h"
 #include "window_link.h"
@@ -1571,7 +1572,8 @@ TEST_CASE("every menu item can be clicked without trouble") {
         Harness h(1920, 1080);
         h.frame(3);
         for (const auto& it : imgui_items::items())
-            if (it.window.find("MainMenuBar") != std::string::npos && !it.label.empty())
+            if (it.window.find("MainMenuBar") != std::string::npos && !it.label.empty() &&
+                it.label.rfind("##", 0) != 0)  // not the search box
                 tops.push_back(it.label);
     }
     REQUIRE(tops.size() >= 5);
@@ -3151,6 +3153,31 @@ TEST_CASE("drawing tab dragged onto another window moves the drawing there") {
     CHECK(fs::path(got[0]) == file);
     CHECK(h.imguiErrors().empty());
     fs::remove_all(dir);
+}
+
+TEST_CASE("top search box: every Thai word names a real command") {
+    Harness h;
+    for (const ui::ThaiWord& w : ui::thaiWords())
+        CHECK_MESSAGE(h.core().registry().find(w.command) != nullptr, std::string(w.word), " -> ",
+                      w.command);
+    CHECK(ui::thaiWords().size() >= 150);
+}
+
+TEST_CASE("top search box: a Thai word picks a command from the list") {
+    Harness h;
+    h.frame(2);
+    REQUIRE(h.click("##topSearch", "MainMenuBar"));
+    h.frame(2);
+    h.type("วงกลม");
+    h.frame(2);
+    CHECK(h.windowOpen("topSearchList"));
+    h.key(ImGuiKey_Enter);
+    h.frame(2);
+    const auto* prompt = h.core().promptInfo();
+    REQUIRE(prompt != nullptr);  // CIRCLE asks for its centre
+    h.core().pressEscape();
+    h.frame(2);
+    CHECK(!h.windowOpen("topSearchList"));
 }
 
 TEST_CASE("toolbox: every tool runs a command the program has") {

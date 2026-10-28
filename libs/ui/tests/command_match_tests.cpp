@@ -137,3 +137,16 @@ TEST_CASE("dash commands come after plain ones unless the query starts with a da
     REQUIRE(!m.empty());
     CHECK(m[0].name[0] == '-');
 }
+
+TEST_CASE("Thai words find commands") {
+    Fx fx;
+    auto m = matchCommands(fx.reg, "วงกลม");
+    REQUIRE(m.size() == 1);
+    CHECK(m[0].name == "CIRCLE");
+    CHECK(m[0].rank == CommandMatch::Rank::Synonym);
+    CHECK(m[0].synonym == "วงกลม");
+    // A part of a word is enough, and Thai has no spaces so it can sit inside a longer word.
+    CHECK(!matchCommands(fx.reg, "วงก").empty());
+    CHECK(matchCommands(fx.reg, "มุมมน")[0].name == "FILLET");
+    CHECK(matchCommands(fx.reg, "นี่ไม่มีคำนี้").empty());
+}

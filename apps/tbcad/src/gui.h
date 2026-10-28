@@ -146,6 +146,7 @@ private:
 
     void shortcuts();
     void menuBar();
+    void searchBox();  // top-centre command search (English and Thai words)
     void toolStrip();
     void toolbox();
     void toolCell(const ui::ToolDef& t, float iconSize, float scale, bool iconOnly);
@@ -315,6 +316,10 @@ private:
     bool suggestVisible_ = false;
     bool suggestDismissed_ = false;
     bool paletteOpen_ = false;
+    std::string searchText_{};  // the top search box
+    int searchSel_ = 0;
+    bool searchListHovered_ = false;  // the mouse is over the result list
+    bool searchFocus_ = false;        // grab the keyboard on the next frame (Ctrl+K)
     std::string suggestFor_{};
     bool cursorHud_ = true;
     bool hudHovered_ = false;
