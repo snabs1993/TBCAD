@@ -192,6 +192,12 @@ Image crop(const Image& img, int x, int y, int w, int h) {
     return out;
 }
 
+std::filesystem::path savePreview(const Image& img, const std::string& name) {
+    const fs::path file = failureDir() / (name + ".png");
+    writePng(file, img);
+    return file;
+}
+
 bool matchesGolden(const Image& img, const std::string& name, const Tolerance& tol) {
     const fs::path golden = goldenDir() / (name + ".png");
     if (std::getenv("TBCAD_UPDATE_GOLDEN")) {
@@ -560,6 +566,20 @@ Image Harness::screenshot() {
     atlas.h = impl_->atlasH;
     atlas.id = ImGui::GetIO().Fonts->TexID;
     return rasterize(ImGui::GetDrawData(), impl_->width, impl_->height, atlas);
+}
+
+Image Harness::overlayShot(int w, int h, const std::function<void(ImDrawList*)>& draw) {
+    ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
+    imgui_items::clear();
+    core_->updateFrame();
+    ImGui::NewFrame();
+    ViewportRect rect = gui_->frame();
+    gui_->showViewport(7, rect);
+    draw(ImGui::GetForegroundDrawList());
+    ImGui::Render();
+    impl_->haveFrame = true;
+    impl_->last = Image{};
+    return crop(screenshot(), 0, 0, w, h);
 }
 
 Image Harness::windowShot(const std::string& windowPart) {

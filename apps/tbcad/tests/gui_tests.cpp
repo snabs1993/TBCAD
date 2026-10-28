@@ -10,15 +10,19 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <map>
+#include <set>
 #include <sstream>
 
 #include "gui.h"
 #include "gui_harness.h"
+#include "icons.h"
 #include "tbcad/block_cmds/palette.h"
 #include "tbcad/layers/layer_states.h"
 #include "tbcad/render/overlay.h"
 #include "tbcad/ui/app_core.h"
 #include "tbcad/ui/thai_words.h"
+#include "tbcad/ui/toolbox.h"
 #include "tbcad/xref/xref.h"
 #include "window_link.h"
 
@@ -474,7 +478,7 @@ TEST_CASE("external references panel: tree, details, type switch, row menu and c
 }
 
 TEST_CASE("plot panel: options change the exported PDF") {
-    Harness h(1920, 1080);
+    Harness h(1920, 1200);
     h.core().submitText("LINE");
     h.core().submitText("0,0");
     h.core().submitText("200,100");
@@ -597,7 +601,8 @@ namespace {
 // Where a world point is in the harness window (the viewport starts below the menu and tabs).
 ImVec2 screenOf(Harness& h, Vec2 world) {
     const Vec2 s = h.core().camera().worldToScreen(world);
-    return ImVec2(static_cast<float>(s.x), static_cast<float>(s.y) + 92.0f);
+    return ImVec2(static_cast<float>(s.x),
+                  static_cast<float>(s.y) + ImGui::GetMainViewport()->WorkPos.y);
 }
 
 std::size_t entityCount(Harness& h) {
@@ -984,6 +989,17 @@ TEST_CASE("keyboard map: shortcuts, function keys and typing anywhere") {
     h.frame(2);
     CHECK(h.core().runner().active());
     h.key(ImGuiKey_Escape);
+}
+
+TEST_CASE("Space after a typed command name runs it like Enter") {
+    Harness h(1920, 1080);
+    h.frame(2);
+    REQUIRE(h.click("##command", "Command"));
+    h.type("circle ");
+    h.frame(2);
+    CHECK(runningName(h) == "CIRCLE");
+    h.key(ImGuiKey_Escape);
+    h.frame(2);
 }
 
 TEST_CASE("command line focus: edit chords act on the text, Esc clears text then selection") {
@@ -1601,12 +1617,12 @@ TEST_CASE("every menu item can be clicked without trouble") {
     }
 }
 
-TEST_CASE("tool strip: every button starts its command or action") {
+TEST_CASE("toolbox: every button on the first tab starts its command") {
     int total = 0;
     {
         Harness h(1920, 1080);
         h.frame(3);
-        while (h.has("##tool", "##toolstrip") && h.find("##tool", "##toolstrip", total))
+        while (h.has("##tool", "##toolbox") && h.find("##tool", "##toolbox", total))
             ++total;
     }
     REQUIRE(total >= 20);
@@ -1618,7 +1634,7 @@ TEST_CASE("tool strip: every button starts its command or action") {
         h.core().submitText("0,0");
         h.core().submitText("10");
         h.frame(3);
-        REQUIRE(h.click("##tool", "##toolstrip", i));
+        REQUIRE(h.click("##tool", "##toolbox", i));
         h.frame(4);
         if (h.core().runner().active()) {
             ++started;
@@ -1627,8 +1643,8 @@ TEST_CASE("tool strip: every button starts its command or action") {
         h.key(ImGuiKey_Escape);  // a file picker or dialog
         h.frame(2);
     }
-    // Draw and Modify tools run commands: at least those 17 are waiting for input after a click.
-    CHECK(started >= 15);
+    // The Draw tab's tools all run commands that wait for input after a click.
+    CHECK(started >= 18);
 }
 
 TEST_CASE("text editor: TEXT is typed in the box on the drawing, Thai included") {
@@ -3038,6 +3054,36 @@ TEST_CASE("point prompts: a shaky click does not add a second point on release")
     CHECK_FALSE(tbcad::app::releaseTakesPoint(14, 0.5, 2.0));
 }
 
+TEST_CASE("PLINE: a click with a shaky hand takes one point and the next click adds the next") {
+    Harness h(1920, 1080);
+    h.core().setSetting("drafting.osnap", "0");
+    h.frame(3);
+    h.core().submitText("PLINE");
+    h.frame(3);
+    ImGuiIO& io = ImGui::GetIO();
+    h.moveMouse(700, 500);
+    h.frame();
+    io.AddMouseButtonEvent(0, true);
+    h.frame();
+    h.moveMouse(706, 503);  // the hand moves a little while the button is down
+    io.AddMouseButtonEvent(0, false);
+    h.frame(2);
+    // Still asking for the next point; the line has not been made yet.
+    REQUIRE(h.core().runner().active());
+    CHECK(entityCount(h) == 0);
+    h.moveMouse(900, 520);
+    h.frame(2);
+    h.click(900, 520);
+    h.core().submitText("");
+    h.frame(3);
+    std::size_t n = 0;
+    h.core().document().forEachEntity([&](const Entity& e) {
+        if (const auto* p = std::get_if<PolylineData>(&e.data))
+            n = p->v.size();
+    });
+    CHECK(n == 2);
+}
+
 TEST_CASE("window link: windows find each other and pass drawings on") {
     const fs::path dir = fs::temp_directory_path() / "tbcad-window-link-test";
     fs::remove_all(dir);
@@ -3132,4 +3178,101 @@ TEST_CASE("top search box: a Thai word picks a command from the list") {
     h.core().pressEscape();
     h.frame(2);
     CHECK(!h.windowOpen("topSearchList"));
+TEST_CASE("toolbox: every tool runs a command the program has") {
+    Harness h(1280, 720);
+    std::set<std::string> seen;
+    for (const ui::ToolTab& tab : ui::toolboxTabs()) {
+        CHECK_FALSE(tab.groups.empty());
+        for (const ui::ToolGroup& g : tab.groups) {
+            for (const ui::ToolDef& t : g.tools) {
+                INFO(tab.id << " / " << g.name << " / " << t.command);
+                CHECK(h.core().registry().find(t.command) != nullptr);
+                CHECK_FALSE(t.label.empty());
+                for (const ui::ToolVariant& v : t.variants) {
+                    const std::string name = v.command.substr(0, v.command.find(' '));
+                    CHECK(h.core().registry().find(name) != nullptr);
+                }
+                seen.insert(t.command);
+            }
+        }
+    }
+    CHECK(seen.size() > 100);
+}
+
+TEST_CASE("toolbox: tabs switch, fold and keep the drawing area clear") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    CHECK(matchesGolden(h.windowShot("##toolbox"), "toolbox_draw"));
+    const float open = ImGui::GetMainViewport()->WorkPos.y;
+    REQUIRE(h.click("Modify", "##toolbox"));
+    h.frame(3);
+    CHECK(h.core().settings().getString("ui.toolbox.tab") == "modify");
+    CHECK(matchesGolden(h.windowShot("##toolbox"), "toolbox_modify"));
+    h.core().setSetting("ui.toolbox.folded", "1");
+    h.frame(3);
+    CHECK(ImGui::GetMainViewport()->WorkPos.y < open - 40.0f);
+}
+
+// Every toolbar icon on one sheet (saved as icon-sheet.png in the build's gui-test-failures folder
+// so a person can look at it) and checked for the mistakes a picture would show: an empty icon, a
+// stroke outside its square, two icons drawn the same, a missing name.
+TEST_CASE("icon sheet: every icon draws inside its square, and no two are alike") {
+    using app::Icon;
+    const int count = static_cast<int>(Icon::Count);
+    REQUIRE(count >= 90);
+    constexpr int cols = 12, cellW = 116, cellH = 92, iconPx = 56;
+    const int rows = (count + cols - 1) / cols;
+    Harness h(1440, 900);
+    h.frame(2);
+    std::vector<std::string> problems;
+    std::map<std::size_t, std::string> seen;
+    const Image sheet = h.overlayShot(cols * cellW, rows * cellH, [&](ImDrawList* dl) {
+        dl->AddRectFilled(ImVec2(0, 0), ImVec2(float(cols * cellW), float(rows * cellH)),
+                          IM_COL32(32, 34, 38, 255));
+        for (int i = 0; i < count; ++i) {
+            const Icon icon = static_cast<Icon>(i);
+            const std::string name = app::iconName(icon);
+            if (name.empty())
+                problems.push_back("icon " + std::to_string(i) + " has no name");
+            const float x = float((i % cols) * cellW), y = float((i / cols) * cellH);
+            const ImVec2 lo(x + (cellW - iconPx) * 0.5f, y + 6);
+            dl->AddRect(lo, ImVec2(lo.x + iconPx, lo.y + iconPx), IM_COL32(60, 64, 72, 255));
+            const int v0 = dl->VtxBuffer.Size;
+            app::drawIcon(dl, icon, lo, float(iconPx), IM_COL32(225, 228, 235, 255),
+                          app::iconAccent(app::iconGroup(icon)));
+            if (dl->VtxBuffer.Size == v0) {
+                problems.push_back(name + " draws nothing");
+                continue;
+            }
+            float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
+            std::size_t hash = 1469598103934665603ull;
+            for (int v = v0; v < dl->VtxBuffer.Size; ++v) {
+                const ImVec2 p = dl->VtxBuffer[v].pos;
+                x0 = std::min(x0, p.x), y0 = std::min(y0, p.y);
+                x1 = std::max(x1, p.x), y1 = std::max(y1, p.y);
+                hash = (hash ^ std::size_t(std::lround((p.x - lo.x) * 4))) * 1099511628211ull;
+                hash = (hash ^ std::size_t(std::lround((p.y - lo.y) * 4))) * 1099511628211ull;
+            }
+            const float slack = 0.06f * iconPx;  // strokes and accent marks may overshoot a little
+            if (x0 < lo.x - slack || y0 < lo.y - slack || x1 > lo.x + iconPx + slack ||
+                y1 > lo.y + iconPx + slack)
+                problems.push_back(name + " leaves its square");
+            if (x1 - x0 < 0.3f * iconPx || y1 - y0 < 0.3f * iconPx)
+                problems.push_back(name + " is too small");
+            const auto [it, fresh] = seen.emplace(hash, name);
+            if (!fresh)
+                problems.push_back(name + " looks the same as " + it->second);
+            const char* label = name.c_str();
+            const ImVec2 ts = ImGui::CalcTextSize(label);
+            dl->AddText(ImVec2(x + (cellW - ts.x) * 0.5f, lo.y + iconPx + 6),
+                        IM_COL32(180, 186, 198, 255), label);
+        }
+    });
+    CHECK(!sheet.empty());
+    const auto file = savePreview(sheet, "icon-sheet");
+    MESSAGE("icon sheet: " << file.string());
+    for (const std::string& p : problems)
+        MESSAGE("icon problem: " << p);
+    CHECK(problems.empty());
+    CHECK(h.imguiErrors().empty());
 }
