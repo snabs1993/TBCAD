@@ -95,7 +95,7 @@ TEST_CASE("AutoCAD's everyday aliases are there") {
         {"NCOPY", "NCOPY"},     {"ATT", "ATTDEF"},      {"ATE", "ATTEDIT"},
         {"XR", "XREF"},         {"XA", "XATTACH"},      {"XB", "XBIND"},
         {"GR", "DDGRIPS"},      {"DV", "DVIEW"},        {"-INSERT", "INSERT"},
-        {"-BLOCK", "-BLOCK"},  {"-HATCH", "HATCH"},    {"-BOUNDARY", "BOUNDARY"},
+        {"-BLOCK", "-BLOCK"},   {"-HATCH", "HATCH"},    {"-BOUNDARY", "BOUNDARY"},
         {"-LAYER", "-LAYER"}};
     std::string missing;
     for (const auto& [alias, command] : expected) {

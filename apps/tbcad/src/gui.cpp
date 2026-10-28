@@ -4148,8 +4148,8 @@ void Gui::startPage(const ViewportRect& rect) {
         }
         if (flag("ui.tipOfTheDay", true)) {
             static const char* const kTips[] = {
-                "Ctrl+0 or F11 hides every panel (Clean Screen). Press it again to bring them "
-                "back.",
+                ("Ctrl+0 or F11 hides every panel (Clean Screen). Press it again to bring them "
+                 "back."),
                 "Ctrl+Shift+P lists every command with its keys.",
                 "Press Enter on an empty command line to repeat the last command.",
                 "Hold the middle button and drag to pan. The wheel zooms at the cursor.",
