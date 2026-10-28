@@ -3038,6 +3038,36 @@ TEST_CASE("point prompts: a shaky click does not add a second point on release")
     CHECK_FALSE(tbcad::app::releaseTakesPoint(14, 0.5, 2.0));
 }
 
+TEST_CASE("PLINE: a click with a shaky hand takes one point and the next click adds the next") {
+    Harness h(1920, 1080);
+    h.core().setSetting("drafting.osnap", "0");
+    h.frame(3);
+    h.core().submitText("PLINE");
+    h.frame(3);
+    ImGuiIO& io = ImGui::GetIO();
+    h.moveMouse(700, 500);
+    h.frame();
+    io.AddMouseButtonEvent(0, true);
+    h.frame();
+    h.moveMouse(706, 503);  // the hand moves a little while the button is down
+    io.AddMouseButtonEvent(0, false);
+    h.frame(2);
+    // Still asking for the next point; the line has not been made yet.
+    REQUIRE(h.core().runner().active());
+    CHECK(entityCount(h) == 0);
+    h.moveMouse(900, 520);
+    h.frame(2);
+    h.click(900, 520);
+    h.core().submitText("");
+    h.frame(3);
+    std::size_t n = 0;
+    h.core().document().forEachEntity([&](const Entity& e) {
+        if (const auto* p = std::get_if<PolylineData>(&e.data))
+            n = p->v.size();
+    });
+    CHECK(n == 2);
+}
+
 TEST_CASE("window link: windows find each other and pass drawings on") {
     const fs::path dir = fs::temp_directory_path() / "tbcad-window-link-test";
     fs::remove_all(dir);
