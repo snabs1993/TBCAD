@@ -65,6 +65,7 @@ void printUsage() {
         "  --self-test          hidden window; exit code 77 when no display or OpenGL 3.3\n"
         "  --mcp                turn the MCP server on (AI access to the drawing)\n"
         "  --no-vsync           do not wait for the monitor\n"
+        "  --software-gl        draw with software OpenGL (needs the software-gl folder, Windows)\n"
         "  --child              a window opened by another TBCAD window (own autosave folder)\n"
         "  --window-pos X,Y     put the window here (with --window-size W,H: this big)\n");
 }
@@ -119,6 +120,8 @@ Options parseOptions(int argc, char** argv) {
             o.vsync = false;
         else if (a == "--child")
             o.child = true;
+        else if (a == "--software-gl")
+            o.softwareGl = true;
         else if (a == "--window-pos")
             std::sscanf(next().c_str(), "%d,%d", &o.windowX, &o.windowY);
         else if (a == "--window-size")
@@ -157,11 +160,16 @@ void App::reportOpenGlProblem() {
     }
     const std::string text = openGlProblemText(renderer, version);
     std::fprintf(stderr, "tbcad: %s\n", text.c_str());
-    showOpenGlProblem(text);
+    const bool offer = !options_.softwareGl && softwareGlAvailable();
+    if (showOpenGlProblem(text, offer))
+        relaunchWithSoftwareGl();
 }
 
 bool App::initWindow(std::string& why) {
     glfwSetErrorCallback(glfwError);
+    if ((options_.softwareGl || platform::processEnvironment("TBCAD_SOFTWARE_GL").has_value()) &&
+        !useSoftwareGl())
+        std::fprintf(stderr, "tbcad: software OpenGL (software-gl/opengl32.dll) not found\n");
     if (!glfwInit()) {
         why = "could not initialise GLFW (no display?)";
         return false;
@@ -214,6 +222,8 @@ bool App::initWindow(std::string& why) {
     std::string err;
     if (!renderer_.init(reinterpret_cast<render::GLLoadProc>(glfwGetProcAddress), &err)) {
         why = "renderer: " + err;
+        if (!hidden() && !options_.selfTest && options_.captureScript.empty() && !options_.gate)
+            reportOpenGlProblem();
         return false;
     }
 

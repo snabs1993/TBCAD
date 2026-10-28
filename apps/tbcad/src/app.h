@@ -45,6 +45,7 @@ struct Options {
     bool vsync = true;
     bool mcp = false;  // --mcp: turn the MCP server on (and remember it)
     bool help = false;
+    bool softwareGl = false;  // --software-gl: draw with the bundled software OpenGL (Windows)
     bool child = false;  // --child: a window another TBCAD window opened (own autosave folder)
     int windowX = 0, windowY = 0;  // --window-pos X,Y: where to put the window (screen points)
     int windowW = 0, windowH = 0;  // --window-size W,H: its size (0: the default)
