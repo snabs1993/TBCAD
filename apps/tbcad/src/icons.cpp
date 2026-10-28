@@ -1,6 +1,7 @@
 #include "icons.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <initializer_list>
 
@@ -105,7 +106,11 @@ struct Pen {
 }  // namespace
 
 void drawIcon(ImDrawList* dl, Icon icon, ImVec2 min, float size, ImU32 color, ImU32 accent) {
-    const Pen g{dl,    min,   size / 20.0f, color, std::max(1.0f, 1.5f * size / 20.0f),
+    const Pen g{dl,
+                min,
+                size / 20.0f,
+                color,
+                std::max(1.0f, 1.5f * size / 20.0f),
                 accent != 0 ? accent : color};
     const Pen a = g.a();
     switch (icon) {
@@ -313,7 +318,8 @@ void drawIcon(ImDrawList* dl, Icon icon, ImVec2 min, float size, ImU32 color, Im
             g.line(17, 4, 17, 16);
             break;
         case Icon::Sketch:
-            g.dl->AddBezierCubic(g.p(2.5f, 13), g.p(5, 4), g.p(8, 4), g.p(10, 10), g.color, g.thick);
+            g.dl->AddBezierCubic(g.p(2.5f, 13), g.p(5, 4), g.p(8, 4), g.p(10, 10), g.color,
+                                 g.thick);
             g.dl->AddBezierCubic(g.p(10, 10), g.p(11.5f, 15), g.p(14, 16), g.p(16.5f, 8), g.color,
                                  g.thick);
             a.dot(16.5f, 8, 1.5f);
@@ -702,6 +708,23 @@ ImU32 iconAccent(IconGroup group) {
             break;
     }
     return 0;
+}
+
+bool iconFromId(std::string_view id, Icon& out) {
+    for (int i = 0; i < static_cast<int>(Icon::Count); ++i) {
+        const std::string_view name = iconName(static_cast<Icon>(i));
+        if (name.size() != id.size())
+            continue;
+        bool same = true;
+        for (std::size_t k = 0; k < name.size() && same; ++k)
+            same = std::tolower(static_cast<unsigned char>(name[k])) ==
+                   std::tolower(static_cast<unsigned char>(id[k]));
+        if (same) {
+            out = static_cast<Icon>(i);
+            return true;
+        }
+    }
+    return false;
 }
 
 bool iconButton(const char* id, Icon icon, float size, bool enabled) {

@@ -2,6 +2,8 @@
 
 #include <imgui.h>
 
+#include <string_view>
+
 namespace tbcad::app {
 
 // The colour family of an icon: the accent dot or stroke follows it, so the toolbox can be scanned
@@ -121,6 +123,10 @@ ImU32 iconAccent(IconGroup group);
 // Draws `icon` centred in the square [min, min + size). The second colour (when not 0) is used for
 // the one accent part each icon may have; 0 draws everything in `color`.
 void drawIcon(ImDrawList* dl, Icon icon, ImVec2 min, float size, ImU32 color, ImU32 accent = 0);
+
+// The icon with this id (the ids the Toolbox table uses, lower case); false when there is none
+// yet, and the caller draws the tool's initials instead.
+bool iconFromId(std::string_view id, Icon& out);
 
 // An icon button of the given square size (frame included); true when clicked.
 bool iconButton(const char* id, Icon icon, float size, bool enabled = true);

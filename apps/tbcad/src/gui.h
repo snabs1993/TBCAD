@@ -146,6 +146,7 @@ private:
     void shortcuts();
     void menuBar();
     void toolStrip();
+    void toolbox();
     void readOnlyBanner();
     void blockEditBar();
     void contextualBar();
@@ -297,6 +298,7 @@ private:
     std::string textEditorSent_{};
     textcmd::FormatBar formatBar_{};  // the MTEXT editor's formatting bar
     bool spaceAsEnter_ = false;
+    bool spaceSubmit_ = false;  // Space typed after text: run the line like Enter
     std::string typedWhileUnfocused_{};
     std::size_t lastHistorySize_ = 0;
     float commandFooterH_ = 0;  // measured height of the chips and input line
