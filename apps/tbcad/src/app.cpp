@@ -2003,6 +2003,24 @@ int App::run() {
         return status;
     }
 
+    // A new version is looked for once a day, only in a normal run (not scripted or capture runs)
+    // and only when the setting allows it.
+    if (options_.frames == 0 && !options_.selfTest && !options_.child &&
+        core_->setting("update.check").value_or("1") != "0" && !std::getenv("TBCAD_NO_UPDATE_CHECK")) {
+        const long long now = std::chrono::duration_cast<std::chrono::seconds>(
+                                  std::chrono::system_clock::now().time_since_epoch())
+                                  .count();
+        long long last = 0;
+        try {
+            last = std::stoll(core_->setting("update.lastCheck").value_or("0"));
+        } catch (...) {
+        }
+        if (now - last > 20 * 3600) {
+            core_->setSetting("update.lastCheck", std::to_string(now));
+            gui_->checkForUpdates(false);
+        }
+    }
+
     int framesDrawn = 0;
     double last = glfwGetTime();
     while (!glfwWindowShouldClose(window_) && !gui_->wantsExit()) {
@@ -2051,6 +2069,7 @@ int App::run() {
     windowLink_.reset();
     core_->shutdown();
     removeChildData();
+    gui_->launchPendingInstaller();
     return status;
 }
 

@@ -36,6 +36,10 @@ Settings Settings::withDefaults() {
     o["osnap.markerSize"] = 12;      // AutoSnap marker size, pixels
     o["osnap.marker"] = true;        // AutoSnap marker shown
     o["osnap.apbox"] = false;        // APBOX: aperture box at point prompts
+    o["update.check"] = true;        // look for a new version when the program starts (once a day)
+    o["update.channel"] = "auto";    // auto | stable | test
+    o["update.skip"] = "";           // the version the user chose to skip
+    o["update.lastCheck"] = 0;       // seconds since 1970 of the last automatic check
     return s;
 }
 

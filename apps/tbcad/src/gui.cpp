@@ -537,6 +537,133 @@ void Gui::performPending(bool discard) {
     }
 }
 
+void Gui::checkForUpdates(bool manual) {
+    using State = platform::UpdateService::State;
+    updateManual_ = manual;
+    if (manual && update_.state() != State::Idle && update_.state() != State::Checking &&
+        update_.state() != State::Downloading) {
+        lastUpdateState_ = State::Idle;  // show the answer again
+    }
+    if (manual)
+        showUpdate_ = true;
+    const std::string channel = core_.setting("update.channel").value_or("auto");
+    update_.check(TBCAD_VERSION, channel);
+}
+
+void Gui::launchPendingInstaller() {
+    using State = platform::UpdateService::State;
+    if (!installAfterExit_ || !exitRequested_ || update_.state() != State::Ready)
+        return;
+    std::error_code ec;
+    const auto exe = std::filesystem::canonical(platform::selfExecutable(), ec);
+    const std::string dir = exe.parent_path().string();
+    const auto lower = [](std::string t) {
+        for (auto& c : t)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return t;
+    };
+    bool perMachine = false;
+    for (const char* var : {"ProgramFiles", "ProgramFiles(x86)"})
+        if (const char* pf = std::getenv(var); pf && *pf && lower(dir).rfind(lower(pf), 0) == 0)
+            perMachine = true;
+    platform::launchDetached(update_.installer(), platform::installerArguments(perMachine));
+}
+
+void Gui::updatePopup() {
+    using State = platform::UpdateService::State;
+    const State st = update_.state();
+    if (installAfterExit_ && pending_ == Pending::None && !exitRequested_)
+        installAfterExit_ = false;  // the user cancelled the close: no install
+    if (st != lastUpdateState_) {
+        lastUpdateState_ = st;
+        const auto rel = update_.release();
+        const bool skipped = rel && core_.setting("update.skip").value_or("") == rel->version;
+        if (st == State::Available && (updateManual_ || !skipped))
+            showUpdate_ = true;
+        else if (st == State::Ready)
+            showUpdate_ = true;
+        else if (updateManual_ && (st == State::UpToDate || st == State::Failed))
+            showUpdate_ = true;
+    }
+    if (showUpdate_) {
+        ImGui::OpenPopup("Update TBCAD");
+        showUpdate_ = false;
+    }
+    ImGui::SetNextWindowSize(ImVec2(520, 0), ImGuiCond_Appearing);
+    if (!ImGui::BeginPopupModal("Update TBCAD", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        return;
+    const auto rel = update_.release();
+    switch (st) {
+        case State::Idle:
+        case State::Checking:
+            ImGui::TextUnformatted("Checking for a new version...");
+            ImGui::Spacing();
+            if (ImGui::Button("Close", ImVec2(110, 0)))
+                ImGui::CloseCurrentPopup();
+            break;
+        case State::UpToDate:
+            ImGui::Text("TBCAD %s is the newest version.", TBCAD_VERSION);
+            ImGui::Spacing();
+            if (ImGui::Button("Close", ImVec2(110, 0)))
+                ImGui::CloseCurrentPopup();
+            break;
+        case State::Failed:
+            ImGui::TextWrapped("The update did not work: %s", update_.error().c_str());
+            ImGui::Spacing();
+            if (ImGui::Button("Close", ImVec2(110, 0)))
+                ImGui::CloseCurrentPopup();
+            break;
+        case State::Available:
+            if (rel) {
+                ImGui::Text("TBCAD %s is available. You have %s.", rel->version.c_str(),
+                            TBCAD_VERSION);
+                if (!rel->notes.empty()) {
+                    ImGui::Spacing();
+                    ImGui::BeginChild("##updatenotes", ImVec2(0, 150), true);
+                    ImGui::TextWrapped("%s", rel->notes.substr(0, 2000).c_str());
+                    ImGui::EndChild();
+                }
+                ImGui::Spacing();
+                if (ImGui::Button("Update now", ImVec2(130, 0))) {
+                    updateManual_ = true;
+                    update_.download(std::filesystem::temp_directory_path() / "TBCAD-update");
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Later", ImVec2(110, 0)))
+                    ImGui::CloseCurrentPopup();
+                ImGui::SameLine();
+                if (ImGui::Button("Skip this version", ImVec2(150, 0))) {
+                    core_.setSetting("update.skip", rel->version);
+                    ImGui::CloseCurrentPopup();
+                }
+            }
+            break;
+        case State::Downloading:
+            ImGui::Text("Downloading TBCAD %s...", rel ? rel->version.c_str() : "");
+            ImGui::ProgressBar(update_.progress(), ImVec2(-1, 0));
+            ImGui::Spacing();
+            if (ImGui::Button("Cancel", ImVec2(110, 0)))
+                update_.cancel();
+            break;
+        case State::Ready:
+            ImGui::TextWrapped(
+                "TBCAD %s is downloaded. It will ask you to save any unsaved drawing, close, "
+                "install over this version (your settings stay) and start again.",
+                rel ? rel->version.c_str() : "");
+            ImGui::Spacing();
+            if (ImGui::Button("Install and restart", ImVec2(170, 0))) {
+                installAfterExit_ = true;
+                ImGui::CloseCurrentPopup();
+                requestAction(Pending::Exit);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Later", ImVec2(110, 0)))
+                ImGui::CloseCurrentPopup();
+            break;
+    }
+    ImGui::EndPopup();
+}
+
 bool Gui::requestClose() {
     if (!core_.anyDocumentModified())
         return true;
@@ -1416,6 +1543,8 @@ void Gui::menuBar() {
             showCommandList_ = true;
         if (ImGui::MenuItem("Report a Problem..."))
             showReport_ = true;
+        if (ImGui::MenuItem("Check for Updates..."))
+            checkForUpdates(true);
         if (ImGui::MenuItem("About TBCAD"))
             showAbout_ = true;
         if (ImGui::MenuItem("Third-Party Notices"))
@@ -5880,6 +6009,8 @@ void Gui::dialogs() {
             ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
+
+    updatePopup();
 
     if (showAbout_) {
         ImGui::OpenPopup("About TBCAD");
