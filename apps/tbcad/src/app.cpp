@@ -4,6 +4,9 @@
 #include <backends/imgui_impl_glfw.h>
 #include <backends/imgui_impl_opengl3.h>
 #include <glad/gl.h>
+#ifdef TBCAD_HAS_PRO
+#include <tbcad/pro/pro.h>
+#endif
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <miniz.h>
@@ -1928,6 +1931,12 @@ int App::run() {
     uiRegistry_ = std::make_unique<ui::UiRegistry>();
     registerAllUi(*uiRegistry_);
     plugins_->registerUi(*uiRegistry_);
+#ifdef TBCAD_HAS_PRO
+    extensionPump_ = tbcad::pro::attach(*core_, *registry_, *uiRegistry_, [this] {
+        if (windowReady_)
+            glfwPostEmptyEvent();
+    });
+#endif
     mcp_->registerUi(*uiRegistry_);
     core_->registerBuiltinUi(*uiRegistry_);
     core_->applyUiKeybindings(*uiRegistry_);
@@ -2006,6 +2015,8 @@ int App::run() {
             glfwSetWindowShouldClose(window_, GLFW_FALSE);
 
         mcp_->pump();
+        if (extensionPump_)
+            extensionPump_();
         frame();
         ++framesDrawn;
         if (scripted && framesDrawn >= options_.frames) {

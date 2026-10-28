@@ -121,6 +121,10 @@ public:
     State state() const { return state_; }
     // Valid once Joined (the document and the replica exist until the session is destroyed).
     Document* document() { return doc_.get(); }
+    // Hands the drawing to the application (which then owns and eventually closes it). The
+    // replica keeps working on it, so the application must destroy this session first when the
+    // drawing is closed. After this, document() is null.
+    std::unique_ptr<Document> releaseDocument() { return std::move(doc_); }
     Replica* replica() { return replica_.get(); }
     PeerId self() const { return self_; }
     Role role() const { return role_; }

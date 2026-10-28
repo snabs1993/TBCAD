@@ -3,6 +3,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -137,6 +138,12 @@ public:
     // built-in drawing and says so in the history.
     void newDocument();
     Result<void> openFile(const std::filesystem::path& path);
+    // Opens a drawing built in memory (one received from another program, for example) as a new
+    // tab; it has no file until the user saves it.
+    void adoptDocument(std::unique_ptr<Document> doc);
+    // Called with a drawing just before it is closed or replaced (also at exit), while it and
+    // everything attached to it still exist: for modules that observe a drawing and must let go.
+    void addDocumentClosingHook(std::function<void(Document&)> hook);
 
     // ---- open drawings (tabs) ----------------------------------------------------------------
     std::size_t documentCount() const;
@@ -567,6 +574,8 @@ private:
     std::map<std::string, std::string> transient_{};  // "tmp.*" settings: not saved
     platform::Settings settings_;
     platform::Keybindings keybindings_;
+    // Declared before slots_ so that it outlives the sessions.
+    std::vector<std::function<void(Document&)>> closingHooks_;
     std::vector<std::string> startupWarnings_{};
 
     render::Scene scene_;

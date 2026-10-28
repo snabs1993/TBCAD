@@ -54,6 +54,11 @@ set(_tbcad_app_defs
   TBCAD_GIT_HASH="${TBCAD_GIT_HASH}"
   TBCAD_SOURCE_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
 
+if(TARGET tbcad_pro)
+  list(APPEND _tbcad_app_libs tbcad_pro)
+  list(APPEND _tbcad_app_defs TBCAD_HAS_PRO)
+endif()
+
 add_library(tbcad_gui STATIC ${_tbcad_gui_sources})
 target_compile_features(tbcad_gui PUBLIC cxx_std_20)
 tbcad_set_warnings(tbcad_gui)
