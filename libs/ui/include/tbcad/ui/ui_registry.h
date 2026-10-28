@@ -88,6 +88,15 @@ struct HoverMenu {
 // Fills `menu` and returns true when something at the cursor offers a menu.
 using HoverMenuFn = std::function<bool(PanelContext&, HoverMenu&)>;
 
+// A short text shown over the drawing next to a point (a collaborator's name by their cursor).
+// Drawn with Dear ImGui by the application, in screen space, so it keeps its size when zooming.
+struct ViewportLabel {
+    Vec2 world{};
+    std::string text{};
+    Rgba color{255, 255, 255, 255};
+};
+using LabelProviderFn = std::function<void(PanelContext&, std::vector<ViewportLabel>&)>;
+
 struct PanelInfo {
     std::string id{};  // unique, e.g. "layers"; also the key for the dock layout
     std::string title{};
@@ -149,6 +158,12 @@ public:
     bool addStatusToggle(std::string id, std::string label, std::function<bool()> get,
                          std::function<void(bool)> set);
     void addOverlayDrawer(OverlayDrawFn fn);
+    // Asked once per frame for the labels to draw over the drawing.
+    void addLabelProvider(LabelProviderFn fn) {
+        if (fn)
+            labelProviders_.push_back(std::move(fn));
+    }
+    const std::vector<LabelProviderFn>& labelProviders() const { return labelProviders_; }
     // Like an overlay drawer, but drawn before the drawing so that it lies under the objects
     // (the grid).
     void addUnderlayDrawer(OverlayDrawFn fn);
@@ -211,6 +226,7 @@ private:
     std::vector<StatusToggle> toggles_{};
     std::vector<OverlayDrawFn> overlays_{};
     std::vector<OverlayDrawFn> underlays_{};
+    std::vector<LabelProviderFn> labelProviders_{};
     std::vector<IdleClickFn> idleClicks_{};
     std::vector<HoverMenuFn> hoverMenus_{};
     std::vector<PropertySection> sections_{};
