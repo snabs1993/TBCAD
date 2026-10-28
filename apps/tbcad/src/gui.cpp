@@ -1730,7 +1730,11 @@ void Gui::toolCell(const ui::ToolDef& t, float iconSize, float scale, bool iconO
                               ImGui::GetColorU32(ImGuiCol_TextDisabled));
         onArrow = ImGui::GetIO().MousePos.x > ax - 6 * scale;
     }
-    if (hit) {
+    // A click on a scroll arrow drawn over the Toolbox row is not a click on the tool under it.
+    const float mx = ImGui::GetIO().MousePos.x;
+    const bool underArrow = inToolbox_ && ((arrowZoneL_ > 0 && mx < arrowZoneL_) ||
+                                           (arrowZoneR_ > 0 && mx > arrowZoneR_));
+    if (hit && !underArrow) {
         if (onArrow) {
             ImGui::OpenPopup("##variants");
         } else {
@@ -1871,6 +1875,7 @@ void Gui::toolbox() {
         if (!folded) {
             if (ImGui::IsWindowHovered() && ImGui::GetIO().MouseWheel != 0.0f)
                 ImGui::SetScrollX(ImGui::GetScrollX() - ImGui::GetIO().MouseWheel * 60.0f);
+            inToolbox_ = true;
             // "Recent" first: the last few commands run from anywhere, so they are one click away.
             std::vector<ui::ToolGroup> shown;
             if (!recent.empty()) {
@@ -1904,6 +1909,45 @@ void Gui::toolbox() {
                 if (!expert)
                     ImGui::TextDisabled("%s", g.name.c_str());
                 ImGui::EndGroup();
+            }
+            inToolbox_ = false;
+            // A row wider than the window: arrows at its edges scroll it (the wheel works too).
+            const float maxX = ImGui::GetScrollMaxX();
+            arrowZoneL_ = arrowZoneR_ = 0.0f;
+            if (maxX > 0.0f) {
+                const ImVec2 wp = ImGui::GetWindowPos();
+                const ImVec2 ws = ImGui::GetWindowSize();
+                const float aw = 22.0f * scale;
+                const float top = wp.y + tabH + st.WindowPadding.y;
+                auto arrow = [&](bool right) {
+                    const float x0 = right ? wp.x + ws.x - aw : wp.x;
+                    const ImVec2 lo(x0, top), hi(x0 + aw, top + bodyH);
+                    const bool over =
+                        ImGui::IsMouseHoveringRect(lo, hi) && ImGui::IsWindowHovered();
+                    ImDrawList* dl = ImGui::GetWindowDrawList();
+                    dl->AddRectFilled(
+                        lo, hi,
+                        ImGui::GetColorU32(over ? ImGuiCol_ButtonHovered : ImGuiCol_WindowBg,
+                                           0.92f));
+                    const float cx = (lo.x + hi.x) * 0.5f, cy = (lo.y + hi.y) * 0.5f,
+                                r = 5.0f * scale;
+                    const float d = right ? r : -r;
+                    dl->AddTriangleFilled(ImVec2(cx - d * 0.6f, cy - r),
+                                          ImVec2(cx - d * 0.6f, cy + r), ImVec2(cx + d * 0.6f, cy),
+                                          ImGui::GetColorU32(ImGuiCol_Text));
+                    if (over && ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+                        ImGui::SetScrollX(
+                            std::clamp(ImGui::GetScrollX() + (right ? 1.0f : -1.0f) * ws.x * 0.6f,
+                                       0.0f, maxX));
+                };
+                if (ImGui::GetScrollX() > 0.0f) {
+                    arrowZoneL_ = wp.x + aw;
+                    arrow(false);
+                }
+                if (ImGui::GetScrollX() < maxX - 1.0f) {
+                    arrowZoneR_ = wp.x + ws.x - aw;
+                    arrow(true);
+                }
             }
         }
     }

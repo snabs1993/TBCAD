@@ -303,8 +303,10 @@ private:
     std::string textEditorSent_{};
     textcmd::FormatBar formatBar_{};  // the MTEXT editor's formatting bar
     bool spaceAsEnter_ = false;
-    std::string lastToolSeen_;  // the command the Toolbox last saw running
-    bool spaceSubmit_ = false;  // Space typed after text: run the line like Enter
+    bool inToolbox_ = false;  // toolCell is drawing a Toolbox row (not the Quick rail)
+    float arrowZoneL_ = 0, arrowZoneR_ = 0;  // screen x of the Toolbox scroll arrows, 0 = none
+    std::string lastToolSeen_;               // the command the Toolbox last saw running
+    bool spaceSubmit_ = false;               // Space typed after text: run the line like Enter
     std::string typedWhileUnfocused_{};
     std::size_t lastHistorySize_ = 0;
     float commandFooterH_ = 0;  // measured height of the chips and input line
