@@ -1186,10 +1186,11 @@ TEST_CASE("hover tooltip, right-click as Enter and the cursor HUD switch") {
     Harness h(1920, 1080);
     h.core().setSetting("drafting.osnap", "0");
     h.frame(3);
+    // Typed points, so the line's length (shown in the tooltip picture) does not depend on how
+    // wide the bars around the drawing are.
     h.command("LINE");
-    const ImVec2 a = screenOf(h, {100, 100}), b = screenOf(h, {400, 100});
-    h.click(a.x, a.y);
-    h.click(b.x, b.y);
+    h.core().submitText("100,100");
+    h.core().submitText("400,100");
     h.core().pressEscape();
     h.core().zoomExtents();
     h.frame(20);
@@ -1207,6 +1208,18 @@ TEST_CASE("hover tooltip, right-click as Enter and the cursor HUD switch") {
     h.frame(60);
     CHECK(h.windowShot("##Tooltip").empty());
     h.core().setSetting("hover.tooltip", "1");
+    // The bars above the drawing can leave it on a fraction of a pixel that differs between
+    // platforms, so find the row of pixels that is on the line first.
+    for (const float dy : {0.0f, 1.0f, -1.0f, 2.0f, -2.0f}) {
+        h.moveMouse(onLine.x + 3, onLine.y + dy);
+        h.frame(60);
+        if (!h.windowShot("##Tooltip").empty()) {
+            onLine.y += dy;
+            break;
+        }
+    }
+    h.moveMouse(onLine.x + 300, onLine.y + 200);
+    h.frame(3);
     h.moveMouse(onLine.x + 3, onLine.y);
     h.frame(20);
     CHECK(h.windowShot("##Tooltip").empty());  // not yet 600 ms
@@ -3345,4 +3358,18 @@ TEST_CASE("toolbox: Expert mode is icons only and shorter, tooltips teach the ke
     const Image tip = h.windowShot("##Tooltip");
     REQUIRE_FALSE(tip.empty());
     CHECK(matchesGolden(tip, "toolbox_tooltip"));
+}
+
+TEST_CASE("toolbox: a narrow window gets scroll arrows that move the row") {
+    Harness h(900, 700);
+    h.frame(4);
+    ImGuiWindow* w = ImGui::FindWindowByName("##toolbox");
+    REQUIRE(w);
+    CHECK(w->ScrollMax.x > 0.0f);
+    CHECK(w->Scroll.x == 0.0f);
+    const float winRight = w->Pos.x + w->Size.x;
+    h.click(winRight - 8.0f, w->Pos.y + 70.0f);
+    h.frame(3);
+    CHECK(w->Scroll.x > 100.0f);
+    CHECK(matchesGolden(h.windowShot("##toolbox"), "toolbox_narrow"));
 }
