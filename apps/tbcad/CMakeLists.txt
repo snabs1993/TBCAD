@@ -50,7 +50,7 @@ set(_tbcad_app_libs
   tbcad::glad tbcad::imgui)
 set(_tbcad_app_defs
   GLFW_INCLUDE_NONE
-  TBCAD_VERSION="${PROJECT_VERSION}"
+  TBCAD_VERSION="${TBCAD_VERSION_LABEL}"
   TBCAD_GIT_HASH="${TBCAD_GIT_HASH}"
   TBCAD_SOURCE_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")
 

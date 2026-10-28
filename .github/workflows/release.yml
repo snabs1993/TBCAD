@@ -50,7 +50,7 @@ jobs:
           Write-Host "Building TBCAD $v ($num)"
 
       - name: Configure
-        run: cmake --preset windows-msvc-release -DTBCAD_WARNINGS_AS_ERRORS=ON
+        run: cmake --preset windows-msvc-release -DTBCAD_WARNINGS_AS_ERRORS=ON "-DTBCAD_VERSION_LABEL=${{ steps.ver.outputs.version }}"
       - name: Build
         run: cmake --build --preset windows-msvc-release
       - name: Test
@@ -88,7 +88,7 @@ jobs:
           if (-not $iscc) { choco install innosetup -y --no-progress | Out-Null }
           $exe = (Get-Command iscc -ErrorAction SilentlyContinue)?.Source
           if (-not $exe) { $exe = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
-          & $exe "/DAppVersion=${{ steps.ver.outputs.numeric }}" "/DBuildDir=$PWD\stage\TBCAD" "/DRepoDir=$PWD" "/DOutDir=$PWD\dist" packaging/windows/tbcad.iss
+          & $exe "/DAppVersion=${{ steps.ver.outputs.numeric }}" "/DAppLabel=${{ steps.ver.outputs.version }}" "/DBuildDir=$PWD\stage\TBCAD" "/DRepoDir=$PWD" "/DOutDir=$PWD\dist" packaging/windows/tbcad.iss
           if ($LASTEXITCODE -ne 0) { throw "iscc failed with $LASTEXITCODE" }
           # The installer is named after the numeric version; add the full tag name when it differs.
           $built = "dist/TBCAD-${{ steps.ver.outputs.numeric }}-setup.exe"
