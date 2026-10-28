@@ -148,4 +148,17 @@ const std::vector<ToolTab>& toolboxTabs() {
     return tabs;
 }
 
+const ToolDef* findTool(std::string_view command) {
+    for (const ToolTab& tab : toolboxTabs())
+        for (const ToolGroup& g : tab.groups)
+            for (const ToolDef& t : g.tools)
+                if (t.command == command)
+                    return &t;
+    return nullptr;
+}
+
+std::vector<std::string> defaultQuickRail() {
+    return {"LINE", "POLYLINE", "CIRCLE", "MOVE", "TRIM", "ERASE"};
+}
+
 }  // namespace tbcad::ui

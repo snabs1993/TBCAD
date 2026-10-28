@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace tbcad::ui {
@@ -33,5 +34,12 @@ struct ToolTab {
 };
 
 const std::vector<ToolTab>& toolboxTabs();
+
+// The tool that runs `command` (first match across the tabs, command names compared as typed in
+// capitals), or nullptr.
+const ToolDef* findTool(std::string_view command);
+
+// The Quick rail's commands until the user changes them.
+std::vector<std::string> defaultQuickRail();
 
 }  // namespace tbcad::ui
