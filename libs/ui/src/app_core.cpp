@@ -105,6 +105,13 @@ private:
 
 struct AppCore::Session {
     explicit Session(std::unique_ptr<Document> d) : docPtr(std::move(d)), doc(*docPtr) {}
+    ~Session() {
+        if (closingHooks)
+            for (const auto& hook : *closingHooks)
+                hook(doc);
+    }
+    // The application's "drawing is closing" hooks, run before anything of the drawing goes away.
+    const std::vector<std::function<void(Document&)>>* closingHooks = nullptr;
 
     // Destroyed last (members below refer to it).
     std::unique_ptr<Document> docPtr;
@@ -383,6 +390,7 @@ void printIndexProfile(const Document& d, std::vector<std::pair<double, const En
 std::unique_ptr<AppCore::Session> AppCore::makeSession(std::unique_ptr<Document> doc,
                                                        fs::path file) {
     auto s = std::make_unique<Session>(std::move(doc));
+    s->closingHooks = &closingHooks_;
     Document& d = s->doc;
     // The new session can take the address of one just closed, at the same revision number: the
     // extents remembered for that one must not be taken for this one's.
@@ -625,6 +633,16 @@ void AppCore::installSession(std::unique_ptr<Document> doc, fs::path file) {
     slot.viewSaved = false;
     slot.autosavedRevision = ~std::uint64_t{0};
     enterSlot(active_, true);
+}
+
+void AppCore::addDocumentClosingHook(std::function<void(Document&)> hook) {
+    if (hook)
+        closingHooks_.push_back(std::move(hook));
+}
+
+void AppCore::adoptDocument(std::unique_ptr<Document> doc) {
+    if (doc)
+        addSession(std::move(doc), {});
 }
 
 void AppCore::addSession(std::unique_ptr<Document> doc, fs::path file) {

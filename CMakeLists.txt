@@ -54,6 +54,14 @@ foreach(_cml IN LISTS _tbcad_libs _tbcad_cmds)
   add_subdirectory("${_dir}" "${_rel}")
 endforeach()
 
+# Optional extension (a separate, private source tree): TBCAD_PRO_DIR points at a folder whose
+# CMakeLists.txt defines the static target tbcad_pro and the header <tbcad/pro/pro.h> (see
+# docs/extensions.md). Nothing of it lives in this repository.
+set(TBCAD_PRO_DIR "" CACHE PATH "Optional extension module tree (see docs/extensions.md)")
+if(TBCAD_BUILD_APP AND TBCAD_PRO_DIR)
+  add_subdirectory("${TBCAD_PRO_DIR}" "tbcad_pro_build")
+endif()
+
 # Command line tools build everywhere; the desktop application only when TBCAD_BUILD_APP is on.
 set(_tbcad_cli_apps tbcad-convert tbcad-mcp tbcad-samples)
 foreach(_cml IN LISTS _tbcad_apps)
