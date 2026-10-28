@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.28)
 
 project(TBCAD VERSION 0.0.1 LANGUAGES C CXX)
 
+# The version text shown in the program (About, window title, installer). Release builds pass the
+# full tag version, for example 0.1.0-test.7; the numeric PROJECT_VERSION stays for the exe resource.
+set(TBCAD_VERSION_LABEL "${PROJECT_VERSION}" CACHE STRING "Version text shown in the program")
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)

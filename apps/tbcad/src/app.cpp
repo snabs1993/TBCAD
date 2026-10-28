@@ -1671,7 +1671,7 @@ void App::frame() {
 
     const std::string title = core_->windowTitle();
     if (title != lastTitle_) {
-        glfwSetWindowTitle(window_, title.c_str());
+        glfwSetWindowTitle(window_, (title + " " TBCAD_VERSION).c_str());
         lastTitle_ = title;
     }
 

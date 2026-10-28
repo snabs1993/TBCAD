@@ -8,7 +8,7 @@ tbcad_add_library(mcpcli
 
 add_executable(tbcad-mcp src/main.cpp)
 target_link_libraries(tbcad-mcp PRIVATE tbcad::mcpcli)
-target_compile_definitions(tbcad-mcp PRIVATE TBCAD_VERSION="${PROJECT_VERSION}")
+target_compile_definitions(tbcad-mcp PRIVATE TBCAD_VERSION="${TBCAD_VERSION_LABEL}")
 tbcad_set_warnings(tbcad-mcp)
 
 file(GLOB_RECURSE _mcpcli_tests CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp")

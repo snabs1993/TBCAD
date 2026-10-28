@@ -350,7 +350,7 @@ void drawIcon(ImDrawList* dl, Icon icon, ImVec2 min, float size, ImU32 color, Im
         case Icon::Measure:
             g.rect(2.5f, 7, 17.5f, 13);
             for (int i = 1; i < 6; ++i)
-                g.line(2.5f + 2.5f * i, 7, 2.5f + 2.5f * i, i % 2 ? 10 : 11);
+                g.line(2.5f + 2.5f * i, 7, 2.5f + 2.5f * i, i % 2 ? 10.0f : 11.0f);
             a.line(2.5f + 7.5f, 7, 2.5f + 7.5f, 13);
             break;
         case Icon::Wipeout:

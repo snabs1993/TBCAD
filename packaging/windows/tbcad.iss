@@ -5,6 +5,10 @@
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
+; The full version text for the window titles ("0.1.0-test.7"); the numeric AppVersion is for the file.
+#ifndef AppLabel
+  #define AppLabel AppVersion
+#endif
 #ifndef BuildDir
   #error Pass /DBuildDir=<folder that holds tbcad.exe, tbcad-convert.exe, tbcad-mcp.exe and assets>
 #endif
@@ -19,7 +23,7 @@
 AppId={{6F1C2D7A-3B54-4E6B-9E0A-7B1D5C0A9D21}
 AppName=TBCAD
 AppVersion={#AppVersion}
-AppVerName=TBCAD {#AppVersion}
+AppVerName=TBCAD {#AppLabel}
 AppPublisher=TBCAD contributors
 AppPublisherURL=https://github.com/snabs1993/TBCAD
 AppSupportURL=https://github.com/snabs1993/TBCAD/issues
