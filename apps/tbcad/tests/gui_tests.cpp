@@ -3298,3 +3298,23 @@ TEST_CASE("menu bar: drawing menus sit under Commands, Classic Menus brings them
     CHECK_FALSE(h.has("Commands", "MainMenuBar"));
     CHECK(h.has("Draw", "MainMenuBar"));
 }
+
+TEST_CASE("toolbox: Expert mode is icons only and shorter, tooltips teach the keyboard way") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    const float beginner = ImGui::GetMainViewport()->WorkPos.y;
+    h.core().setSetting("ui.toolbox.expert", "1");
+    h.frame(3);
+    CHECK(ImGui::GetMainViewport()->WorkPos.y < beginner - 15.0f);
+    CHECK(matchesGolden(h.windowShot("##toolbox"), "toolbox_expert"));
+    // Hover the first Toolbox button: the tip names the command, its alias and the typed way.
+    h.core().setSetting("ui.toolbox.expert", "0");
+    h.frame(3);
+    const auto* first = h.find("##tool", "##toolbox", 0);
+    REQUIRE(first);
+    h.moveMouse((first->min.x + first->max.x) * 0.5f, (first->min.y + first->max.y) * 0.5f);
+    h.frame(60);
+    const Image tip = h.windowShot("##Tooltip");
+    REQUIRE_FALSE(tip.empty());
+    CHECK(matchesGolden(tip, "toolbox_tooltip"));
+}

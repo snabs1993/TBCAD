@@ -1306,6 +1306,7 @@ void Gui::menuBar() {
             toggle("Toolbar", "ui.toolstrip", true);
             toggle("Toolbox", "ui.toolbox", true);
             toggle("Quick Rail", "ui.quickRailBar", true);
+            toggle("Expert Toolbox (icons only)", "ui.toolbox.expert", false);
             if (ImGui::MenuItem("Classic Menus", nullptr, !flag("ui.compactMenus", true)))
                 core_.setSetting("ui.compactMenus", flag("ui.compactMenus", true) ? "0" : "1");
             toggle("Status Bar", "ui.statusbar", true);
@@ -1675,7 +1676,13 @@ void Gui::toolCell(const ui::ToolDef& t, float iconSize, float scale, bool iconO
                 tip += " (" + aliases.front() + ")";
             if (!c->description().empty())
                 tip += "\n" + std::string(c->description());
+            // How to reach it without the mouse, and what the extras are.
+            tip += "\n\nKeyboard: type " + std::string(c->name()) +
+                   (aliases.empty() ? "" : " or " + aliases.front()) + " and press Space or Enter";
         }
+        if (!t.variants.empty())
+            tip += "\nClick the small arrow for other ways to do it";
+        tip += "\nRight-click: add to the Quick rail";
         ImGui::SetTooltip("%s", tip.c_str());
     }
     ImGui::PopID();
@@ -1737,7 +1744,10 @@ void Gui::toolbox() {
     const ImGuiStyle& st = ImGui::GetStyle();
     const float line = ImGui::GetTextLineHeight();
     const float tabH = ImGui::GetFrameHeight();
-    const float bodyH = iconSize + line * 2.0f + st.ItemSpacing.y * 3.0f;
+    // Expert mode: icons only, no names or group captions, so the bar is shorter.
+    const bool expert = flag("ui.toolbox.expert", false);
+    const float bodyH = expert ? iconSize + st.ItemSpacing.y * 2.0f
+                               : iconSize + line * 2.0f + st.ItemSpacing.y * 3.0f;
     const float h = tabH + (folded ? 0.0f : bodyH) + st.WindowPadding.y * 2.0f;
     ImGuiViewport* vp = ImGui::GetMainViewport();
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
@@ -1790,9 +1800,10 @@ void Gui::toolbox() {
                     if (!firstTool)
                         ImGui::SameLine(0, 2);
                     firstTool = false;
-                    toolCell(t, iconSize, scale, false);
+                    toolCell(t, iconSize, scale, expert);
                 }
-                ImGui::TextDisabled("%s", g.name.c_str());
+                if (!expert)
+                    ImGui::TextDisabled("%s", g.name.c_str());
                 ImGui::EndGroup();
             }
         }
