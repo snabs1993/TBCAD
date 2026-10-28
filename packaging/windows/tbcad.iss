@@ -67,6 +67,7 @@ Source: "{#BuildDir}\tbcad-mcp.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BuildDir}\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#BuildDir}\THIRD_PARTY_NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#RepoDir}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#BuildDir}\software-gl\*"; DestDir: "{app}\software-gl"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "tbcad-open-dxf.cmd"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#RepoDir}\docs\user-guide\*"; DestDir: "{app}\docs"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#RepoDir}\samples\*"; DestDir: "{app}\samples"; Flags: ignoreversion recursesubdirs createallsubdirs

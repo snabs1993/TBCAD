@@ -3012,6 +3012,7 @@ TEST_CASE("OpenGL problem message names the GPU and the fix") {
     const std::string b = tbcad::openGlProblemText("", "");
     CHECK(b.find("unknown") != std::string::npos);
     CHECK(b.find("Update the graphics driver") != std::string::npos);
+    CHECK(b.find("--software-gl") != std::string::npos);
 }
 
 TEST_CASE("first run: the start page opens the sample or a new drawing in one click, no dialog") {

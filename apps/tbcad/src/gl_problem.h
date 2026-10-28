@@ -21,10 +21,21 @@ inline std::string openGlProblemText(const std::string& renderer, const std::str
         t += "Update the graphics driver from the maker of your graphics card (Intel, NVIDIA or "
              "AMD), then start TBCAD again. If this is a remote desktop or virtual machine, run "
              "TBCAD on the computer itself.";
+    t += "\n\nTo draw without a graphics driver (slower), start tbcad.exe with --software-gl "
+         "(needs the software-gl folder next to tbcad.exe).";
     return t;
 }
 
 // A message box on Windows; nothing elsewhere (the text is also printed to stderr).
-void showOpenGlProblem(const std::string& text);
+// When `offerSoftware` is set the box asks whether to restart with software drawing and returns
+// true on "Yes".
+bool showOpenGlProblem(const std::string& text, bool offerSoftware = false);
+
+// Optional software OpenGL (Mesa llvmpipe, MIT): if the installer folder holds
+// software-gl/opengl32.dll, load it instead of the system driver. Windows only; false elsewhere.
+bool softwareGlAvailable();
+bool useSoftwareGl();
+// Start this program again with --software-gl (same arguments). Windows only.
+bool relaunchWithSoftwareGl();
 
 }  // namespace tbcad
