@@ -3281,3 +3281,20 @@ TEST_CASE("toolbox: Recent group fills as commands run, and Quick rail buttons r
     h.frame(2);
     CHECK(matchesGolden(h.windowShot("##quickrail"), "quickrail"));
 }
+
+TEST_CASE("menu bar: drawing menus sit under Commands, Classic Menus brings them back") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    CHECK(h.has("Commands", "MainMenuBar"));
+    CHECK_FALSE(h.has("Draw", "MainMenuBar"));
+    REQUIRE(h.click("Commands", "MainMenuBar"));
+    h.frame(3);
+    CHECK(h.has("Draw", "##Menu"));
+    CHECK(h.has("Modify", "##Menu"));
+    h.key(ImGuiKey_Escape);
+    h.frame(2);
+    h.core().setSetting("ui.compactMenus", "0");
+    h.frame(3);
+    CHECK_FALSE(h.has("Commands", "MainMenuBar"));
+    CHECK(h.has("Draw", "MainMenuBar"));
+}

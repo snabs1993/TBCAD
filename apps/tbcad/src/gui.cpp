@@ -1306,6 +1306,8 @@ void Gui::menuBar() {
             toggle("Toolbar", "ui.toolstrip", true);
             toggle("Toolbox", "ui.toolbox", true);
             toggle("Quick Rail", "ui.quickRailBar", true);
+            if (ImGui::MenuItem("Classic Menus", nullptr, !flag("ui.compactMenus", true)))
+                core_.setSetting("ui.compactMenus", flag("ui.compactMenus", true) ? "0" : "1");
             toggle("Status Bar", "ui.statusbar", true);
             toggle("Navigation Bar", "ui.navbar", true);
             toggle("Contextual Tabs", "ui.contextTabs", true);
@@ -1378,7 +1380,11 @@ void Gui::menuBar() {
             std::find(tops.begin(), tops.end(), top) == tops.end())
             tops.push_back(top);
     }
-    for (const auto& top : tops) {
+    // The Toolbox carries the everyday commands, so by default the rest sit in one "Commands"
+    // menu with the old Draw, Modify, ... as sub-menus. Classic Menus (View > User Interface)
+    // brings them back as separate top-level menus.
+    const bool compact = flag("ui.compactMenus", true);
+    auto topMenu = [&](const std::string& top) {
         if (ImGui::BeginMenu(top.c_str())) {
             MenuNode root;
             for (const auto& item : registry_.menuItems()) {
@@ -1389,6 +1395,16 @@ void Gui::menuBar() {
             drawNode(root, core_, keys);
             ImGui::EndMenu();
         }
+    };
+    if (compact && !tops.empty()) {
+        if (ImGui::BeginMenu("Commands")) {
+            for (const auto& top : tops)
+                topMenu(top);
+            ImGui::EndMenu();
+        }
+    } else {
+        for (const auto& top : tops)
+            topMenu(top);
     }
     if (ImGui::BeginMenu("Help")) {
         if (ImGui::MenuItem("Quick Start", keys.label("help.quickStart").c_str()))
