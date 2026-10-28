@@ -15,6 +15,7 @@
 #include "settings_dialog.h"
 #include "tbcad/core/color.h"
 #include "tbcad/platform/external_link.h"
+#include "tbcad/platform/updater.h"
 #include "tbcad/textcmd/format_bar.h"
 #include "tbcad/ui/app_core.h"
 #include "tbcad/ui/command_match.h"
@@ -82,6 +83,11 @@ public:
     void showTile(unsigned texture, const ViewportRect& rect);
 
     bool wantsExit() const { return exitRequested_; }
+    // Looks for a newer version in the background (the program start does this once a day when the
+    // setting allows; Help > Check for Updates does it on request and always answers).
+    void checkForUpdates(bool manual);
+    // After the main loop: runs the downloaded installer when the user chose "Install and restart".
+    void launchPendingInstaller();
     // The window's close button: asks to save first when needed. Returns true when it is fine to
     // close right now.
     bool requestClose();
@@ -254,6 +260,12 @@ private:
     ui::Theme theme_ = ui::darkTheme();
     bool exitRequested_ = false;
     bool showAbout_ = false;
+    void updatePopup();
+    platform::UpdateService update_;
+    platform::UpdateService::State lastUpdateState_ = platform::UpdateService::State::Idle;
+    bool showUpdate_ = false;
+    bool updateManual_ = false;
+    bool installAfterExit_ = false;
     bool showNotices_ = false;
     bool showReport_ = false;
     bool showCommandList_ = false;

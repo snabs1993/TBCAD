@@ -90,7 +90,15 @@ Root: HKA; Subkey: "Software\Classes\TBCAD.DxfImport\shell\open\command"; ValueT
 
 [Run]
 Filename: "{app}\tbcad.exe"; Description: "Start TBCAD"; Flags: nowait postinstall skipifsilent
+; An in-program update (TBCAD runs this setup silently with /TBCADUPDATE=1) starts the program again.
+Filename: "{app}\tbcad.exe"; Flags: nowait runasoriginaluser; Check: IsProgramUpdate
 
 [UninstallDelete]
 ; Settings and drawings in the user's folders are never removed; only what we put in {app}.
 Type: filesandordirs; Name: "{app}\docs"
+
+[Code]
+function IsProgramUpdate: Boolean;
+begin
+  Result := ExpandConstant('{param:TBCADUPDATE|0}') = '1';
+end;

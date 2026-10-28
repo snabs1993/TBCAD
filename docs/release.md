@@ -30,6 +30,19 @@ Files shipped: `tbcad.exe`, `tbcad-convert.exe`, `tbcad-mcp.exe`, `assets\` (fon
 `THIRD_PARTY_NOTICES.txt` (generated at build time from `third_party/notices`), and the user
 guide in `docs\`.
 
+## Updates inside the program
+
+TBCAD looks at the GitHub Releases of snabs1993/TBCAD when it starts (once a day; Help > Check for
+Updates does it at once; Settings > Files can turn it off). It offers a release that is newer than
+the running version and has a `TBCAD-<version>-setup.exe` asset. Draft releases are not visible to
+it, so nothing is offered until the release is published. The channel setting decides whether test
+builds (`-test.N` tags, or releases marked pre-release) count: "same kind as this version" (default),
+"final only" or "test builds too". "Update now" downloads the installer (size and the SHA-256 that
+GitHub lists for the asset are checked; only addresses under the project's release area are
+accepted), then closes TBCAD after the usual save prompts and runs the setup silently over the old
+install (`/SILENT /TBCADUPDATE=1`, `/ALLUSERS` when the program lives in Program Files); the setup
+starts TBCAD again. Settings stay. `TBCAD_NO_UPDATE_CHECK=1` disables the start-up check.
+
 ## Version, icon
 
 - The version comes from `project(TBCAD VERSION ...)` in the top `CMakeLists.txt` and is written

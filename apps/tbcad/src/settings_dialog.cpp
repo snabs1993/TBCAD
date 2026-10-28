@@ -715,6 +715,23 @@ void SettingsDialog::files(ui::AppCore& core) {
             "AutoCAD's, Downloads and Documents.");
     }
     ImGui::Spacing();
+    {
+        bool check = s.getBool("update.check", true);
+        if (ImGui::Checkbox("Look for a new version when TBCAD starts", &check))
+            s.setBool("update.check", check);
+        static constexpr const char* kChan[] = {"auto", "stable", "test"};
+        const std::string cur = s.getString("update.channel", "auto");
+        int c = 0;
+        for (int i = 0; i < 3; ++i)
+            if (cur == kChan[i])
+                c = i;
+        ImGui::SetNextItemWidth(260);
+        if (ImGui::Combo("Updates", &c,
+                         "Same kind as this version\0Final releases only\0Test builds too\0"))
+            s.setString("update.channel", kChan[c]);
+        ImGui::TextDisabled("Help > Check for Updates looks right away.");
+    }
+    ImGui::Spacing();
     ImGui::TextDisabled("Settings folder: %s", core.settingsFolder().string().c_str());
 }
 

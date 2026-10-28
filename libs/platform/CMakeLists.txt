@@ -1,15 +1,18 @@
-set(_platform_sources src/json.cpp src/paths.cpp src/settings.cpp src/keybindings.cpp src/crash.cpp src/file_lock.cpp src/external_link.cpp src/clipboard_picture.cpp)
+set(_platform_sources src/json.cpp src/paths.cpp src/settings.cpp src/keybindings.cpp src/crash.cpp src/file_lock.cpp src/external_link.cpp src/clipboard_picture.cpp src/updater.cpp)
 if(WIN32)
-  list(APPEND _platform_sources src/file_dialog_win32.cpp src/clipboard_picture_win32.cpp)
+  list(APPEND _platform_sources src/file_dialog_win32.cpp src/clipboard_picture_win32.cpp src/updater_win32.cpp)
 else()
-  list(APPEND _platform_sources src/file_dialog_stub.cpp src/clipboard_picture_stub.cpp)
+  list(APPEND _platform_sources src/file_dialog_stub.cpp src/clipboard_picture_stub.cpp src/updater_stub.cpp)
 endif()
 
 tbcad_add_library(platform SOURCES ${_platform_sources} DEPENDS tbcad::core)
 if(WIN32)
-  target_link_libraries(tbcad_platform PRIVATE ole32 shell32 uuid)
+  target_link_libraries(tbcad_platform PRIVATE ole32 shell32 uuid winhttp)
   target_compile_definitions(tbcad_platform PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
 endif()
+
+find_package(Threads REQUIRED)
+target_link_libraries(tbcad_platform PUBLIC Threads::Threads)
 
 tbcad_add_tests(platform
   SOURCES
@@ -21,4 +24,5 @@ tbcad_add_tests(platform
     tests/crash_tests.cpp
     tests/file_lock_tests.cpp
     tests/external_link_tests.cpp
-    tests/clipboard_picture_tests.cpp)
+    tests/clipboard_picture_tests.cpp
+    tests/updater_tests.cpp)
