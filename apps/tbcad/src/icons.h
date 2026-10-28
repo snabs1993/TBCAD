@@ -103,7 +103,13 @@ enum class IconGroup { General, Draw, Modify, Annotate, Block, Inquire, Output, 
     X(Grid, Toggle) \
     X(Ortho, Toggle) \
     X(Polar, Toggle) \
-    X(Osnap, Toggle)
+    X(Osnap, Toggle) \
+    X(Gradient, Draw) \
+    X(ByLayer, Modify) \
+    X(ToLayer, Modify) \
+    X(Find, Inquire) \
+    X(Filter, Inquire) \
+    X(Tolerance, Annotate)
 
 // Tool-strip icons, drawn with line primitives on a 20 x 20 grid: single colour, 1.5 px stroke at
 // 100 % scale, so they follow the theme and every DPI without image files.
