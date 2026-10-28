@@ -7,6 +7,7 @@
 #include <imgui.h>
 
 #include <cstdint>
+#include <functional>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -49,6 +50,9 @@ struct Tolerance {
 // Compares `img` with tests/golden/<name>.png. A mismatch writes <name>.actual.png and
 // <name>.diff.png to the build folder and fails with their paths. With TBCAD_UPDATE_GOLDEN=1 in the
 // environment the golden file is written instead (and the check passes).
+// Writes `img` as <name>.png to the build folder's failure/preview directory; returns the path.
+std::filesystem::path savePreview(const Image& img, const std::string& name);
+
 bool matchesGolden(const Image& img, const std::string& name, const Tolerance& tol = {});
 
 class Harness {
@@ -104,6 +108,9 @@ public:
 
     // The current frame as a picture.
     Image screenshot();
+    // A frame with `draw` painting on top of everything (into the draw list it is given), returned
+    // as the top-left w x h pixels. For previews of things that have no place in the Gui yet.
+    Image overlayShot(int w, int h, const std::function<void(ImDrawList*)>& draw);
     // The frame cut to the window whose name contains `windowPart` (with a small margin).
     Image windowShot(const std::string& windowPart);
 

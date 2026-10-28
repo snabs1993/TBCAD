@@ -10,10 +10,12 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <sstream>
 
 #include "gui.h"
 #include "gui_harness.h"
+#include "icons.h"
 #include "tbcad/block_cmds/palette.h"
 #include "tbcad/layers/layer_states.h"
 #include "tbcad/render/overlay.h"
@@ -3105,4 +3107,68 @@ TEST_CASE("drawing tab dragged onto another window moves the drawing there") {
     CHECK(fs::path(got[0]) == file);
     CHECK(h.imguiErrors().empty());
     fs::remove_all(dir);
+}
+
+// Every toolbar icon on one sheet (saved as icon-sheet.png in the build's gui-test-failures folder
+// so a person can look at it) and checked for the mistakes a picture would show: an empty icon, a
+// stroke outside its square, two icons drawn the same, a missing name.
+TEST_CASE("icon sheet: every icon draws inside its square, and no two are alike") {
+    using app::Icon;
+    const int count = static_cast<int>(Icon::Count);
+    REQUIRE(count >= 90);
+    constexpr int cols = 12, cellW = 116, cellH = 92, iconPx = 56;
+    const int rows = (count + cols - 1) / cols;
+    Harness h(1440, 900);
+    h.frame(2);
+    std::vector<std::string> problems;
+    std::map<std::size_t, std::string> seen;
+    const Image sheet = h.overlayShot(cols * cellW, rows * cellH, [&](ImDrawList* dl) {
+        dl->AddRectFilled(ImVec2(0, 0), ImVec2(float(cols * cellW), float(rows * cellH)),
+                          IM_COL32(32, 34, 38, 255));
+        for (int i = 0; i < count; ++i) {
+            const Icon icon = static_cast<Icon>(i);
+            const std::string name = app::iconName(icon);
+            if (name.empty())
+                problems.push_back("icon " + std::to_string(i) + " has no name");
+            const float x = float((i % cols) * cellW), y = float((i / cols) * cellH);
+            const ImVec2 lo(x + (cellW - iconPx) * 0.5f, y + 6);
+            dl->AddRect(lo, ImVec2(lo.x + iconPx, lo.y + iconPx), IM_COL32(60, 64, 72, 255));
+            const int v0 = dl->VtxBuffer.Size;
+            app::drawIcon(dl, icon, lo, float(iconPx), IM_COL32(225, 228, 235, 255),
+                          app::iconAccent(app::iconGroup(icon)));
+            if (dl->VtxBuffer.Size == v0) {
+                problems.push_back(name + " draws nothing");
+                continue;
+            }
+            float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
+            std::size_t hash = 1469598103934665603ull;
+            for (int v = v0; v < dl->VtxBuffer.Size; ++v) {
+                const ImVec2 p = dl->VtxBuffer[v].pos;
+                x0 = std::min(x0, p.x), y0 = std::min(y0, p.y);
+                x1 = std::max(x1, p.x), y1 = std::max(y1, p.y);
+                hash = (hash ^ std::size_t(std::lround((p.x - lo.x) * 4))) * 1099511628211ull;
+                hash = (hash ^ std::size_t(std::lround((p.y - lo.y) * 4))) * 1099511628211ull;
+            }
+            const float slack = 0.06f * iconPx;  // strokes and accent marks may overshoot a little
+            if (x0 < lo.x - slack || y0 < lo.y - slack || x1 > lo.x + iconPx + slack ||
+                y1 > lo.y + iconPx + slack)
+                problems.push_back(name + " leaves its square");
+            if (x1 - x0 < 0.3f * iconPx || y1 - y0 < 0.3f * iconPx)
+                problems.push_back(name + " is too small");
+            const auto [it, fresh] = seen.emplace(hash, name);
+            if (!fresh)
+                problems.push_back(name + " looks the same as " + it->second);
+            const char* label = name.c_str();
+            const ImVec2 ts = ImGui::CalcTextSize(label);
+            dl->AddText(ImVec2(x + (cellW - ts.x) * 0.5f, lo.y + iconPx + 6),
+                        IM_COL32(180, 186, 198, 255), label);
+        }
+    });
+    CHECK(!sheet.empty());
+    const auto file = savePreview(sheet, "icon-sheet");
+    MESSAGE("icon sheet: " << file.string());
+    for (const std::string& p : problems)
+        MESSAGE("icon problem: " << p);
+    CHECK(problems.empty());
+    CHECK(h.imguiErrors().empty());
 }
