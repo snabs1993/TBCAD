@@ -121,7 +121,7 @@ std::vector<ToolTab> build() {
           G{"Check & repair",
             {T{"Audit", "AUDIT", "audit", {}}, T{"Purge", "PURGE", "purge", {}},
              T{"Recover", "RECOVER", "audit", {}}, T{"Standards", "CHECKSTANDARDS", "audit", {}},
-             T{"Quick select", "QSELECT", "find", {}}, T{"Filter", "FILTER", "find", {}}}},
+             T{"Quick select", "QSELECT", "filter", {}}, T{"Filter", "FILTER", "filter", {}}}},
           G{"Drawing aids",
             {T{"Snap", "SNAP", "snap", {}}, T{"Grid", "GRID", "grid", {}},
              T{"Ortho", "ORTHO", "ortho", {}}, T{"Polar", "POLAR", "polar", {}},

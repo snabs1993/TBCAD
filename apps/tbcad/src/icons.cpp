@@ -633,6 +633,39 @@ void drawIcon(ImDrawList* dl, Icon icon, ImVec2 min, float size, ImU32 color, Im
             a.line(10, 5.5f, 10, 14.5f);
             a.line(5.5f, 10, 14.5f, 10);
             break;
+        case Icon::Gradient:
+            g.rect(3, 3, 17, 17);
+            for (int i = 0; i < 5; ++i)
+                g.line(5.5f + 2.2f * i, 17, 5.5f + 2.2f * i, 17 - 2.0f * (i + 1));
+            a.line(3, 3, 17, 17);
+            break;
+        case Icon::ByLayer:
+            g.rect(3, 4, 17, 8);
+            g.rect(3, 12, 17, 16);
+            a.line(6, 10, 14, 10);
+            a.poly({{12, 8.5f}, {14, 10}, {12, 11.5f}});
+            break;
+        case Icon::ToLayer:
+            g.rect(3, 12, 14, 16.5f);
+            g.rect(3, 6, 14, 10);
+            a.line(15, 5, 15, 12);
+            a.poly({{13.5f, 10}, {15, 12}, {16.5f, 10}});
+            break;
+        case Icon::Find:
+            g.circle(8.5f, 8.5f, 5);
+            a.line(12.3f, 12.3f, 17, 17);
+            break;
+        case Icon::Filter:
+            g.poly({{3, 4}, {17, 4}, {11.5f, 10.5f}, {11.5f, 16}, {8.5f, 14.5f}, {8.5f, 10.5f}},
+                   true);
+            a.dot(10, 6.5f, 1.1f);
+            break;
+        case Icon::Tolerance:
+            g.rect(2.5f, 6, 17.5f, 14);
+            g.line(8, 6, 8, 14);
+            g.line(13, 6, 13, 14);
+            a.dot(5.25f, 10, 1.3f);
+            break;
         case Icon::Grid:
             g.rect(3, 3, 17, 17);
             g.line(7.67f, 3, 7.67f, 17);
