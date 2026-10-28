@@ -985,6 +985,17 @@ TEST_CASE("keyboard map: shortcuts, function keys and typing anywhere") {
     h.key(ImGuiKey_Escape);
 }
 
+TEST_CASE("Space after a typed command name runs it like Enter") {
+    Harness h(1920, 1080);
+    h.frame(2);
+    REQUIRE(h.click("##command", "Command"));
+    h.type("circle ");
+    h.frame(2);
+    CHECK(runningName(h) == "CIRCLE");
+    h.key(ImGuiKey_Escape);
+    h.frame(2);
+}
+
 TEST_CASE("command line focus: edit chords act on the text, Esc clears text then selection") {
     Harness h(1920, 1080);
     h.core().submitText("LINE");

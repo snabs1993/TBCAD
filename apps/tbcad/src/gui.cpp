@@ -2686,8 +2686,12 @@ int Gui::inputCallback(ImGuiInputTextCallbackData* d) {
         case ImGuiInputTextFlags_CallbackCharFilter: {
             const auto* prompt = core_.runner().prompt();
             const bool text = prompt && prompt->kind == cmd::PromptInfo::Kind::String;
-            if (d->EventChar == ' ' && input_.empty() && !text) {
-                spaceAsEnter_ = true;
+            if (d->EventChar == ' ' && !text) {
+                // Space ends a typed command name or answer like Enter; a text prompt keeps it.
+                if (d->BufTextLen > 0)
+                    spaceSubmit_ = true;
+                else
+                    spaceAsEnter_ = true;
                 return 1;  // swallow the space
             }
             return 0;
@@ -2957,7 +2961,11 @@ void Gui::commandWindow() {
         const ImGuiInputTextFlags flags =
             ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackHistory |
             ImGuiInputTextFlags_CallbackCompletion | ImGuiInputTextFlags_CallbackCharFilter;
-        if (ImGui::InputText("##command", &input_, flags, tbcad::app::inputCallback, this)) {
+        const bool entered =
+            ImGui::InputText("##command", &input_, flags, tbcad::app::inputCallback, this);
+        const bool submitLine = entered || (spaceSubmit_ && !input_.empty());
+        spaceSubmit_ = false;
+        if (submitLine) {
             std::string line = input_;
             bool refused = false;
             // An arrow-key pick wins even over a typed word that is itself an alias ("li").
