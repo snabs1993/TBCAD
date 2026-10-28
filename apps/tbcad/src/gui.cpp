@@ -1633,7 +1633,7 @@ void Gui::toolbox() {
                     Icon icon{};
                     if (iconFromId(t.icon, icon)) {
                         drawIcon(dl, icon, iconLo, iconSize - 2 * pad,
-                                 ImGui::GetColorU32(ImGuiCol_Text));
+                                 ImGui::GetColorU32(ImGuiCol_Text), iconAccent(iconGroup(icon)));
                     } else {
                         // No icon drawn for this one yet: its initials in a frame.
                         const ImVec2 a(iconLo.x, iconLo.y);
