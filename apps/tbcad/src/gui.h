@@ -129,7 +129,7 @@ private:
     void saveAllDrawings();
     // QVDRAWING / QVLAYOUT: cards of the open drawings (or of this drawing's layouts) to switch to.
     void quickView();
-    int quickView_ = 0;    // 0 closed, 1 drawings, 2 layouts of the active drawing
+    int quickView_ = 0;  // 0 closed, 1 drawings, 2 layouts of the active drawing
     WindowLink* link_ = nullptr;
     std::uint64_t tabDragId_ = 0;  // the drawing whose tab is being dragged (0: none)
     struct TearOff {
@@ -145,6 +145,7 @@ private:
 
     void shortcuts();
     void menuBar();
+    void searchBox();  // top-centre command search (English and Thai words)
     void toolStrip();
     void readOnlyBanner();
     void blockEditBar();
@@ -308,6 +309,10 @@ private:
     bool suggestVisible_ = false;
     bool suggestDismissed_ = false;
     bool paletteOpen_ = false;
+    std::string searchText_{};  // the top search box
+    int searchSel_ = 0;
+    bool searchListHovered_ = false;  // the mouse is over the result list
+    bool searchFocus_ = false;        // grab the keyboard on the next frame (Ctrl+K)
     std::string suggestFor_{};
     bool cursorHud_ = true;
     bool hudHovered_ = false;

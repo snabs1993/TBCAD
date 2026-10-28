@@ -197,6 +197,7 @@ AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
     keybindings_.declare("view.toggleCommandLine", "Ctrl+9");  // as in AutoCAD
     keybindings_.declare("view.toggleProperties", "Ctrl+1");   // as in AutoCAD
     keybindings_.declare("view.commandPalette", "Ctrl+Shift+P");
+    keybindings_.declare("view.search", "Ctrl+K");  // the search box at the top
     keybindings_.declare("view.cursorHud", "F12");
     keybindings_.declare("view.expandLog", "Ctrl+L");
     keybindings_.declare("view.textWindow", "F2");
@@ -3688,7 +3689,8 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
     if (feedback_.active) {
         if (feedback_.guide) {
             render::OverlayStyle g;
-            g.color = (theme_.bgViewport.r < 128) ? Rgba{0x3C, 0xE6, 0x3C, 255} : Rgba{0x00, 0x96, 0x00, 255};
+            g.color = (theme_.bgViewport.r < 128) ? Rgba{0x3C, 0xE6, 0x3C, 255}
+                                                  : Rgba{0x00, 0x96, 0x00, 255};
             g.widthPx = 1.0;
             g.dashPx = 6;
             g.gapPx = 4;

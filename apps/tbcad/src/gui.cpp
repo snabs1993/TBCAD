@@ -364,6 +364,8 @@ void Gui::runAction(const std::string& action) {
         showCommandLine_ = !showCommandLine_;
     else if (action == "view.toggleProperties")
         panelOpen_["properties"] = !panelOpen_["properties"];
+    else if (action == "view.search")
+        searchFocus_ = true;
     else if (action == "view.commandPalette") {
         showCommandLine_ = true;
         paletteOpen_ = true;
@@ -1401,7 +1403,104 @@ void Gui::menuBar() {
         registeredMenu("Help");
         ImGui::EndMenu();
     }
+    searchBox();
     ImGui::EndMainMenuBar();
+}
+
+// The search box in the middle of the menu bar: type a command name, an alias, a description word
+// or a Thai word ("วงกลม") and pick the command from the list under it.
+void Gui::searchBox() {
+    const float width = std::min(380.0f * dpiScale_, ImGui::GetWindowWidth() * 0.4f);
+    const float x = (ImGui::GetWindowWidth() - width) * 0.5f;
+    if (x < ImGui::GetCursorPosX() + 16.0f * dpiScale_)
+        return;  // the window is too narrow for it
+    ImGui::SetCursorPosX(x);
+    ImGui::SetNextItemWidth(width);
+    if (searchFocus_) {
+        ImGui::SetKeyboardFocusHere();
+        searchFocus_ = false;
+    }
+    const std::string before = searchText_;
+    // Enter deactivates a single-line field; EnterReturnsTrue keeps the pick below in step with it.
+    const bool entered =
+        ImGui::InputTextWithHint("##topSearch", "Search commands  (Ctrl+K)  ค้นหาคำสั่ง", &searchText_,
+                                 ImGuiInputTextFlags_EnterReturnsTrue);
+    if (searchText_ != before)
+        searchSel_ = 0;
+    const bool active = ImGui::IsItemActive() || entered;
+    const ImVec2 boxMin = ImGui::GetItemRectMin();
+    const ImVec2 boxMax = ImGui::GetItemRectMax();
+    if (searchText_.empty() || !(active || searchListHovered_))
+        return;
+    std::vector<std::string> recent;  // command names typed lately, latest first
+    for (auto it = inputHistory_.lines().rbegin();
+         it != inputHistory_.lines().rend() && recent.size() < 30; ++it) {
+        std::string name = it->substr(0, it->find(' '));
+        for (char& ch : name)
+            ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+        if (const cmd::Command* c = core_.registry().find(name))
+            if (std::find(recent.begin(), recent.end(), std::string(c->name())) == recent.end())
+                recent.emplace_back(c->name());
+    }
+    const auto rows = ui::matchCommands(core_.registry(), searchText_, 10, recent);
+    if (rows.empty())
+        return;
+    searchSel_ = std::clamp(searchSel_, 0, static_cast<int>(rows.size()) - 1);
+    std::string run;
+    if (active) {
+        if (ImGui::IsKeyPressed(ImGuiKey_DownArrow))
+            searchSel_ = std::min(searchSel_ + 1, static_cast<int>(rows.size()) - 1);
+        if (ImGui::IsKeyPressed(ImGuiKey_UpArrow))
+            searchSel_ = std::max(searchSel_ - 1, 0);
+        if (entered)
+            run = rows[static_cast<std::size_t>(searchSel_)].name;
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            searchText_.clear();
+            ImGui::ClearActiveID();
+            return;
+        }
+    }
+    ImGui::SetNextWindowPos(ImVec2(boxMin.x, boxMax.y + 2), ImGuiCond_Always);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(boxMax.x - boxMin.x, 0), ImVec2(760, 420));
+    const ImGuiWindowFlags wf = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                                ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav |
+                                ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoDocking;
+    searchListHovered_ = false;
+    if (ImGui::Begin("##topSearchList", nullptr, wf)) {
+        searchListHovered_ = ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows);
+        const ImVec4 muted = ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled);
+        for (std::size_t i = 0; i < rows.size(); ++i) {
+            const auto& m = rows[i];
+            ImGui::PushID(static_cast<int>(i));
+            if (ImGui::Selectable("##row", static_cast<int>(i) == searchSel_))
+                run = m.name;
+            ImGui::SameLine(0, 0);
+            ImGui::TextUnformatted(m.name.c_str());
+            ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Text, muted);
+            if (!m.alias.empty())
+                ImGui::Text("(%s)", m.alias.c_str());
+            ImGui::SameLine();
+            if (m.synonym.empty())
+                ImGui::TextUnformatted(m.description.c_str());
+            else
+                ImGui::Text("\"%s\": %s", m.synonym.c_str(), m.description.c_str());
+            ImGui::PopStyleColor();
+            ImGui::PopID();
+        }
+    }
+    ImGui::End();
+    anyActivity_ = true;
+    if (!run.empty()) {
+        searchText_.clear();
+        searchListHovered_ = false;
+        ImGui::ClearActiveID();
+        if (core_.promptInfo())
+            core_.pressEscape();  // a search pick replaces the command in progress
+        core_.submitText(run);
+        refocusInput_ = true;
+    }
 }
 
 void Gui::toolStrip() {
@@ -3407,11 +3506,10 @@ void Gui::runTearOff() {
     // Closed first: the other window must be able to take the file's lock.
     core_.closeDocument(idx);
     shownActive_ = static_cast<std::size_t>(-1);
-    const bool ok = target ? link_->send(target->pid, file)
-                           : WindowLink::spawn(path, static_cast<int>(t.at.x),
-                                               static_cast<int>(t.at.y),
-                                               static_cast<int>(vp->Size.x),
-                                               static_cast<int>(vp->Size.y));
+    const bool ok =
+        target ? link_->send(target->pid, file)
+               : WindowLink::spawn(path, static_cast<int>(t.at.x), static_cast<int>(t.at.y),
+                                   static_cast<int>(vp->Size.x), static_cast<int>(vp->Size.y));
     if (!ok) {
         doOpenPath(path);  // back where it was
         toast("Could not open another window.");

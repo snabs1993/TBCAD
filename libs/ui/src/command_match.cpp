@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cctype>
 
+#include "tbcad/ui/thai_words.h"
+
 namespace tbcad::ui {
 
 namespace {
@@ -36,6 +38,11 @@ constexpr Synonym kSynonyms[] = {
     {"GROUPS", "GROUP"},        {"COUNT", "QSELECT"},
 };
 
+bool hasNonAscii(std::string_view s) {
+    return std::any_of(s.begin(), s.end(),
+                       [](char c) { return static_cast<unsigned char>(c) >= 0x80; });
+}
+
 }  // namespace
 
 bool isSubsequence(std::string_view query, std::string_view text) {
@@ -68,6 +75,7 @@ std::size_t keywordKeyLength(const std::vector<std::string>& keywords, std::size
 std::vector<CommandMatch> matchCommands(const cmd::Registry& registry, std::string_view queryText,
                                         std::size_t limit, const std::vector<std::string>& recent) {
     const std::string query = upper(queryText);
+    const bool thai = hasNonAscii(queryText);
     std::vector<CommandMatch> out;
     for (const cmd::Command* command : registry.list()) {
         const std::string name(command->name());
@@ -82,6 +90,17 @@ std::vector<CommandMatch> matchCommands(const cmd::Registry& registry, std::stri
             continue;
         }
         bool matched = false;
+        if (thai) {  // a Thai word: found through the Thai word list only
+            for (const ThaiWord& w : thaiWords())
+                if (name == w.command &&
+                    std::string_view(w.word).find(queryText) != std::string_view::npos) {
+                    m.rank = CommandMatch::Rank::Synonym;
+                    m.synonym = w.word;
+                    out.push_back(std::move(m));
+                    break;
+                }
+            continue;
+        }
         for (const std::string& a : aliases)
             if (upper(a) == query) {
                 m.rank = CommandMatch::Rank::ExactAlias;
