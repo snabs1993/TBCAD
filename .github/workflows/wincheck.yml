@@ -42,4 +42,4 @@ jobs:
           $errors | Select-Object -First 300
           exit $code
       - name: Test
-        run: ctest --preset windows-msvc-release --output-on-failure -j 4 -E "perf|performance"
+        run: ctest --preset windows-msvc-release --output-on-failure -j 2 -E "perf|performance"

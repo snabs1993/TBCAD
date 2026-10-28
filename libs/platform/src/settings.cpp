@@ -22,7 +22,7 @@ Settings Settings::withDefaults() {
     o["view.grid"] = false;
     o["drafting.snap"] = false;
     o["drafting.ortho"] = false;
-    o["drafting.polar"] = true;   // as AutoCAD: green polar and object-snap tracking guides
+    o["drafting.polar"] = true;  // as AutoCAD: green polar and object-snap tracking guides
     o["drafting.otrack"] = true;
     o["drafting.osnap"] = true;
     o["pick.aperturePx"] = 6;

@@ -109,8 +109,8 @@ void registerUi(ui::UiRegistry& ui) {
                 overlay.line(render::Space::Screen, {c.x - 4, c.y}, {c.x + 4, c.y}, ts);
                 overlay.line(render::Space::Screen, {c.x, c.y - 4}, {c.x, c.y + 4}, ts);
             }
-            // The tracking rays are green and dashed, like the guide of polar tracking, so that they
-            // read as construction lines and not as objects.
+            // The tracking rays are green and dashed, like the guide of polar tracking, so that
+            // they read as construction lines and not as objects.
             ts.widthPx = 1.0;
             ts.dashPx = 6;
             ts.gapPx = 4;
