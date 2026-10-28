@@ -3178,6 +3178,8 @@ TEST_CASE("top search box: a Thai word picks a command from the list") {
     h.core().pressEscape();
     h.frame(2);
     CHECK(!h.windowOpen("topSearchList"));
+}
+
 TEST_CASE("toolbox: every tool runs a command the program has") {
     Harness h(1280, 720);
     std::set<std::string> seen;
