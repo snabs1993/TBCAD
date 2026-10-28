@@ -3654,6 +3654,33 @@ bool Gui::optionChips() {
 
 // The prompt next to the cursor: what the program wants next, the typed text, and clickable
 // options. Follows the cursor with a lag so the options can be reached with the mouse.
+// Labels that modules ask for (UiRegistry::addLabelProvider), drawn by their point.
+void Gui::viewportLabels(const ViewportRect& rect) {
+    if (registry_.labelProviders().empty() || core_.inPaperSpace())
+        return;
+    ui::PanelContext pc;
+    fillPanelContext(pc);
+    std::vector<ui::ViewportLabel> labels;
+    for (const auto& fn : registry_.labelProviders())
+        fn(pc, labels);
+    if (labels.empty())
+        return;
+    const double sc = ImGui::GetIO().DisplayFramebufferScale.x;
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    for (const ui::ViewportLabel& l : labels) {
+        const Vec2 p = core_.camera().worldToScreen(l.world);
+        const ImVec2 at(rect.x + static_cast<float>(p.x / sc) + 12.0f * dpiScale_,
+                        rect.y + static_cast<float>(p.y / sc) + 10.0f * dpiScale_);
+        if (at.x < rect.x || at.y < rect.y || at.x > rect.x + rect.w || at.y > rect.y + rect.h)
+            continue;
+        const ImVec2 size = ImGui::CalcTextSize(l.text.c_str());
+        const ImU32 fill = IM_COL32(l.color.r, l.color.g, l.color.b, 230);
+        dl->AddRectFilled(ImVec2(at.x - 3, at.y - 1), ImVec2(at.x + size.x + 3, at.y + size.y + 1),
+                          fill, 3.0f);
+        dl->AddText(at, IM_COL32(255, 255, 255, 255), l.text.c_str());
+    }
+}
+
 void Gui::cursorHud(const ViewportRect& rect) {
     const cmd::PromptInfo* info = core_.promptInfo();
     if (!cursorHud_ || !info) {
@@ -5352,6 +5379,7 @@ ViewportRect Gui::frame() {
     lastRect_ = rect;
     startPage(rect);
     cursorHud(rect);
+    viewportLabels(rect);
     optionBar();
     gripMenu(rect);
     // The drawing origin: a small X (red) / Y (green) axis pair, so a new drawing has a landmark.

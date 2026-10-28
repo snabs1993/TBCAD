@@ -197,6 +197,7 @@ private:
     void drawSuggestions(ImVec2 inputPos, float width);
     bool optionChips();
     void cursorHud(const ViewportRect& rect);
+    void viewportLabels(const ViewportRect& rect);
     void optionBar();
     void gripMenu(const ViewportRect& rect);
     void repairAfterOpen();
