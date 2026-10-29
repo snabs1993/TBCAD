@@ -8,7 +8,9 @@
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
+#include <map>
 #include <random>
+#include <set>
 
 #include "gui.h"
 #include "tbcad/platform/file_dialog.h"
@@ -262,6 +264,7 @@ struct Harness::Impl {
     Image last;
     bool haveFrame = false;
     float mx = -1000, my = -1000;
+    std::set<std::string> reportedIds;
 };
 
 Harness::Harness(int width, int height) : impl_(std::make_unique<Impl>()) {
@@ -351,8 +354,31 @@ void Harness::frame(int n) {
         ViewportRect rect = gui_->frame();
         gui_->showViewport(7, rect);
         ImGui::Render();
+        reportDuplicateIds();
         impl_->haveFrame = true;
         impl_->last = Image{};
+    }
+}
+
+// Two widgets of a frame with the same id: Dear ImGui does not report it (it only shows a tooltip
+// when the pointer is over one of them), but the second widget cannot be clicked. Each pair is
+// reported once a test, as an error.
+void Harness::reportDuplicateIds() {
+    std::map<ImGuiID, const imgui_items::Item*> seen;
+    for (const imgui_items::Item& it : imgui_items::items()) {
+        if (it.id == 0)
+            continue;
+        auto [pos, fresh] = seen.emplace(it.id, &it);
+        if (fresh)
+            continue;
+        const imgui_items::Item& first = *pos->second;
+        if (first.min.x == it.min.x && first.min.y == it.min.y && first.max.x == it.max.x &&
+            first.max.y == it.max.y)
+            continue;  // the same widget reported twice
+        const std::string msg =
+            "duplicate widget id: \"" + it.label + "\" in window \"" + it.window + "\"";
+        if (impl_->reportedIds.insert(msg).second)
+            errorLog().push_back(msg);
     }
 }
 

@@ -93,7 +93,7 @@ void drawAddPopup(ui::PanelContext& pc, State& st) {
     ImGui::SetNextItemWidth(260);
     ImGui::InputText("Name", &t.name);
     if (t.kind == ToolKind::Block) {
-        if (ImGui::BeginCombo("Block", t.block.empty() ? "(choose)" : t.block.c_str())) {
+        if (ImGui::BeginCombo("Block##name", t.block.empty() ? "(choose)" : t.block.c_str())) {
             for (const auto& [id, b] : pc.doc->blocks())
                 if (!b.anonymous && b.xrefPath.empty() && ImGui::Selectable(b.name.c_str()))
                     t.block = b.name;

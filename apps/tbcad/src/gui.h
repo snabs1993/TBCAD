@@ -73,6 +73,8 @@ public:
     ViewportRect frame();
     // The viewport rectangle of the last frame (window points).
     const ViewportRect& lastViewportRect() const { return lastRect_; }
+    // The text in the command line's input field (for tests).
+    const std::string& commandLineText() const { return input_; }
     // Shows the rendered drawing in the viewport rectangle; call after frame(), before Render().
     void showViewport(unsigned texture, const ViewportRect& rect);
     // Model tiled viewports (VPORTS): the tiles other than the active one, with their rectangles

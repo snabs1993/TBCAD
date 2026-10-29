@@ -119,6 +119,7 @@ public:
     const std::vector<std::string>& imguiErrors() const;
 
 private:
+    void reportDuplicateIds();
     struct Impl;
     std::unique_ptr<Impl> impl_;
     std::unique_ptr<cmd::Registry> registry_;
