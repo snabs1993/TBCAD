@@ -72,3 +72,13 @@ TEST_CASE("DONUT shows a preview ring at the cursor") {
     CHECK_FALSE(f.host.preview().items.empty());
     f.host.feed({ScriptItem::esc()});
 }
+
+TEST_CASE("DONUT: a diameter given as two points is the distance between them") {
+    Fixture f;
+    f.host.run("DO", {"0,0", "6,8", "10,10"});
+    CHECK(f.host.logContains("second point"));
+    f.host.feed({"@30<0", "0,0", ""});
+    auto es = f.entities();
+    REQUIRE(es.size() == 1);
+    CHECK(close(as<PolylineData>(es[0]).constantWidth, 10));
+}

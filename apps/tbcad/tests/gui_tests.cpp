@@ -3515,3 +3515,86 @@ TEST_CASE("ARRAY: Toolbox variants start their array type, option buttons change
     CHECK(count() >= 1);
     CHECK(h.core().history().size() > 0);
 }
+
+TEST_CASE("DONUT: from the Toolbox with Enter, Space and clicks, diameters picked as two points") {
+    Harness h(1920, 1080);
+    h.core().setSetting("drafting.osnap", "0");
+    h.core().setSetting("ui.toolbox.tab", "draw");
+    h.frame(3);
+    auto rings = [&] {
+        std::vector<PolylineData> out;
+        h.core().document().forEachEntity([&](const Entity& e) {
+            if (const auto* p = std::get_if<PolylineData>(&e.data))
+                out.push_back(*p);
+        });
+        return out;
+    };
+    const app::ViewportRect vp = h.gui().lastViewportRect();
+    const float cx = vp.x + vp.w * 0.5f, cy = vp.y + vp.h * 0.5f;
+
+    // The Donut button (Lines has six tools, then Circle, Arc, Ellipse), Enter and Space take the
+    // remembered diameters, a click places a ring, Enter ends.
+    REQUIRE(h.click("##tool", "##toolbox", 9));
+    h.frame(3);
+    REQUIRE(runningName(h) == "DONUT");
+    h.key(ImGuiKey_Enter);
+    h.frame(2);
+    h.key(ImGuiKey_Space);
+    h.frame(2);
+    CHECK(h.core().promptText().find("center of donut") != std::string::npos);
+    h.click(cx, cy);
+    h.frame(2);
+    h.click(cx + 200, cy);
+    h.frame(2);
+    h.key(ImGuiKey_Enter);
+    h.frame(3);
+    CHECK_FALSE(h.core().runner().active());
+    REQUIRE(rings().size() == 2);
+    CHECK(rings()[0].constantWidth == doctest::Approx(2.5));
+
+    // Typed DO; each diameter answered by two clicks in the drawing, as in AutoCAD.
+    auto world = [&](float x, float y) {
+        return h.core().camera().screenToWorld(
+            {x - ImGui::GetMainViewport()->WorkPos.x, y - ImGui::GetMainViewport()->WorkPos.y});
+    };
+    h.command("DO");
+    h.frame(3);
+    h.click(cx - 300, cy + 100);
+    h.frame(2);
+    CHECK(h.core().promptText().find("second point") != std::string::npos);
+    h.click(cx - 280, cy + 100);
+    h.frame(2);
+    CHECK(h.core().promptText().find("outside diameter") != std::string::npos);
+    h.click(cx - 300, cy + 150);
+    h.frame(2);
+    h.click(cx - 240, cy + 150);
+    h.frame(2);
+    CHECK(h.core().promptText().find("center of donut") != std::string::npos);
+    h.click(cx - 100, cy - 100);
+    h.frame(2);
+    h.key(ImGuiKey_Escape);
+    h.frame(3);
+    CHECK_FALSE(h.core().runner().active());
+    REQUIRE(rings().size() == 3);
+    const double inner = distance(world(cx - 300, cy + 100), world(cx - 280, cy + 100));
+    const double outer = distance(world(cx - 300, cy + 150), world(cx - 240, cy + 150));
+    CHECK(rings()[2].constantWidth == doctest::Approx((outer - inner) / 2).epsilon(0.01));
+
+    // Typed points work the same way, and Enter at the second point goes back to the question.
+    h.command("DO");
+    h.frame(2);
+    h.command("0,0");
+    CHECK(h.core().promptText().find("second point") != std::string::npos);
+    h.command("");
+    CHECK(h.core().promptText().find("inside diameter") != std::string::npos);
+    h.command("0,0");
+    h.command("6,8");  // 10 apart
+    h.command("@30<0");
+    h.command("30");
+    h.command("500,500");
+    h.command("");
+    h.frame(3);
+    REQUIRE(rings().size() == 4);
+    CHECK(rings()[3].constantWidth == doctest::Approx(10));
+    CHECK(h.gui().commandLineText().empty());
+}
