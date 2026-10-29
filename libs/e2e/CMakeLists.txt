@@ -7,6 +7,7 @@ tbcad_add_tests(e2e
   SOURCES
     tests/main.cpp
     tests/smoke_tests.cpp
+    tests/revcloud_edit_tests.cpp
     tests/plot_colour_tests.cpp
     tests/command_fuzz_tests.cpp
     tests/odd_geometry_tests.cpp

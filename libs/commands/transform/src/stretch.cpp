@@ -16,6 +16,8 @@ int vertexGrips(const Entity& e, std::size_t gripCount) {
         case EntityKind::Arc:
             return 2;
         case EntityKind::Polyline:
+            if (const auto cloud = geom::cloudShape(e))  // a cloud stretches by its outline
+                return static_cast<int>(cloud->outline.size());
             return static_cast<int>(std::get<PolylineData>(e.data).v.size());
         case EntityKind::Spline:
         case EntityKind::Leader:

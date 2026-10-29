@@ -210,7 +210,15 @@ private:
         }
         bool angleLike =
             base.find("angle") != std::string::npos || base.find("rotation") != std::string::npos;
-        bool flag = base == "closed";
+        // Yes / No fields (closed, a cloud's side ...) are flags on any object that has them.
+        bool flag = false;
+        for (EntityId id : ids) {
+            const Entity* e = ctx.doc().find(id);
+            if (!e || (only && kind(*e) != *only))
+                continue;
+            for (const GeometryField& gf : geometryFields(*e, vertex))
+                flag = flag || (gf.id == base && gf.type == FieldType::Flag);
+        }
         double value = 0;
         if (flag) {
             std::string t = lowerAscii(text);

@@ -231,6 +231,8 @@ std::vector<GripAction> gripActions(const Document& doc, const Grip& grip) {
                 out.push_back(GripAction::Radius);
             break;
         case EntityKind::Polyline: {
+            if (geom::cloudShape(*e))  // a revision cloud's grips only reshape its outline
+                break;
             const auto& pl = *entityAs<PolylineData>(*e);
             const int n = static_cast<int>(pl.v.size());
             // The end vertex of an open polyline whose last segment is straight lengthens it.

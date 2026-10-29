@@ -7,6 +7,7 @@ tbcad_add_library(geom
     src/intersect.cpp
     src/linetype_marks.cpp
     src/polybool.cpp
+    src/revcloud.cpp
     src/spline.cpp
     src/transform.cpp
   DEPENDS tbcad::core)
@@ -18,6 +19,7 @@ tbcad_add_tests(geom
     tests/entity_tests.cpp
     tests/intersect_tests.cpp
     tests/polybool_tests.cpp
+    tests/revcloud_tests.cpp
     tests/spline_tests.cpp
     tests/transform_tests.cpp
     tests/bench_tests.cpp)

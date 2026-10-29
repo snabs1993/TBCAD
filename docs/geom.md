@@ -110,3 +110,12 @@ until one lands on it again (or press Enter), pick the side of the old outline t
 answer Reverse; the new part is cloud arcs facing out of the result, and it is one undo step.
 **Arclength** sets the longest arc chord (remembered); **Style** chooses Normal or
 Calligraphy (each arc swells and thins like a pen stroke, stored as polyline widths).
+
+A cloud stays editable after it is drawn. REVCLOUD marks it with XDATA of the application
+`TBCAD_REVCLOUD` (arc length, the longest chord when it was made, and flags), which .tbcad and DXF
+keep. The Properties panel shows **Cloud arc length**, **Arcs inward** (closed clouds) and
+**Pen-stroke arcs** (the Calligraphy style); changing one lays the arcs again along the same
+outline (also `-PROP Set cloudarclength 10`). The cloud's grips are the corners of its outline
+(the vertices that are not on a straight run) and the middle of each outline edge: dragging one,
+or STRETCH, moves the outline and lays the arcs again. SCALE takes the arc length along. Clouds
+drawn before the mark are found by their arcs (all 120 degrees, all one way).
