@@ -10,7 +10,7 @@
 @expect status GRID off
 @expect prompt Command:
 @expect item File
-@expect item ##toolstrip
+@expect item ##tool
 @expect item ##command
 @expect item OSNAP
 LINE
