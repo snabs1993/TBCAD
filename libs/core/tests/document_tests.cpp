@@ -1124,3 +1124,32 @@ TEST_CASE("a snapshot keeps the drawing as it was while the document goes on cha
     CHECK(entityAs<LineData>(*later->find(ids[5]))->a.x == -1);
     CHECK(entityAs<LineData>(*snap->find(ids[9999]))->a.x == 9999);
 }
+
+TEST_CASE(
+    "an object read before an edit stays readable when the snapshot lets go mid-transaction") {
+    // An autosave holds a snapshot on another thread; an edit then moves the shared storage chunk,
+    // and the autosave may finish at any moment. A pointer from find() taken before the edit must
+    // still point at live memory until the transaction ends.
+    Document doc;
+    std::vector<EntityId> ids;
+    {
+        Transaction tx = doc.begin("lines");
+        for (int i = 0; i < 5000; ++i)  // the first chunk full, so the snapshot shares it
+            ids.push_back(tx.add(line(i, 0, i + 1, 1)).value());
+        tx.commit();
+    }
+    std::shared_ptr<const Document> snap = doc.snapshot();
+    const Entity* kept = doc.find(ids[1]);
+    REQUIRE(kept != nullptr);
+    {
+        Transaction tx = doc.begin("edit");
+        REQUIRE(tx.modify(ids[2], [](Entity& e) { std::get<LineData>(e.data).a.x = -1; }));
+        snap.reset();  // the autosave is done
+        CHECK(kept->common.id == ids[1]);
+        CHECK(entityAs<LineData>(*kept)->a.x == 1);
+        REQUIRE(tx.erase(kept->common.id));
+        tx.commit();
+    }
+    CHECK(doc.find(ids[1]) == nullptr);
+    CHECK(entityAs<LineData>(*doc.find(ids[2]))->a.x == -1);
+}

@@ -366,7 +366,7 @@ public:
         like.common.linetype = kLinetypeByLayer;
         like.common.lineweight = LineWeight::byLayer();
         const bool blocksOut = static_cast<bool>(block);
-        if (auto r = blocksOut ? addBlocks(ctx, pts.value(), *e, block, align)
+        if (auto r = blocksOut ? addBlocks(ctx, pts.value(), like, block, align)
                                : addPoints(ctx, pts.value(), like);
             !r)
             ctx.message(r.error().message);
@@ -428,7 +428,7 @@ public:
         like.common.linetype = kLinetypeByLayer;
         like.common.lineweight = LineWeight::byLayer();
         const bool blocksOut = static_cast<bool>(block);
-        if (auto r = blocksOut ? addBlocks(ctx, pts.value(), *e, block, align)
+        if (auto r = blocksOut ? addBlocks(ctx, pts.value(), like, block, align)
                                : addPoints(ctx, pts.value(), like);
             !r)
             ctx.message(r.error().message);

@@ -315,6 +315,10 @@ public:
     void popBack();
     // A store with the same entities that shares this one's full chunks.
     void shareInto(EntityStore& out) const;
+    // Lets go of the chunks this store stopped using because a snapshot shared them. They are
+    // kept until here (the end of a transaction) so that a `const Entity*` taken from find()
+    // before an edit still points at live memory, whenever the snapshot's thread lets go.
+    void releaseRetired();
 
     template <class Fn>
     void forEach(Fn&& fn) const {
@@ -332,8 +336,9 @@ private:
         Chunk(const Chunk&) = delete;
         Chunk& operator=(const Chunk&) = delete;
     };
-    void detach(std::size_t chunk);
+    void detach(std::size_t chunk, bool retire = true);
     std::vector<std::shared_ptr<Chunk>> chunks_{};
+    std::vector<std::shared_ptr<Chunk>> retired_{};
     std::vector<Entity*> mems_{};  // chunks_[k]->mem, read without the extra step
     std::size_t size_ = 0;
 };
