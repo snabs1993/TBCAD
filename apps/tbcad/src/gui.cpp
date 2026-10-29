@@ -290,6 +290,52 @@ void* Gui::nativeHandle() const {
 #endif
 }
 
+std::optional<std::filesystem::path> Gui::openDialog(
+    const std::vector<platform::FileFilter>& filters, const std::string& title,
+    const std::filesystem::path& folder) {
+    return modalDialog(
+        [&] { return platform::showOpenDialog(nativeHandle(), filters, title, folder); });
+}
+
+std::optional<std::filesystem::path> Gui::saveDialog(
+    const std::vector<platform::FileFilter>& filters, const std::string& title,
+    const std::string& extension, const std::string& suggested,
+    const std::filesystem::path& folder) {
+    return modalDialog([&] {
+        return platform::showSaveDialog(nativeHandle(), filters, title, extension, suggested,
+                                        folder);
+    });
+}
+
+// The dialog blocks the main window, but panels dragged out into windows of their own are not
+// its owner and stay usable, and their keys pile up in ImGui's queue until the dialog closes;
+// then they reached the command line and ran as commands (test.8). Those windows are switched
+// off while the dialog is up, and whatever was queued meanwhile is dropped.
+std::optional<std::filesystem::path> Gui::modalDialog(
+    const std::function<std::optional<std::filesystem::path>()>& show) {
+#if defined(_WIN32)
+    std::vector<HWND> off;
+    for (ImGuiViewport* vp : ImGui::GetPlatformIO().Viewports) {
+        auto* hwnd = static_cast<HWND>(vp->PlatformHandleRaw);
+        if (vp != ImGui::GetMainViewport() && hwnd && IsWindowEnabled(hwnd)) {
+            EnableWindow(hwnd, FALSE);
+            off.push_back(hwnd);
+        }
+    }
+#endif
+    std::optional<std::filesystem::path> picked = fileDialogForTests ? fileDialogForTests() : show();
+#if defined(_WIN32)
+    for (HWND hwnd : off)
+        EnableWindow(hwnd, TRUE);
+#endif
+    ImGuiIO& io = ImGui::GetIO();
+    io.ClearEventsQueue();
+    io.ClearInputKeys();
+    typedWhileUnfocused_.clear();
+    anyActivity_ = true;
+    return picked;
+}
+
 bool Gui::consumeActivity() {
     if (anyActivity_) {
         activityFrames_ = 30;
@@ -306,7 +352,7 @@ bool Gui::consumeActivity() {
 
 void Gui::runAction(const std::string& action) {
     if (platform::Keybindings::isCommandAction(action)) {
-        core_.submitText(action.substr(platform::Keybindings::kCommandPrefix.size()));
+        core_.startCommand(action.substr(platform::Keybindings::kCommandPrefix.size()));
         return;
     }
     if (action == "file.new") {
@@ -333,9 +379,9 @@ void Gui::runAction(const std::string& action) {
     else if (action == "view.nextDocument")
         core_.activateDocument((core_.activeDocument() + 1) % core_.documentCount());
     else if (action == "view.nextLayout")
-        core_.submitText("LAYOUTNEXT");
+        core_.startCommand("LAYOUTNEXT");
     else if (action == "view.prevLayout")
-        core_.submitText("LAYOUTPREV");
+        core_.startCommand("LAYOUTPREV");
     else if (action == "view.prevDocument")
         core_.activateDocument((core_.activeDocument() + core_.documentCount() - 1) %
                                core_.documentCount());
@@ -396,7 +442,7 @@ void Gui::runAction(const std::string& action) {
     else {
         for (const auto& item : registry_.menuItems())
             if (item.actionId == action) {
-                core_.submitText(item.command);
+                core_.startCommand(item.command);
                 break;
             }
     }
@@ -689,8 +735,8 @@ void Gui::rememberFolder(const std::filesystem::path& picked) {
 }
 
 void Gui::doOpen() {
-    if (platform::nativeDialogsAvailable()) {
-        if (auto p = platform::showOpenDialog(nativeHandle(), openFilters(), "Open drawing",
+    if (nativeDialogs()) {
+        if (auto p = openDialog( openFilters(), "Open drawing",
                                               dialogFolder())) {
             rememberFolder(*p);
             doOpenPath(platform::pathToUtf8(*p));
@@ -711,9 +757,9 @@ void Gui::dxfCommandWithPath(const char* command, const std::filesystem::path& p
 
 void Gui::doImportDxf() {
     static const std::vector<platform::FileFilter> filters = {{"DXF drawings", "*.dxf"}};
-    if (platform::nativeDialogsAvailable()) {
+    if (nativeDialogs()) {
         if (auto p =
-                platform::showOpenDialog(nativeHandle(), filters, "Import DXF", dialogFolder())) {
+                openDialog( filters, "Import DXF", dialogFolder())) {
             rememberFolder(*p);
             dxfCommandWithPath("IMPORTDXF", *p);
         }
@@ -728,8 +774,8 @@ void Gui::doImportDxf() {
 void Gui::doLayoutFromTemplate() {
     static const std::vector<platform::FileFilter> filters = {
         {"Drawings and templates", "*.tbcad;*.dxf"}};
-    if (platform::nativeDialogsAvailable()) {
-        if (auto p = platform::showOpenDialog(nativeHandle(), filters, "Layout from template",
+    if (nativeDialogs()) {
+        if (auto p = openDialog( filters, "Layout from template",
                                               dialogFolder())) {
             rememberFolder(*p);
             core_.submitText("LAYOUT");
@@ -747,8 +793,8 @@ void Gui::doExportDxf() {
     std::filesystem::path stem = core_.hasFile() ? core_.file() : std::filesystem::path{"Drawing1"};
     stem.replace_extension(".dxf");
     std::string suggested = stem.filename().string();
-    if (platform::nativeDialogsAvailable()) {
-        if (auto p = platform::showSaveDialog(nativeHandle(), filters, "Export DXF", "dxf",
+    if (nativeDialogs()) {
+        if (auto p = saveDialog( filters, "Export DXF", "dxf",
                                               suggested, dialogFolder())) {
             rememberFolder(*p);
             dxfCommandWithPath("EXPORTDXF", *p);
@@ -1154,8 +1200,8 @@ void Gui::doSaveAs() {
         folder = platform::pathFromUtf8(core_.settings().getString("files.lastFolder", ""));
     if (platform::pathToUtf8(folder).size() > 200)
         folder.clear();
-    if (platform::nativeDialogsAvailable()) {
-        if (auto p = platform::showSaveDialog(nativeHandle(), drawingFilters(ext == "dxf"),
+    if (nativeDialogs()) {
+        if (auto p = saveDialog( drawingFilters(ext == "dxf"),
                                               "Save drawing as", ext, suggested, folder)) {
             rememberFolder(*p);
             saveAsPath(*p);
@@ -1315,7 +1361,7 @@ void drawNode(const MenuNode& node, ui::AppCore& core, const platform::Keybindin
             if (ImGui::MenuItem(child.name.c_str(), shortcut.c_str())) {
                 if (child.item->command == "HATCH" || child.item->command == "GRADIENT")
                     core.openPanel("hatch");  // pattern and scale are set in the panel
-                core.submitText(child.item->command);
+                core.startCommand(child.item->command);
             }
         } else if (ImGui::BeginMenu(child.name.c_str())) {
             drawNode(child, core, keys);
@@ -1650,9 +1696,7 @@ void Gui::searchBox() {
         searchText_.clear();
         searchListHovered_ = false;
         ImGui::ClearActiveID();
-        if (core_.promptInfo())
-            core_.pressEscape();  // a search pick replaces the command in progress
-        core_.submitText(run);
+        core_.startCommand(run);  // a search pick replaces the command in progress
         refocusInput_ = true;
     }
 }
@@ -1729,7 +1773,7 @@ void Gui::toolStrip(bool inMenuBar) {
                     else {
                         if (std::string_view(t.command) == "HATCH")
                             core_.openPanel("hatch");
-                        core_.submitText(t.command);
+                        core_.startCommand(t.command);
                     }
                 }
                 if (t.command && ImGui::BeginPopupContextItem("##toolCtx")) {
@@ -1777,7 +1821,7 @@ void Gui::toolStrip(bool inMenuBar) {
             firstQuick = false;
             ImGui::PushID(static_cast<int>(i));
             if (ImGui::Button((label + "##quick").c_str(), ImVec2(0, iconSize)))
-                core_.submitText(quick[i]);
+                core_.startCommand(quick[i]);
             ImGui::PopID();
             if (ImGui::BeginPopupContextItem("##quickCtx")) {
                 if (ImGui::MenuItem("Remove from Quick Access")) {
@@ -1878,13 +1922,13 @@ void Gui::toolCell(const ui::ToolDef& t, float iconSize, float scale, bool iconO
         } else {
             if (t.command == "HATCH")
                 core_.openPanel("hatch");
-            core_.submitText(t.command);
+            core_.startCommand(t.command);
         }
     }
     if (ImGui::BeginPopup("##variants")) {
         for (const ui::ToolVariant& v : t.variants)
             if (ImGui::MenuItem(v.label.c_str()))
-                core_.submitText(v.command);
+                core_.startCommand(v.command);
         ImGui::EndPopup();
     }
     if (ImGui::BeginPopupContextItem("##toolboxCtx")) {
@@ -4895,7 +4939,7 @@ void Gui::viewportInput(const ViewportRect& rect) {
                 doRightClick(rightAction_);
             else if (!chosen.empty())
                 // The Undo slice undoes one step (U); UNDO itself asks how many.
-                core_.submitText(chosen == "UNDO" ? std::string("U") : chosen);
+                core_.startCommand(chosen == "UNDO" ? std::string("U") : chosen);
         }
     }
     if (wheel_.isOpen())
@@ -5320,8 +5364,8 @@ ViewportRect Gui::frame() {
             static const std::vector<platform::FileFilter> pdf = {{"PDF files", "*.pdf"}};
             static const std::vector<platform::FileFilter> image = {
                 {"Pictures", "*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.gif;*.tga"}};
-            if (platform::nativeDialogsAvailable()) {
-                if (auto p = platform::showOpenDialog(nativeHandle(),
+            if (nativeDialogs()) {
+                if (auto p = openDialog(
                                                       kind == "pdf"     ? pdf
                                                       : kind == "image" ? image
                                                                         : drawing,
@@ -5338,8 +5382,8 @@ ViewportRect Gui::frame() {
                 {"SVG", "*.svg"},
                 {"PNG picture", "*.png"},
                 {"JPEG picture", "*.jpg;*.jpeg"}};
-            if (platform::nativeDialogsAvailable()) {
-                if (auto p = platform::showSaveDialog(nativeHandle(), exportTypes, "Export", "pdf",
+            if (nativeDialogs()) {
+                if (auto p = saveDialog( exportTypes, "Export", "pdf",
                                                       what.substr(16), dialogFolder())) {
                     rememberFolder(*p);
                     core_.submitText("\"" + platform::pathToUtf8(*p) + "\"");

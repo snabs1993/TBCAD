@@ -16,9 +16,12 @@ void checkPassesThrough(const Entity* e, const std::vector<Vec2>& pts) {
 
 }  // namespace
 
-TEST_CASE("SPLINE through fit points (natural ends)") {
+TEST_CASE("SPLINE: Enter after the fit points finishes with natural ends") {
     Fixture f;
-    CHECK(f.host.run("SPL", {"0,0", "10,10", "20,0", "30,10", "", "", ""}).finished);
+    // test.8: Enter used to go on to start / end tangent prompts.
+    auto r = f.host.run("SPL", {"0,0", "10,10", "20,0", "30,10", ""});
+    CHECK(r.finished);
+    CHECK(r.consumed == 5);
     auto es = f.entities();
     REQUIRE(es.size() == 1);
     const auto& s = indirect<SplineData>(es[0]);
@@ -33,7 +36,7 @@ TEST_CASE("SPLINE through fit points (natural ends)") {
 
 TEST_CASE("SPLINE fit matches geom::interpolateSpline exactly") {
     Fixture f;
-    f.host.run("SPLINE", {"0,0", "10,10", "20,0", "30,10", "", "", ""});
+    f.host.run("SPLINE", {"0,0", "10,10", "20,0", "30,10", ""});
     auto es = f.entities();
     REQUIRE(es.size() == 1);
     const auto& s = indirect<SplineData>(es[0]);
@@ -49,7 +52,7 @@ TEST_CASE("SPLINE fit matches geom::interpolateSpline exactly") {
 
 TEST_CASE("SPLINE with a start tangent leaves the first point in that direction") {
     Fixture f;
-    f.host.run("SPL", {"0,0", "10,10", "20,0", "", "10,0", ""});
+    f.host.run("SPL", {"0,0", "10,10", "20,0", "Tangents", "10,0", "", ""});
     auto es = f.entities();
     REQUIRE(es.size() == 1);
     const auto& s = indirect<SplineData>(es[0]);
@@ -63,7 +66,7 @@ TEST_CASE("SPLINE with a start tangent leaves the first point in that direction"
 
 TEST_CASE("SPLINE with an end tangent arrives at the last point in that direction") {
     Fixture f;
-    f.host.run("SPL", {"0,0", "10,10", "20,0", "", "", "20,-10"});
+    f.host.run("SPL", {"0,0", "10,10", "20,0", "Tangents", "", "20,-10", ""});
     auto es = f.entities();
     REQUIRE(es.size() == 1);
     auto curve = geom::SplineCurve::make(indirect<SplineData>(es[0]));
@@ -90,7 +93,7 @@ TEST_CASE("SPLINE Close makes a closed fit spline without asking for tangents") 
 
 TEST_CASE("SPLINE with two fit points is a straight spline") {
     Fixture f;
-    f.host.run("SPL", {"0,0", "10,0", "", "", ""});
+    f.host.run("SPL", {"0,0", "10,0", ""});
     auto es = f.entities();
     REQUIRE(es.size() == 1);
     CHECK(indirect<SplineData>(es[0]).degree == 1);
@@ -159,7 +162,7 @@ TEST_CASE("SPLINE CV Close makes a periodic spline whose ends meet") {
 
 TEST_CASE("SPLINE Undo removes the last point") {
     Fixture f;
-    f.host.run("SPL", {"0,0", "10,10", "20,0", "30,10", "Undo", "40,0", "", "", ""});
+    f.host.run("SPL", {"0,0", "10,10", "20,0", "30,10", "Undo", "40,0", ""});
     auto es = f.entities();
     REQUIRE(es.size() == 1);
     const auto& s = indirect<SplineData>(es[0]);
@@ -173,7 +176,7 @@ TEST_CASE("SPLINE: Esc draws nothing, one point is not enough") {
     CHECK(f.entities().empty());
     f.host.run("SPL", {"0,0", ""});
     CHECK(f.entities().empty());
-    f.host.run("SPL", {"0,0", "10,10", "", ScriptItem::esc()});
+    f.host.run("SPL", {"0,0", "10,10", "Tangents", ScriptItem::esc(), ScriptItem::esc()});
     CHECK(f.entities().empty());
     CHECK_FALSE(f.host.undoStack().canUndo());
 }
@@ -185,7 +188,7 @@ TEST_CASE("SPLINE previews the curve and is one undo step") {
     in.worldCursor = {20, 0};
     f.host.runner().pointerMoved(in);
     CHECK_FALSE(f.host.preview().items.empty());
-    f.host.feed({"20,0", "", "", ""});
+    f.host.feed({"20,0", ""});
     CHECK(f.host.undoStack().undoCount() == 1);
     f.host.undo();
     CHECK(f.entities().empty());
@@ -218,7 +221,7 @@ TEST_CASE("SPLINE Tangents sets both end tangents before Enter") {
 TEST_CASE("SPLINE toLerance drops fit points that lie within the tolerance of the curve") {
     Fixture f;
     // the middle point is 0.05 off a straight run
-    f.host.run("SPL", {"0,0", "toLerance", "0.5", "10,0.05", "20,0", "", "", ""});
+    f.host.run("SPL", {"0,0", "toLerance", "0.5", "10,0.05", "20,0", ""});
     auto es = f.entities();
     REQUIRE(es.size() == 1);
     const auto& s = indirect<SplineData>(es[0]);

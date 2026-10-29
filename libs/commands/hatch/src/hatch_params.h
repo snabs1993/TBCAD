@@ -215,6 +215,19 @@ inline void saveParams(cmd::IHost& host, const Params& p) {
     host.setSetting(kSettingGradientColor2, colorText(p.gradient.color2));
 }
 
+// Every field saveParams writes.
+inline bool sameSettings(const Params& a, const Params& b) {
+    const auto& ga = a.gradient;
+    const auto& gb = b.gradient;
+    return a.pattern == b.pattern && a.scale == b.scale && a.scaleAuto == b.scaleAuto &&
+           a.angle == b.angle && a.base == b.base && a.gap == b.gap && a.island == b.island &&
+           a.associative == b.associative && a.separate == b.separate && a.order == b.order &&
+           a.annotative == b.annotative && a.doubled == b.doubled &&
+           a.transparency == b.transparency && ga.kind == gb.kind && ga.shift == gb.shift &&
+           ga.tint == gb.tint && ga.oneColor == gb.oneColor && ga.color1 == gb.color1 &&
+           ga.color2 == gb.color2;
+}
+
 inline std::string summary(const Params& p) {
     return p.pattern + ", scale " + number(p.scale) + ", angle " + number(p.angle * 180.0 / kPi) +
            (p.gap > 0 ? ", gap " + number(p.gap) : "") +

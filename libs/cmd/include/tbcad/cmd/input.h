@@ -41,6 +41,7 @@ struct IntResult {
 struct StringResult {
     Status status = Status::Cancel;
     std::string text{};
+    std::optional<Vec2> point{};  // the click that answered (StringOptions::clickAnswers)
     bool ok() const { return status == Status::Ok; }
 };
 struct KeywordResult {  // status is Keyword when a keyword was chosen
@@ -126,6 +127,9 @@ struct StringOptions {
     std::optional<TextEditorHint> editor{};
     bool allowEmpty = false;  // Enter returns Ok with "" instead of None
     TextPreviewFn textPreview{};
+    // A click in the drawing answers as Enter does, and its point comes back in
+    // StringResult::point (TABLE: a click at "Title <none>" places the table there).
+    bool clickAnswers = false;
 };
 struct KeywordOptions {
     std::vector<std::string> keywords{};

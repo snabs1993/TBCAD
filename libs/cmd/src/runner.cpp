@@ -1099,6 +1099,21 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                                                           : std::optional<Vec2>{shapePts_.back()});
                 return addShapePoint(p);
             }
+            if (req.kind == K::String && req.clickAnswers) {
+                ans.status = req.defaultText || req.allowEmptyString ? Status::Ok : Status::None;
+                ans.text = req.defaultText.value_or(std::string());
+                ans.point = filtered(in.raw, true, req.base, req.snap);
+                ans.clicked = true;
+                return complete(std::move(ans));
+            }
+            if (req.kind == K::Real || req.kind == K::Integer || req.kind == K::String ||
+                req.kind == K::Keyword) {
+                // Not silently dropped (test.8: a click at TABLE's "Title <none>").
+                host_.print(req.kind == K::Keyword
+                                ? "Pick an option or type it; Enter takes the default."
+                                : "Type the answer here; Enter takes the default.");
+                return SubmitResult::Ignored;
+            }
             if (req.kind != K::Point && req.kind != K::Distance && req.kind != K::Angle)
                 return SubmitResult::Ignored;
             // While FROM or M2P collects its points the rubber band starts at the last of them.

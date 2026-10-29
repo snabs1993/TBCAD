@@ -262,6 +262,10 @@ public:
     // The same for a line a panel sends: the command line shows names instead of the internal
     // "#id" references the panels use, and answers to prompts are not echoed a second time.
     void submitPanelText(std::string_view text);
+    // A command picked from a button, menu, Toolbox or shortcut. Like AutoCAD's ^C^C macros it
+    // cancels the command in progress first, so the name is not taken as an answer to its prompt
+    // ("Invalid point RECTANGLE"); a transparent command (ZOOM, PAN...) runs on top of it instead.
+    void startCommand(std::string_view text);
     void pressEscape();
     void showHelp(const std::string& query);
     const std::vector<std::string>& history() const { return history_; }

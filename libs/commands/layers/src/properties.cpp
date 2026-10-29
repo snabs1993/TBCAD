@@ -868,17 +868,10 @@ std::vector<StringField> stringFields(const Document& doc, const Entity& e) {
     } else if (const auto* tb = entityAs<TableData>(e)) {
         out.push_back({"style", "Text style", styleNameOf(doc, tb->style), true, styleNames(doc)});
     } else if (const auto* h = entityAs<HatchData>(e)) {
-        if (!h->solid && !h->gradient) {
-            std::vector<std::string> names = hatch::PatternRegistry::names();
-            names.erase(std::remove_if(names.begin(), names.end(),
-                                       [](const std::string& n) {
-                                           const hatch::Pattern* p =
-                                               hatch::PatternRegistry::find(n);
-                                           return !p || p->solid;
-                                       }),
-                        names.end());
-            out.push_back({"pattern", "Pattern", h->pattern, true, std::move(names)});
-        }
+        // SOLID is a choice too, so a filled hatch can become a pattern and back.
+        if (!h->gradient)
+            out.push_back({"pattern", "Pattern", h->solid ? std::string("SOLID") : h->pattern,
+                           true, hatch::PatternRegistry::names()});
     }
     return out;
 }
@@ -1073,9 +1066,10 @@ Result<void> setStringField(const Document& doc, Transaction& tx, EntityId id, c
     } else if (auto* hh = entityAs<HatchData>(next)) {
         if (f == "pattern") {
             const hatch::Pattern* pat = hatch::PatternRegistry::find(chosen);
-            if (!pat || pat->solid)
-                return makeError(ErrorCode::NotFound, "No such line pattern.");
+            if (!pat)
+                return makeError(ErrorCode::NotFound, "No such hatch pattern.");
             hh->pattern = pat->name;
+            hh->solid = pat->solid;
         }
     } else if (auto* tb = entityAs<TableData>(next)) {
         const TextStyle* st = doc.textStyleByName(chosen);

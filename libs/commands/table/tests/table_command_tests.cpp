@@ -59,6 +59,33 @@ TEST_CASE("TABLE draws a titled table at the picked corner and undoes in one ste
     CHECK_FALSE(f.tableId());
 }
 
+TEST_CASE("TABLE in a 1:100 model starts with cells 100 times the style's paper size") {
+    Fx f;
+    {
+        Transaction tx = f.doc.begin("scale");
+        REQUIRE(tx.modifyHeader([](Header& h) { h.custom[kAnnoScaleKey] = "100"; }).ok());
+        tx.commit();
+    }
+    REQUIRE(f.host->run("TABLE", {"2", "2", "", "", "", "0,0"}).finished);
+    const TableData* t = f.table();
+    REQUIRE(t);
+    CHECK(t->colWidths[0] == doctest::Approx(3000));
+    CHECK(t->rowHeights[0] == doctest::Approx(800));
+    CHECK(t->textHeight == doctest::Approx(280));
+    CHECK(t->margin == doctest::Approx(100));
+}
+
+TEST_CASE("TABLE: a click at the title prompt means no title and places the table there") {
+    Fx f;
+    auto r = f.host->run("TABLE", {"2", "2", "20", "6", ScriptItem::click({50, 60})});
+    CHECK(r.finished);
+    const TableData* t = f.table();
+    REQUIRE(t);
+    CHECK_FALSE(t->titleRow);
+    CHECK(t->origin.x == doctest::Approx(50));
+    CHECK(t->origin.y == doctest::Approx(60));
+}
+
 TEST_CASE("TABLE without a title has exactly the requested rows") {
     Fx f;
     REQUIRE(f.host->run("TABLE", {"2", "2", "20", "6", ScriptItem::enter(), "0,0"}).finished);
