@@ -156,6 +156,8 @@ TEST_CASE("arcFromThreePoints") {
     CHECK(b.value().startAngle == doctest::Approx(0).epsilon(1e-9));
     CHECK(b.value().endAngle == doctest::Approx(kPi));
     CHECK_FALSE(arcFromThreePoints({0, 0}, {1, 1}, {2, 2}).ok());
+    // Nearly straight: not collinear by the angle test, but the bulge is too small for an arc.
+    CHECK_FALSE(arcFromThreePoints({0, 0}, {1, 7e-13}, {2, 0}).ok());
 }
 
 TEST_CASE("polyline segments keep indices and skip degenerate ones") {

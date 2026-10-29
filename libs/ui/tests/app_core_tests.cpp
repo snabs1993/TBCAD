@@ -528,6 +528,7 @@ TEST_CASE("autosave is written for unsaved changes and offered after a crash") {
     std::string dump = canonicalDump(f.core->document());
 
     // A second session on the same folders finds the leftover.
+    f.core.reset();  // the first session ends without a clean exit, as in a crash
     auto registry2 = makeRegistry();
     AppCore second(*registry2, platform::AppPaths{f.dir / "cfg", f.dir / "data"});
     auto rec = second.pendingRecovery();
@@ -558,6 +559,7 @@ TEST_CASE("a damaged autosave is reported, can be discarded, and does not stop t
     const auto size = fs::file_size(saved);
     fs::resize_file(saved, size / 2);  // as if the disk filled up
 
+    f.core.reset();  // the first session ends without a clean exit, as in a crash
     auto registry2 = makeRegistry();
     AppCore second(*registry2, platform::AppPaths{f.dir / "cfg", f.dir / "data"});
     auto rec = second.pendingRecovery();
@@ -583,6 +585,7 @@ TEST_CASE("a save that fails keeps the autosave and the unsaved state") {
     CHECK_FALSE(f.core->saveAs(f.dir / "no-such-folder" / "x.tbcad").ok());
     CHECK(f.core->modified());
     CHECK(fs::file_size(f.dir / "keep.tbcad") == goodSize);
+    f.core.reset();  // the first session ends without a clean exit, as in a crash
     auto registry2 = makeRegistry();
     AppCore second(*registry2, platform::AppPaths{f.dir / "cfg", f.dir / "data"});
     CHECK(second.pendingRecovery().has_value());  // still offered after a crash
@@ -603,6 +606,7 @@ TEST_CASE("an autosave killed in the middle leaves the previous autosave offered
         tmp.replace_extension(ext);
         std::ofstream(tmp, std::ios::binary) << "TBCAD half written";
     }
+    f.core.reset();  // the first session ends without a clean exit, as in a crash
     auto registry2 = makeRegistry();
     AppCore second(*registry2, platform::AppPaths{f.dir / "cfg", f.dir / "data"});
     const auto all = second.pendingRecoveries();
@@ -635,6 +639,7 @@ TEST_CASE("autosave covers every open drawing and recovery reopens them all") {
     CHECK(f.core->autosaveNow());
     CHECK_FALSE(f.core->autosaveNow());
 
+    f.core.reset();  // the first session ends without a clean exit, as in a crash
     auto registry2 = makeRegistry();
     AppCore second(*registry2, platform::AppPaths{f.dir / "cfg", f.dir / "data"});
     CHECK(second.pendingRecoveries().size() == 3);
@@ -669,6 +674,7 @@ TEST_CASE("the Drawing Recovery Manager lists leftover autosaves and backups and
     CHECK(backups[0].autosaveFile.filename() == "kept.tbcad.bak");
 
     // A new session (the first did not close normally) sees the autosaves as left over.
+    f.core.reset();  // the first session ends without a clean exit, as in a crash
     auto registry2 = makeRegistry();
     AppCore second(*registry2, platform::AppPaths{f.dir / "cfg", f.dir / "data"});
     const auto left = second.leftoverRecoveries();
@@ -696,6 +702,55 @@ TEST_CASE("a clean save or shutdown removes the autosave") {
     REQUIRE(f.core->autosaveNow());
     f.core->shutdown();
     CHECK_FALSE(f.core->pendingRecovery().has_value());
+}
+
+TEST_CASE("two TBCAD processes on one autosave folder keep their autosaves apart") {
+    Fixture f("autosave_two_processes");
+    f.line("0,0", "100,0");
+    REQUIRE(f.core->autosaveNow());
+    // A second start of the program while the first runs.
+    auto registry2 = makeRegistry();
+    auto second =
+        std::make_unique<AppCore>(*registry2, platform::AppPaths{f.dir / "cfg", f.dir / "data"});
+    CHECK(second->pendingRecoveries().empty());  // the first one's drawing is not a leftover
+    second->submitText("TESTLINE");
+    second->submitText("0,0");
+    second->submitText("0,50");
+    REQUIRE(second->autosaveNow());
+    CHECK(second->pendingRecoveries().size() == 1);  // only its own
+    CHECK(f.core->pendingRecoveries().size() == 1);
+    second->shutdown();  // a clean exit takes only its own autosave away
+    second.reset();
+    REQUIRE(f.core->pendingRecoveries().size() == 1);
+    // The first one crashes: the next start offers its drawing.
+    f.core.reset();
+    auto registry3 = makeRegistry();
+    AppCore third(*registry3, platform::AppPaths{f.dir / "cfg", f.dir / "data"});
+    REQUIRE(third.pendingRecoveries().size() == 1);
+    REQUIRE(third.recoverAll().ok());
+    CHECK(third.document().modelSpaceCount() == 1);
+}
+
+TEST_CASE(
+    "autosaves put off with Later survive a clean save and exit until recovered or discarded") {
+    Fixture f("autosave_later");
+    f.line("0,0", "100,0");
+    REQUIRE(f.core->autosaveNow());
+    f.core.reset();  // crash
+    auto registry2 = makeRegistry();
+    AppCore second(*registry2, platform::AppPaths{f.dir / "cfg", f.dir / "data"});
+    REQUIRE(second.pendingRecoveries().size() == 1);
+    // Later: the user carries on, saves a drawing of their own and quits.
+    second.submitText("TESTLINE");
+    second.submitText("0,0");
+    second.submitText("0,50");
+    REQUIRE(second.autosaveNow());
+    REQUIRE(second.saveAs(f.dir / "mine.tbcad").ok());
+    CHECK(second.pendingRecoveries().size() == 1);
+    second.shutdown();
+    CHECK(second.pendingRecoveries().size() == 1);
+    second.discardRecovery();
+    CHECK(second.pendingRecoveries().empty());
 }
 
 TEST_CASE("autosave timer follows the setting") {
@@ -1885,6 +1940,7 @@ TEST_CASE("recovery survives leftovers of a process killed in the middle of an a
         bad << "TBCAD-but-cut-off";
     }
 
+    f.core.reset();  // the first session ends without a clean exit, as in a crash
     auto registry2 = makeRegistry();
     AppCore second(*registry2, platform::AppPaths{f.dir / "cfg", f.dir / "data"});
     CHECK(second.pendingRecoveries().size() == 3);  // two good drawings and the truncated one

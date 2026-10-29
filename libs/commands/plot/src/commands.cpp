@@ -122,12 +122,17 @@ public:
         PlotSettings s;
         timePhase("load settings", [&] { s = loadSettings(ctx.host()); });
         Format format = format_;
+        // Strict (set by scripted callers such as the MCP tools): a value that cannot be used ends
+        // the command with an "Error:" message instead of falling back to the old setting.
+        bool strict = false;
+        bool colorChosen = false;  // Color picked in this run (warn only then)
         for (;;) {
             KeywordOptions menu;
             menu.keywords = {"Paper",   "Orientation", "Area",        "Scale",        "Center",
                              "Offset",  "Margin",      "LineWeights", "Transparency", "Color",
                              "Style",   "Format",      "Resolution",  "Layout",       "Stamp",
-                             "LWScale", "Screening",   "PdfLayers",   "UpsideDown",   "Export"};
+                             "LWScale", "Screening",   "PdfLayers",   "UpsideDown",   "Strict",
+                             "Export"};
             menu.defaultKeyword = "Export";
             std::string prompt;
             timePhase("menu summary",
@@ -137,6 +142,10 @@ public:
                 co_return;
             const std::string& kw = choice.keyword;
 
+            if (kw == "Strict") {
+                strict = true;
+                continue;
+            }
             if (kw == "Export") {
                 // Never a question here: scripts and headless plots must run through. The
                 // drawing keeps its object colours, as AutoCAD does without the table.
@@ -147,6 +156,12 @@ public:
                     ctx.message("Plot style table \"" + plotStyleName(ctx.host()) +
                                 "\" was not found: plotting with object colours (Style picks "
                                 "another table, e.g. monochrome.ctb).");
+                if (colorChosen && s.color == ColorMode::AsDisplayed && s.styleTable &&
+                    lower(plotStyleName(ctx.host())).find("monochrome") != std::string::npos)
+                    ctx.message("Colour mode is Color, but the plot style table \"" +
+                                plotStyleName(ctx.host()) +
+                                "\" prints everything in black. Pick Style None or another table "
+                                "for colour.");
                 cmd::StringOptions fo;
                 fo.defaultValue = defaultFile(ctx.host(), format);
                 auto file = co_await ctx.getString("Output file", fo);
@@ -210,7 +225,10 @@ public:
                         if (lower(p.name) == lower(name.text))
                             found = &p;
                     if (!found) {
-                        ctx.message("Unknown paper size \"" + name.text + "\".");
+                        ctx.message(std::string(strict ? "Error: " : "") + "Unknown paper size \"" +
+                                    name.text + "\".");
+                        if (strict)
+                            co_return;
                         continue;
                     }
                     s.paperName = found->name;
@@ -269,8 +287,12 @@ public:
                 cmd::StringOptions so;
                 so.defaultValue = scaleText(s);
                 auto r = co_await ctx.getString("Scale (Fit or 1:N, for example 1:100)", so);
-                if (r.ok() && !parseScale(r.text, s))
-                    ctx.message("Not a scale: \"" + r.text + "\". Use Fit or 1:N.");
+                if (r.ok() && !parseScale(r.text, s)) {
+                    ctx.message(std::string(strict ? "Error: " : "") + "Not a scale: \"" + r.text +
+                                "\". Use Fit or 1:N.");
+                    if (strict)
+                        co_return;
+                }
             } else if (kw == "Center") {
                 KeywordOptions ko;
                 ko.keywords = {"Yes", "No"};
@@ -334,6 +356,7 @@ public:
                                     : s.color == ColorMode::Greyscale ? "Greyscale"
                                                                       : "Color";
                 auto r = co_await ctx.getKeyword("Colour mode", ko);
+                colorChosen = r.ok();
                 if (r.ok())
                     s.color = r.keyword == "Monochrome"  ? ColorMode::Monochrome
                               : r.keyword == "Greyscale" ? ColorMode::Greyscale
@@ -346,7 +369,9 @@ public:
                     continue;
                 auto t = resolveStyleTable(ctx.host(), r.text);
                 if (!t) {
-                    ctx.message(t.error().message);
+                    ctx.message(std::string(strict ? "Error: " : "") + t.error().message);
+                    if (strict)
+                        co_return;
                     continue;
                 }
                 setPlotStyleName(ctx.host(), r.text);

@@ -14,10 +14,14 @@ namespace tbcad::platform {
 struct AppPaths {
     std::filesystem::path configDir{};
     std::filesystem::path dataDir{};
+    // Set for a window that keeps its other data apart but shares the autosave folder.
+    std::filesystem::path autosaveOverride{};
 
     std::filesystem::path settingsFile() const { return configDir / "settings.json"; }
     std::filesystem::path keybindingsFile() const { return configDir / "keybindings.json"; }
-    std::filesystem::path autosaveDir() const { return dataDir / "autosave"; }
+    std::filesystem::path autosaveDir() const {
+        return autosaveOverride.empty() ? dataDir / "autosave" : autosaveOverride;
+    }
     std::filesystem::path crashDir() const { return dataDir / "crashes"; }
 };
 

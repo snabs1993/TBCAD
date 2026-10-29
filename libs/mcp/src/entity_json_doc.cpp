@@ -8,6 +8,8 @@ const std::string& entityJsonDoc() {
 Units: lengths are millimetres, angles are radians. Anywhere an angle is expected you may write
 `{"deg": 90}`; anywhere a length is expected you may write `{"value": 3, "unit": "m"}` (units: mm,
 cm, m, in, ft). Points are `[x, y]` (or `{"x": 1, "y": 2}`). Output is always mm and radians.
+This holds in every tool and in every drawing: a drawing set to show metres still takes plain
+numbers as millimetres (a 177 m long plan is 177000), and get_drawing_info reports `displayUnit`.
 
 Every entity has:
 
@@ -34,7 +36,7 @@ Kind fields:
 - **spline**: `degree`, `controlPoints`, optional `fitPoints`, `weights`, `closed`
 - **text**: `position`, `height`, `value`, optional `rotation`, `style`, `hAlign` (left, center, right, aligned, middle, fit), `vAlign` (baseline, bottom, middle, top), `alignPoint` (the point any alignment but left/baseline hangs the text on; defaults to `position`), `widthFactor`, `oblique`, and `attdef` `{"tag", "prompt", "default", "invisible", "constant", "verify", "preset"}` which makes the text an attribute definition (put it in a block with `create_block`; inserts then take `attributes`)
 - **mtext**: `position`, `height`, `width`, `value`, `attachment` (topLeft ... bottomRight), optional `rotation`, `style`
-- **hatch**: `loops`, `solid`, and for patterns `pattern`, `scale`, `angle`, optional `patternOrigin`. `fill` is the solid colour (default ByLayer). `gradient` `{"type": "linear"|"cylinder", "color1", "color2", "angle"}` makes it a gradient fill (colours as for `color`). `associativeWith` lists the boundary entity ids the hatch follows (read only). When writing, a loop is `[[x,y],...]` or `{"vertices": [...]}` or `{"edges": [{"type":"line"|"arc"|"polyline",...}]}`.
+- **hatch**: `loops`, `solid`, and for patterns `pattern`, `scale`, `angle`, optional `patternOrigin`. Patterns are drawn in mm on paper at scale 1, so give `scale` the plot scale N (50 for a drawing plotted at 1:50). `fill` is the solid colour (default ByLayer). `gradient` `{"type": "linear"|"cylinder", "color1", "color2", "angle"}` makes it a gradient fill (colours as for `color`). `associativeWith` lists the boundary entity ids the hatch follows (read only). When writing, a loop is `[[x,y],...]` or `{"vertices": [...]}` or `{"edges": [{"type":"line"|"arc"|"polyline",...}]}`.
 - **insert**: `block` (name), `position`, `scale` (number or `[sx, sy]`), `rotation`. Optional `attributes` `{"TAG": "value"}` (values of the block's attribute definitions), `dynamicValues` (numbers, in the order of the block's dynamic parameters) and `array`, which turns the insert into an associative array:
   `{"kind":"rectangular","rows","columns","rowSpacing","columnSpacing","angle"}`,
   `{"kind":"polar","center","count","fillAngle","rotateItems","reference"}` or

@@ -12,6 +12,8 @@
 namespace tbcad::dimcmd {
 
 std::unique_ptr<cmd::Command> makeDimStyleCommand();
+// DIMSCALE, DIMTXT, DIMDEC, DIMLFAC, ...: one setting of the current dimension style.
+void registerDimVarCommands(cmd::Registry& registry);
 std::unique_ptr<cmd::Command> makeDimStyleLineCommand();
 std::unique_ptr<cmd::Command> makeDimSetupCommand();
 std::unique_ptr<cmd::Command> makeDimOverrideCommand();

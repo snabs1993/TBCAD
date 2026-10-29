@@ -3295,6 +3295,7 @@ TEST_CASE("icon sheet: every icon draws inside its square, and no two are alike"
 
 TEST_CASE("toolbox: Recent group fills as commands run, and Quick rail buttons run their command") {
     Harness h(1920, 1080);
+    h.core().setSetting("ui.toolbox.showRecent", "1");
     h.frame(3);
     CHECK(h.core().settings().getStrings("ui.toolbox.recent").empty());
     h.core().submitText("CIRCLE");
@@ -3321,6 +3322,102 @@ TEST_CASE("toolbox: Recent group fills as commands run, and Quick rail buttons r
     h.core().pressEscape();
     h.frame(2);
     CHECK(matchesGolden(h.windowShot("##quickrail"), "quickrail"));
+}
+
+TEST_CASE("toolbox: a tool in Recent and in its own group both work after selecting first") {
+    Harness h(1920, 1080);
+    threeLayers(h);
+    h.core().setSetting("ui.toolbox.tab", "modify");
+    h.core().setSetting("ui.toolbox.showRecent", "1");
+    h.core().selectAll();
+    h.core().submitText("ROTATE");
+    h.frame(3);
+    h.core().pressEscape();
+    h.frame(3);
+    // Recent holds Rotate once; Rotate is also the third button of Move & copy.
+    for (const int nth : {0, 3}) {
+        h.core().selectAll();
+        h.frame(3);
+        REQUIRE(h.click("##tool", "##toolbox", nth));
+        h.frame(3);
+        CHECK(runningName(h) == "ROTATE");
+        h.core().pressEscape();
+        h.frame(3);
+    }
+    CHECK(h.imguiErrors().empty());
+}
+
+TEST_CASE(
+    "mirror: typed command leaves the command line empty, Yes/No click, Space takes the default") {
+    Harness h(1920, 1080);
+    threeLayers(h);
+    for (const int how : {0, 1, 2}) {
+        CAPTURE(how);
+        h.core().selectAll();
+        REQUIRE(h.click("##command", "Command"));
+        h.type("mi");
+        if (how == 1)
+            h.type(" ");  // Space ends the command name like Enter
+        else
+            h.key(ImGuiKey_Enter);
+        h.frame(3);
+        REQUIRE(runningName(h) == "MIRROR");
+        h.type("0,0");
+        h.key(ImGuiKey_Enter);
+        h.frame(2);
+        h.type("10,0");
+        h.key(ImGuiKey_Enter);
+        h.frame(3);
+        const auto* p = h.core().runner().prompt();
+        REQUIRE(p);
+        CHECK(p->text.find("Erase") != std::string::npos);
+        if (how == 0) {
+            REQUIRE(h.click("Yes"));
+        } else if (how == 1) {
+            REQUIRE(h.click("No"));
+        } else {
+            h.type(" ");
+        }
+        h.frame(3);
+        CHECK_FALSE(h.core().runner().active());
+        h.core().pressEscape();
+        h.frame(2);
+    }
+    CHECK(h.imguiErrors().empty());
+}
+
+TEST_CASE("toolbox: no two buttons share an ImGui ID on any tab, with Recent shown") {
+    Harness h(1920, 1080);
+    h.core().setSetting("ui.toolbox.showRecent", "1");
+    h.frame(3);
+    for (const char* cmd : {"ROTATE", "MOVE", "CIRCLE", "LINE", "COPY", "MIRROR"}) {
+        h.core().submitText(cmd);
+        h.frame(2);
+        h.core().pressEscape();
+        h.frame(2);
+    }
+    std::vector<std::string> clashes;
+    for (const char* tab : {"draw", "modify", "annotate", "blocks", "inspect", "output"}) {
+        for (const char* expert : {"0", "1"}) {
+            h.core().setSetting("ui.toolbox.tab", tab);
+            h.core().setSetting("ui.toolbox.expert", expert);
+            h.frame(4);
+            std::map<ImGuiID, std::string> seen;
+            for (const auto& it : tbcad::imgui_items::items()) {
+                if (it.window.find("toolbox") == std::string::npos &&
+                    it.window.find("quickrail") == std::string::npos &&
+                    it.window.find("MainMenuBar") == std::string::npos)
+                    continue;
+                const auto [pos, fresh] = seen.emplace(it.id, it.window + "/" + it.label);
+                if (!fresh)
+                    clashes.push_back(std::string(tab) + ": " + pos->second + " and " + it.window +
+                                      "/" + it.label);
+            }
+        }
+    }
+    for (const std::string& c : clashes)
+        MESSAGE("ID clash: " << c);
+    CHECK(clashes.empty());
 }
 
 TEST_CASE("menu bar: drawing menus sit under Commands, Classic Menus brings them back") {

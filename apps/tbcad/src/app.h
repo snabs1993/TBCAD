@@ -3,8 +3,8 @@
 #include <atomic>
 #include <chrono>
 #include <filesystem>
-#include <map>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -47,10 +47,10 @@ struct Options {
     bool mcp = false;  // --mcp: turn the MCP server on (and remember it)
     bool help = false;
     bool softwareGl = false;  // --software-gl: draw with the bundled software OpenGL (Windows)
-    bool child = false;  // --child: a window another TBCAD window opened (own autosave folder)
+    bool child = false;       // --child: a window another TBCAD window opened (own autosave folder)
     int windowX = 0, windowY = 0;  // --window-pos X,Y: where to put the window (screen points)
     int windowW = 0, windowH = 0;  // --window-size W,H: its size (0: the default)
-    std::string listCommands{};  // --list-commands F: write the command list (Markdown) and exit
+    std::string listCommands{};    // --list-commands F: write the command list (Markdown) and exit
 };
 
 Options parseOptions(int argc, char** argv);

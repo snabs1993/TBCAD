@@ -26,13 +26,13 @@ int compareVersions(const Version& a, const Version& b);
 
 // One release as the update check needs it.
 struct ReleaseInfo {
-    std::string tag;       // v0.1.0-test.8
-    std::string version;   // 0.1.0-test.8
-    std::string pageUrl;   // the release page, for "what's new"
-    std::string notes;     // the release text
-    std::string assetName; // TBCAD-0.1.0-test.8-setup.exe
+    std::string tag;        // v0.1.0-test.8
+    std::string version;    // 0.1.0-test.8
+    std::string pageUrl;    // the release page, for "what's new"
+    std::string notes;      // the release text
+    std::string assetName;  // TBCAD-0.1.0-test.8-setup.exe
     std::string assetUrl;
-    std::string sha256;    // lower-case hex, empty when GitHub gave none
+    std::string sha256;  // lower-case hex, empty when GitHub gave none
     long long assetSize = 0;
     bool prerelease = false;
 };
@@ -60,7 +60,8 @@ std::string sha256FileHex(const std::filesystem::path& file);
 
 // Command-line of the installer for an in-place update: silent, over the old install, and the
 // program starts again when it is done. `perMachine` is true when the running program lives in
-// Program Files (the installer then asks Windows for administrator rights, as the first install did).
+// Program Files (the installer then asks Windows for administrator rights, as the first install
+// did).
 std::vector<std::string> installerArguments(bool perMachine);
 
 // Platform parts. HTTPS GET into `body`; false with `error` set on failure. Not available on

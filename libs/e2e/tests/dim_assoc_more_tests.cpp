@@ -205,7 +205,7 @@ TEST_CASE("aligned, angular, arc-length and ordinate dimensions follow their obj
         auto tx = doc.begin("setup");
         Entity p;
         PolylineData pd;
-        pd.v = {{{0, 0}, 0, 0, 0}, {60, 0}, {60, 40}, {0, 40}};
+        pd.v = {{{0, 0}, 0, 0, 0}, {{60, 0}}, {{60, 40}}, {{0, 40}}};
         p.data = std::move(pd);
         poly = tx.add(std::move(p)).value();
         Entity a;

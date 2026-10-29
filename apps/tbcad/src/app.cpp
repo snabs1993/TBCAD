@@ -1872,9 +1872,11 @@ int App::run() {
     platform::installCrashHandler(paths_.crashDir(), TBCAD_VERSION);
     const std::filesystem::path linkDir = paths_.dataDir / "windows";
     if (options_.child) {
-        // Another window of the program already uses the autosave folder; this one gets its own so
-        // neither takes the other's drawings for leftovers of a crash.
+        // A window opened by another one keeps its logs and the like apart, but autosaves into the
+        // same folder (each process names its autosaves apart), so if it crashes the next start
+        // offers its drawings.
         childDataDir_ = linkDir / ("data-" + std::to_string(WindowLink::currentProcessId()));
+        paths_.autosaveOverride = paths_.autosaveDir();
         paths_.dataDir = childDataDir_;
     }
     registry_ = std::make_unique<cmd::Registry>();
@@ -2006,7 +2008,8 @@ int App::run() {
     // A new version is looked for once a day, only in a normal run (not scripted or capture runs)
     // and only when the setting allows it.
     if (options_.frames == 0 && !options_.selfTest && !options_.child &&
-        core_->setting("update.check").value_or("1") != "0" && !std::getenv("TBCAD_NO_UPDATE_CHECK")) {
+        core_->setting("update.check").value_or("1") != "0" &&
+        !std::getenv("TBCAD_NO_UPDATE_CHECK")) {
         const long long now = std::chrono::duration_cast<std::chrono::seconds>(
                                   std::chrono::system_clock::now().time_since_epoch())
                                   .count();

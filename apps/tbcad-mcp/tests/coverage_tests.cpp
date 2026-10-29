@@ -400,7 +400,7 @@ TEST_CASE("plot: page setups, plot style tables and image export") {
     auto dir = std::filesystem::temp_directory_path() / "tbcad_mcp_image";
     std::filesystem::create_directories(dir);
     auto png = dir / "plot.png";
-    f.ok("export_image", "{\"path\":\"" + png.generic_string() + "\",\"dpi\":72,\"paper\":\"A5\"}");
+    f.ok("export_image", "{\"path\":\"" + png.generic_string() + "\",\"dpi\":72,\"paper\":\"A4\"}");
     {
         std::ifstream in(png, std::ios::binary);
         std::string head(8, ' ');
@@ -434,4 +434,66 @@ TEST_CASE("symbols, wipeout flag and fields in text") {
     CHECK(f.ok("get_entity", "{\"id\":\"" + w + "\"}").find("wipeout") == nullptr);
     std::string t = f.add(R"({"kind":"text","position":[0,0],"height":2.5,"value":"%<date>%"})");
     CHECK(f.ok("get_entity", "{\"id\":\"" + t + "\"}").find("value")->asString() == "%<date>%");
+}
+
+TEST_CASE("open_drawing and save_drawing take .dxf, and export_dxf refuses to replace silently") {
+    const auto dir = std::filesystem::temp_directory_path() / "tbcad_mcp_dxf_test";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    const std::string file = (dir / "a.dxf").generic_string();
+    {
+        Full f;
+        f.add(R"({"kind":"line","start":[0,0],"end":[4000,0]})");
+        f.add(R"({"kind":"line","start":[0,0],"end":[0,3000]})");
+        f.ok("save_drawing", "{\"path\":\"" + file + "\"}");
+        CHECK(std::filesystem::exists(dir / "a.dxf"));
+        CHECK(f.fails("export_dxf", "{\"path\":\"" + file + "\"}").find("overwrite") !=
+              std::string::npos);
+        f.ok("export_dxf", "{\"path\":\"" + file + "\",\"overwrite\":true}");
+    }
+    Full g;
+    g.ok("open_drawing", "{\"path\":\"" + file + "\"}");
+    CHECK(g.session.document().modelSpaceCount() == 2);
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+}
+
+TEST_CASE("a drawing that shows metres still takes millimetres in every tool") {
+    Full f;
+    f.ok("run_command", R"({"command":"SETVAR","inputs":["INSUNITS","Meters"]})");
+    CHECK(f.ok("get_drawing_info").find("displayUnit")->asString() == "m");
+    f.ok("insert_symbol", R"({"symbol":"north_arrow","position":[10,10]})");
+    const Json ext = *f.ok("get_drawing_info").find("extents");
+    CHECK(ext.find("max")->asArray()[0].asNumber() <
+          100);  // not 10000: the position was not read as metres
+    const std::string id = f.add(R"({"kind":"line","start":[0,0],"end":[100,0]})");
+    f.ok("create_block", "{\"name\":\"B1\",\"ids\":[\"" + id + "\"],\"base\":[1000,2000]}");
+    const auto* b = f.session.document().blockByName("B1");
+    REQUIRE(b);
+    CHECK(b->base.x == doctest::Approx(1000));
+    CHECK(b->base.y == doctest::Approx(2000));
+}
+
+TEST_CASE("plot tools: a bad paper, scale or style table is an error, not a fallback") {
+    Full f;
+    f.add(R"({"kind":"line","start":[0,0],"end":[4000,0]})");
+    const auto dir = std::filesystem::temp_directory_path() / "tbcad_mcp_strict";
+    std::filesystem::create_directories(dir);
+    const std::string pdf = (dir / "s.pdf").generic_string();
+    std::filesystem::remove(dir / "s.pdf");
+    CHECK(f.fails("export_pdf", "{\"path\":\"" + pdf + "\",\"paper\":\"A9\"}").find("A9") !=
+          std::string::npos);
+    CHECK(
+        f.fails("export_pdf", "{\"path\":\"" + pdf + "\",\"scale\":\"1:0\"}").find("Not a scale") !=
+        std::string::npos);
+    CHECK(f.fails("export_pdf", "{\"path\":\"" + pdf + "\",\"style\":\"nope-xyz.ctb\"}").size() >
+          0);
+    CHECK(
+        f.fails("export_pdf", "{\"path\":\"" + pdf + "\",\"area\":\"Display\"}").find("viewport") !=
+        std::string::npos);
+    CHECK_FALSE(std::filesystem::exists(dir / "s.pdf"));
+    f.ok("export_pdf", "{\"path\":\"" + pdf + "\",\"paper\":\"A3\",\"scale\":\"1:100\"}");
+    CHECK(std::filesystem::exists(dir / "s.pdf"));
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
 }

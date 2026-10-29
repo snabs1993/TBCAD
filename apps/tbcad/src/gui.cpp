@@ -1436,6 +1436,7 @@ void Gui::menuBar() {
             toggle("Toolbox", "ui.toolbox", true);
             toggle("Quick Rail", "ui.quickRailBar", true);
             toggle("Expert Toolbox (icons only)", "ui.toolbox.expert", false);
+            toggle("Recent group in Toolbox", "ui.toolbox.showRecent", false);
             if (ImGui::MenuItem("Classic Menus", nullptr, !flag("ui.compactMenus", true)))
                 core_.setSetting("ui.compactMenus", flag("ui.compactMenus", true) ? "0" : "1");
             toggle("Status Bar", "ui.statusbar", true);
@@ -2007,7 +2008,7 @@ void Gui::toolbox() {
             inToolbox_ = true;
             // "Recent" first: the last few commands run from anywhere, so they are one click away.
             std::vector<ui::ToolGroup> shown;
-            if (!recent.empty()) {
+            if (!recent.empty() && flag("ui.toolbox.showRecent", false)) {
                 ui::ToolGroup r{"Recent", {}};
                 for (const std::string& c : recent)
                     if (const ui::ToolDef* d = ui::findTool(c))
@@ -2026,6 +2027,9 @@ void Gui::toolbox() {
                 }
                 firstGroup = false;
                 ImGui::BeginGroup();
+                // The same tool sits in Recent and in its home group: the group name keeps the IDs
+                // apart.
+                ImGui::PushID(g.name.c_str());
                 bool firstTool = true;
                 for (const ui::ToolDef& t : g.tools) {
                     if (!core_.registry().find(t.command))
@@ -2035,6 +2039,7 @@ void Gui::toolbox() {
                     firstTool = false;
                     toolCell(t, iconSize, scale, expert);
                 }
+                ImGui::PopID();
                 if (!expert)
                     ImGui::TextDisabled("%s", g.name.c_str());
                 ImGui::EndGroup();
@@ -3486,10 +3491,15 @@ void Gui::commandWindow() {
                 }
             }
             if (refused) {
+                input_.clear();  // a mistyped command leaves the line empty too
+                ImGui::ClearActiveID();
                 refocusInput_ = true;
                 anyActivity_ = true;
             } else {
                 input_.clear();
+                // The field is still active (Space, not Enter, ended the line): drop its edit
+                // state, or it keeps the typed letters and the next answer is "mi" + answer.
+                ImGui::ClearActiveID();
                 paletteOpen_ = false;
                 inputHistory_.push(line);
                 core_.submitText(line);

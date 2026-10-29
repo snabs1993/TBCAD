@@ -814,7 +814,6 @@ void drawAttDefPanel(ui::PanelContext& ctx) {
         ctx.host->closePanel("attdef");
 }
 
-
 // The Make Block dialog (BLOCK): name, objects, base point and what happens to the originals.
 // OK stores the answers in the "tmp.block.*" settings and runs BLOCK again to make the block;
 // the pick buttons run BLOCK to ask for the objects or the point on the drawing.
@@ -910,8 +909,9 @@ void drawMakeBlockPanel(ui::PanelContext& ctx) {
             std::snprintf(buf, sizeof buf, "%.10g,%.10g", bx, by);
             ctx.host->setSetting("tmp.block.name", n);
             ctx.host->setSetting("tmp.block.base", autoBase ? std::string() : std::string(buf));
-            ctx.host->setSetting("tmp.block.mode",
-                                 mode == 0 ? "Retain" : mode == 2 ? "Delete" : "Convert");
+            ctx.host->setSetting("tmp.block.mode", mode == 0   ? "Retain"
+                                                   : mode == 2 ? "Delete"
+                                                               : "Convert");
             ctx.host->setSetting("tmp.block.go", "1");
             ctx.host->closePanel("makeblock");
             name.clear();

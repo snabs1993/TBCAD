@@ -7,8 +7,8 @@
 #include <imgui.h>
 
 #include <cstdint>
-#include <functional>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>

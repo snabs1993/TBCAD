@@ -28,7 +28,7 @@ set(_mcp_sources
 
 tbcad_add_library(mcp
   SOURCES ${_mcp_sources}
-  DEPENDS tbcad::core tbcad::cmd tbcad::io tbcad::geom tbcad::blocks tbcad::expr tbcad::dim tbcad::layout tbcad::constraints tbcad::modify tbcad::index tbcad::platform tbcad::net tbcad::hatch)
+  DEPENDS tbcad::core tbcad::cmd tbcad::io tbcad::geom tbcad::blocks tbcad::expr tbcad::dim tbcad::layout tbcad::constraints tbcad::modify tbcad::index tbcad::platform tbcad::net tbcad::hatch tbcad::dxf)
 target_include_directories(tbcad_mcp PRIVATE src)
 target_link_libraries(tbcad_mcp PRIVATE miniz)
 

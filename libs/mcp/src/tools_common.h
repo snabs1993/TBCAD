@@ -189,8 +189,10 @@ void registerLayoutTools(ToolSet& tools);
 void registerBlockTools(ToolSet& tools);
 void registerOpsTools(ToolSet& tools);
 
-// "x,y" as a command input.
-std::string pointInput(Vec2 p);
+// A point in millimetres as a command input.
+Json pointInput(Vec2 p);
+// A length in millimetres as typed text in the unit the drawing shows.
+std::string lengthInput(const Document& doc, double mm);
 // Runs a command with scripted inputs and turns a failure into a tool error naming the prompts it
 // saw. On success the result has messages, created and erased ids (plus `extra`).
 ToolResult runChecked(DrawingSession& s, const std::string& command, std::vector<Json> inputs,
