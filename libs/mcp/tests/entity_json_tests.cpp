@@ -173,3 +173,33 @@ TEST_CASE("entity json: a multileader is written and read back") {
         r, R"({"kind":"mleader","lines":[[[0,0],[2000,1000]]],"content":"block","block":"Tag"})");
     CHECK(get(r, withBlock).find("block")->asString() == "Tag");
 }
+
+TEST_CASE("entity json: centred text keeps its alignment point when read and written back") {
+    Rig r;
+    r.initialize();
+    // Without an alignment point a centred text hangs on its position, not on 0,0.
+    std::string id =
+        addOne(r, R"({"kind":"text","position":[500,300],"height":250,"value":"B","hAlign":"center",
+              "vAlign":"middle"})");
+    Json t = get(r, id);
+    REQUIRE(t.find("alignPoint"));
+    CHECK(t.find("alignPoint")->asArray()[0].asNumber() == doctest::Approx(500));
+    CHECK(t.find("alignPoint")->asArray()[1].asNumber() == doctest::Approx(300));
+    // What query gives back goes in again unchanged.
+    std::string again =
+        addOne(r, R"({"kind":"text","position":[480,170],"alignPoint":[500,300],"height":250,
+              "value":"B","hAlign":"center","vAlign":"middle"})");
+    Json u = get(r, again);
+    CHECK(u.find("alignPoint")->asArray()[0].asNumber() == doctest::Approx(500));
+    CHECK(u.find("alignPoint")->asArray()[1].asNumber() == doctest::Approx(300));
+    // Changing the value keeps the text in place; moving its position moves the alignment point.
+    r.ok("modify_entities", J("{\"ids\":[\"" + id + "\"],\"set\":{\"value\":\"C\"}}"));
+    CHECK(get(r, id).find("alignPoint")->asArray()[0].asNumber() == doctest::Approx(500));
+    const double x0 = get(r, id).find("position")->asArray()[0].asNumber();
+    r.ok("modify_entities", J("{\"ids\":[\"" + id + "\"],\"set\":{\"position\":[" +
+                              std::to_string(x0 + 100) + ",300]}}"));
+    CHECK(get(r, id).find("alignPoint")->asArray()[0].asNumber() == doctest::Approx(600));
+    // A left/baseline text has no alignment point to report.
+    CHECK_FALSE(
+        get(r, addOne(r, R"({"kind":"text","position":[0,0],"value":"A"})")).find("alignPoint"));
+}

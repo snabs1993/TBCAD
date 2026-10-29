@@ -107,7 +107,8 @@ public:
     // The layouts of layers, lines and inserts differ between files; each is decided by the first
     // object that fits one reading only. Objects that need a decision (block headers) can come
     // before that object in the stream, so decode ahead quietly and throw the result away.
-    void calibrate() {
+    // `places` are the objects in stream order (the walk), or the map's when the walk failed.
+    void calibrate(const std::vector<std::pair<std::uint64_t, std::int64_t>>& places) {
         const Drawing saved = out_;
         const auto savedFail = failDumps_;
         const auto savedMiss = missDumps_;
@@ -115,7 +116,7 @@ public:
         const bool wasQuiet = quiet_;
         quiet_ = true;
         std::size_t seen = 0;
-        for (const auto& [h, off] : walkedList_) {
+        for (const auto& [h, off] : places) {
             if (tripleVariant_ >= 0 && nolinksVariant_ >= 0 && insertCountKnown_)
                 break;
             if (++seen > 40000)
@@ -161,7 +162,7 @@ public:
                 " ms");
             if (walkedList_.size() * 10 >= map.size() * 7) {
                 const auto tCal = std::chrono::steady_clock::now();
-                calibrate();
+                calibrate(walkedList_);
                 const auto tDec = std::chrono::steady_clock::now();
                 for (const auto& [h, off] : walkedList_) {
                     MapEntry e;
@@ -187,6 +188,16 @@ public:
                 noteTypeTimes();
                 return;
             }
+        }
+        if (fmt_.r2004) {
+            // A real R2018 file whose walk lost its place had model space entities before its
+            // first LINE; without this they were read with the wrong layout and dropped.
+            std::vector<std::pair<std::uint64_t, std::int64_t>> places;
+            places.reserve(map.size());
+            for (const MapEntry& e : map)
+                if (e.offset >= 0 && static_cast<std::size_t>(e.offset) < file_.size())
+                    places.emplace_back(e.handle, e.offset);
+            calibrate(places);
         }
         for (const MapEntry& e : map) {
             if (e.offset < 0 || static_cast<std::size_t>(e.offset) >= file_.size()) {
@@ -748,6 +759,31 @@ private:
     bool insertCountAlways_ = true;
     bool insertCountKnown_ = false;
 
+    // A copy of a reader for trying one layout. From R2007 the strings live in a stream of their
+    // own; the copy reads them from its own copy of that stream, so a failed try does not move
+    // the strings the real read gets (a probe that read the first block header's name made
+    // *Model_Space unreadable when no layer had decided the layout yet).
+    struct Trial {
+        BitReader strings{};
+        BitReader r;
+        explicit Trial(const BitReader& from) : r(from) {
+            if (from.stringStream() != nullptr) {
+                strings = *from.stringStream();
+                r.setStringStream(&strings);
+            }
+        }
+        Trial(const Trial&) = delete;
+        Trial& operator=(const Trial&) = delete;
+        // Makes `into` go on where the try ended, strings included.
+        void keep(BitReader& into) const {
+            BitReader* const s = into.stringStream();
+            into = r;
+            into.setStringStream(s);
+            if (s != nullptr)
+                *s = strings;
+        }
+    };
+
     // ---- shared prefixes ----------------------------------------------------------------------
 
     struct ColorValue {
@@ -1053,7 +1089,8 @@ private:
                     // Only a layer that fits one reading and not the other decides it.
                     bool fits[2] = {false, false};
                     for (int v = 0; v < 2; ++v) {
-                        BitReader probe = r;
+                        Trial trial(r);
+                        BitReader& probe = trial.r;
                         tripleVariant_ = v;
                         bool f = false, x = false;
                         readTriple(probe, f, x);
@@ -1250,7 +1287,8 @@ private:
                     // Layers did not decide the table record layout; a block header may.
                     bool fits[2] = {false, false};
                     for (int v = 0; v < 2; ++v) {
-                        BitReader probe = r;
+                        Trial trial(r);
+                        BitReader& probe = trial.r;
                         BlockRec pb;
                         tripleVariant_ = v;
                         blockBody(probe, pb);
@@ -1355,7 +1393,8 @@ private:
         if (fmt_.r2004 && type == kLine && nolinksVariant_ < 0) {
             bool fits[2] = {false, false};
             for (int v = 0; v < 2; ++v) {
-                BitReader probe = r;
+                Trial trial(r);
+                BitReader& probe = trial.r;
                 nolinksVariant_ = v == 0 ? 1 : 0;
                 CommonBits pc;
                 EntityRec pe;
@@ -1369,7 +1408,8 @@ private:
         if (fmt_.r2004 && (type == kInsert) && !insertCountKnown_) {
             bool fits[2] = {false, false};
             for (int v = 0; v < 2; ++v) {
-                BitReader probe = r;
+                Trial trial(r);
+                BitReader& probe = trial.r;
                 insertCountAlways_ = v == 1;
                 CommonBits pc;
                 EntityRec pe;
@@ -2647,7 +2687,8 @@ private:
                 // only when it ends exactly where the object's main data ends.
                 for (int withMode = 0; withMode < 2; ++withMode) {
                     for (int withUnknown = 0; withUnknown < 2; ++withUnknown) {
-                        BitReader t = r;
+                        Trial trial(r);
+                        BitReader& t = trial.r;
                         EntityRec scratch;
                         if (withMode)
                             t.bb();
@@ -2663,7 +2704,7 @@ private:
                         t.b();  // lock position
                         if (t.failed() || t.bitPos() != mainEnd_)
                             continue;
-                        r = t;
+                        trial.keep(r);
                         add(e, 2, tag);
                         add(e, 70, flags);
                         return;

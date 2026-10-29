@@ -16,6 +16,7 @@ inline bool gR2007 = false;  // R2010 layout: string stream, no object size
 inline bool gR2013 = false;
 inline int gCodepage = 30;         // code page index written in the file header
 inline bool gMapRestarts = false;  // object map sections restart handle and offset deltas
+inline bool gLinksBit = true;      // entities store the "no links" bit (recent files do not)
 
 class BitWriter {
 public:
@@ -239,7 +240,8 @@ public:
             main.b(true);  // no extension dictionary handle
         if (gR2013)
             main.b(false);  // no data in the data store
-        main.b(true);       // links are the defaults
+        if (gLinksBit)
+            main.b(true);  // links are the defaults
         main.bs(color);
         main.bd(1.0);  // linetype scale
         main.bb(static_cast<unsigned>(ltFlags));

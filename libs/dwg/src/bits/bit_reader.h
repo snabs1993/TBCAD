@@ -86,6 +86,7 @@ public:
     // R2007 and later keep every string in a separate stream of the same object; once set,
     // textBytes() reads (UTF-16) from there. The pointed-to reader must outlive this one.
     void setStringStream(BitReader* strings) { strings_ = strings; }
+    BitReader* stringStream() const { return strings_; }
     // CMC: a plain index up to R2000; from R2004 on index, RGB word, flags and optional names.
     // Returns the RGB word (0 before R2004).
     std::uint32_t cmc(bool r2004, std::int32_t* index = nullptr);
