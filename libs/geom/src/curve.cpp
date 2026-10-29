@@ -658,6 +658,8 @@ Result<ArcData> arcFromThreePoints(Vec2 a, Vec2 b, Vec2 c) {
     if (!bu)
         return makeError(ErrorCode::InvalidArgument, "three points are collinear");
     auto arc = bulgeArc(a, c, *bu);
+    if (!arc)  // a bulge too small to tell from a straight line
+        return makeError(ErrorCode::InvalidArgument, "three points are collinear");
     ArcData d;
     d.center = arc->center;
     d.radius = arc->radius;

@@ -1872,9 +1872,11 @@ int App::run() {
     platform::installCrashHandler(paths_.crashDir(), TBCAD_VERSION);
     const std::filesystem::path linkDir = paths_.dataDir / "windows";
     if (options_.child) {
-        // Another window of the program already uses the autosave folder; this one gets its own so
-        // neither takes the other's drawings for leftovers of a crash.
+        // A window opened by another one keeps its logs and the like apart, but autosaves into the
+        // same folder (each process names its autosaves apart), so if it crashes the next start
+        // offers its drawings.
         childDataDir_ = linkDir / ("data-" + std::to_string(WindowLink::currentProcessId()));
+        paths_.autosaveOverride = paths_.autosaveDir();
         paths_.dataDir = childDataDir_;
     }
     registry_ = std::make_unique<cmd::Registry>();
