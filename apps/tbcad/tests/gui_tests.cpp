@@ -3373,3 +3373,48 @@ TEST_CASE("toolbox: a narrow window gets scroll arrows that move the row") {
     CHECK(w->Scroll.x > 100.0f);
     CHECK(matchesGolden(h.windowShot("##toolbox"), "toolbox_narrow"));
 }
+
+TEST_CASE("ARRAY: Toolbox variants start their array type, option buttons change the settings") {
+    Harness h(1440, 900);
+    h.frame(3);
+    h.core().submitText("RECTANGLE 0,0 10,10");
+    h.core().pressEscape();
+    h.frame(3);
+    auto count = [&] {
+        std::size_t n = 0;
+        h.core().document().forEachEntity([&](const Entity&) { ++n; });
+        return n;
+    };
+    for (const ui::ToolTab& tab : ui::toolboxTabs())
+        for (const ui::ToolGroup& g : tab.groups)
+            for (const ui::ToolDef& t : g.tools)
+                for (const ui::ToolVariant& v : t.variants) {
+                    CAPTURE(v.command);
+                    h.core().submitText(v.command);
+                    h.core().submitText("all");
+                    h.core().submitText("");
+                    h.frame(2);
+                    // The command must have moved on to its own questions, not stay on selection.
+                    if (v.command.rfind("ARRAY", 0) == 0) {
+                        CHECK(h.core().promptText().find("Select objects") == std::string::npos);
+                        CHECK(h.core().runner().active());
+                    }
+                    h.core().pressEscape();
+                    h.core().pressEscape();
+                }
+    h.core().submitText("ARRAYRECT");
+    h.core().submitText("all");
+    h.core().submitText("");
+    h.frame(3);
+    REQUIRE(h.has("Rows", "optionbar"));
+    REQUIRE(h.click("Rows", "optionbar"));
+    h.frame(3);
+    h.command("5");
+    h.frame(3);
+    REQUIRE(h.has("Accept", "optionbar"));
+    CHECK(h.core().promptText().find("5 rows") != std::string::npos);
+    REQUIRE(h.click("Accept", "optionbar"));
+    h.frame(3);
+    CHECK(count() >= 1);
+    CHECK(h.core().history().size() > 0);
+}
