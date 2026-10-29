@@ -134,8 +134,10 @@ private:
     bool groupPending_ = false;  // Group: the next text is a group name
     // Typed point modifiers at a point prompt, as in AutoCAD: FROM (a base point, then an offset
     // from it), M2P / MTP (the middle of two points) TT (a temporary tracking point) and TK
-    // (tracking: a chain of axis-aligned points).
-    enum class PtMod { None, FromBase, FromOffset, Mid1, Mid2, Track, TkFirst, TkNext };
+    // (tracking: a chain of axis-aligned points). Second: a distance or angle prompt with no base
+    // point was answered with a point; the answer is measured from it to the next point, as
+    // AutoCAD's "Specify second point".
+    enum class PtMod { None, FromBase, FromOffset, Mid1, Mid2, Track, TkFirst, TkNext, Second };
     PtMod ptMod_ = PtMod::None;
     Vec2 ptModA_{};
     // The last segment picked in the running command (from its base to the point), for

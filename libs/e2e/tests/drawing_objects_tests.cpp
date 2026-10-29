@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <functional>
 #include <map>
+#include <numbers>
 #include <random>
 #include <string>
 #include <vector>
@@ -22,6 +23,7 @@
 #include "tbcad/geom/entity.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/mline/mline.h"
+#include "tbcad/render/fill.h"
 #include "tbcad/transform/grips.h"
 
 using namespace tbcad;
@@ -512,5 +514,24 @@ TEST_CASE("a custom MLSTYLE and the multiline drawn with it survive .tbcad and D
         CHECK(style->offsets.size() == 3);
         CHECK(style->startCap);
         CHECK(style->endCap);
+    }
+}
+
+TEST_CASE("a DONUT fills its ring on screen: the filled area is the ring's area") {
+    for (const double inner : {0.0, 5.0}) {
+        CAPTURE(inner);
+        Rig r;
+        REQUIRE(r.host.run("DONUT", {std::to_string(inner), "10", "100,50", ""}).finished);
+        REQUIRE(r.ids().size() == 1);
+        geom::DisplayContext ctx;
+        ctx.pixelSizeMm = 0.01;
+        DisplayList list;
+        geom::buildDisplay(r.doc, *r.doc.find(r.ids()[0]), ctx, list);
+        double area = 0;
+        for (const DisplayItem& item : list.items)
+            if (const auto* f = std::get_if<DisplayFill>(&item))
+                area += render::triangleArea(render::triangulateEvenOdd(f->rings));
+        const double expected = std::numbers::pi * (25 - inner * inner / 4);
+        CHECK(area == doctest::Approx(expected).epsilon(0.01));
     }
 }
