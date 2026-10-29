@@ -13,6 +13,7 @@
 #include <iterator>
 #include <map>
 #include <mutex>
+#include <random>
 #include <set>
 #include <span>
 #include <sstream>
@@ -164,6 +165,13 @@ struct AppCore::DocSlot {
 
 AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
     : registry_(registry), paths_(std::move(paths)), settings_(platform::Settings::withDefaults()) {
+    {
+        std::random_device rd;
+        char tag[17];
+        std::snprintf(tag, sizeof tag, "%08x%08x", static_cast<unsigned>(rd()),
+                      static_cast<unsigned>(rd()));
+        autosaveTag_ = tag;
+    }
     if (auto r = settings_.load(paths_.settingsFile()); !r) {
         // Keep the damaged file for the user to look at: the next save would replace it.
         std::error_code ec;
@@ -924,16 +932,42 @@ bool isRecoveryFile(const fs::path& p) {
            (p.extension() == ".tbcad" || p.extension() == ".json");
 }
 
+// The tag of the process that wrote recovery-<tag>-<n>.tbcad; empty for the recovery-<n> and
+// recovery names of older versions.
+std::string recoveryOwner(const fs::path& p) {
+    const std::string stem = p.stem().string();
+    constexpr std::string_view head = "recovery-";
+    if (stem.rfind(head, 0) != 0)
+        return {};
+    const std::size_t dash = stem.rfind('-');
+    return dash > head.size() ? stem.substr(head.size(), dash - head.size()) : std::string();
+}
+
 }  // namespace
 
-// Every unsaved drawing has its own pair of files, recovery-<n>.tbcad and recovery-<n>.json
-// (a single recovery.tbcad from older versions is found too).
+std::string AppCore::autosaveBase(std::uint64_t slotId) const {
+    return "recovery-" + autosaveTag_ + "-" + std::to_string(slotId);
+}
+
+bool AppCore::autosaveInUseElsewhere(const fs::path& file) const {
+    const std::string owner = recoveryOwner(file);
+    if (owner.empty() || owner == autosaveTag_)
+        return false;
+    // The owner holds this lock for as long as it runs; the system drops it however it ends.
+    const platform::FileLock probe(paths_.autosaveDir() / ("recovery-" + owner));
+    return probe.heldElsewhere();
+}
+
+// Every unsaved drawing has its own pair of files, recovery-<tag>-<n>.tbcad and .json (the
+// recovery-<n> and single recovery.tbcad of older versions are found too). Those of other TBCAD
+// processes that are still running are not leftovers and are skipped.
 std::vector<Recovery> AppCore::pendingRecoveries() const {
     std::vector<fs::path> files;
     std::error_code ec;
     for (fs::directory_iterator it(paths_.autosaveDir(), ec), end; !ec && it != end;
          it.increment(ec))
-        if (it->path().extension() == ".tbcad" && isRecoveryFile(it->path()))
+        if (it->path().extension() == ".tbcad" && isRecoveryFile(it->path()) &&
+            !autosaveInUseElsewhere(it->path()))
             files.push_back(it->path());
     std::sort(files.begin(), files.end());
     std::vector<Recovery> out;
@@ -983,7 +1017,7 @@ Result<void> AppCore::recoverAll() {
         ++done;
     }
     // The leftovers are replaced by autosaves of the recovered drawings.
-    removeAutosaveFiles();
+    removeAutosaveFiles(true);
     autosaveNow();
     if (done == 0 && firstError)
         return *firstError;
@@ -993,7 +1027,7 @@ Result<void> AppCore::recoverAll() {
 }
 
 void AppCore::discardRecovery() {
-    removeAutosaveFiles();
+    removeAutosaveFiles(true);
 }
 
 std::vector<Recovery> AppCore::leftoverRecoveries() const {
@@ -1001,8 +1035,7 @@ std::vector<Recovery> AppCore::leftoverRecoveries() const {
     for (Recovery& r : pendingRecoveries()) {
         bool own = false;
         for (const DocSlot& slot : slots_)
-            own = own || r.autosaveFile.filename() ==
-                             fs::path("recovery-" + std::to_string(slot.id) + ".tbcad");
+            own = own || r.autosaveFile.filename() == fs::path(autosaveBase(slot.id) + ".tbcad");
         if (!own)
             out.push_back(std::move(r));
     }
@@ -1073,14 +1106,15 @@ void AppCore::reapAutosave(DocSlot& slot, bool wait) {
         slot.autosavedRevision = slot.autosaveJobRevision;
 }
 
-void AppCore::removeAutosaveFiles() {
+void AppCore::removeAutosaveFiles(bool leftovers) {
     for (DocSlot& slot : slots_)
         reapAutosave(slot, true);
     std::error_code ec;
     std::vector<fs::path> files;
     for (fs::directory_iterator it(paths_.autosaveDir(), ec), end; !ec && it != end;
          it.increment(ec))
-        if (isRecoveryFile(it->path()))
+        if (isRecoveryFile(it->path()) && (leftovers ? !autosaveInUseElsewhere(it->path())
+                                                     : recoveryOwner(it->path()) == autosaveTag_))
             files.push_back(it->path());
     for (const fs::path& f : files)
         fs::remove(f, ec);
@@ -1091,7 +1125,7 @@ void AppCore::removeAutosaveOf(std::uint64_t slotId) {
         if (slot.id == slotId && slot.autosaveJob.valid())
             (void)slot.autosaveJob.get();  // finished, and its result no longer counts
     std::error_code ec;
-    const std::string base = "recovery-" + std::to_string(slotId);
+    const std::string base = autosaveBase(slotId);
     fs::remove(paths_.autosaveDir() / (base + ".tbcad"), ec);
     fs::remove(paths_.autosaveDir() / (base + ".json"), ec);
 }
@@ -1099,7 +1133,7 @@ void AppCore::removeAutosaveOf(std::uint64_t slotId) {
 void AppCore::shutdown() {
     if (settings_.dirty())
         (void)settings_.save(paths_.settingsFile());
-    removeAutosaveFiles();
+    removeAutosaveFiles(false);
 }
 
 // Starts the autosave of one drawing: a snapshot of the drawing is taken now and the rest
@@ -1112,7 +1146,10 @@ bool AppCore::startAutosave(DocSlot& slot) {
         return false;
     if (!platform::ensureDirectory(paths_.autosaveDir()))
         return false;
-    const std::string base = "recovery-" + std::to_string(slot.id);
+    if (!autosaveOwner_)
+        autosaveOwner_ = std::make_unique<platform::FileLock>(paths_.autosaveDir() /
+                                                              ("recovery-" + autosaveTag_));
+    const std::string base = autosaveBase(slot.id);
     io::WriteOptions opt;
     opt.keepBackup = false;
     std::future<Result<void>> written =
@@ -1903,7 +1940,7 @@ Result<void> AppCore::saveAs(const fs::path& requested) {
     }
     removeAutosaveOf(slots_[active_].id);
     if (!anyDocumentModified())
-        removeAutosaveFiles();
+        removeAutosaveFiles(false);
     settings_.addRecentFile(platform::pathToUtf8(path));
     wantThumbnail(path);
     (void)settings_.save(paths_.settingsFile());

@@ -40,6 +40,10 @@ namespace tbcad::layout {
 struct Viewport;
 }
 
+namespace tbcad::platform {
+class FileLock;
+}
+
 namespace tbcad::ui {
 
 struct PointerState {
@@ -519,8 +523,15 @@ private:
     void enterSlot(std::size_t index, bool fitView);
     std::optional<std::size_t> slotOfFile(const std::filesystem::path& path) const;
     void resetSessionState();
-    void removeAutosaveFiles();
+    // Removes this process's autosaves, and with `leftovers` also those left by crashed sessions
+    // (never those of another TBCAD process that is running).
+    void removeAutosaveFiles(bool leftovers);
     void removeAutosaveOf(std::uint64_t slotId);
+    // recovery-<tag>-<slot id>: the name of a drawing's autosave without the extension.
+    std::string autosaveBase(std::uint64_t slotId) const;
+    // True for an autosave written by another TBCAD process that is still running: it is not a
+    // leftover of a crash, and is neither offered nor deleted here.
+    bool autosaveInUseElsewhere(const std::filesystem::path& file) const;
     cmd::RawInput makeRaw(const PointerState& p) const;
     void updateHover(const PointerState& p);
     EntityId hoverId_{};
@@ -662,6 +673,11 @@ private:
     std::optional<std::string> clipboardOut_{};
 
     std::chrono::steady_clock::time_point lastAutosave_{};
+    // Every TBCAD process (a second start, a window torn off another) names its autosaves with a
+    // tag of its own and holds a lock on that tag while it runs, so several of them can share the
+    // autosave folder without overwriting or deleting each other's files.
+    std::string autosaveTag_;
+    std::unique_ptr<platform::FileLock> autosaveOwner_;
     std::chrono::steady_clock::time_point settingsDirtyAt_{};
     bool settingsDirtySeen_ = false;
     bool autosaveClockStarted_ = false;
