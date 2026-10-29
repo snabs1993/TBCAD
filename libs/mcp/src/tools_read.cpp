@@ -124,7 +124,8 @@ Json drawingInfoJson(DrawingSession& s, const std::string& serverVersion) {
     o["name"] = f.name;
     o["path"] = f.hasFile ? Json(f.path.generic_string()) : Json{};
     o["modified"] = f.modified;
-    o["units"] = "mm";
+    o["units"] = "mm";  // what every tool number means, whatever unit the drawing shows
+    o["displayUnit"] = std::string(unitSuffix(doc.header().units));
     o["angles"] = "radians";
     o["revision"] = static_cast<double>(doc.revision());
     o["entityCount"] = static_cast<double>(doc.modelSpaceCount());
@@ -553,7 +554,8 @@ void registerReadTools(ToolSet& tools) {
     auto idArray = [] { return tArray(tString(), "Entity ids (decimal strings)"); };
 
     add({"get_drawing_info", "Drawing info",
-         "Summary of the open drawing: file, units (mm), entity count, extents, current layer, "
+         "Summary of the open drawing: file, units (all tool lengths are mm; displayUnit is what "
+         "the drawing shows), entity count, extents, current layer, "
          "layer and block counts, undo label, whether the user is in the middle of a command.",
          tObject({}), outSchema({"name", "entityCount", "extents", "currentLayer"}), Edit::None,
          false, true, true, getDrawingInfo});

@@ -184,7 +184,7 @@ ToolResult clipboard(ToolContext& ctx, const Json& a) {
                 return ToolResult::fail("point: " + pt.error().message);
             at = pt.value();
         }
-        in = {Json(pointInput(at))};
+        in = {pointInput(at)};
     } else if (action == "paste_original") {
         command = "PASTEORIG";
     } else {
@@ -364,8 +364,7 @@ ToolResult insertSymbol(ToolContext& ctx, const Json& a) {
                 : Result<Vec2>(makeError(ErrorCode::InvalidArgument, "position is required"));
     if (!p)
         return ToolResult::fail("position: " + p.error().message);
-    std::vector<Json> in{Json(pointInput(p.value())),
-                         Json(formatDouble(argNumber(a, "rotation", 0)))};
+    std::vector<Json> in{pointInput(p.value()), Json(formatDouble(argNumber(a, "rotation", 0)))};
     const Json* attrs = a.find("attributes");
     for (const char* tag : row->attributes) {
         const Json* v = attrs ? attrs->find(tag) : nullptr;
