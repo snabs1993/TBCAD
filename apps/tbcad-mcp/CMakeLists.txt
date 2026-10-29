@@ -4,7 +4,7 @@ list(FILTER _mcpcli_sources EXCLUDE REGEX "/src/main\\.cpp$")
 
 tbcad_add_library(mcpcli
   SOURCES ${_mcpcli_sources}
-  DEPENDS tbcad::mcp tbcad::platform tbcad_command_registry)
+  DEPENDS tbcad::mcp tbcad::platform tbcad::template tbcad_command_registry)
 
 add_executable(tbcad-mcp src/main.cpp)
 target_link_libraries(tbcad-mcp PRIVATE tbcad::mcpcli)

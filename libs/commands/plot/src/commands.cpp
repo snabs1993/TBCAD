@@ -125,6 +125,7 @@ public:
         // Strict (set by scripted callers such as the MCP tools): a value that cannot be used ends
         // the command with an "Error:" message instead of falling back to the old setting.
         bool strict = false;
+        bool colorChosen = false;  // Color picked in this run (warn only then)
         for (;;) {
             KeywordOptions menu;
             menu.keywords = {"Paper",   "Orientation", "Area",        "Scale",        "Center",
@@ -155,7 +156,7 @@ public:
                     ctx.message("Plot style table \"" + plotStyleName(ctx.host()) +
                                 "\" was not found: plotting with object colours (Style picks "
                                 "another table, e.g. monochrome.ctb).");
-                if (s.color == ColorMode::AsDisplayed && s.styleTable &&
+                if (colorChosen && s.color == ColorMode::AsDisplayed && s.styleTable &&
                     lower(plotStyleName(ctx.host())).find("monochrome") != std::string::npos)
                     ctx.message("Colour mode is Color, but the plot style table \"" +
                                 plotStyleName(ctx.host()) +
@@ -355,6 +356,7 @@ public:
                                     : s.color == ColorMode::Greyscale ? "Greyscale"
                                                                       : "Color";
                 auto r = co_await ctx.getKeyword("Colour mode", ko);
+                colorChosen = r.ok();
                 if (r.ok())
                     s.color = r.keyword == "Monochrome"  ? ColorMode::Monochrome
                               : r.keyword == "Greyscale" ? ColorMode::Greyscale

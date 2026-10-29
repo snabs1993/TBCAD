@@ -120,7 +120,8 @@ Result<void> HeadlessSession::save(std::optional<std::filesystem::path> as) {
 }
 
 void HeadlessSession::newDocument() {
-    install(std::make_unique<Document>(), {});
+    std::unique_ptr<Document> doc = newDocumentFactory_ ? newDocumentFactory_() : nullptr;
+    install(doc ? std::move(doc) : std::make_unique<Document>(), {});
 }
 
 std::vector<std::string> HeadlessSession::messagesSince(std::size_t mark) {
