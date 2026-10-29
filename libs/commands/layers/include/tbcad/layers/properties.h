@@ -73,7 +73,8 @@ struct GeometryField {
 
 // Fields for Line (start/end, length, angle), Circle (centre, radius, diameter, circumference,
 // area), Arc (centre, radius, angles, length), Polyline (vertex count, the current vertex and its
-// X / Y and segment widths, closed, length, area, global width), Hatch (area), Dimension
+// X / Y and segment widths, closed, length, area, global width; a revision cloud also its arc
+// length, side and pen-stroke style), Hatch (area), Dimension
 // (measurement, text position and rotation), Table (position, size, text height, margin),
 // Multileader and the other kinds. `vertex` (0-based, clamped) is the polyline's current vertex.
 std::vector<GeometryField> geometryFields(const Entity& e, int vertex = 0);

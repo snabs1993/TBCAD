@@ -22,7 +22,7 @@ constexpr double kDefaultArcLength = 10;
 const double kCloudBulge = std::tan(kPi / 6);
 
 // More arcs than this would make an object too heavy to draw: the command asks for a longer arc.
-constexpr std::size_t kMaxArcs = 20000;
+constexpr std::size_t kMaxArcs = geom::kMaxCloudArcs;
 
 // `ring` without repeated points (a polyline vertex given twice, the last point on the first).
 std::vector<Vec2> distinct(const std::vector<Vec2>& ring) {
@@ -37,13 +37,7 @@ std::vector<Vec2> distinct(const std::vector<Vec2>& ring) {
 
 // How many arcs cloud() makes along `ring`.
 double arcCount(const std::vector<Vec2>& ring, bool corners, double arcLength) {
-    double total = 0, count = 0;
-    for (std::size_t i = 0; i < ring.size(); ++i) {
-        const double d = distance(ring[i], ring[(i + 1) % ring.size()]);
-        total += d;
-        count += std::max(1.0, std::ceil(d / arcLength - 1e-9));
-    }
-    return corners ? count : std::max(3.0, std::ceil(total / arcLength - 1e-9));
+    return geom::cloudArcCount(ring, true, corners, arcLength);
 }
 
 std::string shortNumber(double v) {
@@ -67,78 +61,25 @@ std::string tooManyArcs(const std::vector<Vec2>& ring, bool corners, double arcL
 // A closed polyline of arcs along `ring`. With `corners` the ring's own vertices stay cloud
 // vertices and every edge is divided into pieces no longer than `arcLength`; otherwise the ring is
 // divided into equal pieces by length. The arcs bulge outwards (inwards with `reverse`).
-PolylineData cloud(const std::vector<Vec2>& ringIn, bool corners, double arcLength, bool reverse,
+PolylineData cloud(const std::vector<Vec2>& ring, bool corners, double arcLength, bool reverse,
                    bool calligraphy = false) {
-    const std::vector<Vec2> ring = distinct(ringIn);
-    std::vector<Vec2> pts;
-    const std::size_t n = ring.size();
-    if (corners) {
-        for (std::size_t i = 0; i < n; ++i) {
-            const Vec2 a = ring[i], b = ring[(i + 1) % n];
-            const int pieces =
-                std::max(1, static_cast<int>(std::ceil(distance(a, b) / arcLength - 1e-9)));
-            for (int k = 0; k < pieces; ++k)
-                pts.push_back(lerp(a, b, static_cast<double>(k) / pieces));
-        }
-    } else {
-        double total = 0;
-        for (std::size_t i = 0; i < n; ++i)
-            total += distance(ring[i], ring[(i + 1) % n]);
-        const int pieces = std::max(3, static_cast<int>(std::ceil(total / arcLength - 1e-9)));
-        const double step = total / pieces;
-        std::size_t edge = 0;
-        double edgeStart = 0;
-        for (int k = 0; k < pieces; ++k) {
-            const double s = k * step;
-            for (;;) {
-                const double len = distance(ring[edge], ring[(edge + 1) % n]);
-                if (s <= edgeStart + len + 1e-12 || edge + 1 >= n)
-                    break;
-                edgeStart += len;
-                ++edge;
-            }
-            const Vec2 a = ring[edge], b = ring[(edge + 1) % n];
-            const double len = distance(a, b);
-            pts.push_back(len > 0 ? lerp(a, b, std::clamp((s - edgeStart) / len, 0.0, 1.0)) : a);
-        }
-    }
-    double sign = ringArea(ring) >= 0 ? 1.0 : -1.0;
-    if (reverse)
-        sign = -sign;
-    PolylineData d;
-    d.closed = true;
-    for (const Vec2& p : pts) {
-        PolyVertex v;
-        v.p = p;
-        v.bulge = sign * kCloudBulge;
-        if (calligraphy) {  // each arc swells and thins like a pen stroke
-            v.startWidth = 0.12 * arcLength;
-            v.endWidth = 0.03 * arcLength;
-        }
-        d.v.push_back(v);
-    }
-    return d;
+    return geom::cloudClosed(ring, corners, arcLength, reverse, calligraphy);
 }
 
 // An open cloud along `path`: each piece no longer than `arcLength`, the arcs on the side away from
 // the area the path encloses (the other side with `reverse`).
-PolylineData openCloud(const std::vector<Vec2>& pathIn, double arcLength, bool reverse,
+PolylineData openCloud(const std::vector<Vec2>& path, double arcLength, bool reverse,
                        bool calligraphy) {
-    std::vector<Vec2> path;
-    for (const Vec2& p : pathIn)
-        if (path.empty() || !tol::isZeroLength(p - path.back()))
-            path.push_back(p);
-    PolylineData d = cloud(path, true, arcLength, reverse, calligraphy);
-    // cloud() closes the ring: drop the pieces of the closing edge, keep the last point.
-    d.closed = false;
-    const Vec2 last = path.back();
-    while (d.v.size() > 1 && !tol::isZeroLength(d.v.back().p - last))
-        d.v.pop_back();
-    if (!d.v.empty()) {
-        d.v.back().bulge = 0;
-        d.v.back().startWidth = d.v.back().endWidth = 0;
-    }
-    return d;
+    return geom::cloudOpen(path, arcLength, reverse, calligraphy);
+}
+
+// Adds the cloud with the current properties, marked so that it can be laid again later.
+void addCloud(cmd::CommandContext& ctx, PolylineData d, double arcLength, bool corners = true) {
+    Entity e{{}, std::move(d)};
+    applyCurrentProperties(ctx.doc().header(), e);
+    geom::markCloud(e, arcLength, corners);
+    if (auto id = ctx.tx().add(std::move(e)); !id)
+        ctx.message(id.error().message);
 }
 
 // A place on a closed polyline: segment k (from vertex k to k + 1) at u in [0, 1] along it.
@@ -415,7 +356,7 @@ private:
             ctx.message(m);
             co_return;
         }
-        addEntity(ctx, cloud(pts, true, len, false, settingNumber(ctx, kCalligraphy, 0) > 0));
+        addCloud(ctx, cloud(pts, true, len, false, settingNumber(ctx, kCalligraphy, 0) > 0), len);
     }
 
     static cmd::Task fromRectangle(cmd::CommandContext& ctx, Vec2 corner, double len) {
@@ -444,7 +385,7 @@ private:
             ctx.message(m);
             co_return;
         }
-        addEntity(ctx, cloud(ring, true, len, false, settingNumber(ctx, kCalligraphy, 0) > 0));
+        addCloud(ctx, cloud(ring, true, len, false, settingNumber(ctx, kCalligraphy, 0) > 0), len);
     }
 
     // Freehand: moving the cursor lays an arc each time it gets an arc length away from the last
@@ -498,7 +439,7 @@ private:
                 co_return;
             }
             ctx.message("Revision cloud finished.");
-            addEntity(ctx, cloud(*path, true, len, false, calligraphy));
+            addCloud(ctx, cloud(*path, true, len, false, calligraphy), len);
             co_return;
         }
         if (distinct(*path).size() < 2) {
@@ -515,7 +456,7 @@ private:
         auto rev = co_await ctx.getKeyword("Reverse direction [Yes/No] <No>", std::move(ko));
         if (!rev.ok())
             co_return;
-        addEntity(ctx, openCloud(*path, len, rev.keyword == "Yes", calligraphy));
+        addCloud(ctx, openCloud(*path, len, rev.keyword == "Yes", calligraphy), len);
     }
 
     // Modify (as AutoCAD): pick a polyline where the new part starts, give points along the new
@@ -630,7 +571,10 @@ private:
             ctx.message(m);
             co_return;
         }
-        if (!ctx.tx().modify(picked.id, [&](Entity& x) { x.data = result; })) {
+        if (!ctx.tx().modify(picked.id, [&](Entity& x) {
+                x.data = result;
+                geom::markCloud(x, len, true);
+            })) {
             ctx.message("The polyline could not be changed.");
             co_return;
         }
@@ -670,6 +614,7 @@ private:
         Entity cloudEntity{ent->common, cloud(ring->pts, ring->corners, len, rev.keyword == "Yes",
                                               settingNumber(ctx, kCalligraphy, 0) > 0)};
         cloudEntity.common.id = {};
+        geom::markCloud(cloudEntity, len, ring->corners);
         auto id = ctx.tx().add(std::move(cloudEntity));
         if (!id) {
             ctx.message(id.error().message);

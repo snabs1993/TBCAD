@@ -3,4 +3,5 @@
 #include "tbcad/geom/curve.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/geom/polybool.h"
+#include "tbcad/geom/revcloud.h"
 #include "tbcad/geom/spline.h"

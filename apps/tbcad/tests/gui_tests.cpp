@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <optional>
 #include <set>
 #include <sstream>
 
@@ -18,6 +19,7 @@
 #include "gui_harness.h"
 #include "icons.h"
 #include "tbcad/block_cmds/palette.h"
+#include "tbcad/geom/revcloud.h"
 #include "tbcad/layers/layer_states.h"
 #include "tbcad/render/overlay.h"
 #include "tbcad/ui/app_core.h"
@@ -1577,6 +1579,62 @@ TEST_CASE("grips: click-move a vertex, and the hover menu adds a vertex") {
     h.frame(5);
     h.core().pressEscape();
     CHECK(verts() == 2);
+}
+
+TEST_CASE("revision cloud: arc length in Object Properties, a corner grip lays the arcs again") {
+    Harness h(1920, 1080);
+    h.core().setSetting("drafting.osnap", "0");
+    h.frame(3);
+    for (const char* s : {"REVCLOUD", "Arclength", "25", "0,0", "100,0", "100,50", "0,50", ""})
+        h.core().submitText(s);
+    h.core().zoomExtents();
+    h.frame(20);
+    h.scroll(700, 500, -3.0f);
+    h.frame(30);
+    auto cloud = [&] {
+        std::optional<geom::CloudShape> s;
+        std::size_t n = 0;
+        h.core().document().forEachEntity([&](const Entity& e) {
+            s = geom::cloudShape(e);
+            if (const auto* p = std::get_if<PolylineData>(&e.data))
+                n = p->v.size();
+        });
+        return std::make_pair(s, n);
+    };
+    REQUIRE(cloud().first);
+    REQUIRE(cloud().second == 12);
+    h.core().selectAll();
+    h.frame(2);
+    REQUIRE(h.click("Object Properties", "DockSpace"));
+    h.frame(3);
+    // The first number row of a cloud is its arc length (labels are plain text, not items).
+    REQUIRE(h.has("##v", "Object Properties"));
+    REQUIRE(h.enterText("##v", "10", "Object Properties"));
+    h.frame(3);
+    CHECK(cloud().second == 30);
+    CHECK(cloud().first->arcLength == doctest::Approx(10));
+    REQUIRE(h.click("##flag", "Object Properties"));  // Arcs inward: the first flag row
+    h.frame(3);
+    CHECK(cloud().first->inward);
+
+    // Click the top right corner grip, then a point further right: the arcs follow the outline.
+    h.core().selectAll();
+    h.frame(3);
+    const ImVec2 grip = screenOf(h, {100, 50});
+    h.click(grip.x, grip.y);
+    h.frame(3);
+    REQUIRE(h.core().runner().active());
+    const ImVec2 to = screenOf(h, {150, 50});
+    h.click(to.x, to.y);
+    h.frame(3);
+    CHECK_FALSE(h.core().runner().active());
+    const auto [shape, n] = cloud();
+    REQUIRE(shape);
+    REQUIRE(shape->outline.size() == 4);
+    CHECK(shape->outline[2].x == doctest::Approx(150).epsilon(0.02));
+    CHECK(shape->arcLength == doctest::Approx(10));
+    CHECK(n > 30);
+    CHECK(h.imguiErrors().empty());
 }
 
 TEST_CASE("every menu item can be clicked without trouble") {

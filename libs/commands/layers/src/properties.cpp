@@ -9,6 +9,7 @@
 
 #include "tbcad/dim/dim.h"
 #include "tbcad/geom/entity.h"
+#include "tbcad/geom/revcloud.h"
 #include "tbcad/hatch/fill.h"
 #include "tbcad/hatch/pattern.h"
 #include "tbcad/text/text.h"
@@ -185,6 +186,14 @@ std::vector<GeometryField> geometryFields(const Entity& e, int vertex) {
         num("endx", "End X", a->center.x + a->radius * std::cos(a->endAngle), false);
         num("endy", "End Y", a->center.y + a->radius * std::sin(a->endAngle), false);
     } else if (const auto* p = entityAs<PolylineData>(e)) {
+        if (const auto cloud = geom::cloudShape(e)) {  // a revision cloud: its arcs come first
+            num("cloudarclength", "Cloud arc length", cloud->arcLength);
+            if (cloud->closed)
+                out.push_back({"cloudinward", "Arcs inward", FieldType::Flag, true,
+                               cloud->inward ? 1.0 : 0.0});
+            out.push_back({"cloudcalligraphy", "Pen-stroke arcs", FieldType::Flag, true,
+                           cloud->calligraphy ? 1.0 : 0.0});
+        }
         out.push_back(
             {"vertices", "Vertices", FieldType::Count, false, static_cast<double>(p->v.size())});
         if (!p->v.empty()) {
@@ -394,6 +403,24 @@ Result<void> setGeometryField(Transaction& tx, EntityId id, const std::string& f
                 a->endAngle = en;
             } else
                 return fail(bad("An arc has no editable field \"" + f + "\"."));
+        } else if (entityAs<PolylineData>(e) &&
+                   (f == "cloudarclength" || f == "cloudinward" || f == "cloudcalligraphy")) {
+            auto cloud = geom::cloudShape(e);
+            if (!cloud)
+                return fail(bad("The polyline is not a revision cloud."));
+            if (f == "cloudarclength") {
+                if (v <= 0)
+                    return fail(bad("The arc length must be greater than zero."));
+                cloud->arcLength = v;
+            } else if (f == "cloudinward") {
+                cloud->inward = v != 0;
+            } else {
+                cloud->calligraphy = v != 0;
+            }
+            auto r = geom::reshapeCloud(e, *cloud);
+            if (!r)
+                return fail(r.error());
+            e = std::move(r).value();
         } else if (auto* p = entityAs<PolylineData>(e)) {
             const bool perVertex =
                 f == "vertexx" || f == "vertexy" || f == "startwidth" || f == "endwidth";

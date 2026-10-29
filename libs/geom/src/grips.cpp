@@ -5,6 +5,7 @@
 
 #include "internal.h"
 #include "tbcad/geom/entity.h"
+#include "tbcad/geom/revcloud.h"
 
 namespace tbcad::geom {
 
@@ -359,6 +360,10 @@ std::vector<Vec2> gripPoints(const Entity& e) {
             break;
         }
         case EntityKind::Polyline: {
+            if (const auto cloud = cloudShape(e)) {
+                g = cloudGrips(*cloud);
+                break;
+            }
             const auto& pl = *entityAs<PolylineData>(e);
             for (const PolyVertex& v : pl.v)
                 g.push_back(v.p);
@@ -562,6 +567,8 @@ Result<Entity> moveGrip(const Entity& e, int index, Vec2 to) {
             return out;
         }
         case EntityKind::Polyline: {
+            if (const auto cloud = cloudShape(e))  // the outline moves, the arcs are laid again
+                return moveCloudGrip(e, *cloud, index, to);
             auto& pl = *entityAs<PolylineData>(out);
             int n = static_cast<int>(pl.v.size());
             if (index < n) {
