@@ -3374,7 +3374,7 @@ TEST_CASE("toolbox: a narrow window gets scroll arrows that move the row") {
     CHECK(matchesGolden(h.windowShot("##toolbox"), "toolbox_narrow"));
 }
 
-TEST_CASE("ARRAY: Toolbox variants start the array type and its option buttons change the settings") {
+TEST_CASE("ARRAY: Toolbox variants start their array type, option buttons change the settings") {
     Harness h(1440, 900);
     h.frame(3);
     h.core().submitText("RECTANGLE 0,0 10,10");
