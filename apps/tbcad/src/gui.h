@@ -155,7 +155,7 @@ private:
     void shortcuts();
     void menuBar();
     void searchBox();  // top-centre command search (English and Thai words)
-    void toolStrip();
+    void toolStrip(bool inMenuBar = false);
     void toolbox();
     void toolCell(const ui::ToolDef& t, float iconSize, float scale, bool iconOnly);
     void quickRail();
@@ -321,7 +321,8 @@ private:
     bool inToolbox_ = false;  // toolCell is drawing a Toolbox row (not the Quick rail)
     float arrowZoneL_ = 0, arrowZoneR_ = 0;  // screen x of the Toolbox scroll arrows, 0 = none
     std::string lastToolSeen_;               // the command the Toolbox last saw running
-    bool spaceSubmit_ = false;               // Space typed after text: run the line like Enter
+    bool compact_ = true;       // the compact layout: thin bars, the most room for the drawing
+    bool spaceSubmit_ = false;  // Space typed after text: run the line like Enter
     std::string typedWhileUnfocused_{};
     std::size_t lastHistorySize_ = 0;
     float commandFooterH_ = 0;  // measured height of the chips and input line

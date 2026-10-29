@@ -988,11 +988,18 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
         }
         ImGui::EndCombo();
     }
-    ImGui::SameLine();
+    {
+        // The check box: its square, a gap and the label.
+        const float w = ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x +
+                        ImGui::CalcTextSize("Invert").x;
+        const float right = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
+        if (right - ImGui::GetItemRectMax().x > w + ImGui::GetStyle().ItemSpacing.x)
+            ImGui::SameLine();
+    }
     ImGui::Checkbox("Invert", &st.invert);
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Show the layers the filter does not match");
-    ImGui::SameLine();
+    nextButton("Save filter...");
     const bool haveFilter = !st.filter.empty();
     ImGui::BeginDisabled(!haveFilter);
     if (ImGui::Button("Save filter..."))
@@ -1077,7 +1084,7 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
         ImGui::EndCombo();
     }
 
-    ImGui::SameLine();
+    nextButton("Manager...");
     if (ImGui::Button("Manager...")) {
         st.mgrSel.clear();
         ImGui::OpenPopup("Layer States Manager");
@@ -1085,7 +1092,7 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Save, restore, rename and delete layer states");
     layerStatesManager(ctx, doc, st);
-    ImGui::SameLine();
+    nextButton("Translate...");
     if (ImGui::Button("Translate...")) {
         st.trNew.clear();
         ImGui::OpenPopup("Layer Translator");
@@ -1127,8 +1134,10 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
         // In a narrow panel Linetype and Weight start hidden (right-click the header to show them).
         const bool narrow = availWidth < 560;
         const VpTarget vp = viewportTarget(ctx);
-        const float others = 30 * 3 + 40 + 34 + (narrow ? 0 : 72 + 56) + (vp ? 40 : 0) +
-                             (narrow ? 6 : 8) * ImGui::GetStyle().CellPadding.x * 2;
+        // Narrow (a slim side column): the names keep their room, Plot waits in the header's
+        // right-click menu with Linetype and Weight.
+        const float others = 30 * 3 + 40 + (narrow ? 0 : 34 + 72 + 56) + (vp ? 40 : 0) +
+                             (narrow ? 5 : 8) * ImGui::GetStyle().CellPadding.x * 2;
         ImGui::TableSetupColumn(
             "Name", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_DefaultSort,
             std::max(150.0f, availWidth - others));
@@ -1146,7 +1155,10 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
             "Weight",
             ImGuiTableColumnFlags_WidthFixed | (narrow ? ImGuiTableColumnFlags_DefaultHide : 0),
             56);
-        ImGui::TableSetupColumn("Plot", ImGuiTableColumnFlags_WidthFixed, 34);
+        ImGui::TableSetupColumn(
+            "Plot",
+            ImGuiTableColumnFlags_WidthFixed | (narrow ? ImGuiTableColumnFlags_DefaultHide : 0),
+            34);
         ImGui::TableSetupColumn(
             "Transp.", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_DefaultHide, 56);
         ImGui::TableSetupColumn(

@@ -236,11 +236,10 @@ void drawQuickSelect(ui::PanelContext& pc) {
     valueField("Value", doc, prop, st.value);
     ImGui::EndDisabled();
 
+    // One choice a row, so both fit a slim side panel.
     ImGui::TextUnformatted("How to apply:");
-    ImGui::SameLine();
     if (ImGui::RadioButton("Include in new selection set", !st.exclude))
         st.exclude = false;
-    ImGui::SameLine();
     if (ImGui::RadioButton("Exclude from new selection set", st.exclude))
         st.exclude = true;
     ImGui::Checkbox("Append to current selection set", &st.append);

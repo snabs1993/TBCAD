@@ -108,9 +108,9 @@ void drawLevelsPanel(ui::PanelContext& ctx) {
         ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableSetupColumn("Cur", ImGuiTableColumnFlags_WidthFixed, 34);
         // Fixed width (the table scrolls sideways when the panel is narrow) so names never get
-        // squeezed.
-        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, 160);
-        ImGui::TableSetupColumn("Elev (mm)", ImGuiTableColumnFlags_WidthFixed, 80);
+        // squeezed; narrow enough that Show and Lock fit a slim side column.
+        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, 120);
+        ImGui::TableSetupColumn("Elev (mm)", ImGuiTableColumnFlags_WidthFixed, 72);
         ImGui::TableSetupColumn("Show", ImGuiTableColumnFlags_WidthFixed, 40);
         ImGui::TableSetupColumn("Lck", ImGuiTableColumnFlags_WidthFixed, 34);
         ImGui::TableSetupColumn("Objects", ImGuiTableColumnFlags_WidthFixed, 60);

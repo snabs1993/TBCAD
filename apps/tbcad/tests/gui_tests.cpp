@@ -533,8 +533,10 @@ struct RedSpot {
 };
 RedSpot redSpot(const Image& img) {
     RedSpot r;
-    for (int y = 95; y < 860 && y < img.height; ++y)
-        for (int x = 0; x < 1420 && x < img.width; ++x) {
+    // The drawing area of a 1920 x 1080 window: below the bars, left of the side panels, above
+    // the command line (the Layers panel's red swatch must not count).
+    for (int y = 85; y < 930 && y < img.height; ++y)
+        for (int x = 0; x < 1500 && x < img.width; ++x) {
             const std::uint8_t* p = &img.rgba[(static_cast<std::size_t>(y) * img.width + x) * 4];
             if (p[0] > 200 && p[1] < 110 && p[2] < 110) {
                 ++r.count;
@@ -560,7 +562,8 @@ TEST_CASE("UCS icon: on, off, origin, noorigin, rotated and the world marker") {
     h.core().pressEscape();
     h.frame(3);
     Vec2 o = h.core().camera().worldToScreen({0, 0});
-    o.y += 92;  // the viewport starts below the menu, toolbar and tabs
+    o.x += ImGui::GetMainViewport()->WorkPos.x;  // the viewport starts after the bars
+    o.y += ImGui::GetMainViewport()->WorkPos.y;
 
     // On by default, at the world origin.
     const RedSpot on = redSpot(h.screenshot());
@@ -729,7 +732,12 @@ TEST_CASE("command bar: autocomplete picks, Tab completes, Up recalls history") 
     // Typing narrows the list; Tab takes the first row, Enter runs it.
     h.type("cir");
     CHECK(h.has("##row", "##suggest"));
-    CHECK(matchesGolden(crop(h.screenshot(), 60, 820, 700, 230), "command_suggest"));
+    // The list over the command line, from the input line's left end.
+    const auto* input = h.find("##command", "Command");
+    REQUIRE(input);
+    CHECK(matchesGolden(crop(h.screenshot(), static_cast<int>(input->min.x) - 50,
+                             static_cast<int>(input->max.y) - 230, 700, 230),
+                        "command_suggest"));
     h.key(ImGuiKey_Tab);
     h.key(ImGuiKey_Enter);
     CHECK(h.core().runner().active());
@@ -1124,7 +1132,17 @@ TEST_CASE("mouse in the viewport: draw with clicks, select by window and crossin
     h.core().clearSelection();
 
     // Click on an object selects it, Shift + click removes it again.
-    const ImVec2 onLine = screenOf(h, {180, 100});  // away from the midpoint grip
+    // On the first line as drawn: the clicks land on whole pixels, which at the starting zoom
+    // are several millimetres apart. A quarter of the way along, away from the midpoint grip.
+    Vec2 first{}, second{};
+    h.core().document().forEachEntity([&](const Entity& e) {
+        if (const auto* ln = std::get_if<LineData>(&e.data); ln && first.x == 0 && first.y == 0) {
+            first = {ln->a.x, ln->a.y};
+            second = {ln->b.x, ln->b.y};
+        }
+    });
+    const ImVec2 onLine =
+        screenOf(h, {first.x + (second.x - first.x) * 0.27, first.y + (second.y - first.y) * 0.27});
     h.click(onLine.x, onLine.y);
     h.frame(2);
     CHECK(h.core().selection().size() == 1);
@@ -3275,6 +3293,7 @@ TEST_CASE("toolbox: every tool runs a command the program has") {
 
 TEST_CASE("toolbox: tabs switch, fold and keep the drawing area clear") {
     Harness h(1920, 1080);
+    h.core().setSetting("ui.compact", "0");  // the full Toolbox: tabs over big labelled buttons
     h.frame(3);
     CHECK(matchesGolden(h.windowShot("##toolbox"), "toolbox_draw"));
     const float open = ImGui::GetMainViewport()->WorkPos.y;
@@ -3497,6 +3516,7 @@ TEST_CASE("menu bar: drawing menus sit under Commands, Classic Menus brings them
 
 TEST_CASE("toolbox: Expert mode is icons only and shorter, tooltips teach the keyboard way") {
     Harness h(1920, 1080);
+    h.core().setSetting("ui.compact", "0");
     h.frame(3);
     const float beginner = ImGui::GetMainViewport()->WorkPos.y;
     h.core().setSetting("ui.toolbox.expert", "1");
@@ -3517,6 +3537,7 @@ TEST_CASE("toolbox: Expert mode is icons only and shorter, tooltips teach the ke
 
 TEST_CASE("toolbox: a narrow window gets scroll arrows that move the row") {
     Harness h(900, 700);
+    h.core().setSetting("ui.compact", "0");
     h.frame(4);
     ImGuiWindow* w = ImGui::FindWindowByName("##toolbox");
     REQUIRE(w);
@@ -3655,4 +3676,63 @@ TEST_CASE("DONUT: from the Toolbox with Enter, Space and clicks, diameters picke
     REQUIRE(rings().size() == 4);
     CHECK(rings()[3].constantWidth == doctest::Approx(10));
     CHECK(h.gui().commandLineText().empty());
+}
+namespace {
+// The Toolbox's tool strip in the compact layout: a child window of "##toolbox".
+ImGuiWindow* toolRow() {
+    for (ImGuiWindow* w : GImGui->Windows)
+        if (w->WasActive && std::string_view(w->Name).find("##toolrow") != std::string_view::npos)
+            return w;
+    return nullptr;
+}
+}  // namespace
+
+TEST_CASE("compact layout: thin bars, a big drawing area, options in the command line") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    // One row of tabs and icons; the File / Edit buttons sit in the menu bar; no Pan / Zoom
+    // buttons over the drawing.
+    ImGuiWindow* box = ImGui::FindWindowByName("##toolbox");
+    REQUIRE(box);
+    CHECK(box->Size.y < 40.0f);
+    CHECK_FALSE(h.windowOpen("##toolstrip"));
+    CHECK_FALSE(h.windowOpen("##navbar"));
+    CHECK(h.has("##tool", "##MainMenuBar"));
+    REQUIRE(toolRow());
+    // The drawing gets most of the window.
+    ImGuiDockNode* centre = ImGui::DockBuilderGetCentralNode(0x7BC4D001u);
+    REQUIRE(centre);
+    CHECK(centre->Size.x > 1920.0f * 0.75f);
+    CHECK(centre->Size.y > 1080.0f * 0.78f);
+    CHECK(matchesGolden(h.windowShot("##toolbox"), "toolbox_compact"));
+
+    // A point prompt with options: the box by the cursor holds no buttons, the command line's
+    // option buttons work (a click there used to read a prompt it had just replaced).
+    h.core().submitText("PLINE");
+    h.core().submitText("0,0");
+    h.moveMouse(800, 500);
+    h.frame(5);
+    CHECK_FALSE(h.has("Arc", "##hud"));
+    REQUIRE(h.click("Arc", "Command"));
+    h.frame(3);
+    REQUIRE(h.core().runner().prompt());
+    CHECK(h.core().promptText().find("arc") != std::string::npos);
+    REQUIRE(h.click("Line", "Command"));
+    h.frame(3);
+    CHECK(h.core().promptText().find("next point") != std::string::npos);
+    h.core().pressEscape();
+    h.frame(2);
+}
+
+TEST_CASE("compact layout: a narrow window scrolls the tool row, the tabs stay") {
+    Harness h(900, 700);
+    h.frame(4);
+    ImGuiWindow* row = toolRow();
+    REQUIRE(row);
+    CHECK(row->ScrollMax.x > 0.0f);
+    CHECK(row->Scroll.x == 0.0f);
+    h.click(row->Pos.x + row->Size.x - 8.0f, row->Pos.y + row->Size.y * 0.5f);
+    h.frame(3);
+    CHECK(row->Scroll.x > 100.0f);
+    CHECK(h.has("Output", "##toolbox"));
 }
