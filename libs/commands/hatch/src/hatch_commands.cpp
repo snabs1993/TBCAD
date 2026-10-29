@@ -289,14 +289,28 @@ public:
         using cmd::Status;
         ctx.commitOnCancel();  // Esc ends the command but keeps the hatches already made
         Params p = loadParams(ctx.host());
+        Params seen = p;  // the saved settings p last agreed with
         if (ctx.doc().header().custom.count(kHpOriginKey))
             p.base = hatchOrigin(ctx.doc().header());  // HPORIGIN: where every new hatch starts
-        last_.reset();                                 // each run starts a new hatch
+        // The Hatch panel saves a pattern, scale... picked while this command waits: take it, so
+        // the next area gets what the panel shows (test.8: BRICK picked, LINE45 made).
+        auto takePanelEdits = [&] {
+            Params now = loadParams(ctx.host());
+            if (sameSettings(now, seen))
+                return;
+            const Vec2 base = p.base;
+            p = now;
+            if (now.base == seen.base)
+                p.base = base;  // the origin was not touched: keep HPORIGIN or Base
+            seen = std::move(now);
+        };
+        last_.reset();  // each run starts a new hatch
         lastSig_.clear();
         ctx.host().setSetting("ui.showPanel", "hatch");  // like AutoCAD's contextual tab
         std::size_t made = 0;
         HoverPreview hover;
         for (;;) {
+            takePanelEdits();
             cmd::PointOptions opt;
             opt.keywords =
                 gradient_
@@ -308,7 +322,10 @@ public:
                                                "Base",         "Gap",       "Island",     "Link",
                                                "SEparate",     "DRaworder", "ANnotative", "DOuble",
                                                "Transparency", "Undo"};
-            opt.preview = [&](Vec2 cursor, DisplayList& out) { hover.draw(ctx, p, cursor, out); };
+            opt.preview = [&](Vec2 cursor, DisplayList& out) {
+                takePanelEdits();
+                hover.draw(ctx, p, cursor, out);
+            };
             opt.snap = false;  // a snapped pick would sit on the boundary
             std::string what = gradient_ ? gradientSummary(p) : summary(p);
             auto r = co_await ctx.getPoint("Pick internal point (" + what + ")", opt);
@@ -477,10 +494,12 @@ public:
                         made += hatchObjects(ctx, p, sel.ids);
                 }
                 saveParams(ctx.host(), p);
+                seen = loadParams(ctx.host());
                 continue;
             }
             if (!r.ok())
                 break;  // Enter or Esc
+            takePanelEdits();
             made += hatchPoint(ctx, p, r.point);
         }
     }

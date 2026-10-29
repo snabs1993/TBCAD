@@ -221,7 +221,7 @@ void drawPanel(ui::PanelContext& pc) {
     }
     double base[2] = {p.base.x, p.base.y};
     if (ImGui::InputScalarN(leftLabel("Origin").c_str(), ImGuiDataType_Double, base, 2, nullptr,
-                            nullptr, "%.6g")) {
+                            nullptr, "%.10g")) {
         p.base = {base[0], base[1]};
         changed = true;
     }
@@ -229,52 +229,26 @@ void drawPanel(ui::PanelContext& pc) {
     if (changed)
         saveParams(*pc.host, p);
 
-    if (ImGui::Button("Pick internal point") && pc.runCommand)
-        pc.runCommand("HATCH");
+    // Each button replaces a command in progress (its name would be taken as an answer).
+    auto start = [&](const std::string& line) {
+        if (!pc.runCommand)
+            return;
+        if (pc.commandActive && pc.cancelCommand)
+            for (int i = 0; i < 4; ++i)  // it does nothing once no command runs
+                pc.cancelCommand();
+        pc.runCommand(line);
+    };
+    if (ImGui::Button("Pick internal point"))
+        start("HATCH");
     ImGui::SameLine();
-    if (ImGui::Button("Gradient##run") && pc.runCommand)  // the section above is "Gradient" too
-        pc.runCommand("GRADIENT");
+    if (ImGui::Button("Gradient##run"))  // the section above is "Gradient" too
+        start("GRADIENT");
     ImGui::SameLine();
     ImGui::BeginDisabled(!hasHatchSelected(pc));
-    if (ImGui::Button("Apply to selected hatches") && pc.runCommand)
-        pc.runCommand(selectionCommand(p, false));
+    if (ImGui::Button("Apply to selected hatches"))
+        start(selectionCommand(p, false));
     ImGui::EndDisabled();
     ImGui::EndGroup();
-}
-
-// ---- Properties panel: Hatch section ---------------------------------------------------------
-
-void drawSection(ui::PanelContext& pc, EntityId id) {
-    if (!pc.doc || !pc.runCommand || pc.multiSelection)
-        return;
-    const Entity* e = pc.doc->find(id);
-    const HatchData* h = e ? entityAs<HatchData>(*e) : nullptr;
-    if (!h)
-        return;
-    ImGui::SeparatorText("Hatch");
-
-    if (ImGui::BeginCombo("Pattern", h->pattern.empty() ? "SOLID" : h->pattern.c_str())) {
-        for (const std::string& name : PatternRegistry::names()) {
-            if (ImGui::Selectable(name.c_str(), name == h->pattern))
-                pc.runCommand("HATCHEDIT P " + name + " D");
-        }
-        ImGui::EndCombo();
-    }
-    // InputDouble does not take EnterReturnsTrue: the edit counts when the field is left.
-    constexpr ImGuiInputTextFlags kEnter = ImGuiInputTextFlags_AutoSelectAll;
-    double scale = h->patternScale;
-    ImGui::InputDouble("Scale", &scale, 0, 0, "%.6g", kEnter);
-    if (ImGui::IsItemDeactivatedAfterEdit() && scale > 0 && scale != h->patternScale)
-        pc.runCommand("HATCHEDIT S " + number(scale) + " D");
-    double angle = h->patternAngle * 180.0 / kPi;
-    ImGui::InputDouble("Angle", &angle, 0, 0, "%.6g", kEnter);
-    if (ImGui::IsItemDeactivatedAfterEdit())
-        pc.runCommand("HATCHEDIT A " + number(angle) + " D");
-    double base[2] = {h->patternOrigin.x, h->patternOrigin.y};
-    ImGui::InputScalarN("Origin", ImGuiDataType_Double, base, 2, nullptr, nullptr, "%.6g", kEnter);
-    if (ImGui::IsItemDeactivatedAfterEdit())
-        pc.runCommand("HATCHEDIT B " + number(base[0]) + "," + number(base[1]) + " D");
-    ImGui::TextDisabled("%zu loop(s)", h->loops.size());
 }
 
 // ---- Contextual tab: Hatch Editor --------------------------------------------------------------
@@ -327,7 +301,6 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Draw/Gradient", "GRADIENT", "draw.gradient");
     ui.addMenuItem("Modify/Edit Hatch", "HATCHEDIT", "modify.hatchedit");
     ui.addPanel("hatch", "Hatch", drawPanel, false);
-    ui.addPropertySection(EntityKind::Hatch, drawSection);
     ui.addContextualTab("hatch", "Hatch Editor", {EntityKind::Hatch}, drawContextTab);
 }
 

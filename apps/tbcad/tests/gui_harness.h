@@ -106,6 +106,11 @@ public:
     // Types a line in the command window and presses Enter.
     void command(const std::string& line);
 
+    // All text drawn in the newest frame (labels, values shown as text, messages), once switched
+    // on: for values a test cannot reach as widgets, such as a read-only number in a panel.
+    void captureText(bool on);
+    const std::string& shownText() const;
+
     // The current frame as a picture.
     Image screenshot();
     // A frame with `draw` painting on top of everything (into the draw list it is given), returned

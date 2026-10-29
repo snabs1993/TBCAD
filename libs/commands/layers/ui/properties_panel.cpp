@@ -59,10 +59,26 @@ EditState& edit() {
     return e;
 }
 
+// Up to four decimals and never an exponent: an area of 8295770 mm² read "8.29577e+06" (test.8).
 std::string formatNumber(double v) {
     char buf[64];
-    std::snprintf(buf, sizeof buf, "%.6g", v);
-    return buf;
+    if (!std::isfinite(v) || std::abs(v) >= 1e15) {
+        std::snprintf(buf, sizeof buf, "%.6g", v);
+        return buf;
+    }
+    std::snprintf(buf, sizeof buf, "%.4f", v);
+    std::string s = buf;
+    while (s.back() == '0')
+        s.pop_back();
+    if (s.back() == '.')
+        s.pop_back();
+    if (s == "-0")
+        s = "0";
+    if (s == "0" && v != 0) {  // smaller than the four decimals show
+        std::snprintf(buf, sizeof buf, "%.4g", v);
+        s = buf;
+    }
+    return s;
 }
 
 // A text input that applies on Enter or when it loses focus after an edit. Returns the new text

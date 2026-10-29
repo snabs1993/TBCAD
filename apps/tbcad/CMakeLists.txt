@@ -129,7 +129,7 @@ if(TBCAD_BUILD_TESTS)
   # The real Gui driven with queued mouse / keyboard events and compared with golden pictures; no
   # window, no GPU (GLFW's null platform and a software rasteriser).
   add_executable(tbcad_gui_tests tests/gui_tests.cpp tests/gui_harness.cpp tests/gui_perf_tests.cpp
-    tests/command_sweep.cpp)
+    tests/command_sweep.cpp tests/mouse_test8.cpp)
   target_compile_features(tbcad_gui_tests PRIVATE cxx_std_20)
   tbcad_set_warnings(tbcad_gui_tests)
   target_include_directories(tbcad_gui_tests PRIVATE tests)

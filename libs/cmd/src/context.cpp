@@ -96,6 +96,7 @@ CommandContext::Awaiter<StringResult> CommandContext::getString(std::string prom
     auto r = make(detail::PromptKind::String, std::move(prompt), {});
     r.defaultText = std::move(opts.defaultValue);
     r.allowEmptyString = opts.allowEmpty;
+    r.clickAnswers = opts.clickAnswers;
     r.editor = opts.editor;
     r.textPreview = std::move(opts.textPreview);
     return {*this, std::move(r)};

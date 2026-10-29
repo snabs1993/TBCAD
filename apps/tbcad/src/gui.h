@@ -15,6 +15,7 @@
 #include "settings_dialog.h"
 #include "tbcad/core/color.h"
 #include "tbcad/platform/external_link.h"
+#include "tbcad/platform/file_dialog.h"
 #include "tbcad/platform/updater.h"
 #include "tbcad/textcmd/format_bar.h"
 #include "tbcad/ui/app_core.h"
@@ -126,6 +127,9 @@ public:
     void setThumbnailLoader(std::function<unsigned(const std::filesystem::path&)> loader) {
         thumbnailLoader_ = std::move(loader);
     }
+    // Tests: stands in for the native Open / Save dialogs (they cannot be answered there) and runs
+    // where one would be shown, so a test can type into the app while "the dialog is up".
+    std::function<std::optional<std::filesystem::path>()> fileDialogForTests{};
 
 private:
     // CloseAll closes every drawing except the one `keepDoc_` names (0 = none): CLOSEALL and the
@@ -246,6 +250,20 @@ private:
     void performPending(bool discard = false);
     void continuePending();
     void* nativeHandle() const;
+    // The native file dialogs, run so that nothing typed while they are up reaches the drawing.
+    bool nativeDialogs() const {
+        return fileDialogForTests || platform::nativeDialogsAvailable();
+    }
+    std::optional<std::filesystem::path> openDialog(const std::vector<platform::FileFilter>& filters,
+                                                    const std::string& title,
+                                                    const std::filesystem::path& folder);
+    std::optional<std::filesystem::path> saveDialog(const std::vector<platform::FileFilter>& filters,
+                                                    const std::string& title,
+                                                    const std::string& extension,
+                                                    const std::string& suggested,
+                                                    const std::filesystem::path& folder);
+    std::optional<std::filesystem::path> modalDialog(
+        const std::function<std::optional<std::filesystem::path>()>& show);
 
     ui::AppCore& core_;
     ui::UiRegistry& registry_;

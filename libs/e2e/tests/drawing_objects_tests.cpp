@@ -59,7 +59,7 @@ std::vector<Maker> makers() {
     std::vector<Maker> m;
     m.push_back({"spline fit", [](Rig& r, Vec2 o) {
                      r.host.run("SPL",
-                                {P(o, 0, 0), P(o, 30, 40), P(o, 60, 0), P(o, 90, 40), "", "", ""});
+                                {P(o, 0, 0), P(o, 30, 40), P(o, 60, 0), P(o, 90, 40), ""});
                  }});
     m.push_back({"spline CV", [](Rig& r, Vec2 o) {
                      r.host.run("SPL", {"M", "CV", P(o, 0, 0), P(o, 30, 40), P(o, 60, 0),

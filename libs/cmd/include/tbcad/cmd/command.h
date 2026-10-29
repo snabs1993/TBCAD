@@ -64,6 +64,7 @@ struct PromptRequest {
     bool freeText = false;
     bool snap = true;  // Point: the point filters (object snaps, ortho...) apply
     bool allowEmptyString = false;
+    bool clickAnswers = false;  // String: a click answers as Enter, with its point
     bool allowPreselection = true;
     bool single = false;
     bool allowZero = true;
@@ -82,6 +83,7 @@ struct PromptAnswer {
     EntityId entity{};
     std::vector<EntityId> ids{};
     bool shift = false;
+    bool clicked = false;  // String: answered by a click at `point`
 };
 
 template <class R>
@@ -100,7 +102,8 @@ inline IntResult toResult<IntResult>(PromptAnswer&& a) {
 }
 template <>
 inline StringResult toResult<StringResult>(PromptAnswer&& a) {
-    return {a.status, std::move(a.text)};
+    return {a.status, std::move(a.text),
+            a.clicked ? std::optional<Vec2>(a.point) : std::optional<Vec2>{}};
 }
 template <>
 inline KeywordResult toResult<KeywordResult>(PromptAnswer&& a) {

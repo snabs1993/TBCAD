@@ -85,8 +85,8 @@ std::optional<SplineData> build(Method m, const std::vector<Vec2>& pts, bool clo
 }
 
 // SPLINE [SPL]: fit points through geom::interpolateSpline (default) or control vertices
-// (Method). Enter finishes; for fit splines it then asks for optional end tangents (Enter =
-// natural). Close and Undo are options of the next-point prompt.
+// (Method). Enter finishes the spline with natural ends, as in AutoCAD; end tangents are the
+// Tangents option. Close and Undo are options of the next-point prompt.
 class SplineCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "SPLINE"; }
@@ -99,8 +99,7 @@ public:
         std::vector<Vec2> pts;
         bool closed = false;
         double fitTolerance = 0;
-        std::optional<Vec2> startTan, endTan;  // set by Tangents, else asked for at the end
-        bool presetTangents = false;
+        std::optional<Vec2> startTan, endTan;  // set by Tangents, else natural
 
         for (;;) {
             cmd::PointOptions o;
@@ -180,17 +179,21 @@ public:
             } else if (r.keyword == "Tangents") {
                 cmd::PointOptions so;
                 so.base = pts.front();
-                auto st = co_await ctx.getPoint("Specify start tangent", std::move(so));
-                if (!st.ok())
+                // Enter at either prompt leaves that end natural.
+                auto st = co_await ctx.getPoint("Specify start tangent <natural>", std::move(so));
+                if (st.status == cmd::Status::Cancel)
                     continue;
                 cmd::PointOptions eo;
                 eo.base = pts.back();
-                auto et = co_await ctx.getPoint("Specify end tangent", std::move(eo));
-                if (!et.ok())
+                auto et = co_await ctx.getPoint("Specify end tangent <natural>", std::move(eo));
+                if (et.status == cmd::Status::Cancel)
                     continue;
-                startTan = st.point - pts.front();
-                endTan = et.point - pts.back();
-                presetTangents = true;
+                startTan.reset();
+                endTan.reset();
+                if (st.ok())
+                    startTan = st.point - pts.front();
+                if (et.ok())
+                    endTan = et.point - pts.back();
             } else if (r.keyword == "Undo") {
                 pts.pop_back();
             } else {  // Close
@@ -202,30 +205,6 @@ public:
         if (pts.size() < 2) {
             ctx.message("A spline needs at least two points.");
             co_return;
-        }
-        if (method == Method::Fit && !closed && !presetTangents) {
-            cmd::PointOptions so;
-            so.base = pts.front();
-            so.preview = [c, method, pts](Vec2 cursor, DisplayList& out) {
-                if (auto s = build(method, pts, false, cursor - pts.front()))
-                    previewEntity(*c, makeEntity(*s), out);
-            };
-            auto st = co_await ctx.getPoint("Specify start tangent <natural>", std::move(so));
-            if (st.status == cmd::Status::Cancel)
-                co_return;
-            if (st.ok())
-                startTan = st.point - pts.front();
-            cmd::PointOptions eo;
-            eo.base = pts.back();
-            eo.preview = [c, method, pts, startTan](Vec2 cursor, DisplayList& out) {
-                if (auto s = build(method, pts, false, startTan, cursor - pts.back()))
-                    previewEntity(*c, makeEntity(*s), out);
-            };
-            auto et = co_await ctx.getPoint("Specify end tangent <natural>", std::move(eo));
-            if (et.status == cmd::Status::Cancel)
-                co_return;
-            if (et.ok())
-                endTan = et.point - pts.back();
         }
         auto s = method == Method::Fit && !closed && fitTolerance > 0
                      ? fitWithTolerance(pts, fitTolerance, startTan, endTan)

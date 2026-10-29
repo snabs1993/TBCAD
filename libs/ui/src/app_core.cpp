@@ -2074,6 +2074,25 @@ void AppCore::submitPanelText(std::string_view text) {
     echoMode_ = EchoMode::Typed;
 }
 
+void AppCore::startCommand(std::string_view text) {
+    std::string line = cmd::trim(text);
+    cmd::CommandRunner& run = runner();
+    if (run.active() && !line.empty() && line[0] != '\'') {
+        const std::vector<std::string> words = splitWords(line);
+        const cmd::Command* c = words.empty() ? nullptr : registry_.find(words[0]);
+        if (c && c->isTransparent()) {
+            line.insert(0, 1, '\'');
+        } else {
+            // A command whose Esc lands on another prompt of its own needs a few.
+            for (int i = 0; i < 16 && run.active(); ++i)
+                pressEscape();
+            if (run.active())
+                return;
+        }
+    }
+    submitText(line);
+}
+
 namespace {
 // Numbers with a long fraction ("3787.4686716791975,5741.31161") are shortened to a few decimals
 // for the command line; the command itself still gets the full value.
@@ -3407,6 +3426,10 @@ void AppCore::click(const PointerState& p) {
                     run.submit(cmd::Input::pick(*id, world, p.shift));
                 break;
             default:
+                // A typed-answer prompt: the runner says what it wants, or (TABLE's title) takes
+                // the click. Text edited in the drawing has clicks of its own.
+                if (!prompt_->editor)
+                    run.submit(cmd::Input::click(raw));
                 break;
         }
         return;

@@ -32,6 +32,30 @@ std::string shortNumber(double v) {
     return buf;
 }
 
+// The table style's sizes are millimetres on paper. Drawn in model space, and not annotative,
+// they are multiplied by the drawing's scale as dimensions are: the annotation scale, else the
+// current dimension style's overall scale, else (a drawing that says neither) a round factor that
+// makes the table about a third of the view wide. 30 x 8 mm cells were a speck in a 1:100 plan
+// (test.8).
+double modelScale(cmd::CommandContext& ctx, const table::TableStyle& style, long long cols) {
+    const Header& h = ctx.doc().header();
+    if (!ctx.host().activeLayoutName().empty() || annotateNewObjects(h))
+        return 1;
+    if (const double a = currentAnnotationScale(h); a > 1)
+        return a;
+    if (const DimStyle* ds = ctx.doc().dimStyle(h.currentDimStyle); ds && ds->overallScale > 1)
+        return ds->overallScale;
+    const cmd::ViewState view = ctx.host().view();
+    const double viewWidth = view.scale * view.sizePx.x;
+    const double width = style.colWidth * static_cast<double>(cols);
+    if (!(viewWidth > 0) || !(width > 0) || width * 20 > viewWidth)
+        return 1;
+    const double raw = viewWidth / 3 / width;
+    const double decade = std::pow(10.0, std::floor(std::log10(raw)));
+    const double m = raw / decade;
+    return decade * (m >= 5 ? 5 : m >= 2 ? 2 : 1);
+}
+
 bool isTable(const Entity& e) {
     return kind(e) == EntityKind::Table;
 }
@@ -63,20 +87,24 @@ public:
         auto rows = co_await ctx.getInteger("Number of rows <5>", io);
         if (!rows.ok())
             co_return;
+        const double k = modelScale(ctx, style, cols.value);
         cmd::DistanceOptions dop;
         dop.allowZero = false;
-        dop.defaultValue = style.colWidth;
-        auto cw =
-            co_await ctx.getDistance("Column width <" + shortNumber(style.colWidth) + ">", dop);
+        dop.defaultValue = style.colWidth * k;
+        auto cw = co_await ctx.getDistance(
+            "Column width <" + shortNumber(style.colWidth * k) + ">", dop);
         if (!cw.ok())
             co_return;
-        dop.defaultValue = style.rowHeight;
-        auto rh =
-            co_await ctx.getDistance("Row height <" + shortNumber(style.rowHeight) + ">", dop);
+        dop.defaultValue = style.rowHeight * k;
+        auto rh = co_await ctx.getDistance(
+            "Row height <" + shortNumber(style.rowHeight * k) + ">", dop);
         if (!rh.ok())
             co_return;
+        // Text, margin and cell text heights follow the row height chosen.
+        const double size = rh.value / style.rowHeight;
         cmd::StringOptions so;
         so.allowEmpty = true;
+        so.clickAnswers = true;  // a click there means no title, and puts the table where it was
         auto title = co_await ctx.getString("Title <none>", so);
         if (title.status == Status::Cancel)
             co_return;
@@ -84,9 +112,8 @@ public:
 
         const std::size_t nrows =
             static_cast<std::size_t>(rows.value) + (titleText.empty() ? 0u : 1u);
-        const double textHeight = rh.value == style.rowHeight
-                                      ? style.textHeight
-                                      : style.textHeight * rh.value / style.rowHeight;
+        const double textHeight = rh.value == style.rowHeight ? style.textHeight
+                                                              : style.textHeight * size;
         auto build = [=](Vec2 at) {
             return table::make(nrows, static_cast<std::size_t>(cols.value), cw.value, rh.value,
                                titleText, at, textHeight);
@@ -96,16 +123,24 @@ public:
         po.preview = [c, build](Vec2 cursor, DisplayList& out) {
             previewTable(*c, build(cursor), out);
         };
-        auto where = co_await ctx.getPoint("Specify insertion point (top-left corner)", po);
-        if (!where.ok())
-            co_return;
+        Vec2 at{};
+        if (title.point) {
+            at = *title.point;
+        } else {
+            auto where = co_await ctx.getPoint("Specify insertion point (top-left corner)", po);
+            if (!where.ok())
+                co_return;
+            at = where.point;
+        }
         ctx.setUndoLabel("TABLE");
-        TableData t = build(where.point);
-        t.margin = style.margin;
+        TableData t = build(at);
+        t.margin = style.margin * size;
         t.headerRow = style.headerRow;
         t.titleStyle = style.title;
         t.headerStyle = style.header;
         t.dataStyle = style.data;
+        for (TableCellStyle* cs : {&t.titleStyle, &t.headerStyle, &t.dataStyle})
+            cs->textHeight *= size;
         t.style = ctx.doc().header().currentTextStyle;
         if (!style.textStyle.empty())
             if (const TextStyle* ts = ctx.doc().textStyleByName(style.textStyle))

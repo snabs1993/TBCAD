@@ -265,6 +265,8 @@ struct Harness::Impl {
     bool haveFrame = false;
     float mx = -1000, my = -1000;
     std::set<std::string> reportedIds;
+    bool captureText = false;
+    std::string text;
 };
 
 Harness::Harness(int width, int height) : impl_(std::make_unique<Impl>()) {
@@ -351,8 +353,14 @@ void Harness::frame(int n) {
         imgui_items::clear();
         core_->updateFrame();
         ImGui::NewFrame();
+        if (impl_->captureText)
+            ImGui::LogToBuffer(0);  // depth 0: logging must not open tree nodes
         ViewportRect rect = gui_->frame();
         gui_->showViewport(7, rect);
+        if (impl_->captureText) {
+            impl_->text = ImGui::GetCurrentContext()->LogBuffer.c_str();
+            ImGui::LogFinish();
+        }
         ImGui::Render();
         reportDuplicateIds();
         impl_->haveFrame = true;
@@ -380,6 +388,15 @@ void Harness::reportDuplicateIds() {
         if (impl_->reportedIds.insert(msg).second)
             errorLog().push_back(msg);
     }
+}
+
+void Harness::captureText(bool on) {
+    impl_->captureText = on;
+    impl_->text.clear();
+}
+
+const std::string& Harness::shownText() const {
+    return impl_->text;
 }
 
 void Harness::settle(int limit) {
