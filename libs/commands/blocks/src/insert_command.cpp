@@ -104,8 +104,7 @@ public:
 
         // In a window the Insert dialog (list of blocks with a preview, scale and rotation) opens
         // to pick from; the name can still be typed. (Not when a panel started this run.)
-        if (!doc.blocks().empty() && source.empty() && !fromPanel &&
-            ctx.host().dialogsAvailable())
+        if (!doc.blocks().empty() && source.empty() && !fromPanel && ctx.host().dialogsAvailable())
             ctx.host().openPanel("insertdlg");
 
         // Block name.

@@ -1,5 +1,6 @@
-#include <algorithm>
 #include <doctest/doctest.h>
+
+#include <algorithm>
 
 #include "tbcad/platform/updater.h"
 
