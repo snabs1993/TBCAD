@@ -49,6 +49,7 @@ namespace tbcad::app {
 namespace {
 
 constexpr ImGuiID kDockId = 0x7BC4D001u;
+constexpr float kCompactTabPad = 1.0f;  // Model / layout tab strip padding, compact layout
 
 const std::vector<platform::FileFilter>& openFilters() {
     static const std::vector<platform::FileFilter> f = {
@@ -149,11 +150,11 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
     cursorHud_ = flag("hud.enabled", true);
     for (const auto& p : registry_.panels())
         panelOpen_[p.id] = p.visibleByDefault;
-    // The default dock sizes changed (a command bar of about four rows); a layout saved by
-    // an older build is replaced once.
-    if (core_.settings().getString("ui.dockLayout", "") != "v3") {
+    // The default dock sizes changed (the compact layout: a narrower side column and a command
+    // bar of three rows); a layout saved by an older build is replaced once.
+    if (core_.settings().getString("ui.dockLayout", "") != "v4") {
         rebuildDock_ = true;
-        core_.settings().setString("ui.dockLayout", "v3");
+        core_.settings().setString("ui.dockLayout", "v4");
     }
     // The workspace used last time. Only the panels are applied here: the docking layout comes
     // back from imgui.ini by itself.
@@ -1432,6 +1433,7 @@ void Gui::menuBar() {
                 if (ImGui::MenuItem(label, nullptr, on))
                     core_.setSetting(key, on ? "0" : "1");
             };
+            toggle("Compact Layout (most room for the drawing)", "ui.compact", true);
             toggle("Toolbar", "ui.toolstrip", true);
             toggle("Toolbox", "ui.toolbox", true);
             toggle("Quick Rail", "ui.quickRailBar", true);
@@ -1440,7 +1442,7 @@ void Gui::menuBar() {
             if (ImGui::MenuItem("Classic Menus", nullptr, !flag("ui.compactMenus", true)))
                 core_.setSetting("ui.compactMenus", flag("ui.compactMenus", true) ? "0" : "1");
             toggle("Status Bar", "ui.statusbar", true);
-            toggle("Navigation Bar", "ui.navbar", true);
+            toggle("Navigation Bar", "ui.navbar", !compact_);
             toggle("Contextual Tabs", "ui.contextTabs", true);
             toggle("Option Bar", "ui.optionBar", true);
             ImGui::Separator();
@@ -1553,6 +1555,8 @@ void Gui::menuBar() {
         registeredMenu("Help");
         ImGui::EndMenu();
     }
+    if (compact_ && flag("ui.toolstrip", true))
+        toolStrip(true);
     searchBox();
     ImGui::EndMainMenuBar();
 }
@@ -1653,7 +1657,7 @@ void Gui::searchBox() {
     }
 }
 
-void Gui::toolStrip() {
+void Gui::toolStrip(bool inMenuBar) {
     struct Tool {
         Icon icon;
         const char* tip;
@@ -1676,11 +1680,14 @@ void Gui::toolStrip() {
     ImGuiViewport* vp = ImGui::GetMainViewport();
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
                                    ImGuiWindowFlags_NoDocking;
-    const float iconSize = std::round(
-        26.0f * dpiScale_ * static_cast<float>(core_.settings().getNumber("ui.scale", 1.0)));
+    // In the compact layout the buttons sit in the menu bar, as tall as a menu title.
+    const float iconSize =
+        inMenuBar ? ImGui::GetFrameHeight()
+                  : std::round(26.0f * dpiScale_ *
+                               static_cast<float>(core_.settings().getNumber("ui.scale", 1.0)));
     const float h = iconSize + ImGui::GetStyle().WindowPadding.y * 2.0f;
-    if (ImGui::BeginViewportSideBar("##toolstrip", vp, ImGuiDir_Up, h, flags)) {
-        bool first = true;
+    if (inMenuBar || ImGui::BeginViewportSideBar("##toolstrip", vp, ImGuiDir_Up, h, flags)) {
+        bool first = !inMenuBar;  // in the menu bar a line parts the buttons from the menus
         // A line between groups.
         auto groupGap = [&] {
             if (!first) {
@@ -1788,7 +1795,7 @@ void Gui::toolStrip() {
             }
         }
         // Right-click the strip to show or hide a group, or to change the Quick Access buttons.
-        if (ImGui::BeginPopupContextWindow("##toolstripMenu")) {
+        if (!inMenuBar && ImGui::BeginPopupContextWindow("##toolstripMenu")) {
             for (const Group& group : groups) {
                 const std::string key = std::string("ui.toolgroup.") + group.name;
                 bool shown = flag(key, true);
@@ -1801,7 +1808,8 @@ void Gui::toolStrip() {
             ImGui::EndPopup();
         }
     }
-    ImGui::End();
+    if (!inMenuBar)
+        ImGui::End();
 }
 
 // One Toolbox button: icon (or initials), name under it, a small arrow when it has variants.
@@ -1932,13 +1940,18 @@ std::vector<std::string> Gui::quickRailCommands() const {
 // work from any Toolbox tab. Right-click a Toolbox button to add or remove one.
 void Gui::quickRail() {
     const float scale = dpiScale_ * static_cast<float>(core_.settings().getNumber("ui.scale", 1.0));
-    const float iconSize = std::round(28.0f * scale);
+    const float iconSize = std::round((compact_ ? 22.0f : 28.0f) * scale);
+    if (compact_)
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(2.0f * scale, 4.0f * scale));
     const ImGuiStyle& st = ImGui::GetStyle();
     const float w = iconSize + 8.0f * scale + st.WindowPadding.x * 2.0f;
     ImGuiViewport* vp = ImGui::GetMainViewport();
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
                                    ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoNav;
-    if (ImGui::BeginViewportSideBar("##quickrail", vp, ImGuiDir_Left, w, flags)) {
+    const bool open = ImGui::BeginViewportSideBar("##quickrail", vp, ImGuiDir_Left, w, flags);
+    if (compact_)
+        ImGui::PopStyleVar();
+    if (open) {
         for (const std::string& c : quickRailCommands()) {
             const ui::ToolDef* t = ui::findTool(c);
             if (t && core_.registry().find(t->command))
@@ -1973,25 +1986,38 @@ void Gui::toolbox() {
         lastToolSeen_.clear();
     }
     const float scale = dpiScale_ * static_cast<float>(core_.settings().getNumber("ui.scale", 1.0));
-    const float iconSize = std::round(30.0f * scale);
+    // Compact layout: one thin row, the tab names on the left and small icon buttons after
+    // them (names in the tooltips), so the drawing keeps the height.
+    const bool compact = compact_;
+    const float iconSize = std::round((compact ? 22.0f : 30.0f) * scale);
+    if (compact)
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4.0f * scale, 2.0f * scale));
     const ImGuiStyle& st = ImGui::GetStyle();
     const float line = ImGui::GetTextLineHeight();
     const float tabH = ImGui::GetFrameHeight();
     // Expert mode: icons only, no names or group captions, so the bar is shorter.
-    const bool expert = flag("ui.toolbox.expert", false);
-    const float bodyH = expert ? iconSize + st.ItemSpacing.y * 2.0f
-                               : iconSize + line * 2.0f + st.ItemSpacing.y * 3.0f;
-    const float h = tabH + (folded ? 0.0f : bodyH) + st.WindowPadding.y * 2.0f;
+    const bool expert = compact || flag("ui.toolbox.expert", false);
+    const float bodyH = compact  ? iconSize + 4.0f
+                        : expert ? iconSize + st.ItemSpacing.y * 2.0f
+                                 : iconSize + line * 2.0f + st.ItemSpacing.y * 3.0f;
+    const float h = (compact ? std::max(tabH, bodyH) : tabH + (folded ? 0.0f : bodyH)) +
+                    st.WindowPadding.y * 2.0f;
     ImGuiViewport* vp = ImGui::GetMainViewport();
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoSavedSettings |
                                    ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoScrollWithMouse;
-    if (ImGui::BeginViewportSideBar("##toolbox", vp, ImGuiDir_Up, h, flags)) {
+    const bool open = ImGui::BeginViewportSideBar("##toolbox", vp, ImGuiDir_Up, h, flags);
+    if (compact)
+        ImGui::PopStyleVar();
+    if (open) {
+        if (compact)
+            ImGui::PushStyleVar(ImGuiStyleVar_SelectableTextAlign, ImVec2(0.5f, 0.5f));
         for (const ui::ToolTab& t : tabs) {
             const bool sel = &t == tab;
             ImGui::PushID(t.id.c_str());
-            if (ImGui::Selectable(
-                    t.name.c_str(), sel, 0,
-                    ImVec2(ImGui::CalcTextSize(t.name.c_str()).x + 20.0f * scale, 0))) {
+            if (ImGui::Selectable(t.name.c_str(), sel, 0,
+                                  ImVec2(ImGui::CalcTextSize(t.name.c_str()).x +
+                                             (compact ? 12.0f : 20.0f) * scale,
+                                         compact ? h - st.WindowPadding.y * 2.0f : 0))) {
                 core_.settings().setString("ui.toolbox.tab", t.id);
                 if (folded)
                     core_.setSetting("ui.toolbox.folded", "0");
@@ -2001,8 +2027,23 @@ void Gui::toolbox() {
             ImGui::PopID();
             ImGui::SameLine(0, 2);
         }
-        ImGui::NewLine();
-        if (!folded) {
+        if (compact) {
+            ImGui::PopStyleVar();
+            // A line, then the tools in a strip of their own, which scrolls without the tabs.
+            ImGui::SameLine(0, st.ItemSpacing.x * 2);
+            const ImVec2 p = ImGui::GetCursorScreenPos();
+            ImGui::GetWindowDrawList()->AddLine(ImVec2(p.x - st.ItemSpacing.x, p.y + 2),
+                                                ImVec2(p.x - st.ItemSpacing.x, p.y + bodyH - 2),
+                                                ImGui::GetColorU32(ImGuiCol_Separator));
+        } else {
+            ImGui::NewLine();
+        }
+        const bool strip =
+            compact && !folded &&
+            ImGui::BeginChild("##toolrow", ImVec2(0, bodyH), ImGuiChildFlags_None,
+                              ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
+                                  ImGuiWindowFlags_NoBackground);
+        if (!folded && (strip || !compact)) {
             if (ImGui::IsWindowHovered() && ImGui::GetIO().MouseWheel != 0.0f)
                 ImGui::SetScrollX(ImGui::GetScrollX() - ImGui::GetIO().MouseWheel * 60.0f);
             inToolbox_ = true;
@@ -2052,7 +2093,7 @@ void Gui::toolbox() {
                 const ImVec2 wp = ImGui::GetWindowPos();
                 const ImVec2 ws = ImGui::GetWindowSize();
                 const float aw = 22.0f * scale;
-                const float top = wp.y + tabH + st.WindowPadding.y;
+                const float top = compact ? wp.y : wp.y + tabH + st.WindowPadding.y;
                 auto arrow = [&](bool right) {
                     const float x0 = right ? wp.x + ws.x - aw : wp.x;
                     const ImVec2 lo(x0, top), hi(x0 + aw, top + bodyH);
@@ -2084,6 +2125,8 @@ void Gui::toolbox() {
                 }
             }
         }
+        if (compact && !folded)
+            ImGui::EndChild();
     }
     ImGui::End();
 }
@@ -2218,6 +2261,7 @@ void Gui::optionBar() {
     ImGui::SetNextWindowPos(ImVec2(lastRect_.x + 8, lastRect_.y + 6));
     ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(maxW, 400));
     ImGui::SetNextWindowBgAlpha(0.92f);
+    std::string picked;
     if (ImGui::Begin("##optionbar", nullptr, flags)) {
         ImGui::AlignTextToFramePadding();
         ImGui::TextColored(ImVec4(0.35f, 0.65f, 1.0f, 1.0f), "%s",
@@ -2237,11 +2281,8 @@ void Gui::optionBar() {
             if (isDefault)
                 ImGui::PushStyleColor(ImGuiCol_Button,
                                       ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-            if (ImGui::Button(word.c_str())) {
-                core_.submitText(word);
-                refocusInput_ = true;
-                anyActivity_ = true;
-            }
+            if (ImGui::Button(word.c_str()))
+                picked = word;  // answered after the loop: it replaces the prompt `info` is
             if (isDefault)
                 ImGui::PopStyleColor();
             if (ImGui::IsItemHovered() && isDefault)
@@ -2255,10 +2296,17 @@ void Gui::optionBar() {
         }
     }
     ImGui::End();
+    if (!picked.empty()) {
+        core_.submitText(picked);
+        refocusInput_ = true;
+    }
     anyActivity_ = true;
 }
 
 float Gui::layoutTabsHeight() const {
+    // Compact: buttons one text line tall with a pixel of room above and below.
+    if (compact_)
+        return ImGui::GetTextLineHeight() + 2.0f * kCompactTabPad + 2.0f;
     return ImGui::GetFrameHeight() + ImGui::GetStyle().WindowPadding.y * 2.0f;
 }
 
@@ -2282,6 +2330,10 @@ void Gui::layoutTabs(const ViewportRect& rect) {
     }
     ImGui::SetNextWindowPos(ImVec2(rect.x, rect.y + rect.h));
     ImGui::SetNextWindowSize(ImVec2(rect.w, h));
+    if (compact_) {
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4.0f, kCompactTabPad));
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6.0f, 1.0f));
+    }
     if (ImGui::Begin("##layouttabs", nullptr, flags)) {
         auto run = [&](std::initializer_list<std::string> lines) {
             for (const std::string& l : lines)
@@ -2455,6 +2507,8 @@ void Gui::layoutTabs(const ViewportRect& rect) {
         }
     }
     ImGui::End();
+    if (compact_)
+        ImGui::PopStyleVar(2);
 
     if (templatePending)
         doLayoutFromTemplate();
@@ -2629,7 +2683,7 @@ void Gui::statusBar() {
     // The controls wrap onto further rows when the window is narrow (a side panel open), instead
     // of running off the right edge. The row count comes from the previous frame.
     // Even padding above and below, so the combo boxes are not cut off at the window's edge.
-    constexpr float kPadY = 4.0f;
+    const float kPadY = compact_ ? 2.0f : 4.0f;
     const float h = statusRows_ * ImGui::GetFrameHeight() +
                     (statusRows_ - 1) * ImGui::GetStyle().ItemSpacing.y + 2 * kPadY;
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
@@ -2966,13 +3020,20 @@ void Gui::dockLayout(ImGuiID ds) {
     ImGui::DockBuilderAddNode(ds, ImGuiDockNodeFlags_DockSpace);
     ImGui::DockBuilderSetNodeSize(ds, vp->WorkSize);
     ImGuiID center = ds;
-    // The command area is about four rows tall (three of history and the input line), not a
-    // fixed share of the window, which left it mostly empty on a tall screen.
-    const float commandPx = 4.0f * ImGui::GetFrameHeightWithSpacing() + 24.0f;
-    const float commandRatio = std::clamp(commandPx / std::max(vp->WorkSize.y, 1.0f), 0.07f, 0.15f);
+    // The command area is a few rows tall (history and the input line), not a fixed share of
+    // the window, which left it mostly empty on a tall screen. The compact layout keeps two rows
+    // of history and a side column of about 360 px, so the drawing gets the rest.
+    const float rows = compact_ ? 3.0f : 4.0f;
+    const float commandPx = rows * ImGui::GetFrameHeightWithSpacing() + (compact_ ? 8.0f : 24.0f);
+    const float commandRatio =
+        std::clamp(commandPx / std::max(vp->WorkSize.y, 1.0f), compact_ ? 0.04f : 0.07f, 0.15f);
     ImGuiID bottom =
         ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, commandRatio, nullptr, &center);
-    ImGuiID right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.26f, nullptr, &center);
+    const float sideRatio =
+        compact_ ? std::clamp(360.0f * dpiScale_ / std::max(vp->WorkSize.x, 1.0f), 0.15f, 0.26f)
+                 : 0.26f;
+    ImGuiID right =
+        ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, sideRatio, nullptr, &center);
     ImGui::DockBuilderDockWindow("Command", bottom);
     // The last window docked is the one shown in front: Layers first, as in the plan.
     for (const auto& p : registry_.panels())
@@ -3399,6 +3460,12 @@ void Gui::commandWindow() {
     if (!showCommandLine_)
         return;
     ImGui::SetNextWindowSize(ImVec2(700, 160), ImGuiCond_FirstUseEver);
+    if (compact_) {
+        // Docked alone, the command line needs no tab of its own: one row more for the history.
+        ImGuiWindowClass wc;
+        wc.DockNodeFlagsOverrideSet = ImGuiDockNodeFlags_AutoHideTabBar;
+        ImGui::SetNextWindowClass(&wc);
+    }
     if (ImGui::Begin("Command", &showCommandLine_)) {
         const cmd::PromptInfo* pending = core_.promptInfo();
         // The footer (option chips and the input line) is measured on the previous frame, so
@@ -3634,8 +3701,11 @@ bool Gui::optionChips() {
     const cmd::PromptInfo* info = core_.promptInfo();
     if (!info || info->keywords.empty())
         return false;
-    for (std::size_t i = 0; i < info->keywords.size(); ++i) {
-        const std::string& word = info->keywords[i];
+    // A copy: a click answers the prompt, which replaces the prompt `info` points into.
+    const std::vector<std::string> keywords = info->keywords;
+    std::string picked;
+    for (std::size_t i = 0; i < keywords.size(); ++i) {
+        const std::string& word = keywords[i];
         if (i) {
             const float next = ImGui::GetItemRectMax().x + ImGui::GetStyle().ItemSpacing.x +
                                ImGui::CalcTextSize(word.c_str()).x +
@@ -3645,25 +3715,25 @@ bool Gui::optionChips() {
                 ImGui::SameLine();  // else the chip starts a new row
         }
         ImGui::PushID(static_cast<int>(i));
-        if (ImGui::SmallButton(word.c_str())) {
-            core_.submitText(word);
-            refocusInput_ = true;
-            anyActivity_ = true;
-        }
+        if (ImGui::SmallButton(word.c_str()))
+            picked = word;
         const ImVec2 lo = ImGui::GetItemRectMin();
         const ImVec2 hi = ImGui::GetItemRectMax();
-        const std::size_t n = ui::keywordKeyLength(info->keywords, i);
+        const std::size_t n = ui::keywordKeyLength(keywords, i);
         const float w = ImGui::CalcTextSize(word.substr(0, n).c_str()).x;
         const float x0 = lo.x + ImGui::GetStyle().FramePadding.x;
         ImGui::GetWindowDrawList()->AddLine(ImVec2(x0, hi.y - 3), ImVec2(x0 + w, hi.y - 3),
                                             ImGui::GetColorU32(ImGuiCol_Text), 1.0f);
         ImGui::PopID();
     }
+    if (!picked.empty()) {
+        core_.submitText(picked);
+        refocusInput_ = true;
+        anyActivity_ = true;
+    }
     return true;
 }
 
-// The prompt next to the cursor: what the program wants next, the typed text, and clickable
-// options. Follows the cursor with a lag so the options can be reached with the mouse.
 // Labels that modules ask for (UiRegistry::addLabelProvider), drawn by their point.
 void Gui::viewportLabels(const ViewportRect& rect) {
     if (registry_.labelProviders().empty() || core_.inPaperSpace())
@@ -3691,6 +3761,8 @@ void Gui::viewportLabels(const ViewportRect& rect) {
     }
 }
 
+// Next to the cursor: the distance / angle fields of the point prompt and what is being typed.
+// Follows the cursor with a lag; the prompt and its options are in the command line instead.
 void Gui::cursorHud(const ViewportRect& rect) {
     const cmd::PromptInfo* info = core_.promptInfo();
     if (!cursorHud_ || !info) {
@@ -3711,7 +3783,16 @@ void Gui::cursorHud(const ViewportRect& rect) {
     const float lag = 48.0f * dpiScale_;
     if (!hudHovered_ && (dx * dx + dy * dy > lag * lag || hudAnchor_.x < -1e5f))
         hudAnchor_ = io.MousePos;
-    const bool options = !info->keywords.empty();
+    // Only what belongs at the cursor: the distance / angle fields and what is being typed. The
+    // prompt and its options stay put in the command line and the option bar, where they can be
+    // clicked; a box of buttons chasing the cursor could not be, and covered the drawing.
+    const auto* dynProvider = registry_.cursorFields();
+    const bool hasFields = dynProvider && !dynProvider->fields(core_.feedback()).empty();
+    if (!hasFields && input_.empty()) {
+        hudHovered_ = false;
+        dynFocus_ = -1;
+        return;
+    }
     // Stay inside the drawing: flip to the other side of the cursor near the right and bottom
     // edges (the size is the previous frame's).
     // Far enough from the crosshair that the box does not cover the object being pointed at.
@@ -3729,35 +3810,17 @@ void Gui::cursorHud(const ViewportRect& rect) {
                           ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
                           ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoDocking |
                           ImGuiWindowFlags_NoMove;
-    const auto* dynProvider = registry_.cursorFields();
     const bool editingField = dynProvider && dynProvider->focused() >= 0;
-    if (!options && !editingField)
+    if (!editingField)
         wf |= ImGuiWindowFlags_NoInputs;
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 5));
     if (ImGui::Begin("##hud", nullptr, wf)) {
-        std::string line = info->text;
-        if (info->defaultText)
-            line += " <" + *info->defaultText + ">";
         if (!input_.empty())
-            line += ": " + input_;
-        ImGui::TextUnformatted(line.c_str());
+            ImGui::TextUnformatted(input_.c_str());
         // The snap / tracking label is drawn next to the cursor, not repeated here.
-        const cmd::FilterFeedback& fb = core_.feedback();
-        dynamicFields(fb);
-        if (options) {
-            ImGui::PushID("hudchips");
-            for (std::size_t i = 0; i < info->keywords.size(); ++i) {
-                if (i)
-                    ImGui::SameLine();
-                if (ImGui::SmallButton(info->keywords[i].c_str())) {
-                    core_.submitText(info->keywords[i]);
-                    refocusInput_ = true;
-                }
-            }
-            ImGui::PopID();
-        }
+        dynamicFields(core_.feedback());
         hudSize_ = ImGui::GetWindowSize();
-        hudHovered_ = options && ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows);
+        hudHovered_ = false;
     } else {
         hudHovered_ = false;
     }
@@ -5334,9 +5397,10 @@ ViewportRect Gui::frame() {
                 core_.print(err);
         }
     }
+    compact_ = flag("ui.compact", true);
     if (!cleanScreen_) {  // F11 hides everything but the viewport and the command line
         menuBar();
-        if (flag("ui.toolstrip", true))
+        if (!compact_ && flag("ui.toolstrip", true))
             toolStrip();
         if (flag("ui.toolbox", true))
             toolbox();
@@ -5522,8 +5586,7 @@ void Gui::showTile(unsigned texture, const ViewportRect& rect) {
 // The navigation bar (NAVBAR): pan, zoom extents / window / previous, zoom in and out, at the
 // right edge of the drawing.
 void Gui::navigationBar(const ViewportRect& rect) {
-    if (cleanScreen_ || core_.setting("ui.navbar").value_or("1") == "0" || rect.w < 200 ||
-        rect.h < 260)
+    if (cleanScreen_ || !flag("ui.navbar", !compact_) || rect.w < 200 || rect.h < 260)
         return;
     const float pad = 8.0f * dpiScale_;
     ImGui::SetNextWindowPos(ImVec2(rect.x + rect.w - pad, rect.y + rect.h * 0.5f), ImGuiCond_Always,
