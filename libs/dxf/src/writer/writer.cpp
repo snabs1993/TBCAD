@@ -15,6 +15,7 @@
 #include "tbcad/text/text.h"
 #include "tbcad/underlay/image.h"
 #include "tbcad/underlay/pdf.h"
+#include "units.h"
 #include "writer_impl.h"
 
 namespace tbcad::dxf::detail {
@@ -1973,41 +1974,19 @@ std::string Writer::headerSection(std::uint64_t handSeed) {
         o.i(70, 0);
     }
     if (!r12_) {
+        const LengthUnit unit = doc_.header().units;
+        const bool imperial = unit == LengthUnit::Inch || unit == LengthUnit::Foot;
         var("$MEASUREMENT");
-        o.i(70, 1);
+        o.i(70, imperial ? 0 : 1);
+        // exportDxf hands over a drawing that shows another unit already in that unit.
         var("$INSUNITS");
-        o.i(70, 4);  // millimetres: every TBCAD length is in mm
-        // The unit the drawing shows lengths in, as a note TBCAD reads back (USERI5 is free for
-        // applications; AutoCAD ignores the value).
-        const LengthUnit shown = doc_.header().units;
-        const char* slot = nullptr;  // the first of USERI5..1 the file did not use itself
-        for (const char* n : {"$USERI5", "$USERI4", "$USERI3", "$USERI2", "$USERI1"}) {
-            const auto it = custom.find(std::string(kKeptVarPrefix) + n);
-            bool free = it == custom.end();
-            if (!free) {  // a variable the file left at its default is as good as absent
-                const KeptGroups g = unpackGroups(it->second);
-                free = g.size() == 1 && g[0].first == 70 && g[0].second == "0";
-            }
-            if (free) {
-                slot = n;
-                break;
-            }
-        }
-        if (shown != LengthUnit::Millimeter && slot) {
-            var(slot);
-            o.i(70, 8100 + (shown == LengthUnit::Inch         ? 1
-                            : shown == LengthUnit::Foot       ? 2
-                            : shown == LengthUnit::Centimeter ? 5
-                                                              : 6));
-        }
+        o.i(70, detail::insunitsCode(unit));
         for (const auto& [key, value] : custom) {
             if (key.compare(0, kKeptVarPrefix.size(), kKeptVarPrefix) != 0)
                 continue;
             const std::string name = key.substr(kKeptVarPrefix.size());
             if (ownedHeaderVar(name))
                 continue;
-            if (shown != LengthUnit::Millimeter && slot && name == slot)
-                continue;  // the note about the shown unit took its place
             kept(name.c_str());
         }
     }
@@ -2321,6 +2300,14 @@ std::string ExportSummary::toJson(const Report& report) const {
 }
 
 Result<ExportResult> exportDxf(const Document& doc, const ExportOptions& options, Report& report) {
+    // A drawing that shows another unit is written in it (R12 has no $INSUNITS: millimetres).
+    if (doc.header().units != LengthUnit::Millimeter && options.version != DxfVersion::R12) {
+        auto inUnits = detail::inDrawingUnits(doc);
+        if (!inUnits)
+            return inUnits.error();
+        detail::Writer w(*inUnits.value(), options, report);
+        return w.run();
+    }
     detail::Writer w(doc, options, report);
     return w.run();
 }

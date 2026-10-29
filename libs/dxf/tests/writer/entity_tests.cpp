@@ -58,8 +58,8 @@ RoundTrip roundTrip(const Document& doc, ExportOptions options = {}) {
 
 }  // namespace
 
-TEST_CASE("all geometry kinds, properties and tables survive an export and re-import") {
-    Document doc;
+// One of every entity kind, with tables, layouts and blocks (shared by the round-trip tests).
+static void buildEverything(Document& doc) {
     {
         auto tx = doc.begin("everything");
         Linetype dash;
@@ -344,6 +344,11 @@ TEST_CASE("all geometry kinds, properties and tables survive an export and re-im
                 tx.modify(id, [&](Entity& e) { dim::refresh(doc, *entityAs<DimensionData>(e)); }));
         tx.commit();
     }
+}
+
+TEST_CASE("all geometry kinds, properties and tables survive an export and re-import") {
+    Document doc;
+    buildEverything(doc);
 
     RoundTrip rt = roundTrip(doc);
     CHECK_MESSAGE(rt.diff.empty(), rt.diff);
@@ -2380,6 +2385,70 @@ TEST_CASE("DXF 2007 names the arrowhead block of a multileader, and reads the st
     REQUIRE(m);
     REQUIRE(back.dimStyle(m->style));
     CHECK(back.dimStyle(m->style)->leaderArrow == ArrowType::Dot);
+}
+
+}  // namespace tbcad::dxf
+
+namespace tbcad::dxf {
+
+// Sets the unit the drawing shows; dimensions place their text again for the new number format.
+static void setUnits(Document& doc, LengthUnit unit) {
+    Transaction tx = doc.begin("units");
+    REQUIRE(tx.modifyHeader([&](Header& h) { h.units = unit; }));
+    std::vector<DimStyleId> styles;  // dimension styles show the drawing's unit, as read
+    for (const auto& kv : doc.dimStyles())
+        styles.push_back(kv.first);
+    for (DimStyleId id : styles)
+        REQUIRE(tx.modifyDimStyle(id, [&](DimStyle& d) { d.units = unit; }));
+    tx.commit();
+    std::vector<EntityId> dims;
+    doc.forEachEntity([&](const Entity& e) {
+        if (entityAs<DimensionData>(e))
+            dims.push_back(e.common.id);
+    });
+    Transaction t2 = doc.begin("refresh dimensions");
+    for (EntityId id : dims)
+        REQUIRE(t2.modify(id, [&](Entity& e) { dim::refresh(doc, *entityAs<DimensionData>(e)); }));
+    t2.commit();
+}
+
+TEST_CASE("a drawing in metres is written in metres ($INSUNITS 6) and reads back the same") {
+    Document doc;
+    buildEverything(doc);
+    {
+        Transaction tx = doc.begin("limits and ucs");
+        REQUIRE(tx.modifyHeader([](Header& h) {
+            setDrawingLimits(h, {0, 0}, {42000, 29700});
+            h.custom["tbcad.ucs"] = "GRID\t5000\t2500\t0.5\n";
+            h.custom["tbcad.ucs.current"] = "GRID\t5000\t2500\t0.5";
+        }));
+        tx.commit();
+    }
+    setUnits(doc, LengthUnit::Meter);
+    RoundTrip rt = roundTrip(doc);
+    CHECK_MESSAGE(rt.diff.empty(), rt.diff);
+    CHECK(rt.exportReport.count(Severity::Error) == 0);
+    CHECK(rt.back->header().units == LengthUnit::Meter);
+    const std::size_t at = rt.bytes.find("$INSUNITS");
+    REQUIRE(at != std::string::npos);
+    std::string head = rt.bytes.substr(at, 24);
+    head.erase(std::remove(head.begin(), head.end(), '\r'), head.end());
+    CHECK(head.find("\n70\n6\n") != std::string::npos);
+    std::string limits = rt.bytes.substr(rt.bytes.find("$LIMMAX"), 40);
+    limits.erase(std::remove(limits.begin(), limits.end(), '\r'), limits.end());
+    CHECK(limits.find("\n42.0\n") != std::string::npos);  // 42 m
+}
+
+TEST_CASE(
+    "the test drawing in centimetres or inches is written in that unit and reads back the same") {
+    for (const LengthUnit unit : {LengthUnit::Centimeter, LengthUnit::Inch, LengthUnit::Foot}) {
+        Document doc;
+        buildEverything(doc);
+        setUnits(doc, unit);
+        RoundTrip rt = roundTrip(doc);
+        CHECK_MESSAGE(rt.diff.empty(), static_cast<int>(unit), rt.diff);
+        CHECK(rt.back->header().units == unit);
+    }
 }
 
 }  // namespace tbcad::dxf

@@ -204,6 +204,7 @@ void Importer::parseHeader(const Record& rec) {
     std::string var;
     int insunits = 0;
     int unitMarker = 0;
+    int measurement = -1;  // $MEASUREMENT: 0 imperial, 1 metric, -1 not in the file
     std::string markerVar;
     bool haveUnits = false;
     double ltscale = 1, celtscale = 1;
@@ -224,6 +225,8 @@ void Importer::parseHeader(const Record& rec) {
         } else if (var == "$INSUNITS" && g.code == 70) {
             insunits = static_cast<int>(g.integer());
             haveUnits = true;
+        } else if (var == "$MEASUREMENT" && g.code == 70) {
+            measurement = static_cast<int>(g.integer());
         } else if (var.compare(0, 6, "$USERI") == 0 && var.size() == 7 && g.code == 70 &&
                    g.integer() > 8100 && g.integer() <= 8106) {
             // TBCAD's own note of the unit it shows lengths in (all lengths are mm in the file)
@@ -264,6 +267,10 @@ void Importer::parseHeader(const Record& rec) {
         }
     }
     setUnits(insunits, !haveUnits);
+    {
+        const bool imperial = measurement == 0 || (measurement < 0 && (k_ == 25.4 || k_ == 304.8));
+        patternK_ = imperial ? k_ / 25.4 : k_;
+    }
     if (unitMarker != 0 && k_ == 1) {
         displayUnit_ = unitMarker == 1   ? LengthUnit::Inch
                        : unitMarker == 2 ? LengthUnit::Foot
@@ -332,7 +339,7 @@ void Importer::parseHeader(const Record& rec) {
             limMin[0] < limMax[0] && limMin[1] < limMax[1] &&
             !(limMin[0] == 0 && limMin[1] == 0 &&  // the defaults of other writers: not a choice
               ((limMax[0] == 420 && limMax[1] == 297) || (limMax[0] == 12 && limMax[1] == 9))))
-            setDrawingLimits(h, {limMin[0], limMin[1]}, {limMax[0], limMax[1]});
+            setDrawingLimits(h, Vec2{limMin[0], limMin[1]} * k_, Vec2{limMax[0], limMax[1]} * k_);
         h.createdBy = "tbcad-convert";
         h.custom["dxf.acadver"] = acadVer_;
         if (!clayer.empty())
@@ -1482,7 +1489,7 @@ void Importer::readStyle(const Record& r) {
     // in ROMANS measured 0.92 of the SHX width in the owner's plot.
     if (!ts.fontFamily.empty() && ts.fontFamily == "TBCAD Stroke")
         ts.widthFactor *= kShxStandInWidth;
-    ts.height = r.num(40, 0);
+    ts.height = r.num(40, 0) * k_;
     if (!std::isfinite(ts.height) || ts.height < 0)
         ts.height = 0;
     ts.oblique = r.num(50, 0) * kPi / 180.0;
