@@ -53,8 +53,8 @@ bool get(const std::string& url, Sink&& sink, std::string& error, long long* tot
         return false;
     }
     WinHttpSetTimeouts(session.h, 10000, 10000, 20000, 30000);
-    Handle conn(WinHttpConnect(session.h, std::wstring(host, uc.dwHostNameLength).c_str(),
-                               uc.nPort, 0));
+    Handle conn(
+        WinHttpConnect(session.h, std::wstring(host, uc.dwHostNameLength).c_str(), uc.nPort, 0));
     if (!conn.h) {
         error = "Cannot reach the update server.";
         return false;
@@ -82,8 +82,8 @@ bool get(const std::string& url, Sink&& sink, std::string& error, long long* tot
     if (total) {
         wchar_t len[32];
         DWORD n = sizeof len;
-        *total = WinHttpQueryHeaders(req.h, WINHTTP_QUERY_CONTENT_LENGTH, WINHTTP_HEADER_NAME_BY_INDEX,
-                                     len, &n, WINHTTP_NO_HEADER_INDEX)
+        *total = WinHttpQueryHeaders(req.h, WINHTTP_QUERY_CONTENT_LENGTH,
+                                     WINHTTP_HEADER_NAME_BY_INDEX, len, &n, WINHTTP_NO_HEADER_INDEX)
                      ? _wtoi64(len)
                      : 0;
     }
@@ -151,7 +151,8 @@ bool httpsDownload(const std::string& url, const std::filesystem::path& file,
 std::filesystem::path selfExecutable() {
     wchar_t buf[4096];
     const DWORD n = GetModuleFileNameW(nullptr, buf, 4096);
-    return n > 0 && n < 4096 ? std::filesystem::path(std::wstring(buf, n)) : std::filesystem::path();
+    return n > 0 && n < 4096 ? std::filesystem::path(std::wstring(buf, n))
+                             : std::filesystem::path();
 }
 
 bool launchDetached(const std::filesystem::path& exe, const std::vector<std::string>& args) {
@@ -160,8 +161,8 @@ bool launchDetached(const std::filesystem::path& exe, const std::vector<std::str
     std::wstring params;
     for (const auto& a : args)
         params += (params.empty() ? L"" : L" ") + widen(a);
-    const auto r = reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", exe.c_str(),
-                                                           params.c_str(), nullptr, SW_SHOWNORMAL));
+    const auto r = reinterpret_cast<INT_PTR>(
+        ShellExecuteW(nullptr, L"open", exe.c_str(), params.c_str(), nullptr, SW_SHOWNORMAL));
     return r > 32;
 }
 

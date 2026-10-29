@@ -12,8 +12,8 @@ namespace tbcad::platform {
 namespace {
 
 bool allDigits(std::string_view s) {
-    return !s.empty() && std::all_of(s.begin(), s.end(),
-                                     [](unsigned char c) { return std::isdigit(c) != 0; });
+    return !s.empty() &&
+           std::all_of(s.begin(), s.end(), [](unsigned char c) { return std::isdigit(c) != 0; });
 }
 
 std::vector<std::string_view> splitDots(std::string_view s) {
@@ -202,9 +202,10 @@ struct Sha256 {
         std::uint32_t a = h[0], b = h[1], c = h[2], d = h[3], e = h[4], f = h[5], g = h[6],
                       hh = h[7];
         for (int i = 0; i < 64; ++i) {
-            const auto t1 = hh + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) +
-                            k[i] + w[i];
-            const auto t2 = (rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c));
+            const auto t1 =
+                hh + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + k[i] + w[i];
+            const auto t2 =
+                (rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c));
             hh = g;
             g = f;
             f = e;
@@ -280,8 +281,9 @@ std::string sha256FileHex(const std::filesystem::path& file) {
 }
 
 std::vector<std::string> installerArguments(bool perMachine) {
-    return {"/SILENT",          "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS",
-            "/TBCADUPDATE=1",   perMachine ? "/ALLUSERS" : "/CURRENTUSER"};
+    return {"/SILENT",        "/SUPPRESSMSGBOXES",
+            "/NORESTART",     "/CLOSEAPPLICATIONS",
+            "/TBCADUPDATE=1", perMachine ? "/ALLUSERS" : "/CURRENTUSER"};
 }
 
 // ---- UpdateService ----------------------------------------------------------------------------
@@ -320,20 +322,20 @@ void UpdateService::check(std::string currentVersion, std::string channel) {
     join();
     cancel_ = false;
     state_ = State::Checking;
-    worker_ = std::thread([this, currentVersion = std::move(currentVersion),
-                           channel = std::move(channel)] {
-        std::string body, err;
-        if (!httpsGet(std::string(kReleaseFeedUrl), body, err)) {
+    worker_ = std::thread(
+        [this, currentVersion = std::move(currentVersion), channel = std::move(channel)] {
+            std::string body, err;
+            if (!httpsGet(std::string(kReleaseFeedUrl), body, err)) {
+                std::lock_guard lock(mu_);
+                error_ = err;
+                state_ = State::Failed;
+                return;
+            }
+            auto pick = pickUpdate(parseReleases(body), currentVersion, channel);
             std::lock_guard lock(mu_);
-            error_ = err;
-            state_ = State::Failed;
-            return;
-        }
-        auto pick = pickUpdate(parseReleases(body), currentVersion, channel);
-        std::lock_guard lock(mu_);
-        release_ = pick;
-        state_ = pick ? State::Available : State::UpToDate;
-    });
+            release_ = pick;
+            state_ = pick ? State::Available : State::UpToDate;
+        });
 }
 
 void UpdateService::download(const std::filesystem::path& folder) {

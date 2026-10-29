@@ -2006,7 +2006,8 @@ int App::run() {
     // A new version is looked for once a day, only in a normal run (not scripted or capture runs)
     // and only when the setting allows it.
     if (options_.frames == 0 && !options_.selfTest && !options_.child &&
-        core_->setting("update.check").value_or("1") != "0" && !std::getenv("TBCAD_NO_UPDATE_CHECK")) {
+        core_->setting("update.check").value_or("1") != "0" &&
+        !std::getenv("TBCAD_NO_UPDATE_CHECK")) {
         const long long now = std::chrono::duration_cast<std::chrono::seconds>(
                                   std::chrono::system_clock::now().time_since_epoch())
                                   .count();
