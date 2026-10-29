@@ -3677,6 +3677,7 @@ TEST_CASE("DONUT: from the Toolbox with Enter, Space and clicks, diameters picke
     CHECK(rings()[3].constantWidth == doctest::Approx(10));
     CHECK(h.gui().commandLineText().empty());
 }
+
 namespace {
 // The Toolbox's tool strip in the compact layout: a child window of "##toolbox".
 ImGuiWindow* toolRow() {
