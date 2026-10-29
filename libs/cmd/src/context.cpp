@@ -106,6 +106,7 @@ CommandContext::Awaiter<KeywordResult> CommandContext::getKeyword(std::string pr
     auto r = make(detail::PromptKind::Keyword, std::move(prompt), std::move(opts.keywords));
     r.defaultText = std::move(opts.defaultKeyword);
     r.keywordAliases = std::move(opts.aliases);
+    r.preview = std::move(opts.preview);
     return {*this, std::move(r)};
 }
 

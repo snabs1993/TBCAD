@@ -307,7 +307,15 @@ private:
         (void)box;
         (void)source;
         (void)doc;
-        auto center = co_await ctx.getPoint("Specify center point of array");
+        const double pixel = ctx.host().view().scale;
+        cmd::PointOptions centerOpts;
+        centerOpts.preview = [&doc, source, pixel](Vec2 cursor, DisplayList& out) {
+            blocks::PolarArray spec{cursor, 6, kTwoPi, true, std::nullopt};
+            previewCopies(doc, source,
+                          blocks::polarTransforms(spec, detail::boundsOf(doc, source).center()),
+                          pixel, out);
+        };
+        auto center = co_await ctx.getPoint("Specify center point of array", centerOpts);
         if (!center.ok())
             co_return;
         const Vec2 c = center.point;
@@ -319,9 +327,18 @@ private:
                 "Polar array of " + std::to_string(n) + " items over " +
                     niceNumber(fillAngle * 180 / kPi) +
                     " degrees [Items/Angle/Between/Rotate/Associative] <Accept>",
-                cmd::KeywordOptions{.keywords = {"Accept", "Items", "Angle", "Fill", "Between",
-                                                 "Rotate", "Associative"},
-                                    .defaultKeyword = "Accept"});
+                cmd::KeywordOptions{
+                    .keywords = {"Accept", "Items", "Angle", "Fill", "Between", "Rotate",
+                                 "Associative"},
+                    .defaultKeyword = "Accept",
+                    .preview = [&doc, source, c, n, fillAngle, rotate, pixel](Vec2,
+                                                                              DisplayList& out) {
+                        blocks::PolarArray spec{c, n, fillAngle, rotate, std::nullopt};
+                        previewCopies(
+                            doc, source,
+                            blocks::polarTransforms(spec, detail::boundsOf(doc, source).center()),
+                            pixel, out);
+                    }});
             if (!opt.ok())
                 co_return;
             if (opt.keyword == "Accept")
@@ -358,7 +375,6 @@ private:
                     fillAngle = between * (n - 1);
                 }
             } else if (opt.keyword == "Angle" || opt.keyword == "Fill") {
-                const double pixel = ctx.host().view().scale;
                 const int items = n;
                 auto preview = [&doc, source, c, items, pixel](Vec2 cursor, DisplayList& out) {
                     blocks::PolarArray spec{c, items, 0, true, std::nullopt};
@@ -427,9 +443,13 @@ private:
                     " columns, spacing " + niceNumber(spec.columnSpacing) + " x " +
                     niceNumber(spec.rowSpacing) + ", angle " + niceNumber(spec.angle * 180 / kPi) +
                     " [COUnt/Rows/Columns/Spacing/Angle/Associative] <Accept>",
-                cmd::KeywordOptions{.keywords = {"Accept", "COUnt", "Rows", "Columns", "Spacing",
-                                                 "Angle", "Associative"},
-                                    .defaultKeyword = "Accept"});
+                cmd::KeywordOptions{
+                    .keywords = {"Accept", "COUnt", "Rows", "Columns", "Spacing", "Angle",
+                                 "Associative"},
+                    .defaultKeyword = "Accept",
+                    .preview = [&doc, source, spec, pixel](Vec2, DisplayList& out) {
+                        previewCopies(doc, source, blocks::rectangularTransforms(spec), pixel, out);
+                    }});
             if (!opt.ok())
                 co_return;
             if (opt.keyword == "Accept")

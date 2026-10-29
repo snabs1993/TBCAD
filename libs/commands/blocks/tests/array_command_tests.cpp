@@ -188,8 +188,9 @@ TEST_CASE("ARRAY shows the grid while the row and column counts are typed") {
     const std::size_t two = f.host->preview().items.size();
     f.host->runner().textEdited("4");
     CHECK(f.host->preview().items.size() > two);
+    // An empty box shows what Enter would make: the default count (3 rows).
     f.host->runner().textEdited("");
-    CHECK(f.host->preview().items.empty());
+    CHECK(f.host->preview().items.size() > two);
 }
 
 TEST_CASE("ARRAY with every default is one Enter and the spacing has no long decimals") {

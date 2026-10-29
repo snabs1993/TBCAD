@@ -477,7 +477,7 @@ void geometrySection(tbcad::ui::PanelContext& ctx, Cache& c) {
                     c.vertex = v - 1;
                     c.revision = ~0ull;  // recompute the vertex rows
                 }
-            } else if (!f.field.editable || f.field.type == FieldType::Count) {
+            } else if (!f.field.editable) {
                 ImGui::TextDisabled("%s", text.c_str());
             } else if (f.field.type == FieldType::Flag) {
                 bool v = f.field.value != 0;

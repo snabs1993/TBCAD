@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <functional>
 
+#include "tbcad/blocks/array.h"
 #include "tbcad/dim/dim.h"
 #include "tbcad/geom/entity.h"
 #include "tbcad/geom/revcloud.h"
@@ -258,6 +259,36 @@ std::vector<GeometryField> geometryFields(const Entity& e, int vertex) {
         num("scalex", "Scale X", in->scale.x);
         num("scaley", "Scale Y", in->scale.y);
         out.push_back({"rotation", "Rotation", FieldType::Angle, true, deg(in->rotation)});
+        // An associative array (ARRAY) shows its own settings, changed in place as by ARRAYEDIT.
+        if (const ArrayInfo* arr = in->array ? &*in->array : nullptr) {
+            auto count = [&](const char* id, const char* label, int n) {
+                out.push_back({id, label, FieldType::Count, true, static_cast<double>(n)});
+            };
+            switch (arr->kind) {
+                case ArrayInfo::Kind::Rectangular:
+                    count("arraycolumns", "Columns", arr->columns);
+                    num("arraycolumnspacing", "Column spacing", arr->columnSpacing);
+                    count("arrayrows", "Rows", arr->rows);
+                    num("arrayrowspacing", "Row spacing", arr->rowSpacing);
+                    out.push_back(
+                        {"arrayangle", "Array angle", FieldType::Angle, true, deg(arr->angle)});
+                    break;
+                case ArrayInfo::Kind::Polar:
+                    count("arrayitems", "Items", arr->count);
+                    out.push_back(
+                        {"arrayfill", "Fill angle", FieldType::Angle, true, deg(arr->fillAngle)});
+                    out.push_back({"arrayrotate", "Rotate items", FieldType::Flag, true,
+                                   arr->rotateItems ? 1.0 : 0.0});
+                    break;
+                case ArrayInfo::Kind::Path:
+                    count("arrayitems", "Items", arr->count);
+                    if (arr->pathSpacing > 0)
+                        num("arraypathspacing", "Item spacing", arr->pathSpacing);
+                    out.push_back({"arrayrotate", "Align items", FieldType::Flag, true,
+                                   arr->rotateItems ? 1.0 : 0.0});
+                    break;
+            }
+        }
     } else if (const auto* ray = entityAs<RayData>(e)) {
         num("x", "Base X", ray->origin.x);
         num("y", "Base Y", ray->origin.y);
@@ -544,7 +575,45 @@ Result<void> setGeometryField(Transaction& tx, EntityId id, const std::string& f
                 (f == "scalex" ? in->scale.x : in->scale.y) = v;
             } else if (f == "rotation")
                 in->rotation = rad(v);
-            else
+            else if (f.rfind("array", 0) == 0 && in->array) {
+                ArrayInfo arr = *in->array;
+                const bool isCount = f == "arrayrows" || f == "arraycolumns" || f == "arrayitems";
+                if (isCount && (v < 1 || v != std::floor(v)))
+                    return fail(bad("The number of items is a whole number from 1."));
+                if (f == "arrayrows")
+                    arr.rows = static_cast<int>(std::min<double>(v, blocks::kMaxArrayItems));
+                else if (f == "arraycolumns")
+                    arr.columns = static_cast<int>(std::min<double>(v, blocks::kMaxArrayItems));
+                else if (f == "arrayrowspacing" || f == "arraycolumnspacing") {
+                    if (v == 0)
+                        return fail(bad("The spacing cannot be zero."));
+                    (f == "arrayrowspacing" ? arr.rowSpacing : arr.columnSpacing) = v;
+                } else if (f == "arrayangle")
+                    arr.angle = rad(v);
+                else if (f == "arrayitems") {
+                    if (arr.kind == ArrayInfo::Kind::Polar && v < 2)
+                        return fail(bad("A polar array has at least 2 items."));
+                    arr.count = static_cast<int>(std::min<double>(v, blocks::kMaxArrayItems));
+                } else if (f == "arrayfill") {
+                    if (v == 0 || std::abs(v) > 360)
+                        return fail(bad("The fill angle is from -360 to 360 degrees, not 0."));
+                    arr.fillAngle = rad(v);
+                } else if (f == "arrayrotate")
+                    arr.rotateItems = v != 0;
+                else if (f == "arraypathspacing") {
+                    if (v <= 0)
+                        return fail(bad("The item spacing must be greater than zero."));
+                    arr.pathSpacing = v;
+                } else
+                    return fail(bad("An array has no editable field \"" + f + "\"."));
+                if (blocks::arrayItemCount(arr) > blocks::kMaxArrayItems)
+                    return fail(bad("That array would have too many items."));
+                // Items removed or replaced by number may no longer exist: keep those in range.
+                const long long n = blocks::arrayItemCount(arr);
+                std::erase_if(arr.removed, [n](int i) { return i >= n; });
+                std::erase_if(arr.swaps, [n](const ArrayItemSwap& sw) { return sw.item >= n; });
+                in->array = std::move(arr);
+            } else
                 return fail(bad("A block reference has no editable field \"" + f + "\"."));
         } else if (auto* hh = entityAs<HatchData>(e)) {
             if (f == "patternscale") {
