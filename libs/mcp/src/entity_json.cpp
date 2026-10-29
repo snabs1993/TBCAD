@@ -1004,7 +1004,9 @@ Json entityToJson(const Document& doc, const Entity& e) {
                 o["style"] = styleName(doc, d.style);
             o["hAlign"] = hAlignName(d.h);
             o["vAlign"] = vAlignName(d.v);
-            if (d.h == HAlign::Aligned || d.h == HAlign::Fit)
+            // Any alignment but left/baseline hangs the text on the alignment point, so a read
+            // text can be written back where it was.
+            if (d.h != HAlign::Left || d.v != VAlign::Baseline)
                 o["alignPoint"] = pointToJson(d.alignPoint);
             if (d.widthFactor != 1)
                 o["widthFactor"] = d.widthFactor;
@@ -1307,8 +1309,8 @@ Result<Entity> entityFromJson(const Document& doc, const Json& j, const EntityPa
             }
             if (!found)
                 fail("vAlign must be baseline, bottom, middle or top");
-            if (j.find("alignPoint"))
-                t.alignPoint = pt(j, "alignPoint");
+            // Without an alignment point the text hangs on its position (not on 0,0).
+            t.alignPoint = j.find("alignPoint") ? pt(j, "alignPoint") : t.position;
             e.data = Indirect<TextData>(std::move(t));
         } else if (k == "mtext") {
             MTextData t;

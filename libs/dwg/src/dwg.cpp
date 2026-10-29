@@ -104,7 +104,7 @@ Result<bool> readR2004Plus(Bytes file, Version version, detail::Drawing& drawing
             if (i < 3 || classes[i].dxfName == "LAYOUT" || classes[i].dxfName == "HATCH")
                 cl += "; #" + std::to_string(i) + " number " + std::to_string(classes[i].number) +
                       " [" + classes[i].dxfName + "]";
-        notes.push_back(cl);
+        drawing.walkNotes.push_back(cl);
     }
     const auto vars = detail::parseHeader(find("AcDb:Header"), fmt, maintenance, notes);
     drawing.codepage = sec.codepage;

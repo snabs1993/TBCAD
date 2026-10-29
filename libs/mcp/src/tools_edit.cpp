@@ -203,6 +203,13 @@ std::string applySet(const Document& doc, Entity& e, const Json& set) {
         }
         merged.object()[key] = v;
     }
+    // A text that hangs on its alignment point moves with its position.
+    if (const auto* t = entityAs<TextData>(e);
+        t && set.find("position") && !set.find("alignPoint") && merged.find("alignPoint")) {
+        auto to = pointFromJson(*set.find("position"));
+        if (to)
+            merged.object()["alignPoint"] = pointToJson(t->alignPoint + (to.value() - t->position));
+    }
     EntityParseOptions opt;
     auto parsed = entityFromJson(doc, merged, opt);
     if (!parsed)

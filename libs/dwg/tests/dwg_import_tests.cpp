@@ -1062,6 +1062,46 @@ TEST_CASE("an R2013 fit-point spline is read by its method flag, not the stored 
     CHECK(splines == 1);
 }
 
+// A real R2018 file numbered its model space block 2, ahead of every layer, and stored circles
+// ahead of its first line (which decides whether entities carry the "no links" bit). It opened
+// empty: the block's name was misread and the circles were dropped as damaged.
+TEST_CASE("an R2018 file with model space and circles ahead of every layer and line") {
+    gR2004 = gR2007 = gR2013 = true;
+    gLinksBit = false;
+    DwgFile f;
+    f.add(0x02, blockHeader(0x02, "*Model_Space", 0, 0));
+    f.add(0x08, circle(0x08, 10, 20, 5, kLayer0));
+    f.add(kLayer0, layer(kLayer0, "0", 7, kLtype));
+    f.add(kLtype, linetype(kLtype, "Continuous"));
+    f.add(kStyle, style(kStyle, "Standard"));
+    f.add(kPaper, blockHeader(kPaper, "*Paper_Space", 0, 0));
+    f.add(0x40, line(0x40, 2, 0, 0, 0, 100, 50));
+    std::vector<std::uint8_t> objects, handles;
+    f.sections(objects, handles);
+    gR2004 = gR2007 = gR2013 = false;
+    gLinksBit = true;
+    Dwg2004File c;
+    c.section("AcDb:AcDbObjects", objects);
+    c.section("AcDb:Handles", handles, 0x80);
+    dxf::Report report;
+    auto r = importDwg(asBytes(c.build("AC1032")), dxf::ImportOptions{}, report);
+    REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
+    const Document& doc = *r.value().document;
+    int circles = 0, lines = 0;
+    for (EntityId id : doc.modelSpace()) {
+        const Entity& e = *doc.find(id);
+        if (const auto* d = entityAs<CircleData>(e)) {
+            ++circles;
+            CHECK(d->center == Vec2{10, 20});
+            CHECK(d->radius == doctest::Approx(5));
+        } else if (kind(e) == EntityKind::Line) {
+            ++lines;
+        }
+    }
+    CHECK(circles == 1);
+    CHECK(lines == 1);
+}
+
 TEST_CASE("a 2D polyline with its vertices and an mtext import") {
     DwgFile f;
     f.add(kLtype, linetype(kLtype, "Continuous"));
