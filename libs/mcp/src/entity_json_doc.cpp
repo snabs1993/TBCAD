@@ -8,6 +8,8 @@ const std::string& entityJsonDoc() {
 Units: lengths are millimetres, angles are radians. Anywhere an angle is expected you may write
 `{"deg": 90}`; anywhere a length is expected you may write `{"value": 3, "unit": "m"}` (units: mm,
 cm, m, in, ft). Points are `[x, y]` (or `{"x": 1, "y": 2}`). Output is always mm and radians.
+This holds in every tool and in every drawing: a drawing set to show metres still takes plain
+numbers as millimetres (a 177 m long plan is 177000), and get_drawing_info reports `displayUnit`.
 
 Every entity has:
 

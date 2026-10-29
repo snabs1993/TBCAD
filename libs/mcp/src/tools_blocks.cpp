@@ -6,8 +6,14 @@
 
 namespace tbcad::mcp::detail {
 
-std::string pointInput(Vec2 p) {
-    return formatDouble(p.x) + "," + formatDouble(p.y);
+Json pointInput(Vec2 p) {
+    // A click carries millimetres, so the answer does not depend on the unit the drawing shows
+    // (typed numbers would be read in that unit).
+    return Json(Json::Object{{"click", Json(Json::Array{Json(p.x), Json(p.y)})}});
+}
+
+std::string lengthInput(const Document& doc, double mm) {
+    return formatDouble(mm / mmPerUnit(doc.header().units));
 }
 
 // Runs a command and turns a failure into a tool error naming the prompts it saw.
@@ -174,7 +180,7 @@ ToolResult addBlockParameter(ToolContext& ctx, const Json& a) {
     if (!doc.blockByName(block))
         return ToolResult::fail("no block named \"" + block + "\"");
     std::vector<Json> in{Json(block)};
-    auto pt = [&](const char* key) -> Result<std::string> {
+    auto pt = [&](const char* key) -> Result<Json> {
         const Json* j = a.find(key);
         if (!j)
             return makeError(ErrorCode::InvalidArgument, std::string(key) + " is required");
@@ -197,8 +203,8 @@ ToolResult addBlockParameter(ToolContext& ctx, const Json& a) {
         in.emplace_back(p1.value());
         in.emplace_back(p2.value());
         if (type == "linear") {
-            in.emplace_back(formatDouble(argNumber(a, "min", 0)));
-            in.emplace_back(formatDouble(argNumber(a, "max", 0)));
+            in.emplace_back(lengthInput(doc, argNumber(a, "min", 0)));
+            in.emplace_back(lengthInput(doc, argNumber(a, "max", 0)));
         }
     } else if (type == "visibility") {
         in.emplace_back("Visibility");

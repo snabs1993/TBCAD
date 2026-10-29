@@ -218,7 +218,18 @@ ToolResult exportPlot(ToolContext& ctx, const Json& a, const std::string& comman
     } else if (!pathEndsWith(path, ".pdf")) {
         return ToolResult::fail("path must end with .pdf");
     }
-    std::vector<Json> inputs;
+    if (const Json* ar = a.find("area"); ar && ar->isString() && !ar->asString().empty()) {
+        std::string area = ar->asString();
+        for (char& c : area)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (area != "extents" && area != "display")
+            return ToolResult::fail("area must be Extents or Display");
+        if (area == "display" && !ctx.session.view())
+            return ToolResult::fail(
+                "area Display needs a viewport, and this session has none; use Extents");
+    }
+    // Strict: a bad paper, scale or style table is an error here, not a quiet fallback.
+    std::vector<Json> inputs{Json("Strict")};
     auto option = [&](const char* arg, const char* keyword) {
         if (const Json* v = a.find(arg); v && v->isString() && !v->asString().empty()) {
             inputs.emplace_back(keyword);
@@ -253,6 +264,11 @@ ToolResult exportPlot(ToolContext& ctx, const Json& a, const std::string& comman
         inputs.emplace_back("Yes");
     const auto start = std::chrono::steady_clock::now();
     ToolResult r = runWith(ctx, cmdName, inputs, false);
+    if (!r.isError)
+        if (const Json* msgs = r.data.find("messages"); msgs && msgs->isArray())
+            for (const Json& m : msgs->asArray())
+                if (m.isString() && m.asString().rfind("Error: ", 0) == 0)
+                    return ToolResult::fail(m.asString().substr(7));
     if (std::getenv("TBCAD_PLOT_TIMING"))
         std::fprintf(
             stderr, "plot timing: %s tool total %.1f ms\n", cmdName.c_str(),
@@ -274,6 +290,12 @@ ToolResult exportDxf(ToolContext& ctx, const Json& a) {
     if (!pathEndsWith(path, ".dxf"))
         return ToolResult::fail("path must end with .dxf");
     std::vector<Json> inputs{Json(path)};
+    std::error_code ec;
+    if (std::filesystem::exists(platform::pathFromUtf8(path), ec)) {
+        if (!argBool(a, "overwrite"))
+            return ToolResult::fail("the file exists; pass overwrite: true to replace it");
+        inputs.emplace_back("Yes");
+    }
     std::string ver = argString(a, "version");
     inputs.emplace_back(ver);  // "" = Enter = the default version
     return runWith(ctx, ctx.session.registry().find("EXPORTDXF") ? "EXPORTDXF" : "DXFOUT", inputs,
@@ -349,7 +371,8 @@ void registerCommandTools(ToolSet& tools) {
              "Export DXF",
              "Writes the drawing to a DXF file (the EXPORTDXF command).",
              tObject({{"path", tString("absolute path ending in .dxf")},
-                      {"version", tString("R12, R2000 or R2007; default R2000")}},
+                      {"version", tString("R12, R2000 or R2007; default R2000")},
+                      {"overwrite", tBool("replace an existing file at path")}},
                      {"path"}),
              outSchema({"finished", "messages"}),
              Edit::Session,
