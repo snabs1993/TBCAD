@@ -714,9 +714,10 @@ public:
                     ctx.message(id.error().message);
                 else if (parent)
                     ctx.message("Child style " + name + " of " + parent->name + " added.");
-                else
-                    check(ctx, ctx.tx().modifyHeader(
-                                   [i = id.value()](Header& h) { h.currentDimStyle = i; }));
+                else if (check(ctx, ctx.tx().modifyHeader(
+                                        [i = id.value()](Header& h) { h.currentDimStyle = i; })))
+                    ctx.message("Dimension style " + name +
+                                " added; new dimensions now use it (Current picks another).");
             } else if (k.keyword == "Rename") {
                 const DimStyle* s = ctx.doc().dimStyleByName(name);
                 if (!s) {
@@ -818,9 +819,10 @@ private:
         for (const auto& [id, s] : ctx.doc().dimStyles())
             ctx.message((id == ctx.doc().header().currentDimStyle ? "* " : "  ") + s.name);
     }
-    static void check(cmd::CommandContext& ctx, const Result<void>& r) {
+    static bool check(cmd::CommandContext& ctx, const Result<void>& r) {
         if (!r)
             ctx.message(r.error().message);
+        return static_cast<bool>(r);
     }
 };
 
@@ -1135,6 +1137,47 @@ public:
     }
 };
 
+// DIMSCALE, DIMTXT, DIMDEC, ... typed as commands, as in AutoCAD: shows and changes one setting of
+// the current dimension style (dimensions of that style follow).
+class DimVarCommand final : public cmd::Command {
+public:
+    DimVarCommand(std::string name, std::string key, std::string help)
+        : name_(std::move(name)), key_(std::move(key)), help_(std::move(help)) {}
+    std::string_view name() const override { return name_; }
+    std::string_view description() const override { return help_; }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        const DimStyleId id = ctx.doc().header().currentDimStyle;
+        DimStyle style = dim::styleOf(ctx.doc(), id);
+        std::string now;
+        for (const auto& [k, v] : describeStyle(ctx.doc(), style))
+            if (k == key_)
+                now = v;
+        cmd::StringOptions so;
+        so.defaultValue = now;
+        auto val = co_await ctx.getString(
+            "Enter new value for " + name_ + " (style " + style.name + ") <" + now + ">", so);
+        if (!val.ok())
+            co_return;
+        const std::string text(cmd::trim(val.text));
+        if (text.empty() || text == now)
+            co_return;
+        if (std::string err = applyProperty(ctx.doc(), style, key_, text); !err.empty()) {
+            ctx.message(err);
+            co_return;
+        }
+        ctx.setUndoLabel(name_);
+        auto r = ctx.tx().modifyDimStyle(id, [&](DimStyle& s) { s = style; });
+        if (!r) {
+            ctx.message(r.error().message);
+            co_return;
+        }
+        ctx.message(name_ + " = " + text + " (dimension style " + style.name + ")");
+    }
+
+private:
+    std::string name_, key_, help_;
+};
+
 class DimStylesPanelCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "DIMSTYLES"; }
@@ -1161,6 +1204,27 @@ std::unique_ptr<cmd::Command> makeDimStyleLineCommand() {
 
 std::unique_ptr<cmd::Command> makeDimSetupCommand() {
     return std::make_unique<DimSetupCommand>();
+}
+
+void registerDimVarCommands(cmd::Registry& registry) {
+    struct Spec {
+        const char* name;
+        const char* key;
+        const char* help;
+    };
+    static constexpr Spec kVars[] = {
+        {"DIMSCALE", "Scale", "Overall scale of the current dimension style"},
+        {"DIMTXT", "TextHeight", "Text height of the current dimension style"},
+        {"DIMASZ", "ArrowSize", "Arrow size of the current dimension style"},
+        {"DIMDEC", "Precision", "Decimal places of the current dimension style"},
+        {"DIMLFAC", "LinearFactor", "Measurement factor of the current dimension style"},
+        {"DIMGAP", "TextGap", "Gap around the text of the current dimension style"},
+        {"DIMEXO", "ExtOffset", "Extension line offset of the current dimension style"},
+        {"DIMEXE", "ExtExtension", "Extension line extension of the current dimension style"},
+        {"DIMRND", "RoundOff", "Round-off of the current dimension style"},
+    };
+    for (const Spec& v : kVars)
+        (void)registry.add(std::make_unique<DimVarCommand>(v.name, v.key, v.help));
 }
 
 std::unique_ptr<cmd::Command> makeDimStyleCommand() {

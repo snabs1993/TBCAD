@@ -569,3 +569,17 @@ TEST_CASE("-DIMSTYLE Save, Restore, Status and Variables work from the command l
     CHECK(f.host->run("-DIMSTYLE", {"Variables", "Plan"}).finished);
     CHECK(f.host->run("-DIMSTYLE", {"?"}).finished);
 }
+
+TEST_CASE("DIMSCALE, DIMDEC and DIMLFAC typed as commands change the current style") {
+    Fixture f;
+    CHECK(f.host->run("DIMSCALE", {"50"}).finished);
+    CHECK(f.host->run("DIMDEC", {"0"}).finished);
+    CHECK(f.host->run("DIMLFAC", {"0.4"}).finished);
+    const DimStyle* st = f.doc.dimStyle(kDimStyleStandard);
+    CHECK(st->overallScale == doctest::Approx(50));
+    CHECK(st->precision == 0);
+    CHECK(st->linearFactor == doctest::Approx(0.4));
+    // A bad value leaves the style as it was.
+    f.host->run("DIMDEC", {"-3"});
+    CHECK(f.doc.dimStyle(kDimStyleStandard)->precision == 0);
+}

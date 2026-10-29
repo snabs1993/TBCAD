@@ -8,6 +8,7 @@
 #include "tbcad/mcp/tools.h"
 #include "tbcad/mcpcli/bridge.h"
 #include "tbcad/mcpcli/cli.h"
+#include "tbcad/tmpl/tmpl.h"
 
 namespace tbcad::mcpcli {
 
@@ -67,6 +68,9 @@ int run(const Options& options, const Environment& env, std::istream& in, std::o
         registerAllCommands(registry);
         mcp::HeadlessSession session(registry);
         session.setReadOnly(options.readOnly);
+        // The same start as File > New: standard linetypes, layers, styles.
+        session.setNewDocumentFactory([] { return tmpl::builtinTemplate(); });
+        session.newDocument();
         if (options.file) {
             auto r = session.load(*options.file);
             if (!r) {

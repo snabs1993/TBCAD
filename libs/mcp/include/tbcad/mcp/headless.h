@@ -26,6 +26,12 @@ public:
     }
     std::function<void(const ToolCallLog&)> onLog{};
 
+    // What new_drawing starts from (default: an empty document). The tbcad-mcp program passes the
+    // built-in template, so new drawings have the same linetypes and layers as File > New.
+    void setNewDocumentFactory(std::function<std::unique_ptr<Document>()> factory) {
+        newDocumentFactory_ = std::move(factory);
+    }
+
     // Loads a .tbcad file as the current drawing (also what open_drawing does).
     Result<void> load(const std::filesystem::path& path);
 
@@ -54,6 +60,7 @@ private:
     void install(std::unique_ptr<Document> doc, std::filesystem::path file);
 
     cmd::Registry& registry_;
+    std::function<std::unique_ptr<Document>()> newDocumentFactory_{};
     std::recursive_mutex mutex_{};
     std::unique_ptr<Document> doc_{};
     index::SpatialIndex index_{};
