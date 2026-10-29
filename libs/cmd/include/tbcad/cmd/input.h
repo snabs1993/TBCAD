@@ -132,6 +132,8 @@ struct KeywordOptions {
     std::optional<std::string> defaultKeyword{};  // returned on Enter
     // Short forms that would be ambiguous as prefixes, e.g. {"N", "New"}; not shown in the prompt.
     std::vector<std::pair<std::string, std::string>> aliases{};
+    // Drawn while the question waits (at the cursor where it was asked): what Enter would make.
+    PreviewFn preview{};
 };
 struct SelectionOptions {
     std::vector<std::string> keywords{};

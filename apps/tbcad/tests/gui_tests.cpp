@@ -3737,3 +3737,89 @@ TEST_CASE("compact layout: a narrow window scrolls the tool row, the tabs stay")
     CHECK(row->Scroll.x > 100.0f);
     CHECK(h.has("Output", "##toolbox"));
 }
+
+// Test.8 report "ARRAY does not work, its settings cannot be changed": the grid did not show
+// while its options were set (only text), and a finished array had no settings in Properties.
+TEST_CASE("ARRAY from the Toolbox shows the grid while it is set up, Properties changes it") {
+    Harness h(1600, 1000);
+    h.core().setSetting("ui.toolbox.tab", "modify");
+    h.core().submitText("CIRCLE 0,0 10");
+    h.core().pressEscape();
+    h.core().zoomExtents();
+    h.core().submitText("ZOOM 0.3X");
+    h.frame(3);
+    auto overlayVertices = [&] {
+        render::Overlay overlay;
+        h.core().buildOverlay(overlay);
+        return overlay.build(h.core().camera()).vertices.size();
+    };
+    auto theArray = [&]() -> const ArrayInfo* {
+        const ArrayInfo* found = nullptr;
+        h.core().document().forEachEntity([&](const Entity& e) {
+            if (const auto* in = entityAs<InsertData>(e); in && in->array)
+                found = &*in->array;
+        });
+        return found;
+    };
+    // Start from the Toolbox button, pick with a window, finish the selection with Enter.
+    int nth = -1, i = 0;
+    for (const ui::ToolTab& t : ui::toolboxTabs())
+        if (t.id == "modify")
+            for (const ui::ToolGroup& g : t.groups)
+                for (const ui::ToolDef& d : g.tools) {
+                    if (d.command == "ARRAY")
+                        nth = i;
+                    ++i;
+                }
+    REQUIRE(nth >= 0);
+    REQUIRE(h.click("##tool", "##toolbox", nth));
+    h.frame(3);
+    const app::ViewportRect vp = h.gui().lastViewportRect();
+    h.drag(vp.x + 100, vp.y + 100, vp.x + vp.w - 100, vp.y + vp.h - 100);
+    h.frame(3);
+    h.key(ImGuiKey_Enter);
+    h.frame(3);
+    REQUIRE(h.has("Rectangular", "optionbar"));
+    const std::size_t before = overlayVertices();
+    h.key(ImGuiKey_Enter);  // <Rectangular>
+    h.frame(3);
+    REQUIRE(h.has("Accept", "optionbar"));
+    CHECK(overlayVertices() > before + 100);  // the 3 x 4 grid is drawn before it is accepted
+    REQUIRE(h.click("Rows", "optionbar"));
+    h.frame(3);
+    h.command("5");
+    h.frame(3);
+    CHECK(h.core().promptText().find("5 rows") != std::string::npos);
+    h.key(ImGuiKey_Enter);  // <Accept>
+    h.frame(3);
+    CHECK_FALSE(h.core().runner().active());
+    const ArrayInfo* a = theArray();
+    REQUIRE(a);
+    CHECK(a->rows == 5);
+    CHECK(a->columns == 4);
+
+    // Select it and change the rows and the column spacing in Object Properties.
+    h.core().selectAll();
+    h.frame(3);
+    REQUIRE(h.click("Object Properties", "DockSpace"));
+    h.frame(3);
+    // Geometry boxes: position X, Y, scale X, Y, rotation, then the array's columns, column
+    // spacing, rows, row spacing and angle.
+    int boxes = 0;
+    while (h.find("##v", "Object Properties", boxes))
+        ++boxes;
+    REQUIRE(boxes == 10);
+    const int box = 7;
+    REQUIRE(h.enterText("##v", "2", "Object Properties", box));
+    h.frame(3);
+    a = theArray();
+    REQUIRE(a);
+    CHECK(a->rows == 2);
+    CHECK(a->columns == 4);
+    // One undo brings the 5 rows back.
+    h.core().submitText("U");
+    h.frame(3);
+    a = theArray();
+    REQUIRE(a);
+    CHECK(a->rows == 5);
+}

@@ -273,6 +273,15 @@ void CommandRunner::refreshPrompt() {
         return;
     }
     const detail::PromptRequest& req = *stack_.back().ctx->pending();
+    // A question with options shows its result at once (ARRAY's grid while its options are set);
+    // a number question shows what its default would make.
+    if (req.kind == detail::PromptKind::Keyword && req.preview) {
+        req.preview(cursor_, previewList_);
+        host_.setPreview(&previewList_);
+    } else if (req.kind == detail::PromptKind::Integer && req.textPreview && req.defaultInt) {
+        req.textPreview(std::to_string(*req.defaultInt), previewList_);
+        host_.setPreview(&previewList_);
+    }
     PromptInfo info;
     info.kind = infoKind(req.kind);
     info.text = req.text;
@@ -378,6 +387,8 @@ void CommandRunner::textEdited(const std::string& text) {
     previewList_.items.clear();
     if (!text.empty())
         req.textPreview(text, previewList_);
+    else if (req.kind == detail::PromptKind::Integer && req.defaultInt)
+        req.textPreview(std::to_string(*req.defaultInt), previewList_);
     host_.setPreview(&previewList_);
 }
 
