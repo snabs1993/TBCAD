@@ -937,8 +937,9 @@ private:
             if (!h)
                 continue;
             Entity proto = *e;
+            const std::vector<HatchLoop> loops = h->loops;  // `h` points into the document
             std::vector<EntityId> created;
-            for (const HatchLoop& loop : h->loops) {
+            for (const HatchLoop& loop : loops) {
                 PolylineData pl = hatch::loopPolyline(loop);
                 if (pl.v.size() < 2)
                     continue;

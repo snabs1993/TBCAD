@@ -400,6 +400,9 @@ ToolResult joinEntities(ToolContext& ctx, const Json& a) {
     modify::JoinResult jr = modify::joinEntities(list, tol);
     if (jr.consumed.empty())
         return ToolResult::fail("nothing to join: the entities do not touch end to end");
+    std::vector<EntityId> consumed;  // read before the document changes under `list`
+    for (std::size_t i : jr.consumed)
+        consumed.push_back(list[i]->common.id);
     auto tx = doc.begin(std::string(kAiLabelPrefix) + "join_entities");
     ChangeRecorder rec(doc);
     for (Entity& e : jr.created) {
@@ -407,8 +410,8 @@ ToolResult joinEntities(ToolContext& ctx, const Json& a) {
         if (!id)
             return ToolResult::fail(id.error().message);
     }
-    for (std::size_t i : jr.consumed)
-        if (auto r = tx.erase(list[i]->common.id); !r)
+    for (EntityId id : consumed)
+        if (auto r = tx.erase(id); !r)
             return ToolResult::fail(r.error().message);
     commit(s, tx, "join_entities");
     return ToolResult::ok(changesJson(rec));

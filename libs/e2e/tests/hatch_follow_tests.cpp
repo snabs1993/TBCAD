@@ -198,10 +198,11 @@ TEST_CASE("trimming or extending a boundary edge keeps the hatch coherent and un
     REQUIRE(h != nullptr);
     REQUIRE_FALSE(h->sourceBoundary.empty());
     const BBox2 before = hatch::hatchBounds(*h);
+    const std::vector<EntityId> boundary = h->sourceBoundary;  // `h` is not kept past an edit
     // A cutting line across the right edge at y = 30; trimming the upper half opens the boundary.
     const EntityId cutter = r.add(LineData{{80, 30}, {120, 30}});
     EntityId right{};
-    for (EntityId id : h->sourceBoundary)
+    for (EntityId id : boundary)
         if (const auto* l = entityAs<LineData>(*r.doc.find(id));
             l && l->a.x == 100 && l->b.x == 100)
             right = id;

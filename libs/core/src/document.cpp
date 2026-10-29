@@ -72,13 +72,19 @@ EntityStore::Chunk::~Chunk() {
     ::operator delete(mem, std::align_val_t{alignof(Entity)});
 }
 
-void EntityStore::detach(std::size_t chunk) {
+void EntityStore::detach(std::size_t chunk, bool retire) {
     std::shared_ptr<Chunk>& c = chunks_[chunk];
     auto copy = std::make_shared<Chunk>();
     for (; copy->count < c->count; ++copy->count)
         new (&copy->mem[copy->count]) Entity(c->mem[copy->count]);
+    if (retire)
+        retired_.push_back(std::move(c));
     c = std::move(copy);
     mems_[chunk] = c->mem;
+}
+
+void EntityStore::releaseRetired() {
+    retired_.clear();
 }
 
 EntityStore::~EntityStore() = default;
@@ -111,7 +117,7 @@ void EntityStore::shareInto(EntityStore& out) const {
     if (size_ % kChunk) {
         out.chunks_.push_back(chunks_[full]);
         out.mems_.push_back(mems_[full]);
-        out.detach(full);
+        out.detach(full, false);
     }
     out.size_ = size_;
 }
@@ -1287,6 +1293,7 @@ void Document::apply(const ChangeSet& changes, Direction direction) {
         if (!inv.empty())
             notify(inv);
     }
+    store_.releaseRetired();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2307,6 +2314,7 @@ ChangeSet Transaction::commit() {
     timer.reset();
     if (!cs.empty())
         d.notify(cs);
+    d.store_.releaseRetired();
     return cs;
 }
 
@@ -2339,6 +2347,7 @@ ChangeSet Transaction::commitUnrecorded() {
     d.active_ = nullptr;
     doc_ = nullptr;
     ++d.revision_;
+    d.store_.releaseRetired();
     return cs;
 }
 
@@ -2385,6 +2394,7 @@ void Transaction::rollback() {
     }
     d.active_ = nullptr;
     doc_ = nullptr;
+    d.store_.releaseRetired();
 }
 
 namespace {
