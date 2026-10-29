@@ -7,7 +7,9 @@ LINE
 @clickw 50 0
 @expect selected 1
 @clickw 100 0
-@clickw 100 50
+# The new place is typed: a click lands on a whole pixel, which is not exactly 100,50 for
+# every window and toolbar size.
+100,50
 @key Escape
 @expect endpoint 100 50 1
 @expect endpoint 100 0 0
