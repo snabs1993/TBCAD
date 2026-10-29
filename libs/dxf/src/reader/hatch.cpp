@@ -308,7 +308,7 @@ bool Importer::convHatch(const Record& r, const Frame& f, std::vector<Entity>& o
         else if (g[j].code == 41) {
             double s = g[j].number();
             if (std::isfinite(s) && s > 0)
-                h.patternScale = s;
+                h.patternScale = k_ == 1 ? s : s * patternK_;  // k_ is 1 on a layout sheet
         }
     }
     out.push_back([&] {

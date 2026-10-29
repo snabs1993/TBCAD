@@ -8,6 +8,7 @@
 #include "../lexer/doctest_include.h"
 #include "../lexer/test_util.h"
 #include "semantic_dump.h"
+#include "tbcad/dim/dim.h"
 #include "tbcad/dxf/reader.h"
 #include "tbcad/dxf/writer.h"
 
@@ -117,8 +118,10 @@ TEST_CASE("every corpus file survives DXF -> tbcad document -> DXF -> document")
         std::size_t bad = 0;
         if (!sameExport(out.value().bytes, out2.value().bytes, bad)) {
             if (const char* dump = std::getenv("TBCAD_DUMP_RT")) {
-                std::ofstream(std::string(dump) + ".1") << out.value().bytes;
-                std::ofstream(std::string(dump) + ".2") << out2.value().bytes;
+                std::ofstream(std::string(dump) + path.substr(path.rfind('/') + 1) + ".1")
+                    << out.value().bytes;
+                std::ofstream(std::string(dump) + path.substr(path.rfind('/') + 1) + ".2")
+                    << out2.value().bytes;
             }
             auto lineAt = [&](const std::string& b, std::size_t n) {
                 std::size_t p0 = 0;
@@ -133,6 +136,61 @@ TEST_CASE("every corpus file survives DXF -> tbcad document -> DXF -> document")
         ++roundTripped;
     }
     CHECK(roundTripped >= 20);
+}
+
+TEST_CASE("every corpus file set to metres is written in metres and reads back the same") {
+    std::size_t done = 0;
+    for (const std::string& path : corpusFiles()) {
+        INFO("file: " << path);
+        if (path.find("aec_objects") != std::string::npos)
+            continue;
+        Result<ImportResult> first = importBytes(testing::readFile(path));
+        if (!first)
+            continue;
+        Document& doc1 = *first.value().document;
+        // Objects kept as the DXF groups they were read as are written back as they were, in the
+        // numbers of their source file; those files are not about units.
+        bool kept = false;
+        doc1.forEachEntity([&](const Entity& e) {
+            if (const auto* p = entityAs<ProxyData>(e); p && !p->raw.empty())
+                kept = true;
+        });
+        if (kept)
+            continue;
+        {
+            Transaction tx = doc1.begin("metres");
+            REQUIRE(tx.modifyHeader([](Header& h) { h.units = LengthUnit::Meter; }));
+            std::vector<DimStyleId> styles;  // dimension styles show the drawing's unit, as read
+            for (const auto& kv : doc1.dimStyles())
+                styles.push_back(kv.first);
+            for (DimStyleId id : styles)
+                REQUIRE(tx.modifyDimStyle(id, [](DimStyle& d) { d.units = LengthUnit::Meter; }));
+            tx.commit();
+            // Dimensions place their text again for the new number format.
+            std::vector<EntityId> dims;
+            doc1.forEachEntity([&](const Entity& e) {
+                if (entityAs<DimensionData>(e))
+                    dims.push_back(e.common.id);
+            });
+            Transaction t2 = doc1.begin("refresh dimensions");
+            for (EntityId id : dims)
+                REQUIRE(t2.modify(
+                    id, [&](Entity& e) { dim::refresh(doc1, *entityAs<DimensionData>(e)); }));
+            t2.commit();
+        }
+        Report exportReport;
+        Result<ExportResult> out = exportDxf(doc1, ExportOptions{}, exportReport);
+        REQUIRE(out.ok());
+        Result<ImportResult> second = importBytes(toBytes(out.value().bytes));
+        REQUIRE(second.ok());
+        const Document& doc2 = *second.value().document;
+        CHECK(doc2.header().units == LengthUnit::Meter);
+        std::string diff =
+            testing::SemanticDump::diff(testing::SemanticDump(doc1), testing::SemanticDump(doc2));
+        CHECK_MESSAGE(diff.empty(), diff);
+        ++done;
+    }
+    CHECK(done >= 15);
 }
 
 }  // namespace tbcad::dxf

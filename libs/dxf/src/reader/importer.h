@@ -308,6 +308,10 @@ private:
     std::optional<Transaction> tx_{};
     ImportSummary sum_{};
     double k_ = 1;  // file units -> mm
+    // Hatch pattern scales are relative to the pattern file of the drawing: acadiso.pat in
+    // drawing units for a metric drawing, acad.pat in inches for an imperial one ($MEASUREMENT).
+    // TBCAD's patterns are in millimetres.
+    double patternK_ = 1;
     // The unit lengths are shown in: the file's own when TBCAD has it (inch, foot, mm, cm, m).
     LengthUnit displayUnit_ = LengthUnit::Millimeter;
 
