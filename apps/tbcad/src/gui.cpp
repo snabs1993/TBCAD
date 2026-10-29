@@ -2026,6 +2026,8 @@ void Gui::toolbox() {
                 }
                 firstGroup = false;
                 ImGui::BeginGroup();
+                // The same tool sits in Recent and in its home group: the group name keeps the IDs apart.
+                ImGui::PushID(g.name.c_str());
                 bool firstTool = true;
                 for (const ui::ToolDef& t : g.tools) {
                     if (!core_.registry().find(t.command))
@@ -2035,6 +2037,7 @@ void Gui::toolbox() {
                     firstTool = false;
                     toolCell(t, iconSize, scale, expert);
                 }
+                ImGui::PopID();
                 if (!expert)
                     ImGui::TextDisabled("%s", g.name.c_str());
                 ImGui::EndGroup();

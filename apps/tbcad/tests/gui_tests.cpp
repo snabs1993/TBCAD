@@ -3323,6 +3323,28 @@ TEST_CASE("toolbox: Recent group fills as commands run, and Quick rail buttons r
     CHECK(matchesGolden(h.windowShot("##quickrail"), "quickrail"));
 }
 
+TEST_CASE("toolbox: a tool in Recent and in its own group both work after selecting first") {
+    Harness h(1920, 1080);
+    threeLayers(h);
+    h.core().setSetting("ui.toolbox.tab", "modify");
+    h.core().selectAll();
+    h.core().submitText("ROTATE");
+    h.frame(3);
+    h.core().pressEscape();
+    h.frame(3);
+    // Recent holds Rotate once; Rotate is also the third button of Move & copy.
+    for (const int nth : {0, 3}) {
+        h.core().selectAll();
+        h.frame(3);
+        REQUIRE(h.click("##tool", "##toolbox", nth));
+        h.frame(3);
+        CHECK(runningName(h) == "ROTATE");
+        h.core().pressEscape();
+        h.frame(3);
+    }
+    CHECK(h.imguiErrors().empty());
+}
+
 TEST_CASE("menu bar: drawing menus sit under Commands, Classic Menus brings them back") {
     Harness h(1920, 1080);
     h.frame(3);
