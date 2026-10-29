@@ -232,7 +232,7 @@ void drawPanel(ui::PanelContext& pc) {
     if (ImGui::Button("Pick internal point") && pc.runCommand)
         pc.runCommand("HATCH");
     ImGui::SameLine();
-    if (ImGui::Button("Gradient") && pc.runCommand)
+    if (ImGui::Button("Gradient##run") && pc.runCommand)  // the section above is "Gradient" too
         pc.runCommand("GRADIENT");
     ImGui::SameLine();
     ImGui::BeginDisabled(!hasHatchSelected(pc));
