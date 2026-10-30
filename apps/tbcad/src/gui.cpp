@@ -158,11 +158,11 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
     cursorHud_ = flag("hud.enabled", true);
     for (const auto& p : registry_.panels())
         panelOpen_[p.id] = p.visibleByDefault;
-    // The default dock sizes changed (the compact layout: a narrower side column and a command
-    // bar of three rows); a layout saved by an older build is replaced once.
-    if (core_.settings().getString("ui.dockLayout", "") != "v4") {
+    // The default dock sizes changed (v5: a side column of about 280 px); a layout saved by an
+    // older build is replaced once.
+    if (core_.settings().getString("ui.dockLayout", "") != "v5") {
         rebuildDock_ = true;
-        core_.settings().setString("ui.dockLayout", "v4");
+        core_.settings().setString("ui.dockLayout", "v5");
     }
     // The workspace used last time. Only the panels are applied here: the docking layout comes
     // back from imgui.ini by itself.
@@ -1997,7 +1997,7 @@ std::vector<std::string> Gui::quickRailCommands() const {
 // work from any Toolbox tab. Right-click a Toolbox button to add or remove one.
 void Gui::quickRail() {
     const float scale = dpiScale_ * static_cast<float>(core_.settings().getNumber("ui.scale", 1.0));
-    const float iconSize = std::round((compact_ ? 22.0f : 28.0f) * scale);
+    const float iconSize = std::round((compact_ ? compactIconPx() : 28.0f) * scale);
     if (compact_)
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(2.0f * scale, 4.0f * scale));
     const ImGuiStyle& st = ImGui::GetStyle();
@@ -2046,7 +2046,7 @@ void Gui::toolbox() {
     // Compact layout: one thin row, the tab names on the left and small icon buttons after
     // them (names in the tooltips), so the drawing keeps the height.
     const bool compact = compact_;
-    const float iconSize = std::round((compact ? 22.0f : 30.0f) * scale);
+    const float iconSize = std::round((compact ? compactIconPx() : 30.0f) * scale);
     if (compact)
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4.0f * scale, 2.0f * scale));
     const ImGuiStyle& st = ImGui::GetStyle();
@@ -3079,7 +3079,7 @@ void Gui::dockLayout(ImGuiID ds) {
     ImGuiID center = ds;
     // The command area is a few rows tall (history and the input line), not a fixed share of
     // the window, which left it mostly empty on a tall screen. The compact layout keeps two rows
-    // of history and a side column of about 360 px, so the drawing gets the rest.
+    // of history and a side column of about 280 px, so the drawing gets the rest.
     const float rows = compact_ ? 3.0f : 4.0f;
     const float commandPx = rows * ImGui::GetFrameHeightWithSpacing() + (compact_ ? 8.0f : 24.0f);
     const float commandRatio =
@@ -3087,7 +3087,7 @@ void Gui::dockLayout(ImGuiID ds) {
     ImGuiID bottom =
         ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, commandRatio, nullptr, &center);
     const float sideRatio =
-        compact_ ? std::clamp(360.0f * dpiScale_ / std::max(vp->WorkSize.x, 1.0f), 0.15f, 0.26f)
+        compact_ ? std::clamp(280.0f * dpiScale_ / std::max(vp->WorkSize.x, 1.0f), 0.15f, 0.26f)
                  : 0.26f;
     ImGuiID right =
         ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, sideRatio, nullptr, &center);
@@ -5005,6 +5005,13 @@ void Gui::dropIntoViewport(const ViewportRect& rect) {
         core_.pointerMoved(ps);
         core_.click(ps);
     }
+}
+
+// Icon size of the compact Toolbox and Quick rail: ui.toolbox.iconPx (16 to 40, default 28, big
+// enough to tell the tools apart; 22 was the first compact layout).
+float Gui::compactIconPx() const {
+    return static_cast<float>(
+        std::clamp(core_.settings().getNumber("ui.toolbox.iconPx", 28.0), 16.0, 40.0));
 }
 
 bool Gui::flag(std::string_view key, bool fallback) const {

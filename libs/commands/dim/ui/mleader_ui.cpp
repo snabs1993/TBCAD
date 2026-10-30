@@ -57,14 +57,19 @@ void drawMLeaderStyles(ui::PanelContext& pc) {
     if (std::find(names.begin(), names.end(), st.selected) == names.end())
         st.selected = current;
 
-    ImGui::BeginChild("mls-list", ImVec2(160, 0), ImGuiChildFlags_Borders);
+    // A narrow panel (the slim side column) puts the list above the settings, not beside them.
+    const bool stack = ImGui::GetContentRegionAvail().x < ImGui::GetFontSize() * 26.0f;
+    ImGui::BeginChild("mls-list",
+                      stack ? ImVec2(0, ImGui::GetFrameHeightWithSpacing() * 4.0f) : ImVec2(160, 0),
+                      ImGuiChildFlags_Borders);
     for (const std::string& n : names) {
         const std::string label = n + (n == current ? "  (current)" : "");
         if (ImGui::Selectable(label.c_str(), n == st.selected))
             st.selected = n;
     }
     ImGui::EndChild();
-    ImGui::SameLine();
+    if (!stack)
+        ImGui::SameLine();
     ImGui::BeginGroup();
     const std::string sel = st.selected;  // a copy: the buttons rename and delete it
     const bool standard = sel == "Standard";

@@ -46,6 +46,25 @@ void run(Harness& h, const char* line) {
     h.frame(2);
 }
 
+// The rarer Layers tools sit in the panel's "..." menu in the slim side column; `sub` names the
+// sub-menu (Filters) the item is in.
+bool layersMore(Harness& h, const char* item, const char* sub = nullptr) {
+    if (!h.click("...", "Layers"))
+        return false;
+    h.frame(2);
+    if (sub) {
+        if (!h.click(sub, "##Popup"))
+            return false;
+        h.frame(2);
+        const bool ok = h.click(item, "##Menu");
+        h.frame(2);
+        return ok;
+    }
+    const bool ok = h.click(item, "##Popup");
+    h.frame(2);
+    return ok;
+}
+
 // Three layers with one line each.
 void threeLayers(Harness& h) {
     run(h, "-LAYER New A-Walls,A-Doors,A-Notes");
@@ -69,23 +88,20 @@ TEST_CASE("layers panel: filters, invert and the filter box") {
     CHECK(h.has("A-Doors", "Layers"));
 
     // Ready-made filter from the drop-down.
-    REQUIRE(h.click("##filters", "Layers"));
-    REQUIRE(h.click("Layers that are off", "Combo"));
+    REQUIRE(layersMore(h, "Layers that are off", "Filters"));
     h.frame(2);
     CHECK(h.has("A-Doors", "Layers"));
     CHECK_FALSE(h.has("A-Walls", "Layers"));
     CHECK_FALSE(h.has("A-Notes", "Layers"));
 
     // Invert shows the others.
-    REQUIRE(h.click("Invert", "Layers"));
-    h.frame(2);
+    REQUIRE(layersMore(h, "Invert filter"));
     CHECK_FALSE(h.has("A-Doors", "Layers"));
     CHECK(h.has("Defpoints", "Layers"));
-    REQUIRE(h.click("Invert", "Layers"));
+    REQUIRE(layersMore(h, "Invert filter"));
 
     // Back to everything, then type a name into the filter box.
-    REQUIRE(h.click("##filters", "Layers"));
-    REQUIRE(h.click("All layers", "Combo"));
+    REQUIRE(layersMore(h, "All layers", "Filters"));
     h.frame(2);
     CHECK(h.has("Defpoints", "Layers"));
     REQUIRE(h.enterText("##filter", "a-wal", "Layers"));
@@ -128,7 +144,7 @@ TEST_CASE("layers panel: groups and merge") {
     h.holdCtrl(true);
     REQUIRE(h.click("A-Walls", "Layers"));
     h.holdCtrl(false);
-    REQUIRE(h.click("New group...", "Layers"));
+    REQUIRE(layersMore(h, "New group..."));
     h.frame(2);
     REQUIRE(h.enterText("##name", "Frame", "Popup"));
     h.frame(2);
@@ -137,8 +153,7 @@ TEST_CASE("layers panel: groups and merge") {
     CHECK(groups[0] == "frame");
 
     // Pick the group in the Filters drop-down.
-    REQUIRE(h.click("##filters", "Layers"));
-    REQUIRE(h.click("frame", "Combo"));
+    REQUIRE(layersMore(h, "frame", "Filters"));
     h.frame(2);
     CHECK(h.has("A-Walls", "Layers"));
     CHECK(h.has("A-Doors", "Layers"));
@@ -184,7 +199,7 @@ TEST_CASE("layers panel: column sorting and the property filter editor") {
     CHECK(y("A-Doors") < y("A-Walls"));
 
     // A property filter: the layers that are off, saved and applied.
-    REQUIRE(h.click("New property filter...", "Layers"));
+    REQUIRE(layersMore(h, "New property filter..."));
     h.frame(2);
     REQUIRE(h.windowOpen("Layer Filter Properties"));
     REQUIRE(h.enterText("Filter name", "Off-ones", "Layer Filter Properties"));
@@ -1986,8 +2001,7 @@ TEST_CASE("SELECTIONANNODISPLAY: a selected annotative object shows its other sc
 TEST_CASE("layer states manager: new, restore chosen properties, rename, delete") {
     Harness h(1920, 1080);
     threeLayers(h);  // A-Walls, A-Doors, A-Notes on; current layer A-Notes
-    REQUIRE(h.has("Manager...", "Layers"));
-    REQUIRE(h.click("Manager...", "Layers"));
+    REQUIRE(layersMore(h, "Layer states..."));
     h.frame(3);
     REQUIRE(h.windowOpen("Layer States Manager"));
 
@@ -2060,7 +2074,7 @@ TEST_CASE("hatch panel golden") {
 TEST_CASE("layer translator: rename, merge, one undo step") {
     Harness h(1920, 1080);
     threeLayers(h);
-    REQUIRE(h.click("Translate...", "Layers"));
+    REQUIRE(layersMore(h, "Translate..."));
     h.frame(3);
     REQUIRE(h.windowOpen("Layer Translator"));
 
@@ -2162,12 +2176,12 @@ TEST_CASE("heavy undo and redo show a hint for a frame, then run") {
 }
 
 TEST_CASE("keyboard: layer dialogs close on Esc and take typing on open") {
-    for (const char* opener : {"Manager...", "Translate..."}) {
+    for (const char* opener : {"Layer states...", "Translate..."}) {
         const std::string win =
-            std::string(opener) == "Manager..." ? "Layer States Manager" : "Layer Translator";
+            std::string(opener) == "Layer states..." ? "Layer States Manager" : "Layer Translator";
         Harness h(1920, 1080);
         threeLayers(h);
-        REQUIRE(h.click(opener, "Layers"));
+        REQUIRE(layersMore(h, opener));
         h.frame(3);
         REQUIRE(h.windowOpen(win));
         h.key(ImGuiKey_Escape);

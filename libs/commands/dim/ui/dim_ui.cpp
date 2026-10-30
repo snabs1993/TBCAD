@@ -453,9 +453,13 @@ void drawPanel(ui::PanelContext& pc) {
         st.selected = current;
 
     // Parents with their child and override styles under them.
-    ImGui::BeginChild("dimstyle-list",
-                      ImVec2(std::clamp(ImGui::GetContentRegionAvail().x * 0.3f, 90.0f, 190.0f), 0),
-                      ImGuiChildFlags_Borders);
+    // A narrow panel (the slim side column) puts the list above the settings, not beside them.
+    const bool stack = ImGui::GetContentRegionAvail().x < ImGui::GetFontSize() * 26.0f;
+    ImGui::BeginChild(
+        "dimstyle-list",
+        stack ? ImVec2(0, ImGui::GetFrameHeightWithSpacing() * 4.0f)
+              : ImVec2(std::clamp(ImGui::GetContentRegionAvail().x * 0.3f, 90.0f, 190.0f), 0),
+        ImGuiChildFlags_Borders);
     for (const auto& [id, s] : pc.doc->dimStyles()) {
         if (s.name.find('$') != std::string::npos &&
             pc.doc->dimStyleByName(s.name.substr(0, s.name.rfind('$'))))
@@ -474,7 +478,8 @@ void drawPanel(ui::PanelContext& pc) {
     }
     ImGui::EndChild();
 
-    ImGui::SameLine();
+    if (!stack)
+        ImGui::SameLine();
     ImGui::BeginGroup();
     // A copy: Delete, Rename and the editor's fields run DIMSTYLE, which replaces or removes the
     // row while this frame still draws it.
