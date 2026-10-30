@@ -4,7 +4,10 @@
 
 #include <algorithm>
 
+#include <string>
+
 #include "gui_harness.h"
+#include "tbcad/layout/layout.h"
 #include "tbcad/ui/app_core.h"
 
 using namespace tbcad;
@@ -19,6 +22,31 @@ TEST_CASE("test.11: Esc closes an open menu, one level at a time") {
     h.key(ImGuiKey_Escape);
     h.frame(3);
     CHECK_FALSE(h.has("Zoom Extents", "##Menu"));
+}
+
+TEST_CASE("test.11: Delete removes the viewport picked on the sheet") {
+    Harness h(1920, 1080);
+    h.frame(2);
+    REQUIRE(h.core().setActiveLayout("Layout1"));
+    h.frame(2);
+    h.command("MVIEW");
+    h.command("20,20");
+    h.command("200,150");
+    h.command("banana");  // asked again, the corners are kept
+    h.command("1:50");
+    h.command("0,0");
+    h.frame(3);
+    auto count = [&] {
+        const auto l = layout::findLayout(h.core().document(), "Layout1");
+        return l ? l->viewports.size() : std::size_t{0};
+    };
+    const std::size_t before = count();
+    REQUIRE(before >= 1);
+    const int id = layout::findLayout(h.core().document(), "Layout1")->viewports.back().id;
+    h.core().setSetting("tmp.layout.viewport", "Layout1:" + std::to_string(id));
+    h.key(ImGuiKey_Delete);
+    h.frame(3);
+    CHECK(count() == before - 1);
 }
 
 TEST_CASE("test.11: LTSCALE changes the dashes already drawn") {

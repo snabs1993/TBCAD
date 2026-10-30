@@ -631,12 +631,18 @@ public:
         // The scale: typed, or Fit to show the whole drawing.
         cmd::StringOptions so;
         so.defaultValue = "1:100";
-        auto scale = co_await ctx.getString("Viewport scale (1:N) or [Fit] <1:100>", so);
-        if (!scale.ok())
-            co_return;
         double typedN = 0;
         Vec2 typedCentre{};
-        const bool fit = lower(scale.text) == "fit" || lower(scale.text) == "f";
+        bool fit = false;
+        for (;;) {  // a wrong answer asks again: the corners picked so far are not thrown away
+            auto scale = co_await ctx.getString("Viewport scale (1:N) or [Fit] <1:100>", so);
+            if (!scale.ok())
+                co_return;
+            fit = lower(scale.text) == "fit" || lower(scale.text) == "f";
+            if (fit || parseScaleN(scale.text, typedN))
+                break;
+            ctx.message("Not a scale: \"" + scale.text + "\". Use 1:N.");
+        }
         const BBox2 box = modelExtents(ctx.doc());
         if (fit) {
             if (box.empty()) {
@@ -644,10 +650,6 @@ public:
                 co_return;
             }
         } else {
-            if (!parseScaleN(scale.text, typedN)) {
-                ctx.message("Not a scale: \"" + scale.text + "\". Use 1:N.");
-                co_return;
-            }
             cmd::PointOptions co;
             auto center = co_await ctx.getPoint(
                 "Specify the model point at the viewport centre <centre of the drawing>", co);

@@ -27,7 +27,7 @@ public:
         cmd::AngleOptions ao;
         ao.base = p.point;
         ao.defaultValue = 0.0;
-        auto a = co_await ctx.getAngle("Specify rotation angle <0>", ao);
+        auto a = co_await ctx.getAngle("Specify rotation angle", ao);
         if (!a.ok())
             co_return;
 
