@@ -1,11 +1,14 @@
 #include "tbcad/training/check.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <iterator>
 
 #include "tbcad/blocks/blocks.h"
 #include "tbcad/geom/entity.h"
+#include "tbcad/layout/layout.h"
+#include "tbcad/platform/paths.h"
 
 namespace tbcad::training {
 
@@ -459,6 +462,41 @@ bool passes(const Check& c, const Facts& f) {
                 ++n;
             });
             return countOk(c, n, 1);
+        }
+        case Check::Type::Saved:
+            return !f.file.empty() && !f.modified &&
+                   platform::pathToUtf8(f.file.filename()).find(c.contains) != std::string::npos;
+        case Check::Type::Space:
+            return sameName(f.layout, c.name);
+        case Check::Type::Viewport: {
+            for (const layout::Layout& lay : layout::layouts(doc)) {
+                if (!c.name.empty() && !sameName(lay.name, c.name))
+                    continue;
+                for (const layout::Viewport& vp : lay.viewports) {
+                    if (c.value && std::abs(vp.scaleN - *c.value) > 1e-6 * *c.value)
+                        continue;
+                    if (c.box) {
+                        // The part of model space the viewport shows.
+                        const Vec2 half{(vp.paper.max.x - vp.paper.min.x) * vp.scaleN / 2,
+                                        (vp.paper.max.y - vp.paper.min.y) * vp.scaleN / 2};
+                        if (c.box->min.x < vp.center.x - half.x ||
+                            c.box->max.x > vp.center.x + half.x ||
+                            c.box->min.y < vp.center.y - half.y ||
+                            c.box->max.y > vp.center.y + half.y)
+                            continue;
+                    }
+                    return true;
+                }
+            }
+            return false;
+        }
+        case Check::Type::Pdf: {
+            std::error_code ec;
+            if (f.lastPdf.empty() || !std::filesystem::exists(f.lastPdf, ec))
+                return false;
+            const auto t = std::filesystem::last_write_time(f.lastPdf, ec);
+            // File times come from a coarse clock that can lag behind now() by a tick.
+            return !ec && t + std::chrono::seconds(2) >= f.since;
         }
         case Check::Type::Selection: {
             for (EntityId id : f.selection) {

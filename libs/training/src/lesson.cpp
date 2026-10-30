@@ -109,6 +109,10 @@ Result<Check::Type> checkType(const std::string& s) {
         {"object", Check::Type::Object},
         {"block", Check::Type::Block},
         {"insert", Check::Type::Insert},
+        {"saved", Check::Type::Saved},
+        {"space", Check::Type::Space},
+        {"viewport", Check::Type::Viewport},
+        {"pdf", Check::Type::Pdf},
     };
     for (const auto& [name, type] : kTypes)
         if (s == name)

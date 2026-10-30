@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <optional>
 #include <span>
 #include <string>
@@ -35,6 +36,12 @@ struct Facts {
     std::string runningCommand{};
     std::string prompt{};
     std::span<const Event> events{};  // since the lesson started
+    std::filesystem::path file{};     // the drawing's file; empty while it was never saved
+    bool modified = false;            // changed since it was last saved
+    std::string layout{};             // the layout tab shown; empty = Model
+    std::filesystem::path lastPdf{};  // the PDF written last (plot.file.pdf)
+    // When the lesson started (file clock); the earliest time when unknown.
+    std::filesystem::file_time_type since = std::filesystem::file_time_type::min();
 };
 
 bool passes(const Check& check, const Facts& facts);

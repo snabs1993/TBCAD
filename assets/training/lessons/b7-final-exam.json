@@ -1,0 +1,179 @@
+{
+  "id": "B7",
+  "world": 7,
+  "boss": true,
+  "title": {
+    "en": "Boss: Final exam",
+    "th": "บอส: สอบจบ"
+  },
+  "goal": {
+    "en": "A 3000 x 3000 bedroom from scratch: 200 mm walls on Walls, a door block, the room name, 2 outside dimensions, and a PDF",
+    "th": "ห้องนอน 3000 x 3000 ตั้งแต่ศูนย์: ผนังหนา 200 ในเลเยอร์ Walls ประตูเป็นบล็อก ชื่อห้อง ขนาดผนังนอก 2 ด้าน และไฟล์ PDF"
+  },
+  "tip": {
+    "en": "You finished the course. Time to draw something real!",
+    "th": "จบหลักสูตรแล้ว ได้เวลาวาดงานจริง!"
+  },
+  "par": 15,
+  "parSeconds": 720,
+  "setup": [
+    "ZOOM;W;-1000,-1000;4000,4000"
+  ],
+  "ghosts": [
+    {
+      "polyline": [
+        [
+          0,
+          0
+        ],
+        [
+          3000,
+          0
+        ],
+        [
+          3000,
+          3000
+        ],
+        [
+          0,
+          3000
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "polyline": [
+        [
+          200,
+          200
+        ],
+        [
+          2800,
+          200
+        ],
+        [
+          2800,
+          2800
+        ],
+        [
+          200,
+          2800
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "dot": [
+        0,
+        0
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Walls: outer corner at 0,0, both outlines on layer Walls. A door as a block. The room name inside. Dimensions of 3000 on two sides. Then a PDF.",
+        "th": "ผนัง: มุมนอกที่ 0,0 เส้นทั้งสองอยู่ในเลเยอร์ Walls ประตูเป็นบล็อก ชื่อห้องอยู่ข้างใน ขนาด 3000 สองด้าน แล้วส่งออก PDF"
+      },
+      "hint": {
+        "en": "Set Walls current, Rectangle, Offset 200 inside; draw a door, make it a block; Text; Linear dimension; Plot.",
+        "th": "ตั้ง Walls เป็นเลเยอร์ปัจจุบัน วาด Rectangle แล้ว Offset 200 ด้านใน วาดประตูแล้วทำเป็นบล็อก ใส่ Text ใส่ขนาดเส้นตรง แล้ว Plot"
+      },
+      "checks": [
+        {
+          "type": "polyline",
+          "closed": true,
+          "layer": "Walls",
+          "box": [
+            [
+              0,
+              0
+            ],
+            [
+              3000,
+              3000
+            ]
+          ]
+        },
+        {
+          "type": "polyline",
+          "closed": true,
+          "layer": "Walls",
+          "box": [
+            [
+              200,
+              200
+            ],
+            [
+              2800,
+              2800
+            ]
+          ]
+        },
+        {
+          "type": "insert"
+        },
+        {
+          "type": "text",
+          "box": [
+            [
+              200,
+              200
+            ],
+            [
+              2800,
+              2800
+            ]
+          ]
+        },
+        {
+          "type": "dimension",
+          "dim": "linear",
+          "value": 3000,
+          "min": 2
+        },
+        {
+          "type": "pdf"
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "-LAYER;Set;Walls;",
+    "RECTANGLE;0,0;@3000,3000",
+    "O;200;<Click 1500 0>;<Click 1500 1500>;",
+    "-LAYER;Set;0;",
+    "LINE;2000,200;2000,1000;",
+    "ARC;C;2000,200;2800,200;2000,1000",
+    "-BLOCK;DOOR;<Click 2000 600>;<Click 2565.7 765.7>;;2000,200;",
+    "DT;800,1500;200;0;ห้องนอน",
+    "DLI;0,0;3000,0;1500,-600",
+    "DLI;0,0;0,3000;-600,1500",
+    "EXPORTPDF;;{folder}/bedroom.pdf"
+  ],
+  "wrong": [
+    [
+      "-LAYER;Set;Walls;",
+      "RECTANGLE;0,0;@3000,3000",
+      "O;200;<Click 1500 0>;<Click 1500 1500>;",
+      "-LAYER;Set;0;",
+      "LINE;2000,200;2000,1000;",
+      "ARC;C;2000,200;2800,200;2000,1000",
+      "-BLOCK;DOOR;<Click 2000 600>;<Click 2565.7 765.7>;;2000,200;",
+      "DT;800,1500;200;0;ห้องนอน",
+      "DLI;0,0;3000,0;1500,-600",
+      "DLI;0,0;0,3000;-600,1500"
+    ],
+    [
+      "RECTANGLE;0,0;@3000,3000",
+      "O;200;<Click 1500 0>;<Click 1500 1500>;",
+      "LINE;2000,200;2000,1000;",
+      "ARC;C;2000,200;2800,200;2000,1000",
+      "-BLOCK;DOOR;<Click 2000 600>;<Click 2565.7 765.7>;;2000,200;",
+      "DT;800,1500;200;0;ห้องนอน",
+      "DLI;0,0;3000,0;1500,-600",
+      "DLI;0,0;0,3000;-600,1500",
+      "EXPORTPDF;;{folder}/bedroom.pdf"
+    ]
+  ]
+}

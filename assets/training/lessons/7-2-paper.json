@@ -1,0 +1,106 @@
+{
+  "id": "7.2",
+  "world": 7,
+  "title": {
+    "en": "Paper space",
+    "th": "หน้ากระดาษ"
+  },
+  "goal": {
+    "en": "Show the room on the A3 sheet at 1:50",
+    "th": "แสดงผังห้องบนกระดาษ A3 มาตราส่วน 1:50"
+  },
+  "tip": {
+    "en": "Draw at full size in Model; choose the scale only on the sheet.",
+    "th": "วาดขนาดจริงใน Model แล้วค่อยเลือกมาตราส่วนบนหน้ากระดาษ"
+  },
+  "par": 2,
+  "setup": [
+    "RECTANGLE;0,0;@5000,4000",
+    "LINE;4000,0;4000,900;",
+    "ARC;C;4000,0;4900,0;4000,900",
+    "RECTANGLE;1900,1600;@1200,800",
+    "ZOOM;W;-500,-500;5500,4500"
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Click the Layout1 tab below the drawing.",
+        "th": "คลิกแท็บ Layout1 ใต้พื้นที่วาด"
+      },
+      "hint": {
+        "en": "The tabs Model, Layout1 and Layout2 are at the bottom left of the drawing.",
+        "th": "แท็บ Model, Layout1, Layout2 อยู่มุมซ้ายล่างของพื้นที่วาด"
+      },
+      "checks": [
+        {
+          "type": "space",
+          "name": "Layout1"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Add a viewport: type MV (MVIEW), Enter, then F for Fit.",
+        "th": "เพิ่มวิวพอร์ต: พิมพ์ MV (MVIEW) กด Enter แล้วพิมพ์ F (Fit)"
+      },
+      "hint": {
+        "en": "Fit fills the printable part of the sheet.",
+        "th": "Fit จะเต็มพื้นที่พิมพ์ของกระดาษ"
+      },
+      "checks": [
+        {
+          "type": "prompt",
+          "command": "MVIEW",
+          "contains": "scale"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Type 1:50 for the scale and press Enter twice.",
+        "th": "พิมพ์มาตราส่วน 1:50 แล้วกด Enter สองครั้ง"
+      },
+      "hint": {
+        "en": "Later, VPSCALE or Object Properties changes the scale.",
+        "th": "ภายหลังเปลี่ยนมาตราส่วนได้ด้วย VPSCALE หรือแผง Object Properties"
+      },
+      "checks": [
+        {
+          "type": "space",
+          "name": "Layout1"
+        },
+        {
+          "type": "viewport",
+          "name": "Layout1",
+          "value": 50,
+          "box": [
+            [
+              0,
+              0
+            ],
+            [
+              5000,
+              4000
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "<Layout Layout1>",
+    "MV;F;1:50;"
+  ],
+  "wrong": [
+    [
+      "<Layout Layout1>",
+      "MV;F;1:100;"
+    ],
+    [
+      "<Layout Layout1>"
+    ],
+    [
+      "MV;F;1:50;"
+    ]
+  ]
+}

@@ -61,6 +61,7 @@ private:
     training::Score score_{};
     bool improved_ = false;
     std::vector<std::string> newBadges_;
+    std::filesystem::file_time_type since_{};  // when the lesson started (for files it writes)
 };
 
 }  // namespace tbcad::app

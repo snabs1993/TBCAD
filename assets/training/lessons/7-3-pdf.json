@@ -1,0 +1,70 @@
+{
+  "id": "7.3",
+  "world": 7,
+  "title": {
+    "en": "Make a PDF",
+    "th": "ส่งออก PDF"
+  },
+  "goal": {
+    "en": "Print the sheet to a PDF file",
+    "th": "พิมพ์หน้ากระดาษออกเป็นไฟล์ PDF"
+  },
+  "tip": {
+    "en": "A PDF opens on any phone or computer: the easiest way to send a drawing.",
+    "th": "PDF เปิดได้ทุกมือถือและคอมพิวเตอร์ เป็นวิธีส่งแบบที่ง่ายที่สุด"
+  },
+  "par": 1,
+  "setup": [
+    "RECTANGLE;0,0;@5000,4000",
+    "LINE;4000,0;4000,900;",
+    "ARC;C;4000,0;4900,0;4000,900",
+    "RECTANGLE;1900,1600;@1200,800",
+    "LAYOUT;Set;Layout1",
+    "MVIEW;Fit;1:50;"
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Open the Output tab and click Plot (or type PLOT).",
+        "th": "เปิดแท็บ Output แล้วคลิก Plot (หรือพิมพ์ PLOT)"
+      },
+      "hint": {
+        "en": "File > Export PDF works too.",
+        "th": "File > Export PDF ก็ได้เหมือนกัน"
+      }
+    },
+    {
+      "text": {
+        "en": "Look at the preview: the sheet with the room at 1:50.",
+        "th": "ดูภาพตัวอย่าง: หน้ากระดาษที่มีผังห้อง 1:50"
+      },
+      "hint": {
+        "en": "PDF is the printer to pick.",
+        "th": "เลือกเครื่องพิมพ์เป็น PDF"
+      }
+    },
+    {
+      "text": {
+        "en": "Plot it: name the file and save it.",
+        "th": "สั่งพิมพ์: ตั้งชื่อไฟล์แล้วบันทึก"
+      },
+      "hint": {
+        "en": "On the command line: Enter at the settings, then type the file name.",
+        "th": "ในบรรทัดคำสั่ง: กด Enter ที่หน้าตั้งค่า แล้วพิมพ์ชื่อไฟล์"
+      },
+      "checks": [
+        {
+          "type": "pdf"
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "EXPORTPDF;;{folder}/room.pdf"
+  ],
+  "wrong": [
+    [
+      "EXPORTPDF;;<Esc>"
+    ]
+  ]
+}

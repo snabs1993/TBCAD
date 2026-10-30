@@ -6,7 +6,7 @@ tbcad_add_library(training
     src/check.cpp
     src/lesson.cpp
     src/run.cpp
-  DEPENDS tbcad::core tbcad::geom tbcad::blocks tbcad::platform)
+  DEPENDS tbcad::core tbcad::geom tbcad::blocks tbcad::layout tbcad::platform)
 
 tbcad_add_tests(training
   SOURCES

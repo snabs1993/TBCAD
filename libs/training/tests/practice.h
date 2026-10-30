@@ -8,6 +8,7 @@
 #include <string>
 
 #include "tbcad/cmd/register_all.h"
+#include "tbcad/platform/paths.h"
 #include "tbcad/training/run.h"
 #include "tbcad/ui/app_core.h"
 #include "tbcad/ui/ui_registry.h"
@@ -21,11 +22,12 @@ struct Practice {
     ui::UiRegistry uiRegistry;
     std::unique_ptr<ui::AppCore> core;
     std::unique_ptr<LessonRun> run;
+    std::filesystem::file_time_type since = std::filesystem::file_time_type::min();
 
     explicit Practice(const std::string& tag) {
         dir = std::filesystem::temp_directory_path() / ("tbcad_training_" + tag);
         std::filesystem::remove_all(dir);
-        std::filesystem::create_directories(dir);
+        std::filesystem::create_directories(dir / "work");
         registerAllCommands(registry);
         core =
             std::make_unique<ui::AppCore>(registry, platform::AppPaths{dir / "cfg", dir / "data"});
@@ -56,17 +58,22 @@ struct Practice {
     void start(const Lesson& lesson) {
         core->newScratchDocument("Practice " + lesson.id);
         core->runSetup(lesson.setup);
+        since = std::filesystem::file_time_type::clock::now();
         run = std::make_unique<LessonRun>(lesson);
         run->update(facts());
     }
 
     // Like AppCore::submitScript, with the steps checked after every part. A few parts stand for
     // what is not typed: "!LINE" picks LINE from a button, "<Esc>" presses Esc, "<Click x y>"
-    // clicks a drawing point and "<Drag x0 y0 x1 y1>" drags a selection box between two.
+    // clicks a drawing point, "<Drag x0 y0 x1 y1>" drags a selection box between two,
+    // "<Layout NAME>" picks a layout tab, "<Save>" saves and "<SaveAs NAME>" saves as NAME in
+    // folder(). "{folder}" anywhere stands for folder().
     void type(const std::string& script) {
         for (std::size_t at = 0; at <= script.size();) {
             const std::size_t end = script.find(';', at);
-            const std::string part = script.substr(at, end == std::string::npos ? end : end - at);
+            std::string part = script.substr(at, end == std::string::npos ? end : end - at);
+            if (const auto f = part.find("{folder}"); f != std::string::npos)
+                part.replace(f, 8, platform::pathToUtf8(folder()));
             if (part.size() > 1 && part[0] == '!') {
                 core->startCommand(part.substr(1));
             } else if (part == "<Esc>") {
@@ -79,6 +86,12 @@ struct Practice {
                 core->pointerMoved(ps);
                 if (!core->pressOnGrip(ps))  // as the window does
                     core->click(ps);
+            } else if (part.rfind("<Layout ", 0) == 0) {
+                REQUIRE(core->setActiveLayout(part.substr(8, part.size() - 9)));
+            } else if (part == "<Save>") {
+                REQUIRE(core->save().ok());
+            } else if (part.rfind("<SaveAs ", 0) == 0) {
+                REQUIRE(core->saveAs(folder() / part.substr(8, part.size() - 9)).ok());
             } else if (part.rfind("<Drag ", 0) == 0) {
                 double x0 = 0, y0 = 0, x1 = 0, y1 = 0;
                 REQUIRE(std::sscanf(part.c_str(), "<Drag %lf %lf %lf %lf>", &x0, &y0, &x1, &y1) ==
@@ -95,6 +108,9 @@ struct Practice {
         }
     }
 
+    // Where the user's files go in these tests (the practice folder).
+    std::filesystem::path folder() const { return dir / "work"; }
+
     Facts facts() const {
         Facts f;
         f.doc = &core->document();
@@ -108,6 +124,11 @@ struct Practice {
             f.runningCommand = p->command;
             f.prompt = p->text;
         }
+        f.file = core->hasFile() ? core->file() : std::filesystem::path{};
+        f.modified = core->modified();
+        f.layout = core->activeLayout();
+        f.lastPdf = platform::pathFromUtf8(core->setting("plot.file.pdf").value_or(""));
+        f.since = since;
         return f;
     }
 };

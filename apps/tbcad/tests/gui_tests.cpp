@@ -3270,6 +3270,15 @@ TEST_CASE("top search box: a Thai word picks a command from the list") {
     CHECK(!h.windowOpen("topSearchList"));
 }
 
+TEST_CASE("practice mode: the start page's New here? button opens it") {
+    Harness h(1600, 900);
+    h.frame(2);
+    REQUIRE(h.has("Try Practice Mode", "##start"));
+    REQUIRE(h.click("Try Practice Mode", "##start"));
+    h.frame(3);
+    CHECK(h.windowOpen("Practice"));
+}
+
 TEST_CASE("practice mode: a lesson from the Help menu, played on the command line, gets stars") {
     Harness h;
     h.frame(2);

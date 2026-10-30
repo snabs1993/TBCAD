@@ -77,6 +77,10 @@ resolved). Counts: `equals`, or `min` (default 1) and `max`.
 | `object` | an object that passes the filters, whose extents are `box` |
 | `block` | a block definition `name` exists, holding `objects` objects |
 | `insert` | a placed block `name` at `center`, turned `angle` degrees |
+| `saved` | the drawing has a file whose name contains `contains`, with no unsaved changes |
+| `space` | the layout tab `name` is shown (empty = Model) |
+| `viewport` | layout `name` (empty = any) has a viewport at 1:`value` whose view holds `box` |
+| `pdf` | a PDF was written since the lesson started (Export PDF) |
 
 An associative array counts as the objects it shows: a polar array of one circle with 8 items is
 8 circles to every check (and its items take the array's layer where they are on layer 0).
@@ -87,6 +91,9 @@ In `solution` and `wrong` (only there) a few parts stand for what is not typed: 
 LINE from a button (`AppCore::startCommand`), `<Esc>` presses Esc, `<Click x y>` clicks a drawing
 point (to pick an object, at a prompt or with no command running) and `<Drag x0 y0 x1 y1>` drags a
 selection box between two drawing points (left to right is a window, right to left a crossing).
+`<Layout NAME>` picks a layout tab, `<Save>` saves and `<SaveAs NAME>` saves as NAME in a test
+folder; `{folder}` anywhere stands for that folder (an Export PDF file name, say). The test window
+is not the real one, so Save and Save As typed as commands do nothing there.
 A part that is empty after a command has ended is Enter, which repeats the last command.
 
 Settings a command remembers between drawings (the Fillet radius and the like) belong in `setup`
