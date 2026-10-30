@@ -83,6 +83,8 @@ TEST_CASE("RENAME renames layers and styles and refuses clashes") {
 
 TEST_CASE("SETVAR reads and changes drawing variables by name") {
     Fixture f;
+    f.host.run("CECOLOR", {"red"});  // typed by name, without SETVAR
+    CHECK(f.doc.header().currentColor == Color::index(1));
     f.host.run("SETVAR", {"ltscale", "3"});
     CHECK(f.doc.header().ltScale == doctest::Approx(3));
     f.host.run("SETVAR", {"CECOLOR", "red"});
