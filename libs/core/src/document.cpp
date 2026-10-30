@@ -2684,6 +2684,11 @@ double annotationFactor(const Header& h, const EntityCommon& c, double override)
 LayerId commandLayerFor(const Header& h, const Entity& e) {
     if (h.custom.empty())
         return {};
+    if (h.currentLayer != kLayerZero) {
+        auto a = h.custom.find(kCommandLayersAutoKey);
+        if (a != h.custom.end() && a->second == "1")
+            return {};
+    }
     const char* key = nullptr;
     switch (kind(e)) {
         case EntityKind::Dimension:

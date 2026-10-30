@@ -104,6 +104,10 @@ inline constexpr const char* kAnnoNewKey = "tbcad.annonew";
 inline constexpr const char* kDimLayerKey = "tbcad.dimlayer";
 inline constexpr const char* kHatchLayerKey = "tbcad.hatchlayer";
 inline constexpr const char* kTextLayerKey = "tbcad.textlayer";
+// "1" when the three layers above came from the template rather than DIMLAYER / HPLAYER /
+// TEXTLAYER: they are then used only while layer 0 is current, so a layer the user made current
+// keeps the dimensions, hatches and text drawn on it.
+inline constexpr const char* kCommandLayersAutoKey = "tbcad.cmdlayers.auto";
 // Linetype scale of new objects (CELTSCALE), whether paper-space linetype scaling (PSLTSCALE) and
 // model-space annotation scaling (MSLTSCALE) apply, and how new polylines run their linetype
 // across vertices (PLINEGEN). Kept in Header::custom; the defaults are 1, on, on and on.

@@ -9,7 +9,7 @@ tbcad_add_library(sysvars
     src/hyperlink.cpp
     src/script.cpp
     src/ui.cpp
-  DEPENDS tbcad::cmd tbcad::core tbcad::layers tbcad::layout tbcad::ui)
+  DEPENDS tbcad::cmd tbcad::core tbcad::drafting tbcad::layers tbcad::layout tbcad::ui)
 
 if(TBCAD_BUILD_APP)
   include(deps/imgui)

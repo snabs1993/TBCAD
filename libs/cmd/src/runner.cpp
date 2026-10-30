@@ -947,11 +947,24 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                         if (accepts(id))
                             found.push_back(id);
                 } else {
+                    // A typed point starts a box, as a click on empty space does: the next point
+                    // closes it (left to right a window, right to left a crossing).
+                    const PointParseContext pc = parseContext(req);
+                    std::optional<Vec2> p;
+                    if (parser_)
+                        p = parser_->parsePoint(text, pc);
+                    if (!p)
+                        p = parsePointText(text, pc);
+                    if (p) {
+                        shape_ = SelShape::Box;
+                        shapePts_.clear();
+                        return addShapePoint(*p);
+                    }
                     return reject(
                         "Invalid option \"" + text +
                         "\". Pick objects, or type Window, Crossing, WPolygon, CPolygon, BOX, "
                         "Fence, All, Last, Previous, Group, Add, Remove, SIngle or "
-                        "Undo (? lists them).");
+                        "Undo (? lists them), or type a corner point.");
                 }
                 return applyBatch(found, false, "No objects found.");
             }

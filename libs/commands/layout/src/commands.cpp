@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -93,10 +94,12 @@ cmd::Task askViewport(cmd::CommandContext& ctx, const std::string& layoutName, i
     }
 }
 
+void addDefaultViewport(cmd::CommandContext& ctx, const std::string& name);
+
 class LayoutCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "LAYOUT"; }
-    std::vector<std::string> defaultAliases() const override { return {"LO"}; }
+    std::vector<std::string> defaultAliases() const override { return {"LO", "-LAYOUT"}; }
     std::string_view description() const override {
         return "Create, rename, resize, delete and list layouts (sheets)";
     }
@@ -143,6 +146,8 @@ public:
                 co_return;
             auto r =
                 layout::createLayout(ctx.tx(), name.text, paperName, orient.keyword == "Landscape");
+            if (r)
+                addDefaultViewport(ctx, name.text);
             report(ctx, r, "Layout \"" + name.text + "\" created.");
             if (r) {
                 ctx.host().setSetting("layout.current", name.text);
@@ -491,6 +496,38 @@ BBox2 modelExtents(const Document& doc) {
         if (const Entity* e = doc.find(id))
             box.merge(geom::bounds(*e, doc));
     return box;
+}
+
+// The smallest round scale (1, 2, 2.5, 5 times a power of ten) at or above n.
+double roundScaleUp(double n) {
+    if (!(n > 0) || !std::isfinite(n))
+        return 1;
+    const double p = std::pow(10.0, std::floor(std::log10(n)));
+    for (double step : {1.0, 2.0, 2.5, 5.0, 10.0})
+        if (step * p >= n * (1 - 1e-9))
+            return step * p;
+    return 10 * p;
+}
+
+// A new sheet comes with one viewport inside the plot margins, showing the whole drawing at a
+// round scale (1:1 while the drawing is empty), so model space shows on it straight away.
+void addDefaultViewport(cmd::CommandContext& ctx, const std::string& name) {
+    const auto lay = layout::findLayout(ctx.doc(), name);
+    if (!lay)
+        return;
+    const double m = std::min({10.0, lay->widthMm / 4, lay->heightMm / 4});
+    BBox2 rect;
+    rect.expand({m, m});
+    rect.expand({lay->widthMm - m, lay->heightMm - m});
+    const BBox2 box = modelExtents(ctx.doc());
+    Vec2 centre{};
+    double n = 1;
+    if (!box.empty()) {
+        centre = {(box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2};
+        n = roundScaleUp(std::max(box.width() / rect.width(), box.height() / rect.height()));
+    }
+    if (auto id = layout::addViewport(ctx.tx(), name, rect, centre, n); !id)
+        ctx.message(id.error().message);
 }
 
 // MVIEW: a viewport on the current layout. Corners are typed on the sheet in millimetres, or the
