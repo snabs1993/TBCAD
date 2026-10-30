@@ -98,6 +98,35 @@ TEST_CASE("command listeners hear starts, ends, undo and redo with how a command
     CHECK(heard[1].kind == CommandEvent::Kind::Redo);
 }
 
+TEST_CASE("a practice drawing is named, never modified, and its setup cannot be undone") {
+    Fixture f("scratch");
+    f.core->newScratchDocument("Practice 2.1");
+    CHECK(f.core->isScratch());
+    CHECK(f.core->displayName() == "Practice 2.1");
+    CHECK(f.core->documentTitle(f.core->activeDocument()) == "Practice 2.1");
+    const std::size_t lines = f.core->history().size();
+    f.core->runSetup({"TESTLINE;0,0;10,0", "TESTLINE;0,5;10,5"});
+    CHECK(f.core->history().size() == lines);  // nothing echoed
+    CHECK(f.core->document().modelSpaceCount() == 2);
+    CHECK_FALSE(f.core->undo());
+    f.line("0,10", "10,10");
+    CHECK_FALSE(f.core->modified());
+    CHECK_FALSE(f.core->anyDocumentModified());
+    CHECK_FALSE(f.core->isPristine());
+    CHECK(f.core->undo());
+    CHECK(f.core->document().modelSpaceCount() == 2);
+}
+
+TEST_CASE("a whole Thai word for a command starts it, and the listener hears the Thai word") {
+    Fixture f("thaiword");
+    std::vector<CommandEvent> heard;
+    f.core->addCommandListener([&](const CommandEvent& e) { heard.push_back(e); });
+    f.core->submitText("ตั้งค่า");  // SETTINGS, through its alias OPTIONS
+    REQUIRE_FALSE(heard.empty());
+    CHECK(heard[0].command == "SETTINGS");
+    CHECK(heard[0].word == "ตั้งค่า");
+}
+
 TEST_CASE("lines a panel sends are echoed with short numbers, and answers are not echoed") {
     Fixture f("panelecho");
     f.core->submitPanelText("TESTLINE 3787.4686716791975,5741.311612364243");

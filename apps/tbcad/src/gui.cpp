@@ -37,6 +37,7 @@
 #include "tbcad/ui/radial_wheel.h"
 #include "tbcad/ui/selection.h"
 #include "tbcad/ui/status_items.h"
+#include "tbcad/ui/thai_words.h"
 #include "tbcad/ui/toolbox.h"
 
 #if defined(_WIN32)
@@ -111,6 +112,13 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
           [this] { cursorHud_ = flag("hud.enabled", true); }}),
       workspaces_(core.settingsFolder() / "workspaces") {
     core_.print("Welcome to TBCAD. Type a command such as LINE or CIRCLE here and press Enter.");
+    {
+        // Before the panels are listed below: Practice adds one.
+        std::string lessons = findBesideExecutable("assets/training/lessons");
+        if (lessons.empty())
+            lessons = std::string(TBCAD_SOURCE_ASSETS_DIR) + "/training/lessons";
+        practice_ = std::make_unique<Practice>(core_, registry_, platform::pathFromUtf8(lessons));
+    }
     {
         std::ifstream in(findBesideExecutable("assets/help/commands.md"), std::ios::binary);
         std::ostringstream buf;
@@ -258,6 +266,7 @@ std::string Gui::actionLabel(const std::string& action) const {
         {"view.cleanScreen", "View > Clean Screen"},
         {"view.cleanScreenAlt", "View > Clean Screen (second key)"},
         {"help.quickStart", "Help > Quick Start"},
+        {"help.practice", "Help > Practice Mode"},
         {"tools.settings", "Tools > Settings"}};
     if (platform::Keybindings::isCommandAction(action))
         return "Run " + action.substr(platform::Keybindings::kCommandPrefix.size());
@@ -430,6 +439,8 @@ void Gui::runAction(const std::string& action) {
             logExpanded_ = !logExpanded_;
     } else if (action == "view.cleanScreen" || action == "view.cleanScreenAlt")
         cleanScreen_ = !cleanScreen_;
+    else if (action == "help.practice")
+        practice_->open();
     else if (action == "help.quickStart") {
         // F1 during a command explains that command; otherwise the quick start opens.
         const auto* prompt = core_.runner().prompt();
@@ -1588,6 +1599,8 @@ void Gui::menuBar() {
     if (ImGui::BeginMenu("Help")) {
         if (ImGui::MenuItem("Quick Start", keys.label("help.quickStart").c_str()))
             showQuickStart_ = true;
+        if (ImGui::MenuItem("Practice Mode", keys.label("help.practice").c_str()))
+            practice_->open();
         if (ImGui::MenuItem("Command List"))
             showCommandList_ = true;
         if (ImGui::MenuItem("Report a Problem..."))
@@ -3583,8 +3596,10 @@ void Gui::commandWindow() {
             std::string line = input_;
             bool refused = false;
             // An arrow-key pick wins even over a typed word that is itself an alias ("li").
+            // A whole Thai word for a command goes through as typed (AppCore starts it).
             if (suggestVisible_ && !suggestions_.empty() &&
-                (suggestNavigated_ || !core_.registry().find(cmd::toUpperAscii(line)))) {
+                (suggestNavigated_ || (!core_.registry().find(cmd::toUpperAscii(line)) &&
+                                       !ui::commandForThaiWord(line)))) {
                 const std::string& pick =
                     suggestions_[static_cast<std::size_t>(std::clamp(
                                      suggestSel_, 0, static_cast<int>(suggestions_.size()) - 1))]
@@ -5341,6 +5356,7 @@ ViewportRect Gui::frame() {
         }
     }
     shortcuts();
+    practice_->tick();
     for (const std::string& what : core_.takeUiRequests()) {
         if (what == "settings")
             settings_.open();

@@ -1238,6 +1238,9 @@ void registerAppCommands(cmd::Registry& registry) {
         "QVDRAWING", std::vector<std::string>{"QVD"}, "action:view.quickViewDrawings",
         "Quick view of the open drawings and their layouts"));
     (void)registry.add(std::make_unique<UiRequestCommand>(
+        "PRACTICE", std::vector<std::string>{}, "action:help.practice",
+        "Practice mode: short lessons that check your drawing as you go"));
+    (void)registry.add(std::make_unique<UiRequestCommand>(
         "QVLAYOUT", std::vector<std::string>{"QVL"}, "action:view.quickViewLayouts",
         "Quick view of the layouts of this drawing"));
     (void)registry.add(std::make_unique<PickVarCommand>(

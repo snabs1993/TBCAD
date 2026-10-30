@@ -1,0 +1,92 @@
+{
+  "id": "1.1",
+  "world": 1,
+  "title": {
+    "en": "Three ways to start",
+    "th": "เริ่มคำสั่งได้ 3 ทาง"
+  },
+  "goal": {
+    "en": "Start the Line tool three different ways",
+    "th": "เริ่มคำสั่งเส้นด้วย 3 วิธี"
+  },
+  "tip": {
+    "en": "Enter on an empty command line repeats the last command.",
+    "th": "กด Enter ที่บรรทัดคำสั่งว่างๆ จะเรียกคำสั่งล่าสุดซ้ำ"
+  },
+  "par": 3,
+  "setup": [],
+  "steps": [
+    {
+      "text": {
+        "en": "Click Draw in the Toolbox, then the Line button. Press Esc.",
+        "th": "คลิกแท็บ Draw ในแถบเครื่องมือ แล้วคลิกปุ่ม Line จากนั้นกด Esc"
+      },
+      "hint": {
+        "en": "The Toolbox is the row of tabs and buttons at the top.",
+        "th": "แถบเครื่องมือคือแถวของแท็บและปุ่มด้านบน"
+      },
+      "checks": [
+        {
+          "type": "command",
+          "command": "LINE",
+          "source": "button"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Type L in the command line and press Enter. Press Esc.",
+        "th": "พิมพ์ L ที่บรรทัดคำสั่งแล้วกด Enter จากนั้นกด Esc"
+      },
+      "hint": {
+        "en": "The command line is at the bottom of the window.",
+        "th": "บรรทัดคำสั่งอยู่ด้านล่างของหน้าต่าง"
+      },
+      "checks": [
+        {
+          "type": "command",
+          "command": "LINE",
+          "source": "alias"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Type เส้น and press Enter. Press Esc.",
+        "th": "พิมพ์คำว่า เส้น แล้วกด Enter จากนั้นกด Esc"
+      },
+      "hint": {
+        "en": "Many commands have a Thai word: วงกลม, ย้าย, ลบ...",
+        "th": "หลายคำสั่งพิมพ์เป็นภาษาไทยได้ เช่น วงกลม ย้าย ลบ"
+      },
+      "checks": [
+        {
+          "type": "command",
+          "command": "LINE",
+          "source": "button"
+        },
+        {
+          "type": "command",
+          "command": "LINE",
+          "source": "alias"
+        },
+        {
+          "type": "command",
+          "command": "LINE",
+          "source": "thai"
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "!LINE;<Esc>;L;<Esc>;เส้น;<Esc>"
+  ],
+  "wrong": [
+    [
+      "L;<Esc>;LINE;<Esc>"
+    ],
+    [
+      "!LINE;<Esc>;เส้น;<Esc>"
+    ]
+  ]
+}

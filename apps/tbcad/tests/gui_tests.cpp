@@ -3270,6 +3270,66 @@ TEST_CASE("top search box: a Thai word picks a command from the list") {
     CHECK(!h.windowOpen("topSearchList"));
 }
 
+TEST_CASE("practice mode: a lesson from the Help menu, played on the command line, gets stars") {
+    Harness h;
+    h.frame(2);
+    REQUIRE(h.click("Help", "MainMenuBar"));
+    h.frame(2);
+    REQUIRE(h.click("Practice Mode", "##Menu"));
+    h.frame(3);
+    REQUIRE(h.windowOpen("Practice"));
+    CHECK(h.gui().practice().lessons().size() >= 11);
+    REQUIRE(h.click("2.1  Your first line", "Practice"));
+    h.frame(3);
+    CHECK(h.core().documentTitle(h.core().activeDocument()) == "Practice 2.1");
+    REQUIRE(h.gui().practice().run() != nullptr);
+    CHECK(h.gui().practice().run()->currentStep() == 0);
+    CHECK(h.has("Hint", "Practice"));
+    h.command("L");
+    h.frame(2);
+    CHECK(h.gui().practice().run()->currentStep() == 1);
+    h.command("0,0");
+    h.command("@1000,0");
+    h.command("");
+    h.frame(3);
+    CHECK(h.gui().practice().finished());
+    CHECK(h.gui().practice().progress().stars("2.1") == 3);
+    h.captureText(true);
+    h.frame(2);
+    CHECK(h.shownText().find("Lesson complete!") != std::string::npos);
+    CHECK_FALSE(h.core().modified());  // a practice drawing never asks to be saved
+    CHECK(h.has("Next lesson", "Practice"));
+    CHECK(h.imguiErrors().empty());
+}
+
+TEST_CASE("practice mode: a Thai word opens it, Restart and the lesson map work") {
+    Harness h;
+    h.frame(2);
+    h.command("ฝึก");
+    h.frame(3);
+    REQUIRE(h.windowOpen("Practice"));
+    REQUIRE(h.click("1.3  Undo and redo", "Practice"));
+    h.frame(3);
+    REQUIRE(h.gui().practice().run() != nullptr);
+    CHECK(h.core().document().modelSpaceCount() == 2);
+    CHECK_FALSE(h.core().undo());  // the starting drawing cannot be undone away
+    h.command("ERASE");
+    h.command("L");
+    h.command("");
+    h.frame(2);
+    CHECK(h.gui().practice().run()->currentStep() == 1);
+    REQUIRE(h.click("Restart", "Practice"));
+    h.frame(3);
+    CHECK(h.gui().practice().run()->currentStep() == 0);
+    CHECK(h.core().document().modelSpaceCount() == 2);
+    CHECK(h.core().documentCount() == 1);  // the old practice tab went
+    REQUIRE(h.click("< All lessons", "Practice"));
+    h.frame(2);
+    CHECK(h.gui().practice().run() == nullptr);
+    CHECK(h.has("2.1  Your first line", "Practice"));
+    CHECK(h.imguiErrors().empty());
+}
+
 TEST_CASE("toolbox: every tool runs a command the program has") {
     Harness h(1280, 720);
     std::set<std::string> seen;

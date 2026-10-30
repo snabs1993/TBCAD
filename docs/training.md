@@ -62,6 +62,10 @@ resolved). Counts: `equals`, or `min` (default 1) and `max`.
 
 ## Tests
 
+In `solution` and `wrong` (only there) a few parts stand for what is not typed: `!LINE` picks
+LINE from a button (`AppCore::startCommand`), `<Esc>` presses Esc and `<Drag x0 y0 x1 y1>` drags a
+selection box between two drawing points (left to right is a window, right to left a crossing).
+
 `tbcad_training_tests` plays every lesson file with the real commands: the starting drawing must
 not pass, the solution must pass within par, and every wrong attempt must fail. Add a solution
 and at least one wrong attempt to every new lesson.
