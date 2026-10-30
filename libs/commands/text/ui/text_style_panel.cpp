@@ -207,7 +207,11 @@ void drawPanel(ui::PanelContext& pc) {
     if (!pc.doc->textStyle(st.selected))
         st.selected = current;
 
-    ImGui::BeginChild("textstyle-list", ImVec2(170, 0), ImGuiChildFlags_Borders);
+    // A narrow panel (the slim side column) puts the list above the settings, not beside them.
+    const bool stack = ImGui::GetContentRegionAvail().x < ImGui::GetFontSize() * 26.0f;
+    ImGui::BeginChild("textstyle-list",
+                      stack ? ImVec2(0, ImGui::GetFrameHeightWithSpacing() * 4.0f) : ImVec2(170, 0),
+                      ImGuiChildFlags_Borders);
     for (const auto& [id, s] : pc.doc->textStyles()) {
         const std::string label = s.name + (id == current ? "  (current)" : "");
         if (ImGui::Selectable(label.c_str(), id == st.selected))
@@ -215,7 +219,8 @@ void drawPanel(ui::PanelContext& pc) {
     }
     ImGui::EndChild();
 
-    ImGui::SameLine();
+    if (!stack)
+        ImGui::SameLine();
     ImGui::BeginGroup();
     // A copy: Delete, Rename and the editor's fields run -STYLE, which replaces or removes the
     // row while this frame still draws it.

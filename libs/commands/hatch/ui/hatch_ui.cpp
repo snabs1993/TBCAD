@@ -182,7 +182,10 @@ void drawPanel(ui::PanelContext& pc) {
     Params p = loadParams(*pc.host);
     bool changed = false;
 
-    ImGui::BeginChild("hatch-patterns", ImVec2(170, 0), ImGuiChildFlags_Borders);
+    // A narrow panel (the slim side column) puts the list above the settings, not beside them.
+    const bool stack = ImGui::GetContentRegionAvail().x < ImGui::GetFontSize() * 26.0f;
+    ImGui::BeginChild("hatch-patterns", stack ? ImVec2(0, 3.2f * 44.0f) : ImVec2(170, 0),
+                      ImGuiChildFlags_Borders);
     for (const std::string& name : PatternRegistry::names()) {
         const Pattern* pattern = PatternRegistry::find(name);
         if (!pattern)
@@ -201,7 +204,8 @@ void drawPanel(ui::PanelContext& pc) {
     }
     ImGui::EndChild();
 
-    ImGui::SameLine();
+    if (!stack)
+        ImGui::SameLine();
     ImGui::BeginGroup();
     if (const Pattern* pattern = PatternRegistry::find(p.pattern))
         ImGui::TextWrapped("%s", pattern->description.c_str());
