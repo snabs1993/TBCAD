@@ -1,0 +1,108 @@
+{
+  "id": "4.3",
+  "world": 4,
+  "title": {
+    "en": "Hide and lock",
+    "th": "ซ่อนและล็อก"
+  },
+  "goal": {
+    "en": "Hide the furniture and lock the walls",
+    "th": "ซ่อนเฟอร์นิเจอร์ และล็อกผนัง"
+  },
+  "tip": {
+    "en": "A locked layer still shows and prints; it just can't be changed.",
+    "th": "เลเยอร์ที่ล็อกยังมองเห็นและพิมพ์ได้ แค่แก้ไขไม่ได้"
+  },
+  "par": 2,
+  "setup": [
+    "-LAYER;Set;Walls;",
+    "RECTANGLE;0,0;@5000,4000",
+    "-LAYER;Set;Furniture;",
+    "RECTANGLE;1900,1600;@1200,800",
+    "CIRCLE;2500,1300;200",
+    "CIRCLE;2500,2700;200",
+    "-LAYER;Set;0;",
+    "ZOOM;W;-500,-500;5500,4500"
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "In the Layers panel, turn Furniture off (the eye).",
+        "th": "ในแผง Layers ปิดเลเยอร์ Furniture (ไอคอนตา)"
+      },
+      "hint": {
+        "en": "Type LA and press Enter to open the panel.",
+        "th": "พิมพ์ LA แล้วกด Enter เพื่อเปิดแผง"
+      },
+      "checks": [
+        {
+          "type": "layer",
+          "name": "Furniture",
+          "on": false
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Lock Walls (the padlock).",
+        "th": "ล็อกเลเยอร์ Walls (ไอคอนกุญแจ)"
+      },
+      "hint": {
+        "en": "Click the padlock in the Walls row.",
+        "th": "คลิกไอคอนกุญแจในแถว Walls"
+      },
+      "checks": [
+        {
+          "type": "layer",
+          "name": "Walls",
+          "locked": true
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Try to erase a wall: click it and press Delete. It stays.",
+        "th": "ลองลบผนัง คลิกแล้วกด Delete ผนังจะยังอยู่"
+      },
+      "hint": {
+        "en": "Locked things can't be picked.",
+        "th": "ของในเลเยอร์ที่ล็อกจะเลือกไม่ได้"
+      },
+      "checks": [
+        {
+          "type": "layer",
+          "name": "Furniture",
+          "on": false
+        },
+        {
+          "type": "layer",
+          "name": "Walls",
+          "locked": true
+        },
+        {
+          "type": "count",
+          "layer": "Walls",
+          "equals": 1
+        },
+        {
+          "type": "count",
+          "layer": "Furniture",
+          "equals": 3
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "-LAYER;OFF;Furniture;LOck;Walls;"
+  ],
+  "wrong": [
+    [
+      "-LAYER;OFF;Furniture;",
+      "ERASE;<Click 2500 0>;",
+      "-LAYER;LOck;Walls;"
+    ],
+    [
+      "-LAYER;Freeze;Furniture;LOck;Walls;"
+    ]
+  ]
+}

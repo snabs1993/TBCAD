@@ -1,0 +1,80 @@
+{
+  "id": "4.4",
+  "world": 4,
+  "title": {
+    "en": "Copy properties",
+    "th": "ลอกคุณสมบัติ"
+  },
+  "goal": {
+    "en": "Make the 3 grey lines look like the red centre line",
+    "th": "ทำเส้นเทา 3 เส้นให้เหมือนเส้นศูนย์กลางสีแดง"
+  },
+  "tip": {
+    "en": "Match copies the layer, colour, linetype and more in one go.",
+    "th": "Match ลอกเลเยอร์ สี ชนิดเส้น และอื่นๆ ได้ในครั้งเดียว"
+  },
+  "par": 1,
+  "setup": [
+    "-LAYER;Set;Centerlines;",
+    "LINE;0,1200;4000,1200;",
+    "-LAYER;Set;0;",
+    "COLOR;8",
+    "LINE;0,800;4000,800;",
+    "LINE;0,400;4000,400;",
+    "LINE;0,0;4000,0;",
+    "COLOR;ByLayer",
+    "ZOOM;W;-500,-1000;4500,2200"
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Match (MA or ลอกคุณสมบัติ): click the red centre line.",
+        "th": "Match (MA หรือ ลอกคุณสมบัติ): คลิกเส้นศูนย์กลางสีแดง"
+      },
+      "hint": {
+        "en": "Type MA, Enter, then click the top line.",
+        "th": "พิมพ์ MA กด Enter แล้วคลิกเส้นบนสุด"
+      },
+      "checks": [
+        {
+          "type": "prompt",
+          "command": "MATCHPROP",
+          "contains": "estination"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Click the 3 grey lines.",
+        "th": "คลิกเส้นเทาทั้ง 3 เส้น"
+      },
+      "hint": {
+        "en": "Each line changes as you click it.",
+        "th": "แต่ละเส้นจะเปลี่ยนทันทีที่คลิก"
+      }
+    },
+    {
+      "text": {
+        "en": "Press Enter.",
+        "th": "กด Enter"
+      },
+      "checks": [
+        {
+          "type": "count",
+          "kind": "line",
+          "layer": "Centerlines",
+          "color": 1,
+          "equals": 4
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "MA;<Click 2000 1200>;<Click 2000 800>;<Click 2000 400>;<Click 2000 0>;"
+  ],
+  "wrong": [
+    [
+      "MA;<Click 2000 1200>;<Click 2000 800>;<Click 2000 400>;"
+    ]
+  ]
+}

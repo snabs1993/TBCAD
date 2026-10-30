@@ -33,6 +33,11 @@ struct Check {
         Selection,  // exactly `equals` objects are selected and all match the filters
         View,       // `box` is in view and fills at least `minFill` of its width or height
         Prompt,     // `command` is running and its prompt contains `contains`
+        Arc,        // an arc: center, radius
+        Text,       // a text, multiline text or leader note that `contains` a string: height,
+                    // box (where it starts), tip (where a leader points)
+        Dimension,  // a dimension: dim (its kind), value (its measurement; degrees for angles)
+        Object,     // an object that passes the filters, with box (its extents)
     };
     Type type = Type::Line;
 
@@ -57,6 +62,11 @@ struct Check {
     // Layer.
     std::string name{};
     std::optional<bool> on{}, frozen{}, locked{};
+
+    // Text / Dimension.
+    std::optional<double> height{}, value{};
+    std::optional<BBox2> tip{};
+    std::string dim{};  // "linear", "aligned", "radius", "diameter", "angular"
 
     // Command / Prompt.
     std::string command{};

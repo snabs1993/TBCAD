@@ -1,0 +1,91 @@
+{
+  "id": "5.5",
+  "world": 5,
+  "title": {
+    "en": "Hatch a floor",
+    "th": "ใส่ลายพื้น"
+  },
+  "goal": {
+    "en": "Fill the bathroom floor (the small room) with a pattern",
+    "th": "ใส่ลายที่พื้นห้องน้ำ (ห้องเล็ก)"
+  },
+  "tip": {
+    "en": "A hatch follows its outline: stretch the room and the hatch grows with it.",
+    "th": "ลายพื้นผูกกับขอบ ยืดห้อง ลายก็ขยายตาม"
+  },
+  "par": 1,
+  "setup": [
+    "RECTANGLE;0,0;@4000,3000",
+    "RECTANGLE;4000,0;@2000,3000",
+    "ZOOM;W;-500,-500;6500,3500"
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Hatch (H or ลายเส้น).",
+        "th": "เรียกคำสั่ง Hatch (H หรือ ลายเส้น)"
+      },
+      "hint": {
+        "en": "Type H and press Enter.",
+        "th": "พิมพ์ H แล้วกด Enter"
+      },
+      "checks": [
+        {
+          "type": "prompt",
+          "command": "HATCH",
+          "contains": "internal point"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "The prompt shows the pattern; type P to pick another, or keep it.",
+        "th": "บรรทัดคำสั่งบอกชื่อลายอยู่ พิมพ์ P เพื่อเลือกลายอื่น หรือใช้ลายเดิมก็ได้"
+      },
+      "hint": {
+        "en": "P is Pattern.",
+        "th": "P คือลาย (Pattern)"
+      }
+    },
+    {
+      "text": {
+        "en": "Click inside the bathroom, then Enter.",
+        "th": "คลิกในห้องน้ำ แล้วกด Enter"
+      },
+      "hint": {
+        "en": "Click anywhere inside the small room.",
+        "th": "คลิกตรงไหนก็ได้ในห้องเล็ก"
+      },
+      "checks": [
+        {
+          "type": "object",
+          "kind": "hatch",
+          "box": [
+            [
+              4000,
+              0
+            ],
+            [
+              6000,
+              3000
+            ]
+          ],
+          "tol": 1
+        },
+        {
+          "type": "count",
+          "kind": "hatch",
+          "equals": 1
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "H;<Click 5000 1500>;"
+  ],
+  "wrong": [
+    [
+      "H;<Click 2000 1500>;"
+    ]
+  ]
+}

@@ -91,3 +91,17 @@ TEST_CASE("the steps of the first-line lesson tick off one by one") {
     CHECK(p.run->complete());
     CHECK(p.run->events().front().source == Source::Alias);
 }
+
+TEST_CASE("the corners lesson starts from a sharp corner whatever radius Fillet used before") {
+    const std::vector<Lesson> all = lessons();
+    const auto it =
+        std::find_if(all.begin(), all.end(), [](const Lesson& l) { return l.id == "3.5"; });
+    REQUIRE(it != all.end());
+    Practice p("fillet");
+    p.core->submitScript("FILLET;R;500");  // the radius is remembered between drawings
+    p.core->pressEscape();
+    p.start(*it);
+    for (const std::string& line : it->solution)
+        p.type(line);
+    CHECK(p.run->complete());
+}

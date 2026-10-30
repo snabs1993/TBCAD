@@ -1,0 +1,103 @@
+{
+  "id": "5.4",
+  "world": 5,
+  "title": {
+    "en": "Round things",
+    "th": "วัดวงกลมและมุม"
+  },
+  "goal": {
+    "en": "The column's radius, the pipe's diameter and the roof's angle",
+    "th": "รัศมีเสา เส้นผ่านศูนย์กลางท่อ และมุมหลังคา"
+  },
+  "tip": {
+    "en": "Radius dimensions start with R, diameters with Ø.",
+    "th": "ขนาดรัศมีขึ้นต้นด้วย R เส้นผ่านศูนย์กลางขึ้นต้นด้วย Ø"
+  },
+  "par": 3,
+  "setup": [
+    "CIRCLE;0,0;300",
+    "CIRCLE;1500,0;100",
+    "LINE;3000,0;5000,0;",
+    "LINE;3000,0;4732.0508,1000;",
+    "ZOOM;W;-1000,-1000;5500,2000"
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Radius (DIMRADIUS or รัศมี): click the big circle, then click where the text goes.",
+        "th": "รัศมี (DIMRADIUS หรือ รัศมี): คลิกวงกลมใหญ่ แล้วคลิกตำแหน่งวางตัวเลข"
+      },
+      "hint": {
+        "en": "Click right on the circle's line.",
+        "th": "คลิกบนเส้นวงกลมพอดี"
+      },
+      "checks": [
+        {
+          "type": "dimension",
+          "dim": "radius",
+          "value": 300
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Diameter (DIMDIAMETER or เส้นผ่านศูนย์กลาง): click the small circle, then place it.",
+        "th": "เส้นผ่านศูนย์กลาง (DIMDIAMETER หรือ เส้นผ่านศูนย์กลาง): คลิกวงกลมเล็ก แล้วคลิกวาง"
+      },
+      "hint": {
+        "en": "Zoom in with the wheel if the circle is small.",
+        "th": "หมุนลูกกลิ้งซูมเข้าถ้าวงกลมเล็กไป"
+      },
+      "checks": [
+        {
+          "type": "dimension",
+          "dim": "diameter",
+          "value": 200
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Angle (DIMANGULAR or ขนาดมุม): click the two roof lines, then place the arc.",
+        "th": "ขนาดมุม (DIMANGULAR หรือ ขนาดมุม): คลิกเส้นหลังคาทั้งสองเส้น แล้วคลิกวางเส้นโค้ง"
+      },
+      "hint": {
+        "en": "Place it between the lines.",
+        "th": "วางไว้ระหว่างสองเส้น"
+      },
+      "checks": [
+        {
+          "type": "dimension",
+          "dim": "radius",
+          "value": 300
+        },
+        {
+          "type": "dimension",
+          "dim": "diameter",
+          "value": 200
+        },
+        {
+          "type": "dimension",
+          "dim": "angular",
+          "value": 30
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "DIMRADIUS;<Click 0 300>;500,500",
+    "DIMDIAMETER;<Click 1500 100>;1800,400",
+    "DIMANGULAR;<Click 4500 0>;<Click 4299.04 750>;5200,500"
+  ],
+  "wrong": [
+    [
+      "DIMRADIUS;<Click 0 300>;500,500",
+      "DIMRADIUS;<Click 1500 100>;1800,400",
+      "DIMANGULAR;<Click 4500 0>;<Click 4299.04 750>;5200,500"
+    ],
+    [
+      "DIMRADIUS;<Click 0 300>;500,500",
+      "DIMDIAMETER;<Click 1500 100>;1800,400"
+    ]
+  ]
+}

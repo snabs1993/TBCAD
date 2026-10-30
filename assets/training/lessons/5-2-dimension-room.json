@@ -1,0 +1,112 @@
+{
+  "id": "5.2",
+  "world": 5,
+  "title": {
+    "en": "Dimension a room",
+    "th": "ใส่ขนาดห้อง"
+  },
+  "goal": {
+    "en": "Show the room's width and depth",
+    "th": "ใส่ขนาดความกว้างและความลึกของห้อง"
+  },
+  "tip": {
+    "en": "Dimensions measure for you: never type the number yourself.",
+    "th": "ขนาดวัดค่าให้เอง ไม่ต้องพิมพ์ตัวเลขเอง"
+  },
+  "par": 2,
+  "setup": [
+    "RECTANGLE;0,0;@4000,3500",
+    "ZOOM;W;-1500,-1500;5000,4500"
+  ],
+  "ghosts": [
+    {
+      "dot": [
+        0,
+        0
+      ]
+    },
+    {
+      "dot": [
+        4000,
+        0
+      ]
+    },
+    {
+      "dot": [
+        0,
+        3500
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Linear dimension (DLI or ขนาดเส้นตรง): click the two bottom corners.",
+        "th": "ขนาดเส้นตรง (DLI หรือ ขนาดเส้นตรง): คลิกมุมล่างทั้งสองมุม"
+      },
+      "hint": {
+        "en": "The endpoint snap shows at each corner.",
+        "th": "ตัวจับจุดปลายจะขึ้นที่แต่ละมุม"
+      },
+      "checks": [
+        {
+          "type": "prompt",
+          "command": "DIMLINEAR",
+          "contains": "dimension line location"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Move the mouse down and click to place it.",
+        "th": "เลื่อนเมาส์ลงแล้วคลิกวาง"
+      },
+      "hint": {
+        "en": "Leave some room below the wall.",
+        "th": "เว้นระยะห่างจากผนังเล็กน้อย"
+      },
+      "checks": [
+        {
+          "type": "dimension",
+          "dim": "linear",
+          "value": 4000
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Do the same for the left wall.",
+        "th": "ทำแบบเดียวกันกับผนังซ้าย"
+      },
+      "hint": {
+        "en": "Click the two left corners, then click to the left.",
+        "th": "คลิกมุมซ้ายทั้งสองมุม แล้วคลิกวางทางซ้าย"
+      },
+      "checks": [
+        {
+          "type": "dimension",
+          "dim": "linear",
+          "value": 4000
+        },
+        {
+          "type": "dimension",
+          "dim": "linear",
+          "value": 3500
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "DLI;0,0;4000,0;2000,-700",
+    "DLI;0,0;0,3500;-700,1750"
+  ],
+  "wrong": [
+    [
+      "DLI;0,0;4000,0;2000,-700"
+    ],
+    [
+      "DLI;0,0;3900,0;2000,-700",
+      "DLI;0,0;0,3500;-700,1750"
+    ]
+  ]
+}

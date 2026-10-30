@@ -1,0 +1,103 @@
+{
+  "id": "5.1",
+  "world": 5,
+  "title": {
+    "en": "Room names",
+    "th": "ชื่อห้อง"
+  },
+  "goal": {
+    "en": "Write the name of the big room in it",
+    "th": "เขียนชื่อห้องในห้องใหญ่"
+  },
+  "tip": {
+    "en": "Thai text works everywhere: in text, notes and dimensions.",
+    "th": "ใช้ภาษาไทยได้ทุกที่ ทั้งข้อความ โน้ต และขนาด"
+  },
+  "par": 1,
+  "setup": [
+    "RECTANGLE;0,0;@4000,3000",
+    "RECTANGLE;4000,0;@2000,3000",
+    "ZOOM;W;-500,-500;6500,3500"
+  ],
+  "ghosts": [
+    {
+      "dot": [
+        1300,
+        1300
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Text (DT or ตัวอักษร), then click the green dot.",
+        "th": "Text (DT หรือ ตัวอักษร) แล้วคลิกจุดเขียว"
+      },
+      "hint": {
+        "en": "Type DT and press Enter.",
+        "th": "พิมพ์ DT แล้วกด Enter"
+      },
+      "checks": [
+        {
+          "type": "prompt",
+          "command": "TEXT",
+          "contains": "height"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Type 250 for the height and Enter, then 0 for the angle and Enter.",
+        "th": "พิมพ์ความสูง 250 กด Enter แล้วพิมพ์มุม 0 กด Enter"
+      },
+      "hint": {
+        "en": "Height is in millimetres on the drawing.",
+        "th": "ความสูงเป็นมิลลิเมตรในแบบ"
+      },
+      "checks": [
+        {
+          "type": "prompt",
+          "command": "TEXT",
+          "contains": "Enter text"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Type ห้องนอน (or Bedroom) and press Enter.",
+        "th": "พิมพ์ ห้องนอน แล้วกด Enter"
+      },
+      "hint": {
+        "en": "Any name will do.",
+        "th": "ใช้ชื่ออะไรก็ได้"
+      },
+      "checks": [
+        {
+          "type": "text",
+          "height": 250,
+          "box": [
+            [
+              0,
+              0
+            ],
+            [
+              4000,
+              3000
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "DT;1300,1300;250;0;ห้องนอน"
+  ],
+  "wrong": [
+    [
+      "DT;1300,1300;100;0;ห้องนอน"
+    ],
+    [
+      "DT;4500,1300;250;0;ห้องนอน"
+    ]
+  ]
+}

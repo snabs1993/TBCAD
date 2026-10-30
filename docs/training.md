@@ -37,7 +37,8 @@ every command start and end, and every undo and redo, together with how the comm
   `{"polyline": [[x,y,bulge]...], "closed": true}` (the bulge is optional).
 - A step is done when all its checks pass; a step without checks is done when a later one is.
   Done steps stay done, and a later step that passes ticks off the steps before it, so a user who
-  takes another route still finishes. The last step must have checks: they are the goal.
+  takes another route still finishes. The last step must have checks, and they must hold the
+  whole goal: a lesson is complete as soon as its last step passes.
 
 ## Checks
 
@@ -59,12 +60,21 @@ resolved). Counts: `equals`, or `min` (default 1) and `max`.
 | `selection` | the selection has `equals` objects and all pass the filters |
 | `view` | `box` is in view and fills at least `minFill` of its width or height |
 | `prompt` | `command` is running and its prompt contains `contains` |
+| `arc` | an arc with `center` / `radius` |
+| `text` | a text, multiline text or leader note (not empty) that contains `contains`, with `height`, starting inside `box`; for a leader, `tip`: a box one of its arrows points into |
+| `dimension` | a dimension of kind `dim` (`linear`, `aligned`, `radius`, `diameter`, `angular`) that measures `value` (degrees for `angular`) |
+| `object` | an object that passes the filters, whose extents are `box` |
 
 ## Tests
 
 In `solution` and `wrong` (only there) a few parts stand for what is not typed: `!LINE` picks
-LINE from a button (`AppCore::startCommand`), `<Esc>` presses Esc and `<Drag x0 y0 x1 y1>` drags a
+LINE from a button (`AppCore::startCommand`), `<Esc>` presses Esc, `<Click x y>` clicks a drawing
+point (to pick an object, at a prompt or with no command running) and `<Drag x0 y0 x1 y1>` drags a
 selection box between two drawing points (left to right is a window, right to left a crossing).
+A part that is empty after a command has ended is Enter, which repeats the last command.
+
+Settings a command remembers between drawings (the Fillet radius and the like) belong in `setup`
+when a lesson depends on them, as the last line: `"FILLET;R;0"` (setup ends any running command).
 
 `tbcad_training_tests` plays every lesson file with the real commands: the starting drawing must
 not pass, the solution must pass within par, and every wrong attempt must fail. Add a solution

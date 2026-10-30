@@ -216,7 +216,7 @@ public:
             dim::refresh(ctx.doc(), d);
             Entity e;
             e.data = Indirect<DimensionData>(std::move(d));
-            applyAnnotativeDefault(ctx.doc().header(), e);
+            applyCurrentProperties(ctx.doc().header(), e);  // layer (DIMLAYER), colour, ...
             ctx.setUndoLabel(std::string(ctx.commandName()));
             auto id = ctx.tx().add(std::move(e));
             if (!id) {

@@ -53,6 +53,37 @@ TEST_CASE("DIMCONTINUE chains from the second extension line, same dimension lin
     CHECK(f.dims().size() == 1);
 }
 
+TEST_CASE("DIMCONTINUE and DIMBASELINE dimensions take the current layer and colour") {
+    Chain f;
+    {
+        Transaction tx = f.doc.begin("current");
+        Layer l;
+        l.name = "DIMS";
+        const LayerId dims = tx.addLayer(l).value();
+        REQUIRE(tx.modifyHeader([&](Header& h) {
+                      h.currentLayer = dims;
+                      h.currentColor = Color::index(3);
+                  })
+                    .ok());
+        tx.commit();
+    }
+    REQUIRE(f.host->run("DIMLINEAR", {"0,0", "100,0", "50,-30"}).finished);
+    REQUIRE(f.host->run("DIMCONTINUE", {"250,0", ScriptItem::enter()}).finished);
+    REQUIRE(f.host->run("DIMBASELINE", {"400,0", ScriptItem::enter()}).finished);
+    int n = 0;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (!entityAs<DimensionData>(e))
+            return;
+        ++n;
+        const Layer* l = f.doc.layer(e.common.layer);
+        REQUIRE(l);
+        CHECK(l->name == "DIMS");
+        CHECK(e.common.color.kind == ColorKind::Index);
+        CHECK(e.common.color.indexValue() == 3);
+    });
+    CHECK(n == 3);
+}
+
 TEST_CASE("DIMBASELINE stacks dimensions from the first extension line") {
     Chain f;
     REQUIRE(f.host->run("DIMLINEAR", {"0,0", "100,0", "50,-30"}).finished);
