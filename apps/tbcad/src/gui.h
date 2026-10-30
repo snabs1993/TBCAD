@@ -6,12 +6,14 @@
 #include <filesystem>
 #include <functional>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "file_browser.h"
+#include "practice.h"
 #include "settings_dialog.h"
 #include "tbcad/core/color.h"
 #include "tbcad/platform/external_link.h"
@@ -130,8 +132,11 @@ public:
     // Tests: stands in for the native Open / Save dialogs (they cannot be answered there) and runs
     // where one would be shown, so a test can type into the app while "the dialog is up".
     std::function<std::optional<std::filesystem::path>()> fileDialogForTests{};
+    // Practice mode (Help > Practice Mode).
+    Practice& practice() { return *practice_; }
 
 private:
+    std::unique_ptr<Practice> practice_;
     // CloseAll closes every drawing except the one `keepDoc_` names (0 = none): CLOSEALL and the
     // tab menu's "Close Other Drawings".
     enum class Pending { None, Close, Exit, CloseAll };

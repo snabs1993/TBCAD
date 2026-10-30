@@ -1,5 +1,8 @@
 #pragma once
 
+#include <doctest/doctest.h>
+
+#include <cstdio>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -50,17 +53,32 @@ struct Practice {
 
     // Draws the starting drawing, then starts listening.
     void start(const Lesson& lesson) {
-        for (const std::string& line : lesson.setup)
-            core->submitScript(line);
+        core->newScratchDocument("Practice " + lesson.id);
+        core->runSetup(lesson.setup);
         run = std::make_unique<LessonRun>(lesson);
         run->update(facts());
     }
 
-    // Like AppCore::submitScript, with the steps checked after every part.
+    // Like AppCore::submitScript, with the steps checked after every part. A few parts stand for
+    // what is not typed: "!LINE" picks LINE from a button, "<Esc>" presses Esc and
+    // "<Drag x0 y0 x1 y1>" drags a selection box between two drawing points.
     void type(const std::string& script) {
         for (std::size_t at = 0; at <= script.size();) {
             const std::size_t end = script.find(';', at);
-            core->submitText(script.substr(at, end == std::string::npos ? end : end - at));
+            const std::string part = script.substr(at, end == std::string::npos ? end : end - at);
+            if (part.size() > 1 && part[0] == '!') {
+                core->startCommand(part.substr(1));
+            } else if (part == "<Esc>") {
+                core->pressEscape();
+            } else if (part.rfind("<Drag ", 0) == 0) {
+                double x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+                REQUIRE(std::sscanf(part.c_str(), "<Drag %lf %lf %lf %lf>", &x0, &y0, &x1, &y1) ==
+                        4);
+                const render::Camera2D& cam = core->camera();
+                core->dragSelect(cam.worldToScreen({x0, y0}), cam.worldToScreen({x1, y1}), {});
+            } else {
+                core->submitText(part);
+            }
             run->update(facts());
             if (end == std::string::npos)
                 break;

@@ -41,6 +41,7 @@
 #include "tbcad/ui/customize.h"
 #include "tbcad/ui/selection.h"
 #include "tbcad/ui/settings_model.h"
+#include "tbcad/ui/thai_words.h"
 #include "tbcad/xref/xref.h"
 
 namespace tbcad::ui {
@@ -128,6 +129,8 @@ struct AppCore::Session {
     fs::path file{};
     std::uint64_t savedRevision = 0;
     std::string readOnlyFormat{};  // "DWG" while the drawing came from a read-only format
+    std::string scratchTitle{};    // set for a practice drawing (newScratchDocument)
+    bool scratch() const { return !scratchTitle.empty() && file.empty(); }
     std::string openReportFormat{};
     std::string openReport{};  // DWGREPORT text of the reader's notices (foreign files)
     // The drawing file is marked as open here; the stamp is its modification time when this
@@ -219,6 +222,7 @@ AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
     keybindings_.declare("view.cleanScreen", "F11");
     keybindings_.declare("view.cleanScreenAlt", "Ctrl+0");  // AutoCAD's chord for the same
     keybindings_.declare("help.quickStart", "F1");
+    keybindings_.declare("help.practice", "");
     keybindings_.declare("tools.settings", "");
     if (auto r = keybindings_.load(paths_.keybindingsFile()); r) {
         for (auto& w : r.value())
@@ -653,6 +657,23 @@ void AppCore::adoptDocument(std::unique_ptr<Document> doc) {
         addSession(std::move(doc), {});
 }
 
+void AppCore::newScratchDocument(const std::string& title) {
+    newDocument();
+    session_->scratchTitle = title.empty() ? std::string("Practice") : title;
+}
+
+void AppCore::runSetup(const std::vector<std::string>& scriptLines) {
+    quiet_ = true;
+    for (const std::string& line : scriptLines)
+        submitScript(line);
+    for (int i = 0; i < 16 && runner().active(); ++i)
+        pressEscape();
+    quiet_ = false;
+    clearSelection();
+    session_->undo.clear();
+    session_->savedRevision = session_->doc.revision();
+}
+
 void AppCore::addSession(std::unique_ptr<Document> doc, fs::path file) {
     if (!slots_.empty() && isPristine()) {
         installSession(std::move(doc), std::move(file));
@@ -729,6 +750,8 @@ std::string AppCore::documentTitle(std::size_t index) const {
     if (index >= slots_.size())
         return {};
     const Session& s = *slots_[index].session;
+    if (s.scratch())
+        return s.scratchTitle;
     std::string name = s.file.empty() ? std::string("Untitled") : s.file.filename().string();
     return s.readOnlyFormat.empty() ? name : name + " [Read-only]";
 }
@@ -774,7 +797,7 @@ bool AppCore::documentModified(std::size_t index) const {
     if (index >= slots_.size())
         return false;
     const Session& s = *slots_[index].session;
-    return s.doc.revision() != s.savedRevision;
+    return !s.scratch() && s.doc.revision() != s.savedRevision;
 }
 
 bool AppCore::anyDocumentModified() const {
@@ -814,7 +837,7 @@ const TabPreview& AppCore::layoutPreview(const std::string& layoutName) {
 }
 
 bool AppCore::isPristine() const {
-    return session_ && session_->file.empty() && !modified() &&
+    return session_ && session_->file.empty() && !modified() && !session_->scratch() &&
            session_->doc.modelSpaceCount() == 0;
 }
 
@@ -881,7 +904,11 @@ const fs::path& AppCore::file() const {
     return session_->file;
 }
 bool AppCore::modified() const {
-    return session_->doc.revision() != session_->savedRevision;
+    return !session_->scratch() && session_->doc.revision() != session_->savedRevision;
+}
+
+bool AppCore::isScratch() const {
+    return session_ && session_->scratch();
 }
 
 // ---- recovery / shutdown -------------------------------------------------------------------
@@ -1141,7 +1168,7 @@ void AppCore::shutdown() {
 // a big drawing.
 bool AppCore::startAutosave(DocSlot& slot) {
     Session& ses = *slot.session;
-    if (slot.autosaveJob.valid() || ses.doc.revision() == ses.savedRevision ||
+    if (slot.autosaveJob.valid() || ses.scratch() || ses.doc.revision() == ses.savedRevision ||
         slot.autosavedRevision == ses.doc.revision())
         return false;
     if (!platform::ensureDirectory(paths_.autosaveDir()))
@@ -1949,6 +1976,8 @@ Result<void> AppCore::saveAs(const fs::path& requested) {
 }
 
 std::string AppCore::displayName() const {
+    if (session_->scratch())
+        return session_->scratchTitle;
     std::string name =
         session_->file.empty() ? std::string("Untitled") : session_->file.filename().string();
     return readOnlyOrigin() ? name + " [Read-only]" : name;
@@ -2002,6 +2031,8 @@ std::string AppCore::redoLabel() const {
 // ---- command line ------------------------------------------------------------------------------
 
 void AppCore::print(std::string_view message) {
+    if (quiet_)
+        return;
     platform::recordCommandLine(std::string(message));
     if (logFile_.is_open()) {
         logFile_ << message << '\n';
@@ -2219,7 +2250,9 @@ void AppCore::submitText(std::string_view text) {
         return;
     }
     startWord_ = words[0];
-    const cmd::SubmitResult started = run.submit(cmd::Input::typed(words[0]));
+    // A Thai word for a command ("เส้น") starts it.
+    const char* thai = registry_.find(words[0]) ? nullptr : commandForThaiWord(words[0]);
+    const cmd::SubmitResult started = run.submit(cmd::Input::typed(thai ? thai : words[0]));
     startWord_.clear();
     if (started == cmd::SubmitResult::UnknownCommand)
         return;

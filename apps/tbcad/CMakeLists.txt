@@ -16,7 +16,8 @@ set(_tbcad_gui_sources
   src/key_map.cpp
   src/settings_dialog.cpp
   src/file_browser.cpp
-  src/window_link.cpp)
+  src/window_link.cpp
+  src/practice.cpp)
 if(WIN32)
   # Version info and icon (packaging/windows/tbcad.rc.in).
   enable_language(RC)
@@ -46,7 +47,7 @@ if(GIT_FOUND)
 endif()
 
 set(_tbcad_app_libs
-  tbcad_appcore tbcad_mcpapp tbcad_plugin tbcad_dwgopen tbcad_drafting tbcad_ui tbcad_platform tbcad_render tbcad_text tbcad_command_registry
+  tbcad_appcore tbcad_training tbcad_mcpapp tbcad_plugin tbcad_dwgopen tbcad_drafting tbcad_ui tbcad_platform tbcad_render tbcad_text tbcad_command_registry
   tbcad::glad tbcad::imgui)
 set(_tbcad_app_defs
   GLFW_INCLUDE_NONE

@@ -1,0 +1,78 @@
+{
+  "id": "1.4",
+  "world": 1,
+  "title": {
+    "en": "Pick objects",
+    "th": "เลือกวัตถุ"
+  },
+  "goal": {
+    "en": "Select only the 3 green circles",
+    "th": "เลือกเฉพาะวงกลมสีเขียว 3 วง"
+  },
+  "tip": {
+    "en": "Esc clears the selection.",
+    "th": "กด Esc เพื่อยกเลิกการเลือก"
+  },
+  "par": 0,
+  "setup": [
+    "COLOR;3",
+    "CIRCLE;0,0;200",
+    "CIRCLE;600,0;200",
+    "CIRCLE;1200,0;200",
+    "COLOR;8",
+    "LINE;-600,-300;1800,-300;",
+    "LINE;-600,300;1800,300;",
+    "LINE;300,-600;300,600;",
+    "LINE;900,-600;900,600;",
+    "COLOR;ByLayer",
+    "ZOOM;W;-800,-800;2000,800"
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Drag a box from left to right around the circles: only objects fully inside are picked.",
+        "th": "ลากกรอบจากซ้ายไปขวาให้ครอบวงกลม จะเลือกเฉพาะวัตถุที่อยู่ในกรอบทั้งชิ้น"
+      },
+      "hint": {
+        "en": "Press the left button left of the circles, hold it, and let go right of them.",
+        "th": "กดปุ่มซ้ายทางซ้ายของวงกลม กดค้างไว้ แล้วปล่อยทางขวาของวงกลม"
+      },
+      "checks": [
+        {
+          "type": "selection",
+          "kind": "circle",
+          "min": 1
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Shift+click anything extra to take it out.",
+        "th": "ถ้าติดชิ้นอื่นมาด้วย กด Shift ค้างแล้วคลิกเพื่อเอาออก"
+      },
+      "hint": {
+        "en": "Right to left picks everything the box touches: try it, then Esc.",
+        "th": "ลากจากขวาไปซ้ายจะเลือกทุกอย่างที่กรอบแตะ ลองดูแล้วกด Esc"
+      },
+      "checks": [
+        {
+          "type": "selection",
+          "kind": "circle",
+          "color": 3,
+          "equals": 3
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "<Drag -250 -250 1450 250>"
+  ],
+  "wrong": [
+    [
+      "<Drag 1450 250 -250 -250>"
+    ],
+    [
+      "<Drag -250 -250 800 250>"
+    ]
+  ]
+}

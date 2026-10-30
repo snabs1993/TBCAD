@@ -239,12 +239,24 @@ constexpr ThaiWord kThaiWords[] = {
     {"ตั้งค่าการวาด", "DSETTINGS"},
     {"ตรวจสอบไฟล์", "AUDIT"},
     {"กู้ไฟล์", "RECOVER"},
+    // Help
+    {"ฝึก", "PRACTICE"},
+    {"ฝึกหัด", "PRACTICE"},
+    {"โหมดฝึก", "PRACTICE"},
+    {"บทเรียน", "PRACTICE"},
 };
 
 }  // namespace
 
 std::span<const ThaiWord> thaiWords() {
     return kThaiWords;
+}
+
+const char* commandForThaiWord(std::string_view word) {
+    for (const ThaiWord& w : kThaiWords)
+        if (word == w.word)
+            return w.command;
+    return nullptr;
 }
 
 }  // namespace tbcad::ui

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <span>
+#include <string_view>
 
 namespace tbcad::ui {
 
@@ -13,5 +14,9 @@ struct ThaiWord {
 };
 
 std::span<const ThaiWord> thaiWords();
+
+// The command a whole Thai word stands for ("เส้น" -> "LINE"); nullptr when it is not one. Typed
+// on the command line and confirmed with Enter, such a word starts its command.
+const char* commandForThaiWord(std::string_view word);
 
 }  // namespace tbcad::ui

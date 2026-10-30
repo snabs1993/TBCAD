@@ -153,6 +153,14 @@ public:
     // "Built-in" = the built-in drawing). A template that cannot be read falls back to the
     // built-in drawing and says so in the history.
     void newDocument();
+    // A drawing to practise in (the practice lessons): a new tab named `title` that never counts
+    // as modified, so it is not autosaved, not offered after a crash and closes without asking.
+    // Once saved under a name it is an ordinary drawing.
+    void newScratchDocument(const std::string& title);
+    bool isScratch() const;
+    // Runs script lines (as submitScript) without echoing them, then forgets their history: Undo
+    // cannot take the drawing back past what they made.
+    void runSetup(const std::vector<std::string>& scriptLines);
     Result<void> openFile(const std::filesystem::path& path);
     // Opens a drawing built in memory (one received from another program, for example) as a new
     // tab; it has no file until the user saves it.
@@ -713,6 +721,7 @@ private:
     bool viewStatePending_ = false;
     enum class EchoMode { Typed, Names, None };
     EchoMode echoMode_ = EchoMode::Typed;
+    bool quiet_ = false;  // runSetup: nothing reaches the command line
     std::string friendlyEcho(const std::string& line) const;
     std::string pendingLayout_;  // layout to show when the running command ends
     void applyPendingLayout();
