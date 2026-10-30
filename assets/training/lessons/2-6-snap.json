@@ -1,0 +1,116 @@
+{
+  "id": "2.6",
+  "world": 2,
+  "title": {
+    "en": "Snap to points",
+    "th": "จับจุด"
+  },
+  "goal": {
+    "en": "Join the middles of the square's sides",
+    "th": "ลากเส้นเชื่อมจุดกึ่งกลางของด้านสี่เหลี่ยม"
+  },
+  "tip": {
+    "en": "Object snap finds ends, middles, centres and crossings for you.",
+    "th": "Object snap หาปลายเส้น จุดกึ่งกลาง จุดศูนย์กลาง และจุดตัดให้เอง"
+  },
+  "par": 1,
+  "setup": [
+    "PLINE;707.1067812,1224.7448714;-1224.7448714,707.1067812;-707.1067812,-1224.7448714;1224.7448714,-707.1067812;Close",
+    "ZOOM;W;-1600,-1500;1600,1500"
+  ],
+  "ghosts": [
+    {
+      "polyline": [
+        [
+          965.9258263,
+          258.8190451
+        ],
+        [
+          -258.8190451,
+          965.9258263
+        ],
+        [
+          -965.9258263,
+          -258.8190451
+        ],
+        [
+          258.8190451,
+          -965.9258263
+        ]
+      ],
+      "closed": true
+    }
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Make sure Object snap is on (F3).",
+        "th": "เปิด Object snap ไว้ (F3)"
+      },
+      "hint": {
+        "en": "The snap button on the status bar is lit when it is on.",
+        "th": "ปุ่ม snap ที่แถบสถานะจะสว่างเมื่อเปิดอยู่"
+      }
+    },
+    {
+      "text": {
+        "en": "Start Line and move near a side until the midpoint mark shows, then click.",
+        "th": "เริ่มคำสั่ง Line เลื่อนเมาส์ไปใกล้ด้านจนเห็นเครื่องหมายจุดกึ่งกลาง แล้วคลิก"
+      },
+      "hint": {
+        "en": "Type MID before clicking to snap only to midpoints.",
+        "th": "พิมพ์ MID ก่อนคลิก เพื่อจับเฉพาะจุดกึ่งกลาง"
+      },
+      "checks": [
+        {
+          "type": "prompt",
+          "command": "LINE",
+          "contains": "next point"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Do the same for all 4 sides, then type C to close.",
+        "th": "ทำแบบเดียวกันครบ 4 ด้าน แล้วพิมพ์ C เพื่อปิดรูป"
+      },
+      "hint": {
+        "en": "A guess by eye is not exact enough: let the snap find the middle.",
+        "th": "กะด้วยตาไม่แม่นพอ ให้ snap หาจุดกึ่งกลางให้"
+      },
+      "checks": [
+        {
+          "type": "path",
+          "closed": true,
+          "tol": 0.01,
+          "path": [
+            [
+              965.9258263,
+              258.8190451
+            ],
+            [
+              -258.8190451,
+              965.9258263
+            ],
+            [
+              -965.9258263,
+              -258.8190451
+            ],
+            [
+              258.8190451,
+              -965.9258263
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "LINE;965.9258263,258.8190451;-258.8190451,965.9258263;-965.9258263,-258.8190451;258.8190451,-965.9258263;C"
+  ],
+  "wrong": [
+    [
+      "LINE;966,259;-259,966;-966,-259;259,-966;C"
+    ]
+  ]
+}

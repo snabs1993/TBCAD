@@ -1,0 +1,97 @@
+{
+  "id": "2.3",
+  "world": 2,
+  "title": {
+    "en": "Length and angle",
+    "th": "ความยาวและมุม"
+  },
+  "goal": {
+    "en": "A 1500 mm line at 30 degrees",
+    "th": "เส้นยาว 1500 มม. ทำมุม 30 องศา"
+  },
+  "tip": {
+    "en": "Angles count anticlockwise from the right: 90 is straight up.",
+    "th": "มุมนับทวนเข็มนาฬิกาจากทางขวา 90 คือชี้ขึ้นตรงๆ"
+  },
+  "par": 1,
+  "setup": [
+    "ZOOM;W;-300,-300;1600,1000"
+  ],
+  "ghosts": [
+    {
+      "line": [
+        [
+          0,
+          0
+        ],
+        [
+          1299.038,
+          750
+        ]
+      ]
+    },
+    {
+      "dot": [
+        0,
+        0
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Start Line and click the green dot.",
+        "th": "เริ่มคำสั่ง Line แล้วคลิกจุดสีเขียว"
+      },
+      "hint": {
+        "en": "Type L, Enter, then 0,0 and Enter.",
+        "th": "พิมพ์ L Enter แล้วพิมพ์ 0,0 Enter"
+      },
+      "checks": [
+        {
+          "type": "prompt",
+          "command": "LINE",
+          "contains": "next point"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Type @1500<30 and press Enter (distance < angle).",
+        "th": "พิมพ์ @1500<30 แล้วกด Enter (ระยะ < มุม)"
+      },
+      "hint": {
+        "en": "The < key is Shift + comma.",
+        "th": "ปุ่ม < คือ Shift + จุลภาค"
+      }
+    },
+    {
+      "text": {
+        "en": "Press Enter to finish.",
+        "th": "กด Enter เพื่อจบ"
+      },
+      "checks": [
+        {
+          "type": "line",
+          "from": [
+            0,
+            0
+          ],
+          "length": 1500,
+          "angle": 30
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "LINE;0,0;@1500<30;"
+  ],
+  "wrong": [
+    [
+      "LINE;0,0;@1500<45;"
+    ],
+    [
+      "LINE;0,0;@1400<30;"
+    ]
+  ]
+}

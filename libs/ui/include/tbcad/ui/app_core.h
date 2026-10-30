@@ -60,6 +60,18 @@ struct Recovery {
     std::uintmax_t sizeBytes = 0;  // size of the autosave file
 };
 
+// What a command listener hears: a command started or ended, or a step of the history was undone
+// or redone.
+struct CommandEvent {
+    enum class Kind { Started, Ended, Undo, Redo };
+    Kind kind = Kind::Started;
+    std::string command{};    // the command's name ("LINE"); empty for Undo / Redo
+    std::string word{};       // Started: the word typed to start it ("L", "LINE"), else empty
+    bool fromButton = false;  // Started: picked from a button, menu, Toolbox or shortcut
+    bool transparent = false;
+    bool cancelled = false;  // Ended: by Esc or a failure
+};
+
 // Shown after a command put geometry outside the working area (non-blocking notice with "Zoom to"
 // and "Undo" actions).
 struct OutOfAreaNotice {
@@ -148,6 +160,9 @@ public:
     // Called with a drawing just before it is closed or replaced (also at exit), while it and
     // everything attached to it still exist: for modules that observe a drawing and must let go.
     void addDocumentClosingHook(std::function<void(Document&)> hook);
+    // Called after every command start and end and every undo or redo, in any drawing: for
+    // observers such as the practice lessons.
+    void addCommandListener(std::function<void(const CommandEvent&)> listener);
 
     // ---- open drawings (tabs) ----------------------------------------------------------------
     std::size_t documentCount() const;
@@ -498,6 +513,8 @@ public:
     std::vector<std::string> takeUiRequests() { return std::exchange(uiRequests_, {}); }
     void promptChanged(const cmd::PromptInfo* prompt) override;
     void feedbackChanged(const cmd::FilterFeedback& feedback) override;
+    void commandStarted(std::string_view name, bool transparent) override;
+    void commandEnded(std::string_view name, bool cancelled) override;
 
 private:
     struct Session;
@@ -591,6 +608,10 @@ private:
     platform::Keybindings keybindings_;
     // Declared before slots_ so that it outlives the sessions.
     std::vector<std::function<void(Document&)>> closingHooks_;
+    std::vector<std::function<void(const CommandEvent&)>> commandListeners_;
+    void notifyCommandListeners(const CommandEvent& e);
+    std::string startWord_{};       // the first word of the line submitText is starting
+    bool startFromButton_ = false;  // inside startCommand
     std::vector<std::string> startupWarnings_{};
 
     render::Scene scene_;

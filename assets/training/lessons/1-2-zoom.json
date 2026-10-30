@@ -1,0 +1,99 @@
+{
+  "id": "1.2",
+  "world": 1,
+  "title": {
+    "en": "Zoom and pan",
+    "th": "ซูมและเลื่อนจอ"
+  },
+  "goal": {
+    "en": "Find the red circle and make it fill the screen",
+    "th": "หาวงกลมสีแดงแล้วซูมให้เต็มจอ"
+  },
+  "tip": {
+    "en": "Double-click the middle button any time to see the whole drawing.",
+    "th": "ดับเบิลคลิกปุ่มกลางเมาส์เมื่อไรก็ได้ เพื่อดูแบบทั้งหมด"
+  },
+  "par": 0,
+  "setup": [
+    "RECTANGLE;0,0;@8000,6000",
+    "COLOR;1",
+    "CIRCLE;20000,15000;50",
+    "COLOR;ByLayer",
+    "ZOOM;W;-1000,-1000;9000,7000"
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Double-click the middle mouse button to see everything.",
+        "th": "ดับเบิลคลิกปุ่มกลางเมาส์เพื่อดูทั้งหมด"
+      },
+      "hint": {
+        "en": "No middle button? Type Z, Enter, E, Enter.",
+        "th": "ไม่มีปุ่มกลาง? พิมพ์ Z กด Enter แล้วพิมพ์ E กด Enter"
+      },
+      "checks": [
+        {
+          "type": "view",
+          "box": [
+            [
+              0,
+              0
+            ],
+            [
+              20050,
+              15050
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Roll the wheel over the red circle to zoom in.",
+        "th": "หมุนลูกกลิ้งเมาส์ที่วงกลมแดงเพื่อซูมเข้า"
+      },
+      "hint": {
+        "en": "Roll forward to zoom in, back to zoom out. The point under the cursor stays put.",
+        "th": "หมุนไปข้างหน้าเพื่อซูมเข้า หมุนกลับเพื่อซูมออก จุดที่เมาส์ชี้จะอยู่ที่เดิม"
+      }
+    },
+    {
+      "text": {
+        "en": "Hold the middle button and drag until the circle fills the screen.",
+        "th": "กดปุ่มกลางค้างแล้วลาก จนวงกลมเต็มจอ"
+      },
+      "hint": {
+        "en": "Or type Z, Enter, W, Enter and drag a box around the circle.",
+        "th": "หรือพิมพ์ Z Enter แล้ว W Enter แล้วลากกรอบรอบวงกลม"
+      },
+      "checks": [
+        {
+          "type": "view",
+          "box": [
+            [
+              19950,
+              14950
+            ],
+            [
+              20050,
+              15050
+            ]
+          ],
+          "minFill": 0.4
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "ZOOM;E",
+    "ZOOM;W;19900,14900;20100,15100"
+  ],
+  "wrong": [
+    [
+      "ZOOM;E"
+    ],
+    [
+      "ZOOM;W;19000,14000;21000,16000"
+    ]
+  ]
+}

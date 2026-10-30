@@ -135,6 +135,10 @@ public:
     // overlay comes with it.
     virtual void promptChanged(const PromptInfo* /*prompt*/) {}
     virtual void feedbackChanged(const FilterFeedback& /*feedback*/) {}
+    // A command started (`transparent`: on top of another one) or ended (`cancelled`: Esc or a
+    // failure). For observers such as the practice lessons.
+    virtual void commandStarted(std::string_view /*name*/, bool /*transparent*/) {}
+    virtual void commandEnded(std::string_view /*name*/, bool /*cancelled*/) {}
 };
 
 // ZOOM Previous: the views left by ZOOM, PAN, VIEW, PLAN and the mouse (newest last, at most

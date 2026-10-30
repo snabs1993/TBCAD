@@ -1964,6 +1964,8 @@ bool AppCore::undo() {
     inUndo_ = true;
     bool ok = runner().undo();
     inUndo_ = false;
+    if (ok)
+        notifyCommandListeners({CommandEvent::Kind::Undo});
     return ok;
 }
 
@@ -1971,6 +1973,8 @@ bool AppCore::redo() {
     inUndo_ = true;
     bool ok = runner().redo();
     inUndo_ = false;
+    if (ok)
+        notifyCommandListeners({CommandEvent::Kind::Redo});
     return ok;
 }
 
@@ -2090,7 +2094,9 @@ void AppCore::startCommand(std::string_view text) {
                 return;
         }
     }
+    startFromButton_ = true;
     submitText(line);
+    startFromButton_ = false;
 }
 
 namespace {
@@ -2212,8 +2218,10 @@ void AppCore::submitText(std::string_view text) {
         showHelp(query);
         return;
     }
-    if (cmd::SubmitResult r = run.submit(cmd::Input::typed(words[0]));
-        r == cmd::SubmitResult::UnknownCommand)
+    startWord_ = words[0];
+    const cmd::SubmitResult started = run.submit(cmd::Input::typed(words[0]));
+    startWord_.clear();
+    if (started == cmd::SubmitResult::UnknownCommand)
         return;
     // Remaining words answer the prompts of the command that just started.
     for (std::size_t i = 1; i < words.size() && run.active(); ++i)
@@ -4203,6 +4211,37 @@ void AppCore::promptChanged(const cmd::PromptInfo* prompt) {
 
 void AppCore::feedbackChanged(const cmd::FilterFeedback& feedback) {
     feedback_ = feedback;
+}
+
+void AppCore::addCommandListener(std::function<void(const CommandEvent&)> listener) {
+    if (listener)
+        commandListeners_.push_back(std::move(listener));
+}
+
+void AppCore::notifyCommandListeners(const CommandEvent& e) {
+    for (const auto& fn : commandListeners_)
+        fn(e);
+}
+
+void AppCore::commandStarted(std::string_view name, bool transparent) {
+    CommandEvent e;
+    e.command = std::string(name);
+    e.transparent = transparent;
+    // Only the command the line itself names: one a script or MULTIPLE starts later is not it.
+    if (!startWord_.empty()) {
+        e.word = startFromButton_ ? std::string() : startWord_;
+        e.fromButton = startFromButton_;
+        startWord_.clear();
+    }
+    notifyCommandListeners(e);
+}
+
+void AppCore::commandEnded(std::string_view name, bool cancelled) {
+    CommandEvent e;
+    e.kind = CommandEvent::Kind::Ended;
+    e.command = std::string(name);
+    e.cancelled = cancelled;
+    notifyCommandListeners(e);
 }
 
 }  // namespace tbcad::ui

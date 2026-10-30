@@ -1,0 +1,123 @@
+{
+  "id": "2.2",
+  "world": 2,
+  "title": {
+    "en": "Draw a room",
+    "th": "วาดห้อง"
+  },
+  "goal": {
+    "en": "A 3000 x 2000 room outline",
+    "th": "กรอบห้องขนาด 3000 x 2000"
+  },
+  "tip": {
+    "en": "REC or สี่เหลี่ยม also start Rectangle.",
+    "th": "พิมพ์ REC หรือ สี่เหลี่ยม ก็เริ่มคำสั่ง Rectangle ได้"
+  },
+  "par": 1,
+  "setup": [
+    "ZOOM;W;-500,-700;3500,2700"
+  ],
+  "ghosts": [
+    {
+      "polyline": [
+        [
+          0,
+          0
+        ],
+        [
+          3000,
+          0
+        ],
+        [
+          3000,
+          2000
+        ],
+        [
+          0,
+          2000
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "dot": [
+        0,
+        0
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Start Rectangle (Draw tab, or type REC).",
+        "th": "เริ่มคำสั่ง Rectangle (แท็บ Draw หรือพิมพ์ REC)"
+      },
+      "hint": {
+        "en": "Type REC and press Enter.",
+        "th": "พิมพ์ REC แล้วกด Enter"
+      },
+      "checks": [
+        {
+          "type": "prompt",
+          "command": "RECTANGLE"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Click the green dot for the first corner.",
+        "th": "คลิกจุดสีเขียวเป็นมุมแรก"
+      },
+      "hint": {
+        "en": "Or type 0,0 and press Enter.",
+        "th": "หรือพิมพ์ 0,0 แล้วกด Enter"
+      },
+      "checks": [
+        {
+          "type": "prompt",
+          "command": "RECTANGLE",
+          "contains": "other corner"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Type @3000,2000 and press Enter.",
+        "th": "พิมพ์ @3000,2000 แล้วกด Enter"
+      },
+      "hint": {
+        "en": "3000 across, 2000 up from the first corner.",
+        "th": "กว้าง 3000 สูง 2000 จากมุมแรก"
+      },
+      "checks": [
+        {
+          "type": "polyline",
+          "closed": true,
+          "vertices": 4,
+          "box": [
+            [
+              0,
+              0
+            ],
+            [
+              3000,
+              2000
+            ]
+          ],
+          "tol": 1
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "RECTANGLE;0,0;@3000,2000"
+  ],
+  "wrong": [
+    [
+      "RECTANGLE;0,0;@3000,1500"
+    ],
+    [
+      "RECTANGLE;100,0;@3000,2000"
+    ]
+  ]
+}

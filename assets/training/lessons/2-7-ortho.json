@@ -1,0 +1,158 @@
+{
+  "id": "2.7",
+  "world": 2,
+  "title": {
+    "en": "Straight with Ortho",
+    "th": "เส้นตรงด้วย Ortho"
+  },
+  "goal": {
+    "en": "Draw a 4-step stair: risers 175, treads 250",
+    "th": "วาดรูปตัดบันได 4 ขั้น ลูกตั้ง 175 ลูกนอน 250"
+  },
+  "tip": {
+    "en": "With Ortho on, point the way and type only the distance.",
+    "th": "เมื่อเปิด Ortho ชี้ทิศด้วยเมาส์ แล้วพิมพ์แค่ระยะ"
+  },
+  "par": 1,
+  "setup": [
+    "ZOOM;W;-300,-200;1300,900"
+  ],
+  "ghosts": [
+    {
+      "polyline": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          175
+        ],
+        [
+          250,
+          175
+        ],
+        [
+          250,
+          350
+        ],
+        [
+          500,
+          350
+        ],
+        [
+          500,
+          525
+        ],
+        [
+          750,
+          525
+        ],
+        [
+          750,
+          700
+        ],
+        [
+          1000,
+          700
+        ]
+      ]
+    },
+    {
+      "dot": [
+        0,
+        0
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Turn Ortho on (F8).",
+        "th": "เปิด Ortho (F8)"
+      },
+      "hint": {
+        "en": "Ortho keeps lines straight across or straight up.",
+        "th": "Ortho บังคับให้เส้นเป็นแนวนอนหรือแนวตั้งเท่านั้น"
+      }
+    },
+    {
+      "text": {
+        "en": "Start Line, click the green dot, point up and type 175, Enter.",
+        "th": "เริ่มคำสั่ง Line คลิกจุดสีเขียว ชี้เมาส์ขึ้นแล้วพิมพ์ 175 Enter"
+      },
+      "hint": {
+        "en": "Or type @0,175 and Enter.",
+        "th": "หรือพิมพ์ @0,175 แล้ว Enter"
+      },
+      "checks": [
+        {
+          "type": "prompt",
+          "command": "LINE",
+          "contains": "next point"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Point right and type 250, Enter. Repeat for every step, then Enter.",
+        "th": "ชี้ไปทางขวาแล้วพิมพ์ 250 Enter ทำซ้ำจนครบทุกขั้น แล้วกด Enter"
+      },
+      "hint": {
+        "en": "Up 175, right 250, four times.",
+        "th": "ขึ้น 175 ไปขวา 250 ทำ 4 รอบ"
+      },
+      "checks": [
+        {
+          "type": "path",
+          "path": [
+            [
+              0,
+              0
+            ],
+            [
+              0,
+              175
+            ],
+            [
+              250,
+              175
+            ],
+            [
+              250,
+              350
+            ],
+            [
+              500,
+              350
+            ],
+            [
+              500,
+              525
+            ],
+            [
+              750,
+              525
+            ],
+            [
+              750,
+              700
+            ],
+            [
+              1000,
+              700
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "LINE;0,0;@0,175;@250,0;@0,175;@250,0;@0,175;@250,0;@0,175;@250,0;"
+  ],
+  "wrong": [
+    [
+      "LINE;0,0;@0,200;@250,0;@0,175;@250,0;@0,175;@250,0;@0,175;@250,0;"
+    ]
+  ]
+}
