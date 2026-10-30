@@ -1,0 +1,88 @@
+# Thai from start to end: a Thai layer, TEXT with stacked vowels and tone marks, the cursor
+# stepping over a whole Thai letter, wrapped MTEXT, a block with a Thai name, save as DXF,
+# open it again and plot to PDF.
+FILEDIA
+0
+@zoom -20 -150 320 60
+-LAYER
+Make
+ผนัง-ใหม่
+Color
+1
+ผนัง-ใหม่
+
+@expect current-layer ผนัง-ใหม่
+TEXTLAYER
+.
+TEXT
+0,0
+8
+0
+ผู้ใหญ่ปั้นน้ำที่นี่ กี่ปี ฤๅษี ญี่ปุ่น ๑๒๓
+@key Escape
+@expect text 1 ผู้ใหญ่ปั้นน้ำ
+@expect on-layer text ผนัง-ใหม่ 1
+# Cursor: type ปั้น, Left once steps over น, type X -> ปั้Xน
+TEXT
+0,-15
+6
+0
+@frames 5
+@type ปั้น
+@key Left
+@type X
+@key Enter
+@key Escape
+@frames 3
+@expect text 1 ปั้Xน
+MTEXT
+0,-30
+150,-100
+@frames 5
+@type ห้องนอนใหญ่ขนาดสี่คูณห้าเมตรพร้อมห้องน้ำในตัวและระเบียงด้านทิศเหนือ ผนังก่ออิฐฉาบปูนเรียบทาสีขาว
+@key ctrl+Enter
+@frames 3
+@expect text 1 ห้องนอนใหญ่
+# Block with a Thai name
+CIRCLE
+250,-60
+15
+TEXT
+240,-62
+4
+0
+ประตู
+@key Escape
+-BLOCK
+ประตู-บานเปิด
+@dragw 230 -80 270 -40
+
+250,-60
+
+@expect insert 1
+INSERT
+ประตู-บานเปิด
+250,-120
+@frames 3
+@expect insert 2
+@shot 11_thai.png
+SAVEAS
+{out}/11_thai.dxf
+@frames 5
+@expect file 11_thai.dxf
+NEW
+@frames 5
+OPEN
+{out}/11_thai.dxf
+@frames 10
+@expect text 1 ผู้ใหญ่ปั้นน้ำ
+@expect text 1 ห้องนอนใหญ่
+@expect on-layer text ผนัง-ใหม่ 2
+@expect insert 2
+@zoom -20 -150 320 60
+@shot 11_thai_reopened.png
+EXPORTPDF
+
+{out}/11_thai.pdf
+@frames 5
+@expect file 11_thai.pdf

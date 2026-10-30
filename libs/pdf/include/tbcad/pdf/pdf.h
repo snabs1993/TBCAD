@@ -96,8 +96,9 @@ public:
     // One glyph of a font made with PdfDocument::addFont, filled with the current fill colour.
     // The matrix (a b c d e f) maps the glyph's em square (1 = one em, y up) to the page (mm).
     // `text` is the character(s) the glyph stands for, used for copying and searching (empty for
-    // the second and later glyphs of one character). Consecutive glyphs share one text object;
-    // any other operation ends it.
+    // the second and later glyphs of one character). A glyph id keeps the first text it was
+    // drawn with; a later use with other text gets an ActualText span. Consecutive glyphs share
+    // one text object; any other operation ends it.
     void showGlyph(int font, std::uint16_t glyphId, std::u32string_view text, double a, double b,
                    double c, double d, double e, double f);
 

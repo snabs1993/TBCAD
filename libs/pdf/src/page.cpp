@@ -6,6 +6,30 @@
 
 namespace tbcad::pdf {
 
+namespace {
+
+// <FEFF...>: a PDF text string in UTF-16BE.
+std::string utf16String(std::u32string_view text) {
+    static const char* d = "0123456789ABCDEF";
+    std::string out = "<FEFF";
+    auto hex4 = [&](unsigned v) {
+        for (int sh = 12; sh >= 0; sh -= 4)
+            out += d[(v >> sh) & 0xF];
+    };
+    for (char32_t cp : text) {
+        if (cp >= 0x10000 && cp <= 0x10FFFF) {
+            cp -= 0x10000;
+            hex4(0xD800 + (cp >> 10));
+            hex4(0xDC00 + (cp & 0x3FF));
+        } else {
+            hex4(cp > 0xFFFF ? 0xFFFD : static_cast<unsigned>(cp));
+        }
+    }
+    return out + ">";
+}
+
+}  // namespace
+
 void Page::endText() {
     if (!inText_)
         return;
@@ -29,17 +53,25 @@ void Page::showGlyph(int font, std::uint16_t glyphId, std::u32string_view text, 
         content_ += formatNumber(v, 6);
         content_ += ' ';
     }
-    content_ += formatNumber(e) + ' ' + formatNumber(f) + " Tm <";
-    static const char* hex = "0123456789ABCDEF";
-    for (int sh = 12; sh >= 0; sh -= 4)
-        content_ += hex[(glyphId >> sh) & 0xF];
-    content_ += "> Tj\n";
+    content_ += formatNumber(e) + ' ' + formatNumber(f) + " Tm ";
+    // The font's ToUnicode map gives one text per glyph. A glyph drawn here for other text (a
+    // Thai consonant that started a cluster elsewhere) or for no text at all (the second glyph
+    // of one character) says so in an ActualText span instead.
     auto& used = glyphsUsed_[font];
     auto it = used.find(glyphId);
     if (it == used.end())
-        used.emplace(glyphId, std::u32string(text));
+        it = used.emplace(glyphId, std::u32string(text)).first;
     else if (it->second.empty() && !text.empty())
         it->second = text;
+    const bool actual = text.empty() || it->second != text;
+    if (actual)
+        content_ += "/Span << /ActualText " + utf16String(text) + " >> BDC ";
+    content_ += '<';
+    static const char* hex = "0123456789ABCDEF";
+    for (int sh = 12; sh >= 0; sh -= 4)
+        content_ += hex[(glyphId >> sh) & 0xF];
+    content_ += "> Tj";
+    content_ += actual ? " EMC\n" : "\n";
 }
 
 void Page::op(std::string_view text) {

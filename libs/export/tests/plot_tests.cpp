@@ -1220,3 +1220,54 @@ TEST_CASE("text plots as real text in the embedded font, also inside a rotated b
         std::filesystem::remove(txt);
     }
 }
+
+TEST_CASE("Thai text copied out of the PDF reads the same as the drawing") {
+    // ป starts the cluster ปั้ in one word and stands alone in another, and น้ำ has more glyphs
+    // than characters: the text read back must still be exactly what was typed.
+    text::registerDisplay();
+    Document doc;
+    // ปั้นน้ำ, ประตู and ผู้ใหญ่.
+    const char* lines[] = {
+        "\xE0\xB8\x9B\xE0\xB8\xB1\xE0\xB9\x89\xE0\xB8\x99"
+        "\xE0\xB8\x99\xE0\xB9\x89\xE0\xB8\xB3",
+        "\xE0\xB8\x9B\xE0\xB8\xA3\xE0\xB8\xB0\xE0\xB8\x95\xE0\xB8\xB9",
+        "\xE0\xB8\x9C\xE0\xB8\xB9\xE0\xB9\x89\xE0\xB9\x83"
+        "\xE0\xB8\xAB\xE0\xB8\x8D\xE0\xB9\x88",
+    };
+    double y = 50;
+    for (const char* line : lines) {
+        Entity e;
+        TextData t;
+        t.position = {10, y};
+        t.height = 5;
+        t.utf8 = line;
+        e.data = t;
+        addEntity(doc, e);
+        y -= 20;
+    }
+    PlotSettings s;
+    auto sheet = buildSheet(doc, s);
+    REQUIRE(sheet.ok());
+    auto pdf = pdfBytes(sheet.value(), false);
+    REQUIRE(pdf.ok());
+    CHECK(pdf.value().find("/ActualText") != std::string::npos);
+
+    if (std::system("pdftotext -v > /dev/null 2>&1") == 0) {
+        const auto dir = std::filesystem::temp_directory_path();
+        const auto file = dir / "tbcad_plot_thai.pdf", txt = dir / "tbcad_plot_thai.txt";
+        {
+            std::ofstream out(file, std::ios::binary);
+            out << pdf.value();
+        }
+        REQUIRE(std::system(("pdftotext -raw \"" + file.string() + "\" \"" + txt.string() + "\"")
+                                .c_str()) == 0);
+        std::ifstream in(txt, std::ios::binary);
+        std::string out((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        for (const char* line : lines) {
+            CAPTURE(out);
+            CHECK(out.find(line) != std::string::npos);
+        }
+        std::filesystem::remove(file);
+        std::filesystem::remove(txt);
+    }
+}
