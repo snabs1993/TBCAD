@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cfloat>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -285,6 +286,14 @@ std::string Gui::actionLabel(const std::string& action) const {
 
 void Gui::setDpiScale(float scale) {
     dpiScale_ = std::max(0.5f, scale);
+    scalePending_ = true;
+    anyActivity_ = true;
+}
+
+void Gui::applyPendingScale() {
+    if (!scalePending_)
+        return;
+    scalePending_ = false;
     const float total = dpiScale_ * static_cast<float>(core_.settings().getNumber("ui.scale", 1.0));
     buildFonts(total);
     applyTheme(theme_, total);
@@ -332,7 +341,8 @@ std::optional<std::filesystem::path> Gui::modalDialog(
         }
     }
 #endif
-    std::optional<std::filesystem::path> picked = fileDialogForTests ? fileDialogForTests() : show();
+    std::optional<std::filesystem::path> picked =
+        fileDialogForTests ? fileDialogForTests() : show();
 #if defined(_WIN32)
     for (HWND hwnd : off)
         EnableWindow(hwnd, TRUE);
@@ -747,8 +757,7 @@ void Gui::rememberFolder(const std::filesystem::path& picked) {
 
 void Gui::doOpen() {
     if (nativeDialogs()) {
-        if (auto p = openDialog( openFilters(), "Open drawing",
-                                              dialogFolder())) {
+        if (auto p = openDialog(openFilters(), "Open drawing", dialogFolder())) {
             rememberFolder(*p);
             doOpenPath(platform::pathToUtf8(*p));
         }
@@ -769,8 +778,7 @@ void Gui::dxfCommandWithPath(const char* command, const std::filesystem::path& p
 void Gui::doImportDxf() {
     static const std::vector<platform::FileFilter> filters = {{"DXF drawings", "*.dxf"}};
     if (nativeDialogs()) {
-        if (auto p =
-                openDialog( filters, "Import DXF", dialogFolder())) {
+        if (auto p = openDialog(filters, "Import DXF", dialogFolder())) {
             rememberFolder(*p);
             dxfCommandWithPath("IMPORTDXF", *p);
         }
@@ -786,8 +794,7 @@ void Gui::doLayoutFromTemplate() {
     static const std::vector<platform::FileFilter> filters = {
         {"Drawings and templates", "*.tbcad;*.dxf"}};
     if (nativeDialogs()) {
-        if (auto p = openDialog( filters, "Layout from template",
-                                              dialogFolder())) {
+        if (auto p = openDialog(filters, "Layout from template", dialogFolder())) {
             rememberFolder(*p);
             core_.submitText("LAYOUT");
             core_.submitText("Template");
@@ -805,8 +812,7 @@ void Gui::doExportDxf() {
     stem.replace_extension(".dxf");
     std::string suggested = stem.filename().string();
     if (nativeDialogs()) {
-        if (auto p = saveDialog( filters, "Export DXF", "dxf",
-                                              suggested, dialogFolder())) {
+        if (auto p = saveDialog(filters, "Export DXF", "dxf", suggested, dialogFolder())) {
             rememberFolder(*p);
             dxfCommandWithPath("EXPORTDXF", *p);
         }
@@ -1212,8 +1218,8 @@ void Gui::doSaveAs() {
     if (platform::pathToUtf8(folder).size() > 200)
         folder.clear();
     if (nativeDialogs()) {
-        if (auto p = saveDialog( drawingFilters(ext == "dxf"),
-                                              "Save drawing as", ext, suggested, folder)) {
+        if (auto p = saveDialog(drawingFilters(ext == "dxf"), "Save drawing as", ext, suggested,
+                                folder)) {
             rememberFolder(*p);
             saveAsPath(*p);
             if (openDxfVersionPrompt_)
@@ -1355,6 +1361,13 @@ void Gui::shortcuts() {
 
 namespace {
 
+// A menu taller than the window scrolls instead of running off the screen (test.10: the end of
+// Commands > Modify could not be reached).
+void capMenuHeight() {
+    const float h = ImGui::GetMainViewport()->WorkSize.y - ImGui::GetFrameHeight() * 2.0f;
+    ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, std::max(h, 120.0f)));
+}
+
 void drawNode(const MenuNode& node, ui::AppCore& core, const platform::Keybindings& keys) {
     for (const MenuNode& child : node.children) {
         if (child.item) {
@@ -1374,9 +1387,12 @@ void drawNode(const MenuNode& node, ui::AppCore& core, const platform::Keybindin
                     core.openPanel("hatch");  // pattern and scale are set in the panel
                 core.startCommand(child.item->command);
             }
-        } else if (ImGui::BeginMenu(child.name.c_str())) {
-            drawNode(child, core, keys);
-            ImGui::EndMenu();
+        } else {
+            capMenuHeight();
+            if (ImGui::BeginMenu(child.name.c_str())) {
+                drawNode(child, core, keys);
+                ImGui::EndMenu();
+            }
         }
     }
 }
@@ -1496,6 +1512,7 @@ void Gui::menuBar() {
             toggle("Quick Rail", "ui.quickRailBar", true);
             toggle("Expert Toolbox (icons only)", "ui.toolbox.expert", false);
             toggle("Recent group in Toolbox", "ui.toolbox.showRecent", false);
+            toggle("Table-style Layers and Properties", "ui.flatTables", true);
             if (ImGui::MenuItem("Classic Menus", nullptr, !flag("ui.compactMenus", true)))
                 core_.setSetting("ui.compactMenus", flag("ui.compactMenus", true) ? "0" : "1");
             toggle("Status Bar", "ui.statusbar", true);
@@ -1575,6 +1592,7 @@ void Gui::menuBar() {
     // brings them back as separate top-level menus.
     const bool compact = flag("ui.compactMenus", true);
     auto topMenu = [&](const std::string& top) {
+        capMenuHeight();
         if (ImGui::BeginMenu(top.c_str())) {
             MenuNode root;
             for (const auto& item : registry_.menuItems()) {
@@ -3592,6 +3610,13 @@ void Gui::commandWindow() {
             ImGui::InputText("##command", &input_, flags, tbcad::app::inputCallback, this);
         const bool submitLine = entered || (spaceSubmit_ && !input_.empty());
         spaceSubmit_ = false;
+        // A Space on the empty line followed in the same frame by typed text and Enter (fast
+        // typing, "␣100,0⏎"): the Space answers the prompt first, then the line the next one
+        // (test.10: MOVE took the base point as a selection corner).
+        if (submitLine && spaceAsEnter_) {
+            spaceAsEnter_ = false;
+            core_.submitText("");
+        }
         if (submitLine) {
             std::string line = input_;
             bool refused = false;
@@ -4197,8 +4222,13 @@ void Gui::startPage(const ViewportRect& rect) {
     // buttons stay put however long the recent list is.
     if (!startPage_ || !core_.isPristine() || core_.documentCount() != 1 || core_.runner().active())
         return;
-    ImGui::SetNextWindowPos(ImVec2(rect.x + rect.w * 0.5f, rect.y + std::min(60.0f, rect.h * 0.1f)),
-                            ImGuiCond_Always, ImVec2(0.5f, 0.0f));
+    const float top = std::min(60.0f, rect.h * 0.1f);
+    ImGui::SetNextWindowPos(ImVec2(rect.x + rect.w * 0.5f, rect.y + top), ImGuiCond_Always,
+                            ImVec2(0.5f, 0.0f));
+    // Inside the drawing area: in a small window it must not cover the command line (test.10);
+    // the wheel scrolls what does not fit.
+    ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0),
+                                        ImVec2(FLT_MAX, std::max(80.0f, rect.h - top - 8.0f)));
     const ImGuiWindowFlags wf = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
                                 ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoDocking |
                                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoNav;
@@ -4669,11 +4699,33 @@ void Gui::panels() {
     fillPanelContext(pc);
     for (const std::string& id : core_.takePanelCloses())
         panelOpen_[id] = false;
+    // The panels that stay (Layers, Properties, Levels) are not counted.
+    auto lasting = [](const std::string& id) {
+        return id == "layers" || id == "properties" || id == "levels";
+    };
     for (const std::string& id : core_.takePanelRequests()) {
         panelOpen_[id] = true;
         for (const auto& panel : registry_.panels())
             if (panel.id == id)
                 focusPanel_ = panel.title;  // bring its tab to the front
+        if (!lasting(id)) {
+            std::erase(panelOrder_, id);
+            panelOrder_.push_back(id);
+        }
+    }
+    // test.10: every command left its panel open as one more tab, until the tab names were one
+    // letter wide. Keep the last four; Esc with nothing else to cancel closes the newest.
+    std::erase_if(panelOrder_, [&](const std::string& id) { return !panelOpen_[id]; });
+    constexpr std::size_t kMaxCommandPanels = 4;
+    while (panelOrder_.size() > kMaxCommandPanels) {
+        panelOpen_[panelOrder_.front()] = false;
+        panelOrder_.erase(panelOrder_.begin());
+    }
+    if (!panelOrder_.empty() && ImGui::IsKeyPressed(ImGuiKey_Escape, false) &&
+        !ImGui::IsAnyItemActive() && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId) &&
+        !core_.runner().active() && core_.selection().empty()) {
+        panelOpen_[panelOrder_.back()] = false;
+        panelOrder_.pop_back();
     }
     // A panel the saved layout has never seen (imgui.ini from an older version, or a panel added
     // later) is docked beside the Object Properties panel instead of floating over the tabs.
@@ -5393,11 +5445,10 @@ ViewportRect Gui::frame() {
             static const std::vector<platform::FileFilter> image = {
                 {"Pictures", "*.png;*.jpg;*.jpeg;*.bmp;*.tif;*.tiff;*.gif;*.tga"}};
             if (nativeDialogs()) {
-                if (auto p = openDialog(
-                                                      kind == "pdf"     ? pdf
-                                                      : kind == "image" ? image
-                                                                        : drawing,
-                                                      "Choose the file to attach", dialogFolder()))
+                if (auto p = openDialog(kind == "pdf"     ? pdf
+                                        : kind == "image" ? image
+                                                          : drawing,
+                                        "Choose the file to attach", dialogFolder()))
                     core_.submitText("\"" + platform::pathToUtf8(*p) + "\"");
                 // A cancelled dialog leaves the command waiting for a typed path.
             } else {
@@ -5411,8 +5462,8 @@ ViewportRect Gui::frame() {
                 {"PNG picture", "*.png"},
                 {"JPEG picture", "*.jpg;*.jpeg"}};
             if (nativeDialogs()) {
-                if (auto p = saveDialog( exportTypes, "Export", "pdf",
-                                                      what.substr(16), dialogFolder())) {
+                if (auto p =
+                        saveDialog(exportTypes, "Export", "pdf", what.substr(16), dialogFolder())) {
                     rememberFolder(*p);
                     core_.submitText("\"" + platform::pathToUtf8(*p) + "\"");
                 }

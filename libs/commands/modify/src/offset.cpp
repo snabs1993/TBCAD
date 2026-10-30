@@ -161,6 +161,10 @@ public:
                 }
                 ctx.checkpoint();
                 const bool onCurrent = getFlag(ctx.host(), kLayerKey, false);
+                // Multiple goes on from the newest copy, one step further each click (test.10:
+                // two clicks on one side made two copies on top of each other).
+                if (multiple && !through && res.value().size() == 1)
+                    source = res.value().front();
                 for (Entity& e : res.value()) {
                     if (onCurrent)
                         e.common.layer = ctx.doc().header().currentLayer;

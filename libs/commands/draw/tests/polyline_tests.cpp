@@ -37,7 +37,7 @@ TEST_CASE("PLINE Undo removes the last vertex") {
     checkVertices(as<PolylineData>(es[0]), {{0, 0}, {100, 0}, {0, 50}});
 }
 
-TEST_CASE("PLINE Width sets the widths of the following segments") {
+TEST_CASE("PLINE Width tapers one segment, the next ones keep the ending width") {
     Fixture f;
     f.host.run("PL", {"0,0", "Width", "2", "4", "100,0", "100,50", ""});
     auto es = f.entities();
@@ -46,7 +46,7 @@ TEST_CASE("PLINE Width sets the widths of the following segments") {
     REQUIRE(pl.v.size() == 3);
     CHECK(close(pl.v[0].startWidth, 2));
     CHECK(close(pl.v[0].endWidth, 4));
-    CHECK(close(pl.v[1].startWidth, 2));
+    CHECK(close(pl.v[1].startWidth, 4));
     CHECK(close(pl.v[1].endWidth, 4));
     CHECK(pl.v[2].startWidth == 0);
 }

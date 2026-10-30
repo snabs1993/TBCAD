@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 
@@ -122,6 +123,22 @@ TEST_CASE("OFFSET Multiple offsets the same object to several sides until Enter"
                                    ScriptItem::enter(), ScriptItem::enter()});
     CHECK(r.finished);
     CHECK(f.count(EntityKind::Line) == 3);
+}
+
+TEST_CASE("OFFSET Multiple steps on from the newest copy (test.10)") {
+    Fixture f;
+    EntityId l = f.add(LineData{{0, 0}, {10, 0}});
+    f.host.run("OFFSET", {"2", ScriptItem::pick(l, {5, 0}), "M", "5,9", "5,9", ScriptItem::enter(),
+                          ScriptItem::enter()});
+    std::vector<double> ys;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* d = entityAs<LineData>(e))
+            ys.push_back(d->a.y);
+    });
+    std::sort(ys.begin(), ys.end());
+    REQUIRE(ys.size() == 3);
+    CHECK(ys[1] == doctest::Approx(2));
+    CHECK(ys[2] == doctest::Approx(4));
 }
 
 TEST_CASE("OFFSET reports a collapse and keeps going") {

@@ -15,6 +15,24 @@
 namespace tbcad::layers {
 
 namespace {
+// ui.flatTables: rows as tight as a spreadsheet, with grid lines between the cells.
+bool gFlat = false;
+ImGuiTableFlags propTableFlags() {
+    return ImGuiTableFlags_SizingStretchProp |
+           (gFlat ? ImGuiTableFlags_BordersInner | ImGuiTableFlags_BordersOuter : 0);
+}
+// Pushes the tight spacing; returns how many style vars to pop.
+int pushFlat() {
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(3, 1));
+    ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(3, 1));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 2));
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+    return 5;
+}
+}  // namespace
+
+namespace {
 
 using namespace ui_detail;
 
@@ -201,7 +219,7 @@ void generalSection(tbcad::ui::PanelContext& ctx, Cache& c) {
 
     if (!ImGui::CollapsingHeader("General", ImGuiTreeNodeFlags_DefaultOpen))
         return;
-    if (ImGui::BeginTable("##general", 2, ImGuiTableFlags_SizingStretchProp)) {
+    if (ImGui::BeginTable("##general", 2, propTableFlags())) {
         ImGui::TableSetupColumn("##k", ImGuiTableColumnFlags_WidthFixed, 90);
         ImGui::TableSetupColumn("##v", ImGuiTableColumnFlags_WidthStretch);
 
@@ -331,7 +349,7 @@ void currentSection(tbcad::ui::PanelContext& ctx) {
         exec(ctx, {"-CURRENT " + keyword, value});
     };
     ImGui::TextDisabled("Nothing selected. New objects get:");
-    if (!ImGui::BeginTable("##current", 2, ImGuiTableFlags_SizingStretchProp))
+    if (!ImGui::BeginTable("##current", 2, propTableFlags()))
         return;
     ImGui::TableSetupColumn("##k", ImGuiTableColumnFlags_WidthFixed, 90);
     ImGui::TableSetupColumn("##v", ImGuiTableColumnFlags_WidthStretch);
@@ -418,7 +436,7 @@ void geometrySection(tbcad::ui::PanelContext& ctx, Cache& c) {
     std::optional<EntityKind> kindInPlay = c.only;
     if (!kindInPlay && c.kinds.size() == 1)
         kindInPlay = c.kinds[0];
-    if (ImGui::BeginTable("##geometry", 2, ImGuiTableFlags_SizingStretchProp)) {
+    if (ImGui::BeginTable("##geometry", 2, propTableFlags())) {
         ImGui::TableSetupColumn("##k", ImGuiTableColumnFlags_WidthFixed, 90);
         ImGui::TableSetupColumn("##v", ImGuiTableColumnFlags_WidthStretch);
         // Words first (contents, style, justify): they are what people edit most on text.
@@ -558,7 +576,7 @@ void assemblySection(tbcad::ui::PanelContext& ctx, Cache& c) {
             ImGui::EndCombo();
         }
     }
-    if (ImGui::BeginTable("##assembly", 2, ImGuiTableFlags_SizingStretchProp)) {
+    if (ImGui::BeginTable("##assembly", 2, propTableFlags())) {
         ImGui::TableSetupColumn("##k", ImGuiTableColumnFlags_WidthFixed, 90);
         ImGui::TableSetupColumn("##v", ImGuiTableColumnFlags_WidthStretch);
         for (std::size_t i = 0; i < ad.params.size(); ++i) {
@@ -654,7 +672,11 @@ void drawBody(tbcad::ui::PanelContext& ctx, bool compact) {
 }  // namespace
 
 void drawPropertiesPanel(tbcad::ui::PanelContext& ctx) {
+    gFlat = ctx.host && ctx.host->setting("ui.flatTables").value_or("1") == "1";
+    const int pushed = gFlat ? pushFlat() : 0;
     drawBody(ctx, false);
+    ImGui::PopStyleVar(pushed);
+    gFlat = false;
 }
 
 void drawQuickProperties(tbcad::ui::PanelContext& ctx) {

@@ -40,6 +40,8 @@ void emitSegment(OverlayMesh& m, Vec2 a, Vec2 b, double w, bool caps, Rgba col) 
     emitTriangle(m, a - n, b + n, b - n, col);
 }
 
+constexpr double kMaxDashesPerSegment = 20000;
+
 // Walks a screen-space polyline emitting solid or dashed segments. The dash phase is
 // continuous across vertices.
 void emitPolyline(OverlayMesh& m, const std::vector<Vec2>& pts, bool closed,
@@ -62,15 +64,27 @@ void emitPolyline(OverlayMesh& m, const std::vector<Vec2>& pts, bool closed,
         if (len <= 0)
             continue;
         const Vec2 dir = (b - a) / len;
+        // Too many dashes to see (a far zoom or a huge line): draw it solid instead.
+        if (len / period > kMaxDashesPerSegment) {
+            emitSegment(m, a, b, st.widthPx, false, st.color);
+            pos += len;
+            continue;
+        }
+        // Each step must move on by at least this much. fmod can return a phase a hair below
+        // a dash or period boundary, and stepping by that hair never ends the loop (test.10:
+        // GRID dots froze the program).
+        const double minStep = std::max(len, period) * 1e-9;
         double t = 0;
         while (t < len) {
-            const double phase = std::fmod(pos + t, period);
-            if (phase < st.dashPx) {
+            double phase = std::fmod(pos + t, period);
+            if (period - phase < minStep)
+                phase = 0;
+            if (phase < st.dashPx - minStep) {
                 const double end = std::min(len, t + (st.dashPx - phase));
                 emitSegment(m, a + dir * t, a + dir * end, st.widthPx, false, st.color);
                 t = end;
             } else {
-                t += period - phase;
+                t += std::max(period - phase, minStep);
             }
         }
         pos += len;

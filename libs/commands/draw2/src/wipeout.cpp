@@ -24,10 +24,10 @@ public:
     cmd::Task run(CommandContext& ctx) override {
         // As AutoCAD: a point starts the outline, Enter takes a polyline.
         cmd::PointOptions first;
-        first.keywords = {"Frames", "Polyline", "Rectangle", "Remove"};
+        first.keywords = {"Frames", "Polyline", "Rectangle", "REmove"};
         first.allowNone = true;
         auto k = co_await ctx.getPoint(
-            "Specify first point or [Frames/Polyline/Rectangle/Remove] <Polyline>", first);
+            "Specify first point or [Frames/Polyline/Rectangle/REmove] <Polyline>", first);
         if (k.status == cmd::Status::None) {
             k.status = cmd::Status::Keyword;
             k.keyword = "Polyline";
@@ -52,7 +52,7 @@ public:
             co_return;
         }
 
-        if (k.status == cmd::Status::Keyword && k.keyword == "Remove") {
+        if (k.status == cmd::Status::Keyword && k.keyword == "REmove") {
             auto sel = co_await ctx.getSelection(
                 "Select wipeouts", cmd::SelectionOptions{.filter = [c = &ctx](const Entity& e) {
                     const auto* p = entityAs<PolylineData>(e);

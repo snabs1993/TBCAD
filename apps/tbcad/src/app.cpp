@@ -1688,6 +1688,7 @@ void App::frame() {
         lastTitle_ = title;
     }
 
+    gui_->applyPendingScale();
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();

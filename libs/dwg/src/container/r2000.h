@@ -56,6 +56,7 @@ struct HeaderVars {
     bool valid = false;
     int insunits = 0;
     double ltscale = 1;
+    int psltscale = -1;  // -1 = not read
     int lunits = 0;
 };
 

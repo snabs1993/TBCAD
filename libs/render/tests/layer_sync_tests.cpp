@@ -47,3 +47,12 @@ TEST_CASE("white and black swap against light and dark backgrounds") {
     CHECK(adaptToBackground(black, lightBg) == black);
     CHECK(adaptToBackground(red, lightBg) == red);
 }
+
+TEST_CASE("pale colours darken on white paper and deep blue lightens on a dark screen") {
+    const Rgba lightBg{255, 255, 255, 255}, darkBg{33, 40, 48, 255};
+    auto luma = [](Rgba c) { return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b; };
+    for (Rgba pale : {Rgba{255, 255, 0, 255}, Rgba{0, 255, 255, 255}, Rgba{170, 255, 170, 255}})
+        CHECK(luma(adaptToBackground(pale, lightBg)) <= 166);
+    CHECK(luma(adaptToBackground(Rgba{0, 0, 255, 255}, darkBg)) >= 69);
+    CHECK(adaptToBackground(Rgba{0, 0, 255, 255}, lightBg) == Rgba{0, 0, 255, 255});
+}

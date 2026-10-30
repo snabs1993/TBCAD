@@ -76,10 +76,12 @@ const BlockDef* blockFromFile(cmd::CommandContext& ctx, const std::string& typed
 // INSERT and MINSERT. MINSERT places the block as a rows x columns array in one object.
 class InsertCommand final : public cmd::Command {
 public:
-    explicit InsertCommand(bool array = false) : array_(array) {}
-    std::string_view name() const override { return array_ ? "MINSERT" : "INSERT"; }
+    explicit InsertCommand(bool array = false, bool typed = false) : array_(array), typed_(typed) {}
+    std::string_view name() const override {
+        return array_ ? "MINSERT" : typed_ ? "-INSERT" : "INSERT";
+    }
     std::vector<std::string> defaultAliases() const override {
-        return array_ ? std::vector<std::string>{} : std::vector<std::string>{"I", "-INSERT"};
+        return array_ || typed_ ? std::vector<std::string>{} : std::vector<std::string>{"I"};
     }
     std::string_view description() const override {
         return array_ ? "Insert a block as a rectangular array" : "Insert a block";
@@ -104,7 +106,9 @@ public:
 
         // In a window the Insert dialog (list of blocks with a preview, scale and rotation) opens
         // to pick from; the name can still be typed. (Not when a panel started this run.)
-        if (!doc.blocks().empty() && source.empty() && !fromPanel && ctx.host().dialogsAvailable())
+        // -INSERT asks everything on the command line.
+        if (!typed_ && !doc.blocks().empty() && source.empty() && !fromPanel &&
+            ctx.host().dialogsAvailable())
             ctx.host().openPanel("insertdlg");
 
         // Block name.
@@ -452,6 +456,7 @@ public:
 
 private:
     bool array_;
+    bool typed_;
 };
 
 // BLOCKSPALETTE: opens the Blocks palette (blocks of this drawing, recent blocks, blocks of another
@@ -493,6 +498,10 @@ std::unique_ptr<cmd::Command> makeMinsertCommand() {
 
 std::unique_ptr<cmd::Command> makeInsertCommand() {
     return std::make_unique<InsertCommand>();
+}
+
+std::unique_ptr<cmd::Command> makeTypedInsertCommand() {
+    return std::make_unique<InsertCommand>(false, true);
 }
 
 }  // namespace tbcad::block_cmds

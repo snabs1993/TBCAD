@@ -25,8 +25,12 @@ double suggestedAnnotationScale(const Document& doc, double pixelMm, bool onShee
     });
     if (!box.empty()) {
         const double extent = std::max(box.width(), box.height());
-        if (std::isfinite(extent) && extent > 0)
+        if (std::isfinite(extent) && extent > 0) {
             wanted = std::max(wanted, extent / 160.0 / base);
+            // Seen from far away a small drawing must not get text as big as itself (test.10:
+            // a 1 m part zoomed out got 1:100 dimensions that covered the screen).
+            wanted = std::min(wanted, extent / 80.0 / base);
+        }
     }
     if (wanted < 8)
         return 1;

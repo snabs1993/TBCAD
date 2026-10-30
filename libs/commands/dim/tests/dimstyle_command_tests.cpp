@@ -183,6 +183,21 @@ TEST_CASE("the first dimension seen from far away gets a scaled style so its tex
     CHECK(g.doc.dimStyles().size() == 1);
 }
 
+TEST_CASE("a small drawing seen from far away keeps dimensions that fit it (test.10)") {
+    Fixture f;
+    f.host->setView({{0, 0}, 14.0, {900, 600}});  // the zoom of a new, empty drawing
+    {
+        auto tx = f.doc.begin("part");
+        Entity a;
+        a.data = LineData{{0, 0}, {1000, 0}};
+        REQUIRE(tx.add(std::move(a)));
+        tx.commit();
+    }
+    f.host->run("DIMLINEAR", {"0,0", "1000,0", "500,-100"});
+    const DimStyle& cur = *f.doc.dimStyle(f.doc.header().currentDimStyle);
+    CHECK(cur.overallScale * cur.textHeight <= 1000.0 / 80.0 + 1e-9);
+}
+
 TEST_CASE("without a view a big drawing still gets readable dimension text") {
     Fixture f;  // a script: no view, but a 20 m plan
     {

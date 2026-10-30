@@ -36,6 +36,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeBTestBlockCommand());
     (void)registry.add(makeBAttOrderCommand());
     (void)registry.add(makeInsertCommand());
+    (void)registry.add(makeTypedInsertCommand());
     (void)registry.add(makeBlocksPaletteCommand());
     (void)registry.add(makeBlocksPaletteCloseCommand());
     (void)registry.add(makeMinsertCommand());

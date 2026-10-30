@@ -97,6 +97,23 @@ TEST_CASE("dashed lines are emitted as separate dashes with the right coverage")
     CHECK(covered == doctest::Approx(60));
 }
 
+TEST_CASE("grid-dot dashes whose period rounds badly still finish") {
+    // test.10: a 1.5 px dash every 37.3 px froze the program; fmod returned a phase a hair
+    // below the period and the walk stepped by that hair forever.
+    Overlay o;
+    o.line(Space::Screen, {0, 50}, {37.3 * 100.3, 50},
+           OverlayStyle{{0, 255, 0, 255}, 1.0, 1.5, 37.3 - 1.5});
+    OverlayMesh m = o.build(camera());
+    CHECK(m.vertices.size() / 6 >= 100);
+    CHECK(m.vertices.size() / 6 <= 110);
+}
+
+TEST_CASE("a dashed line with too many dashes is drawn solid") {
+    Overlay o;
+    o.line(Space::Screen, {0, 50}, {1000, 50}, OverlayStyle{{0, 255, 0, 255}, 1.0, 0.02, 0.02});
+    CHECK(o.build(camera()).vertices.size() == 6);
+}
+
 TEST_CASE("dash phase continues across polyline vertices") {
     Overlay o;
     const Vec2 pts[] = {{0, 0}, {25, 0}, {25, 25}};

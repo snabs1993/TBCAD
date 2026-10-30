@@ -90,14 +90,21 @@ LONG WINAPI onException(EXCEPTION_POINTERS* info) {
         auto write = reinterpret_cast<MiniDumpWriteDumpFn>(
             reinterpret_cast<void*>(GetProcAddress(dbg, "MiniDumpWriteDump")));
         std::snprintf(path, sizeof path, "%s\\crash-%s.dmp", g_dir, stamp);
-        HANDLE file = CreateFileA(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+        HANDLE file = CreateFileA(path, GENERIC_READ | GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
                                   FILE_ATTRIBUTE_NORMAL, nullptr);
         if (write && file != INVALID_HANDLE_VALUE) {
+            // MINIDUMP_EXCEPTION_INFORMATION is declared with 4-byte packing: the pointer sits
+            // right after the thread id. With the natural 8-byte gap dbghelp read a wrong pointer
+            // and wrote an empty file (test.10: every .dmp was 0 bytes).
+#pragma pack(push, 4)
             struct ExceptionInfo {
                 DWORD thread;
                 EXCEPTION_POINTERS* pointers;
                 BOOL clientPointers;
-            } ex{GetCurrentThreadId(), info, FALSE};
+            };
+#pragma pack(pop)
+            static_assert(sizeof(void*) != 8 || sizeof(ExceptionInfo) == 16);
+            ExceptionInfo ex{GetCurrentThreadId(), info, FALSE};
             write(GetCurrentProcess(), GetCurrentProcessId(), file, /*MiniDumpNormal*/ 0, &ex,
                   nullptr, nullptr);
         }

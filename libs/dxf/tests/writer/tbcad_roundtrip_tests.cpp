@@ -657,3 +657,43 @@ TEST_CASE("inserts tens of thousands of kilometres out are kept as inserts and d
 }
 
 }  // namespace tbcad::dxf
+
+namespace tbcad::dxf {
+
+TEST_CASE("empty layouts named by LAYOUT objects survive a save and reopen (test.10)") {
+    const std::string src =
+        "  0\nSECTION\n  2\nBLOCKS\n"
+        "  0\nBLOCK\n  2\n*Paper_Space\n 70\n     0\n 10\n0\n 20\n0\n 30\n0\n  0\nENDBLK\n"
+        "  0\nBLOCK\n  2\n*Paper_Space0\n 70\n     0\n 10\n0\n 20\n0\n 30\n0\n  0\nENDBLK\n"
+        "  0\nENDSEC\n"
+        "  0\nSECTION\n  2\nOBJECTS\n"
+        "  0\nLAYOUT\n  5\nA0\n100\nAcDbPlotSettings\n  1\n\n100\nAcDbLayout\n  1\nLayout1\n"
+        " 70\n     1\n 71\n     1\n"
+        "  0\nLAYOUT\n  5\nA2\n100\nAcDbPlotSettings\n  1\n\n100\nAcDbLayout\n  1\nLayout2\n"
+        " 70\n     1\n 71\n     2\n"
+        "  0\nLAYOUT\n  5\nA1\n100\nAcDbPlotSettings\n  1\n\n100\nAcDbLayout\n  1\nModel\n"
+        " 70\n     1\n 71\n     0\n"
+        "  0\nENDSEC\n  0\nEOF\n";
+    auto layoutsOf = [](const std::string& text) {
+        std::vector<std::byte> bytes(text.size());
+        std::memcpy(bytes.data(), text.data(), text.size());
+        Report r;
+        Result<ImportResult> res = importDxf(bytes, ImportOptions{}, r);
+        REQUIRE(res.ok());
+        const auto& custom = res.value().document->header().custom;
+        const auto it = custom.find("tbcad.layouts");
+        std::string out = it == custom.end() ? std::string() : it->second;
+        return std::make_pair(std::move(res.value().document), out);
+    };
+    auto [doc, first] = layoutsOf(src);
+    CHECK(first.find("Layout1") != std::string::npos);
+    CHECK(first.find("Layout2") != std::string::npos);
+    Report r2;
+    Result<ExportResult> out = exportDxf(*doc, ExportOptions{}, r2);
+    REQUIRE(out.ok());
+    auto [again, second] = layoutsOf(out.value().bytes);
+    CHECK(second.find("Layout1") != std::string::npos);
+    CHECK(second.find("Layout2") != std::string::npos);
+}
+
+}  // namespace tbcad::dxf

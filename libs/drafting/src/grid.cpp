@@ -80,12 +80,17 @@ void buildGrid(render::Overlay& overlay, const render::Camera2D& camera, const G
             st.widthPx = 1.0;
             const double i0 = std::floor(ij.min.x / s) * s, i1 = ij.max.x + s;
             const double j0 = std::floor(ij.min.y / s) * s, j1 = ij.max.y + s;
-            for (double j = j0; j <= j1; j += s)
+            // Count the steps: far from the origin `j += s` can round to j and never end.
+            for (int k = 0, n = static_cast<int>((j1 - j0) / s); k <= n; ++k) {
+                const double j = j0 + k * s;
                 overlay.line(render::Space::World, frame.toWorld(b1 * i0 + b2 * j),
                              frame.toWorld(b1 * i1 + b2 * j), st);
-            for (double i = i0; i <= i1; i += s)
+            }
+            for (int k = 0, n = static_cast<int>((i1 - i0) / s); k <= n; ++k) {
+                const double i = i0 + k * s;
                 overlay.line(render::Space::World, frame.toWorld(b1 * i + b2 * j0),
                              frame.toWorld(b1 * i + b2 * j1), st);
+            }
         };
         level(lv.fineMm, minor, lv.fineAlpha);
         level(lv.coarseMm, major, 1.0);
@@ -112,13 +117,16 @@ void buildGrid(render::Overlay& overlay, const render::Camera2D& camera, const G
         };
         const double x0 = std::floor(area.min.x / s) * s, y0 = std::floor(area.min.y / s) * s;
         const double x1 = area.max.x + s, y1 = area.max.y + s;
-        for (double y = y0; y <= y1; y += s) {
+        // Count the steps: far from the origin `y += s` can round to y and never end.
+        for (int k = 0, n = static_cast<int>((y1 - y0) / s); k <= n; ++k) {
+            const double y = y0 + k * s;
             if (skipCoarse && onCoarse(y))
                 continue;
             overlay.line(render::Space::World, frame.toWorld({x0, y}), frame.toWorld({x1, y}), st);
         }
         if (style.lines) {
-            for (double x = x0; x <= x1; x += s) {
+            for (int k = 0, n = static_cast<int>((x1 - x0) / s); k <= n; ++k) {
+                const double x = x0 + k * s;
                 if (skipCoarse && onCoarse(x))
                     continue;
                 overlay.line(render::Space::World, frame.toWorld({x, y0}), frame.toWorld({x, y1}),
