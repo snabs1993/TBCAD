@@ -1,0 +1,183 @@
+{
+  "id": "3.5",
+  "world": 3,
+  "title": {
+    "en": "Corners",
+    "th": "มุม"
+  },
+  "goal": {
+    "en": "Close two open corners and round the third with radius 300",
+    "th": "ปิดมุมที่เปิด 2 มุม และทำมุมที่ 3 ให้มนรัศมี 300"
+  },
+  "tip": {
+    "en": "Radius 0 makes a sharp corner. Hold Shift on the second click for a sharp corner at any radius.",
+    "th": "รัศมี 0 คือมุมแหลม กด Shift ค้างตอนคลิกเส้นที่สองก็ได้มุมแหลมเสมอ"
+  },
+  "par": 2,
+  "setup": [
+    "LINE;0,0;3700,0;",
+    "LINE;0,0;0,2700;",
+    "LINE;4000,300;4000,2700;",
+    "LINE;300,3000;3700,3000;",
+    "ZOOM;W;-1000,-1000;5000,4000",
+    "FILLET;R;0"
+  ],
+  "ghosts": [
+    {
+      "polyline": [
+        [
+          0,
+          0
+        ],
+        [
+          4000,
+          0
+        ],
+        [
+          4000,
+          3000
+        ],
+        [
+          300,
+          3000,
+          0.414214
+        ],
+        [
+          0,
+          2700
+        ]
+      ],
+      "closed": true
+    }
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Fillet (F or มุมมน): type M and Enter to do several corners, then click the bottom line and the right line.",
+        "th": "Fillet (F หรือ มุมมน): พิมพ์ M กด Enter เพื่อทำหลายมุม แล้วคลิกเส้นล่างกับเส้นขวา"
+      },
+      "hint": {
+        "en": "Radius 0 closes the corner.",
+        "th": "รัศมี 0 คือปิดมุมให้ชนกันพอดี"
+      },
+      "checks": [
+        {
+          "type": "line",
+          "from": [
+            0,
+            0
+          ],
+          "to": [
+            4000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Click the right line, then the top line. Enter to finish.",
+        "th": "คลิกเส้นขวา แล้วคลิกเส้นบน กด Enter เพื่อจบ"
+      },
+      "hint": {
+        "en": "Click each line on the part you want to keep.",
+        "th": "คลิกแต่ละเส้นตรงส่วนที่อยากเก็บไว้"
+      },
+      "checks": [
+        {
+          "type": "line",
+          "from": [
+            4000,
+            0
+          ],
+          "to": [
+            4000,
+            3000
+          ]
+        },
+        {
+          "type": "line",
+          "from": [
+            300,
+            3000
+          ],
+          "to": [
+            4000,
+            3000
+          ]
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Fillet again: type R, Enter, 300, Enter, then click the top line and the left line.",
+        "th": "เรียก Fillet อีกครั้ง พิมพ์ R กด Enter พิมพ์ 300 กด Enter แล้วคลิกเส้นบนกับเส้นซ้าย"
+      },
+      "hint": {
+        "en": "R is Radius.",
+        "th": "R คือรัศมี (Radius)"
+      },
+      "checks": [
+        {
+          "type": "arc",
+          "center": [
+            300,
+            2700
+          ],
+          "radius": 300
+        },
+        {
+          "type": "count",
+          "kind": "arc",
+          "equals": 1
+        },
+        {
+          "type": "line",
+          "from": [
+            0,
+            0
+          ],
+          "to": [
+            4000,
+            0
+          ]
+        },
+        {
+          "type": "line",
+          "from": [
+            4000,
+            0
+          ],
+          "to": [
+            4000,
+            3000
+          ]
+        },
+        {
+          "type": "line",
+          "from": [
+            300,
+            3000
+          ],
+          "to": [
+            4000,
+            3000
+          ]
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "F;M;<Click 2000 0>;<Click 4000 1500>;<Click 4000 1500>;<Click 2000 3000>;",
+    "F;R;300;<Click 2000 3000>;<Click 0 1500>"
+  ],
+  "wrong": [
+    [
+      "F;M;<Click 2000 0>;<Click 4000 1500>;<Click 4000 1500>;<Click 2000 3000>;",
+      "F;R;200;<Click 2000 3000>;<Click 0 1500>"
+    ],
+    [
+      "F;R;300;<Click 2000 3000>;<Click 0 1500>"
+    ]
+  ]
+}

@@ -56,6 +56,11 @@ bool matchesFilters(const Check& c, const Entity& e, const Document& doc) {
     return true;
 }
 
+bool inBox(const BBox2& b, Vec2 p, double tol) {
+    return p.x >= b.min.x - tol && p.y >= b.min.y - tol && p.x <= b.max.x + tol &&
+           p.y <= b.max.y + tol;
+}
+
 template <class Fn>
 void forEachModelEntity(const Document& doc, Fn&& fn) {
     for (EntityId id : doc.modelSpace())
@@ -310,6 +315,103 @@ bool passes(const Check& c, const Facts& f) {
             if (c.locked && l->locked != *c.locked)
                 return false;
             return true;
+        }
+        case Check::Type::Arc: {
+            int n = 0;
+            forEachModelEntity(doc, [&](const Entity& e) {
+                const auto* a = entityAs<ArcData>(e);
+                if (!a || !matchesFilters(c, e, doc))
+                    return;
+                if (c.center && distance(a->center, *c.center) > c.tol)
+                    return;
+                if (c.radius && std::abs(a->radius - *c.radius) > c.tol)
+                    return;
+                ++n;
+            });
+            return countOk(c, n, 1);
+        }
+        case Check::Type::Text: {
+            int n = 0;
+            forEachModelEntity(doc, [&](const Entity& e) {
+                if (!matchesFilters(c, e, doc))
+                    return;
+                const std::string* text = nullptr;
+                std::optional<double> height;
+                Vec2 at{};
+                std::vector<Vec2> tips;  // where a leader's arrows point
+                if (const auto* t = entityAs<TextData>(e)) {
+                    text = &t->utf8;
+                    height = t->height;
+                    at = t->position;
+                } else if (const auto* m = entityAs<MTextData>(e)) {
+                    text = &m->utf8;
+                    height = m->height;
+                    at = m->position;
+                } else if (const auto* l = entityAs<LeaderData>(e)) {
+                    text = &l->utf8;
+                    at = l->textPos;
+                    if (!l->vertices.empty())
+                        tips.push_back(l->vertices.front());
+                } else if (const auto* ml = entityAs<MLeaderData>(e)) {
+                    text = &ml->utf8;
+                    at = ml->contentPos;
+                    for (const auto& line : ml->lines)
+                        if (!line.empty())
+                            tips.push_back(line.front());
+                }
+                if (!text || text->empty() || text->find(c.contains) == std::string::npos)
+                    return;
+                if (c.height && (!height || std::abs(*height - *c.height) > c.tol))
+                    return;
+                if (c.box && !inBox(*c.box, at, 0))
+                    return;
+                if (c.tip && std::none_of(tips.begin(), tips.end(),
+                                          [&](Vec2 p) { return inBox(*c.tip, p, c.tol); }))
+                    return;
+                ++n;
+            });
+            return countOk(c, n, 1);
+        }
+        case Check::Type::Dimension: {
+            int n = 0;
+            forEachModelEntity(doc, [&](const Entity& e) {
+                const auto* d = entityAs<DimensionData>(e);
+                if (!d || !matchesFilters(c, e, doc))
+                    return;
+                const bool angular =
+                    d->kind == DimKind::Angular2Line || d->kind == DimKind::Angular3Point;
+                if (!c.dim.empty()) {
+                    const char* k = angular                        ? "angular"
+                                    : d->kind == DimKind::Linear   ? "linear"
+                                    : d->kind == DimKind::Aligned  ? "aligned"
+                                    : d->kind == DimKind::Radius   ? "radius"
+                                    : d->kind == DimKind::Diameter ? "diameter"
+                                                                   : "";
+                    if (c.dim != k)
+                        return;
+                }
+                if (c.value) {
+                    const double v = angular ? d->measurement * 180.0 / kPi : d->measurement;
+                    if (std::abs(v - *c.value) > (angular ? c.angleTol : c.tol))
+                        return;
+                }
+                ++n;
+            });
+            return countOk(c, n, 1);
+        }
+        case Check::Type::Object: {
+            int n = 0;
+            forEachModelEntity(doc, [&](const Entity& e) {
+                if (!matchesFilters(c, e, doc))
+                    return;
+                if (c.box) {
+                    const BBox2 b = geom::bounds(e, doc);
+                    if (distance(b.min, c.box->min) > c.tol || distance(b.max, c.box->max) > c.tol)
+                        return;
+                }
+                ++n;
+            });
+            return countOk(c, n, 1);
         }
         case Check::Type::Selection: {
             for (EntityId id : f.selection) {

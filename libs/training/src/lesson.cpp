@@ -91,12 +91,22 @@ Result<std::vector<Vec2>> points(const Json* j, const char* what) {
 
 Result<Check::Type> checkType(const std::string& s) {
     static const std::pair<const char*, Check::Type> kTypes[] = {
-        {"line", Check::Type::Line},         {"circle", Check::Type::Circle},
-        {"polyline", Check::Type::Polyline}, {"path", Check::Type::Path},
-        {"count", Check::Type::Count},       {"layer", Check::Type::Layer},
-        {"command", Check::Type::Command},   {"undo", Check::Type::Undo},
-        {"redo", Check::Type::Redo},         {"selection", Check::Type::Selection},
-        {"view", Check::Type::View},         {"prompt", Check::Type::Prompt},
+        {"line", Check::Type::Line},
+        {"circle", Check::Type::Circle},
+        {"polyline", Check::Type::Polyline},
+        {"path", Check::Type::Path},
+        {"count", Check::Type::Count},
+        {"layer", Check::Type::Layer},
+        {"command", Check::Type::Command},
+        {"undo", Check::Type::Undo},
+        {"redo", Check::Type::Redo},
+        {"selection", Check::Type::Selection},
+        {"view", Check::Type::View},
+        {"prompt", Check::Type::Prompt},
+        {"arc", Check::Type::Arc},
+        {"text", Check::Type::Text},
+        {"dimension", Check::Type::Dimension},
+        {"object", Check::Type::Object},
     };
     for (const auto& [name, type] : kTypes)
         if (s == name)
@@ -117,14 +127,17 @@ Result<Check> parseCheck(const Json& o) {
     c.angle = number(o, "angle");
     c.radius = number(o, "radius");
     c.area = number(o, "area");
-    if (const Json* b = o.find("box")) {
-        auto corners = points(b, "box");
+    for (auto [key, out] : {std::pair{"box", &c.box}, std::pair{"tip", &c.tip}}) {
+        const Json* b = o.find(key);
+        if (!b)
+            continue;
+        auto corners = points(b, key);
         if (!corners || corners.value().size() != 2)
-            return parseError("box must be [[x0, y0], [x1, y1]]");
+            return parseError(std::string(key) + " must be [[x0, y0], [x1, y1]]");
         BBox2 box;
         box.expand(corners.value()[0]);
         box.expand(corners.value()[1]);
-        c.box = box;
+        *out = box;
     }
     auto path = points(o.find("path"), "path");
     if (!path)
@@ -149,6 +162,9 @@ Result<Check> parseCheck(const Json& o) {
     c.command = string(o, "command");
     c.source = string(o, "source");
     c.contains = string(o, "contains");
+    c.height = number(o, "height");
+    c.value = number(o, "value");
+    c.dim = string(o, "dim");
     c.minFill = number(o, "minFill").value_or(0);
 
     switch (c.type) {
@@ -167,6 +183,11 @@ Result<Check> parseCheck(const Json& o) {
         case Check::Type::View:
             if (!c.box)
                 return parseError("a view check needs a box");
+            break;
+        case Check::Type::Dimension:
+            if (!c.dim.empty() && c.dim != "linear" && c.dim != "aligned" && c.dim != "radius" &&
+                c.dim != "diameter" && c.dim != "angular")
+                return parseError("unknown dimension kind \"" + c.dim + "\"");
             break;
         default:
             break;

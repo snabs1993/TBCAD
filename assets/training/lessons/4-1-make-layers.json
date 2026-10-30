@@ -1,0 +1,82 @@
+{
+  "id": "4.1",
+  "world": 4,
+  "title": {
+    "en": "Make layers",
+    "th": "สร้างเลเยอร์"
+  },
+  "goal": {
+    "en": "Create the layers Electrical (red) and Plumbing (blue)",
+    "th": "สร้างเลเยอร์ Electrical สีแดง และ Plumbing สีน้ำเงิน"
+  },
+  "tip": {
+    "en": "Every drawing starts with layers for walls, doors, furniture, text and more.",
+    "th": "ทุกแบบเริ่มต้นมีเลเยอร์ผนัง ประตู เฟอร์นิเจอร์ ข้อความ และอื่นๆ ให้แล้ว"
+  },
+  "par": 2,
+  "setup": [
+    "ZOOM;W;-500,-500;3000,2000"
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Open the Layers panel (LA or เลเยอร์).",
+        "th": "เปิดแผง Layers (LA หรือ เลเยอร์)"
+      },
+      "hint": {
+        "en": "Type LA and press Enter.",
+        "th": "พิมพ์ LA แล้วกด Enter"
+      }
+    },
+    {
+      "text": {
+        "en": "Add a new layer, name it Electrical and set its colour to red.",
+        "th": "เพิ่มเลเยอร์ใหม่ ตั้งชื่อ Electrical แล้วตั้งสีเป็นสีแดง"
+      },
+      "hint": {
+        "en": "Red is colour 1.",
+        "th": "สีแดงคือสีหมายเลข 1"
+      },
+      "checks": [
+        {
+          "type": "layer",
+          "name": "Electrical",
+          "color": 1
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Add Plumbing in blue.",
+        "th": "เพิ่มเลเยอร์ Plumbing สีน้ำเงิน"
+      },
+      "hint": {
+        "en": "Blue is colour 5.",
+        "th": "สีน้ำเงินคือสีหมายเลข 5"
+      },
+      "checks": [
+        {
+          "type": "layer",
+          "name": "Electrical",
+          "color": 1
+        },
+        {
+          "type": "layer",
+          "name": "Plumbing",
+          "color": 5
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "-LAYER;New;Electrical,Plumbing;Color;1;Electrical;Color;5;Plumbing;"
+  ],
+  "wrong": [
+    [
+      "-LAYER;New;Electrical,Plumbing;Color;1;Electrical;"
+    ],
+    [
+      "-LAYER;New;Electrical,Plumbing;Color;1;Electrical;Color;3;Plumbing;"
+    ]
+  ]
+}

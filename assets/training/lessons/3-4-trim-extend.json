@@ -1,0 +1,138 @@
+{
+  "id": "3.4",
+  "world": 3,
+  "title": {
+    "en": "Trim and extend",
+    "th": "ตัดและยืด"
+  },
+  "goal": {
+    "en": "Clean the wall lines into a neat cross",
+    "th": "เก็บเส้นผนังให้เป็นกากบาทเรียบร้อย"
+  },
+  "tip": {
+    "en": "In Trim, hold Shift and click to extend instead.",
+    "th": "ระหว่าง Trim กด Shift ค้างแล้วคลิก จะเป็นการยืดแทน"
+  },
+  "par": 2,
+  "setup": [
+    "RECTANGLE;0,0;@4000,3000",
+    "LINE;-500,1500;4500,1500;",
+    "LINE;2000,0;2000,2500;",
+    "ZOOM;W;-1000,-1000;5000,4000"
+  ],
+  "ghosts": [
+    {
+      "line": [
+        [
+          0,
+          1500
+        ],
+        [
+          4000,
+          1500
+        ]
+      ]
+    },
+    {
+      "line": [
+        [
+          2000,
+          0
+        ],
+        [
+          2000,
+          3000
+        ]
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Start Trim (TR or ตัด) and press Enter: every line becomes a cutting edge.",
+        "th": "เริ่มคำสั่ง Trim (TR หรือ ตัด) แล้วกด Enter ทุกเส้นจะเป็นเส้นตัด"
+      },
+      "hint": {
+        "en": "Type TR, Enter, then Enter again.",
+        "th": "พิมพ์ TR กด Enter แล้วกด Enter อีกครั้ง"
+      },
+      "checks": [
+        {
+          "type": "prompt",
+          "command": "TRIM",
+          "contains": "Select object to trim"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Click the two ends that stick out of the room, then Enter.",
+        "th": "คลิกปลายเส้นสองข้างที่ยื่นออกนอกห้อง แล้วกด Enter"
+      },
+      "hint": {
+        "en": "Click the part you want to remove.",
+        "th": "คลิกส่วนที่อยากลบออก"
+      },
+      "checks": [
+        {
+          "type": "line",
+          "from": [
+            0,
+            1500
+          ],
+          "to": [
+            4000,
+            1500
+          ]
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Extend (EX or ต่อเส้น), Enter, click near the top of the short line, then Enter.",
+        "th": "Extend (EX หรือ ต่อเส้น) กด Enter คลิกใกล้ปลายบนของเส้นสั้น แล้วกด Enter"
+      },
+      "hint": {
+        "en": "Click near the end that should grow.",
+        "th": "คลิกใกล้ปลายด้านที่อยากให้ยืด"
+      },
+      "checks": [
+        {
+          "type": "line",
+          "from": [
+            0,
+            1500
+          ],
+          "to": [
+            4000,
+            1500
+          ]
+        },
+        {
+          "type": "line",
+          "from": [
+            2000,
+            0
+          ],
+          "to": [
+            2000,
+            3000
+          ]
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "TR;;<Click -250 1500>;<Click 4250 1500>;",
+    "EX;;<Click 2000 2400>;"
+  ],
+  "wrong": [
+    [
+      "TR;;<Click -250 1500>;",
+      "EX;;<Click 2000 2400>;"
+    ],
+    [
+      "TR;;<Click -250 1500>;<Click 4250 1500>;<Click 2000 2400>;"
+    ]
+  ]
+}

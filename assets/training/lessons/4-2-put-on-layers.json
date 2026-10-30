@@ -1,0 +1,98 @@
+{
+  "id": "4.2",
+  "world": 4,
+  "title": {
+    "en": "Put things on layers",
+    "th": "ย้ายของเข้าเลเยอร์"
+  },
+  "goal": {
+    "en": "Walls on the Walls layer, the door on Doors-Windows",
+    "th": "ผนังอยู่ในเลเยอร์ Walls ประตูอยู่ใน Doors-Windows"
+  },
+  "tip": {
+    "en": "Set a layer current before drawing and new things land on it.",
+    "th": "ตั้งเลเยอร์ปัจจุบันก่อนวาด ของที่วาดใหม่จะอยู่ในเลเยอร์นั้น"
+  },
+  "par": 2,
+  "setup": [
+    "RECTANGLE;0,0;@5000,4000",
+    "LINE;4000,0;4000,900;",
+    "ARC;C;4000,0;4900,0;4000,900",
+    "ZOOM;W;-500,-500;5500,4500"
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Click the room outline to select it.",
+        "th": "คลิกกรอบห้องเพื่อเลือก"
+      },
+      "hint": {
+        "en": "Click right on the line.",
+        "th": "คลิกบนเส้นพอดี"
+      },
+      "checks": [
+        {
+          "type": "selection",
+          "equals": 1,
+          "kind": "polyline"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "In Object Properties, change Layer to Walls, then press Esc.",
+        "th": "ในแผง Object Properties เปลี่ยน Layer เป็น Walls แล้วกด Esc"
+      },
+      "hint": {
+        "en": "Or type CHPROP, click the outline, Enter, LA, Walls, Enter.",
+        "th": "หรือพิมพ์ CHPROP คลิกกรอบห้อง กด Enter พิมพ์ LA แล้ว Walls กด Enter"
+      },
+      "checks": [
+        {
+          "type": "count",
+          "kind": "polyline",
+          "layer": "Walls",
+          "equals": 1
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Select the door line and its curve and put them on Doors-Windows.",
+        "th": "เลือกเส้นประตูและเส้นโค้ง แล้วย้ายไปเลเยอร์ Doors-Windows"
+      },
+      "hint": {
+        "en": "Click both, then change Layer in Object Properties.",
+        "th": "คลิกทั้งสองเส้น แล้วเปลี่ยน Layer ในแผง Object Properties"
+      },
+      "checks": [
+        {
+          "type": "count",
+          "kind": "polyline",
+          "layer": "Walls",
+          "equals": 1
+        },
+        {
+          "type": "count",
+          "layer": "Doors-Windows",
+          "equals": 2
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "<Click 2500 0>",
+    "<Esc>",
+    "CHPROP;<Click 2500 0>;;LA;Walls",
+    "CHPROP;<Click 4000 450>;<Click 4636.4 636.4>;;LA;Doors-Windows"
+  ],
+  "wrong": [
+    [
+      "CHPROP;<Click 2500 0>;;LA;Walls"
+    ],
+    [
+      "CHPROP;<Click 2500 0>;<Click 4000 450>;;LA;Walls",
+      "CHPROP;<Click 4636.4 636.4>;;LA;Doors-Windows"
+    ]
+  ]
+}

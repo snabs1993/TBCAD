@@ -238,29 +238,44 @@ void Practice::drawMap() {
     for (std::size_t i = 0; i < lessons_.size() && !next; ++i)
         if (progress_.stars(lessons_[i].id) == 0)
             next = i;
-    int world = -1;
-    for (std::size_t i = 0; i < lessons_.size(); ++i) {
-        const training::Lesson& l = lessons_[i];
-        if (l.world != world) {
-            world = l.world;
-            const WorldName w = worldName(world);
-            ImGui::Spacing();
-            ImGui::SeparatorText((std::to_string(world) + "  " + w.en + "  /  " + w.th).c_str());
+    // One folding header per world; coming back to the map opens the world of the next lesson.
+    for (std::size_t first = 0; first < lessons_.size();) {
+        const int world = lessons_[first].world;
+        std::size_t end = first, done = 0;
+        for (; end < lessons_.size() && lessons_[end].world == world; ++end)
+            done += progress_.stars(lessons_[end].id) > 0 ? 1 : 0;
+        const WorldName w = worldName(world);
+        ImGui::Spacing();
+        if (next && *next >= first && *next < end)
+            ImGui::SetNextItemOpen(true, ImGuiCond_Appearing);
+        const bool open = ImGui::CollapsingHeader((std::to_string(world) + "  " + w.en + "  /  " +
+                                                   w.th + "##world" + std::to_string(world))
+                                                      .c_str());
+        const std::string count = std::to_string(done) + " / " + std::to_string(end - first);
+        const ImVec2 size = ImGui::CalcTextSize(count.c_str());
+        const ImVec2 max = ImGui::GetItemRectMax();
+        ImGui::GetWindowDrawList()->AddText(
+            ImVec2(max.x - size.x - ImGui::GetStyle().FramePadding.x,
+                   max.y - size.y - ImGui::GetStyle().FramePadding.y),
+            ImGui::GetColorU32(ImGuiCol_TextDisabled), count.c_str());
+        for (std::size_t i = first; open && i < end; ++i) {
+            const training::Lesson& l = lessons_[i];
+            ImGui::PushID(static_cast<int>(i));
+            const std::string label = l.id + "  " + l.title.en + (next == i ? "   < Next" : "");
+            const float starSize = ImGui::GetFontSize() * 0.9f;
+            const float right = ImGui::GetContentRegionAvail().x - (starSize * 3 + 8.0f);
+            if (ImGui::Selectable(label.c_str(), false, 0, ImVec2(std::max(right, 40.0f), 0)))
+                start(i);
+            ImGui::SameLine();
+            stars(progress_.stars(l.id), starSize);
+            if (!l.title.th.empty()) {
+                ImGui::Indent();
+                ImGui::TextDisabled("%s", l.title.th.c_str());
+                ImGui::Unindent();
+            }
+            ImGui::PopID();
         }
-        ImGui::PushID(static_cast<int>(i));
-        const std::string label = l.id + "  " + l.title.en + (next == i ? "   < Next" : "");
-        const float starSize = ImGui::GetFontSize() * 0.9f;
-        const float right = ImGui::GetContentRegionAvail().x - (starSize * 3 + 8.0f);
-        if (ImGui::Selectable(label.c_str(), false, 0, ImVec2(std::max(right, 40.0f), 0)))
-            start(i);
-        ImGui::SameLine();
-        stars(progress_.stars(l.id), starSize);
-        if (!l.title.th.empty()) {
-            ImGui::Indent();
-            ImGui::TextDisabled("%s", l.title.th.c_str());
-            ImGui::Unindent();
-        }
-        ImGui::PopID();
+        first = end;
     }
 }
 

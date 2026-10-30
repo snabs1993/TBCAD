@@ -3279,6 +3279,9 @@ TEST_CASE("practice mode: a lesson from the Help menu, played on the command lin
     h.frame(3);
     REQUIRE(h.windowOpen("Practice"));
     CHECK(h.gui().practice().lessons().size() >= 11);
+    CHECK_FALSE(h.has("2.1  Your first line", "Practice"));  // only the next lesson's world is open
+    REQUIRE(h.click("2  Draw  /  วาด", "Practice"));
+    h.frame(2);
     REQUIRE(h.click("2.1  Your first line", "Practice"));
     h.frame(3);
     CHECK(h.core().documentTitle(h.core().activeDocument()) == "Practice 2.1");
@@ -3326,7 +3329,36 @@ TEST_CASE("practice mode: a Thai word opens it, Restart and the lesson map work"
     REQUIRE(h.click("< All lessons", "Practice"));
     h.frame(2);
     CHECK(h.gui().practice().run() == nullptr);
-    CHECK(h.has("2.1  Your first line", "Practice"));
+    CHECK(h.has("1.3  Undo and redo", "Practice"));
+    CHECK(h.imguiErrors().empty());
+}
+
+TEST_CASE("practice mode: a dimension lesson from a folded world, placed by typing, gets stars") {
+    Harness h;
+    h.frame(2);
+    h.command("PRACTICE");
+    h.frame(3);
+    REQUIRE(h.windowOpen("Practice"));
+    CHECK(h.has("3  Modify  /  แก้ไข", "Practice"));
+    CHECK(h.has("4  Layers  /  เลเยอร์", "Practice"));
+    REQUIRE(h.click("5  Annotate  /  ข้อความและขนาด", "Practice"));
+    h.frame(2);
+    REQUIRE(h.click("5.2  Dimension a room", "Practice"));
+    h.frame(3);
+    REQUIRE(h.gui().practice().run() != nullptr);
+    h.command("DLI");
+    h.command("0,0");
+    h.command("4000,0");
+    h.frame(2);
+    CHECK(h.gui().practice().run()->currentStep() == 1);
+    h.command("2000,-700");
+    h.command("ขนาดเส้นตรง");
+    h.command("0,0");
+    h.command("0,3500");
+    h.command("-700,1750");
+    h.frame(3);
+    CHECK(h.gui().practice().finished());
+    CHECK(h.gui().practice().progress().stars("5.2") == 3);
     CHECK(h.imguiErrors().empty());
 }
 

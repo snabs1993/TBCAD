@@ -60,8 +60,8 @@ struct Practice {
     }
 
     // Like AppCore::submitScript, with the steps checked after every part. A few parts stand for
-    // what is not typed: "!LINE" picks LINE from a button, "<Esc>" presses Esc and
-    // "<Drag x0 y0 x1 y1>" drags a selection box between two drawing points.
+    // what is not typed: "!LINE" picks LINE from a button, "<Esc>" presses Esc, "<Click x y>"
+    // clicks a drawing point and "<Drag x0 y0 x1 y1>" drags a selection box between two.
     void type(const std::string& script) {
         for (std::size_t at = 0; at <= script.size();) {
             const std::size_t end = script.find(';', at);
@@ -70,6 +70,13 @@ struct Practice {
                 core->startCommand(part.substr(1));
             } else if (part == "<Esc>") {
                 core->pressEscape();
+            } else if (part.rfind("<Click ", 0) == 0) {
+                double x = 0, y = 0;
+                REQUIRE(std::sscanf(part.c_str(), "<Click %lf %lf>", &x, &y) == 2);
+                ui::PointerState ps;
+                ps.screen = core->camera().worldToScreen({x, y});
+                core->pointerMoved(ps);
+                core->click(ps);
             } else if (part.rfind("<Drag ", 0) == 0) {
                 double x0 = 0, y0 = 0, x1 = 0, y1 = 0;
                 REQUIRE(std::sscanf(part.c_str(), "<Drag %lf %lf %lf %lf>", &x0, &y0, &x1, &y1) ==

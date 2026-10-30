@@ -1,0 +1,108 @@
+{
+  "id": "5.6",
+  "world": 5,
+  "title": {
+    "en": "A note with an arrow",
+    "th": "โน้ตพร้อมลูกศร"
+  },
+  "goal": {
+    "en": "Point at the window and write what it is made of",
+    "th": "ชี้ที่หน้าต่างแล้วเขียนว่าทำจากอะไร"
+  },
+  "tip": {
+    "en": "Drag the note's grip later to move it; the arrow follows.",
+    "th": "ลากจุดจับของโน้ตเพื่อย้ายได้ภายหลัง ลูกศรจะตามไปเอง"
+  },
+  "par": 1,
+  "setup": [
+    "RECTANGLE;0,0;@5000,4000",
+    "RECTANGLE;1500,-100;@1500,200",
+    "ZOOM;W;-500,-2500;5500,4500"
+  ],
+  "ghosts": [
+    {
+      "dot": [
+        2250,
+        0
+      ]
+    },
+    {
+      "dot": [
+        3500,
+        -1200
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Start MLEADER (or ลูกศรชี้), then click the window.",
+        "th": "เรียกคำสั่ง MLEADER (หรือ ลูกศรชี้) แล้วคลิกที่หน้าต่าง"
+      },
+      "hint": {
+        "en": "The window is the small box in the bottom wall.",
+        "th": "หน้าต่างคือกรอบเล็กในผนังล่าง"
+      },
+      "checks": [
+        {
+          "type": "prompt",
+          "command": "MLEADER",
+          "contains": "landing"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Click where the note goes (the second green dot).",
+        "th": "คลิกตำแหน่งวางโน้ต (จุดเขียวจุดที่สอง)"
+      },
+      "hint": {
+        "en": "The note starts where you click.",
+        "th": "โน้ตจะเริ่มตรงที่คลิก"
+      },
+      "checks": [
+        {
+          "type": "prompt",
+          "command": "MLEADER",
+          "contains": "annotation text"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Type อลูมิเนียม (or Aluminium) and press Enter.",
+        "th": "พิมพ์ อลูมิเนียม แล้วกด Enter"
+      },
+      "hint": {
+        "en": "Any note will do.",
+        "th": "เขียนอะไรก็ได้"
+      },
+      "checks": [
+        {
+          "type": "text",
+          "tip": [
+            [
+              1500,
+              -100
+            ],
+            [
+              3000,
+              100
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "MLEADER;2250,0;3500,-1200;อลูมิเนียม"
+  ],
+  "wrong": [
+    [
+      "MLEADER;2250,0;3500,-1200;"
+    ],
+    [
+      "MLEADER;4000,500;3500,-1200;อลูมิเนียม"
+    ]
+  ]
+}

@@ -1,0 +1,122 @@
+{
+  "id": "3.3",
+  "world": 3,
+  "title": {
+    "en": "Offset walls",
+    "th": "ทำความหนาผนัง"
+  },
+  "goal": {
+    "en": "Give the walls 200 mm thickness",
+    "th": "ทำผนังหนา 200 มม."
+  },
+  "tip": {
+    "en": "Offset remembers the distance: next time just press Enter.",
+    "th": "Offset จำระยะไว้ ครั้งต่อไปกด Enter ได้เลย"
+  },
+  "par": 1,
+  "setup": [
+    "RECTANGLE;0,0;@5000,4000",
+    "ZOOM;W;-1000,-1000;6000,5000"
+  ],
+  "ghosts": [
+    {
+      "polyline": [
+        [
+          -200,
+          -200
+        ],
+        [
+          5200,
+          -200
+        ],
+        [
+          5200,
+          4200
+        ],
+        [
+          -200,
+          4200
+        ]
+      ],
+      "closed": true
+    }
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Start Offset (O or เส้นขนาน), type 200 and Enter.",
+        "th": "เริ่มคำสั่ง Offset (O หรือ เส้นขนาน) พิมพ์ 200 แล้วกด Enter"
+      },
+      "hint": {
+        "en": "Type O, Enter, 200, Enter.",
+        "th": "พิมพ์ O กด Enter พิมพ์ 200 กด Enter"
+      },
+      "checks": [
+        {
+          "type": "prompt",
+          "command": "OFFSET",
+          "contains": "Select object"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Click the room outline.",
+        "th": "คลิกกรอบห้อง"
+      },
+      "hint": {
+        "en": "Click right on the line.",
+        "th": "คลิกบนเส้นพอดี"
+      },
+      "checks": [
+        {
+          "type": "prompt",
+          "command": "OFFSET",
+          "contains": "side to offset"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Click outside the room, then Enter.",
+        "th": "คลิกด้านนอกห้อง แล้วกด Enter"
+      },
+      "hint": {
+        "en": "The side you click is where the new line goes.",
+        "th": "คลิกด้านไหน เส้นใหม่จะไปอยู่ด้านนั้น"
+      },
+      "checks": [
+        {
+          "type": "polyline",
+          "closed": true,
+          "box": [
+            [
+              -200,
+              -200
+            ],
+            [
+              5200,
+              4200
+            ]
+          ]
+        },
+        {
+          "type": "count",
+          "kind": "polyline",
+          "equals": 2
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "O;200;<Click 2500 0>;<Click 2500 -1000>;"
+  ],
+  "wrong": [
+    [
+      "O;100;<Click 2500 0>;<Click 2500 -1000>;"
+    ],
+    [
+      "O;200;<Click 2500 0>;<Click 2500 1000>;"
+    ]
+  ]
+}

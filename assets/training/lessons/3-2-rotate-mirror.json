@@ -1,0 +1,213 @@
+{
+  "id": "3.2",
+  "world": 3,
+  "title": {
+    "en": "Rotate and mirror",
+    "th": "หมุนและพลิก"
+  },
+  "goal": {
+    "en": "Turn the bed 90° and flip the door to open the other way",
+    "th": "หมุนเตียง 90° และพลิกประตูให้เปิดอีกทาง"
+  },
+  "tip": {
+    "en": "Angles go anticlockwise; type -90 to turn the other way.",
+    "th": "มุมนับทวนเข็มนาฬิกา พิมพ์ -90 เพื่อหมุนอีกทาง"
+  },
+  "par": 2,
+  "setup": [
+    "RECTANGLE;0,0;@5000,4000",
+    "RECTANGLE;1500,500;@2000,1500",
+    "LINE;4000,0;4000,900;",
+    "ARC;C;4000,0;4900,0;4000,900",
+    "ZOOM;W;-500,-1500;5500,4500"
+  ],
+  "ghosts": [
+    {
+      "polyline": [
+        [
+          0,
+          500
+        ],
+        [
+          1500,
+          500
+        ],
+        [
+          1500,
+          2500
+        ],
+        [
+          0,
+          2500
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "line": [
+        [
+          4000,
+          0
+        ],
+        [
+          4000,
+          -900
+        ]
+      ]
+    },
+    {
+      "polyline": [
+        [
+          4000,
+          -900,
+          0.414214
+        ],
+        [
+          4900,
+          0
+        ]
+      ]
+    },
+    {
+      "dot": [
+        1500,
+        500
+      ]
+    },
+    {
+      "dot": [
+        4000,
+        0
+      ]
+    },
+    {
+      "dot": [
+        4900,
+        0
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Rotate (RO or หมุน): click the bed, Enter, click its corner at the green dot, type 90 and Enter.",
+        "th": "Rotate (RO หรือ หมุน): คลิกเตียง กด Enter คลิกมุมเตียงที่จุดเขียว พิมพ์ 90 แล้วกด Enter"
+      },
+      "hint": {
+        "en": "The corner you click is the pivot: it stays put while the bed turns.",
+        "th": "มุมที่คลิกคือจุดหมุน มันจะอยู่กับที่ขณะเตียงหมุน"
+      },
+      "checks": [
+        {
+          "type": "polyline",
+          "closed": true,
+          "box": [
+            [
+              0,
+              500
+            ],
+            [
+              1500,
+              2500
+            ]
+          ],
+          "tol": 1
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Mirror (MI or พลิก): click the door line and its curve, then Enter.",
+        "th": "Mirror (MI หรือ พลิก): คลิกเส้นประตูและเส้นโค้ง แล้วกด Enter"
+      },
+      "hint": {
+        "en": "Click right on the lines; both turn highlighted.",
+        "th": "คลิกบนเส้นพอดี ทั้งสองเส้นจะเปลี่ยนเป็นสีไฮไลต์"
+      },
+      "checks": [
+        {
+          "type": "prompt",
+          "command": "MIRROR",
+          "contains": "first point"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Click the two green dots of the door opening, then answer Yes to erase the old door.",
+        "th": "คลิกจุดเขียวสองจุดของช่องประตู แล้วตอบ Yes เพื่อลบประตูเดิม"
+      },
+      "hint": {
+        "en": "Type Y and press Enter for Yes.",
+        "th": "พิมพ์ Y แล้วกด Enter เพื่อตอบ Yes"
+      },
+      "checks": [
+        {
+          "type": "line",
+          "from": [
+            4000,
+            0
+          ],
+          "to": [
+            4000,
+            -900
+          ]
+        },
+        {
+          "type": "object",
+          "kind": "arc",
+          "box": [
+            [
+              4000,
+              -900
+            ],
+            [
+              4900,
+              0
+            ]
+          ],
+          "tol": 1
+        },
+        {
+          "type": "count",
+          "kind": "arc",
+          "equals": 1
+        },
+        {
+          "type": "count",
+          "kind": "line",
+          "equals": 1
+        },
+        {
+          "type": "polyline",
+          "closed": true,
+          "box": [
+            [
+              0,
+              500
+            ],
+            [
+              1500,
+              2500
+            ]
+          ],
+          "tol": 1
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "RO;<Click 2500 500>;;1500,500;90",
+    "MI;<Click 4000 450>;<Click 4636.4 636.4>;;4000,0;4900,0;Y"
+  ],
+  "wrong": [
+    [
+      "RO;<Click 2500 500>;;1500,500;-90",
+      "MI;<Click 4000 450>;<Click 4636.4 636.4>;;4000,0;4900,0;Y"
+    ],
+    [
+      "RO;<Click 2500 500>;;1500,500;90",
+      "MI;<Click 4000 450>;<Click 4636.4 636.4>;;4000,0;4900,0;N"
+    ]
+  ]
+}

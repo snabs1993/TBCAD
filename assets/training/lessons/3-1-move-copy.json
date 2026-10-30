@@ -1,0 +1,198 @@
+{
+  "id": "3.1",
+  "world": 3,
+  "title": {
+    "en": "Move and copy",
+    "th": "ย้ายและคัดลอก"
+  },
+  "goal": {
+    "en": "Move the table into the room and copy the chair 3 times",
+    "th": "ย้ายโต๊ะเข้าห้อง แล้วคัดลอกเก้าอี้อีก 3 ตัว"
+  },
+  "tip": {
+    "en": "Copy keeps placing copies until you press Enter.",
+    "th": "คำสั่ง Copy วางสำเนาได้เรื่อยๆ จนกว่าจะกด Enter"
+  },
+  "par": 2,
+  "setup": [
+    "RECTANGLE;0,0;@5000,4000",
+    "RECTANGLE;6000,1500;@1200,800",
+    "CIRCLE;2500,1300;200",
+    "ZOOM;W;-500,-500;7700,4500"
+  ],
+  "ghosts": [
+    {
+      "polyline": [
+        [
+          1900,
+          1600
+        ],
+        [
+          3100,
+          1600
+        ],
+        [
+          3100,
+          2400
+        ],
+        [
+          1900,
+          2400
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "circle": [
+        2500,
+        2700
+      ],
+      "radius": 200
+    },
+    {
+      "circle": [
+        1600,
+        2000
+      ],
+      "radius": 200
+    },
+    {
+      "circle": [
+        3400,
+        2000
+      ],
+      "radius": 200
+    },
+    {
+      "dot": [
+        6000,
+        1500
+      ]
+    },
+    {
+      "dot": [
+        1900,
+        1600
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Move (M or ย้าย): click the table, Enter, click its corner at the green dot, then the green dot in the room.",
+        "th": "Move (M หรือ ย้าย): คลิกโต๊ะ กด Enter คลิกมุมโต๊ะที่จุดเขียว แล้วคลิกจุดเขียวในห้อง"
+      },
+      "hint": {
+        "en": "Type M, Enter. Click an edge of the table, Enter. Then click the two green dots.",
+        "th": "พิมพ์ M กด Enter คลิกขอบโต๊ะ กด Enter แล้วคลิกจุดเขียวสองจุด"
+      },
+      "checks": [
+        {
+          "type": "polyline",
+          "closed": true,
+          "box": [
+            [
+              1900,
+              1600
+            ],
+            [
+              3100,
+              2400
+            ]
+          ],
+          "tol": 1
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Copy (CO or คัดลอก): click the chair, Enter, then click its centre.",
+        "th": "Copy (CO หรือ คัดลอก): คลิกเก้าอี้ กด Enter แล้วคลิกจุดศูนย์กลาง"
+      },
+      "hint": {
+        "en": "Move the cursor over the middle of the chair: the centre snap shows.",
+        "th": "เลื่อนเมาส์ไปกลางเก้าอี้ จะเห็นตัวจับจุดศูนย์กลาง"
+      },
+      "checks": [
+        {
+          "type": "prompt",
+          "command": "COPY",
+          "contains": "second point"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Click the middle of the 3 dashed circles, then Enter.",
+        "th": "คลิกกลางวงกลมเส้นประทั้ง 3 วง แล้วกด Enter"
+      },
+      "hint": {
+        "en": "Each click places one more chair.",
+        "th": "คลิกแต่ละครั้งจะวางเก้าอี้เพิ่มหนึ่งตัว"
+      },
+      "checks": [
+        {
+          "type": "circle",
+          "center": [
+            2500,
+            2700
+          ],
+          "radius": 200,
+          "tol": 1
+        },
+        {
+          "type": "circle",
+          "center": [
+            1600,
+            2000
+          ],
+          "radius": 200,
+          "tol": 1
+        },
+        {
+          "type": "circle",
+          "center": [
+            3400,
+            2000
+          ],
+          "radius": 200,
+          "tol": 1
+        },
+        {
+          "type": "count",
+          "kind": "circle",
+          "equals": 4
+        },
+        {
+          "type": "polyline",
+          "closed": true,
+          "box": [
+            [
+              1900,
+              1600
+            ],
+            [
+              3100,
+              2400
+            ]
+          ],
+          "tol": 1
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "M;<Click 6000 1900>;;6000,1500;1900,1600",
+    "CO;<Click 2700 1300>;;2500,1300;2500,2700;1600,2000;3400,2000;"
+  ],
+  "wrong": [
+    [
+      "M;<Click 6000 1900>;;6000,1500;1900,1500",
+      "CO;<Click 2700 1300>;;2500,1300;2500,2700;1600,2000;3400,2000;"
+    ],
+    [
+      "M;<Click 6000 1900>;;6000,1500;1900,1600",
+      "CO;<Click 2700 1300>;;2500,1300;2500,2700;1600,2000;"
+    ]
+  ]
+}

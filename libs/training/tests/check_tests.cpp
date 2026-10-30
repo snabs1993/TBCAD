@@ -151,6 +151,44 @@ TEST_CASE("geometry checks: lines, paths, circles, polylines and counts") {
     CHECK_FALSE(passesOn(p, R"({"type": "count", "kind": "circle", "min": 2})"));
 }
 
+TEST_CASE("annotation checks: arcs, text, leader notes, dimensions and object extents") {
+    Practice p("notes");
+    p.core->submitScript("ARC;C;0,0;100,0;0,100");
+    p.core->submitScript("TEXT;10,10;25;0;ห้องนอน");
+    p.core->submitScript("MLEADER;500,0;600,100;Steel");
+    p.core->submitScript("DIMLINEAR;0,0;400,0;200,-50");
+    p.core->submitScript("LINE;1000,0;1100,0;");
+    p.core->submitScript("LINE;1000,0;1000,100;");
+    p.core->submitScript("DIMANGULAR;;1000,0;1100,0;1000,100;1080,80");
+    p.core->submitScript("RECTANGLE;2000,0;@300,200");
+    p.core->submitScript("HATCH;2150,100;");
+
+    CHECK(passesOn(p, R"({"type": "arc", "center": [0, 0], "radius": 100})"));
+    CHECK_FALSE(passesOn(p, R"({"type": "arc", "radius": 90})"));
+
+    CHECK(passesOn(
+        p, R"({"type": "text", "contains": "ห้อง", "height": 25, "box": [[0, 0], [50, 50]]})"));
+    CHECK_FALSE(passesOn(p, R"({"type": "text", "contains": "ห้อง", "height": 30})"));
+    CHECK_FALSE(
+        passesOn(p, R"({"type": "text", "contains": "ห้อง", "box": [[100, 0], [150, 50]]})"));
+    CHECK(passesOn(p, R"({"type": "text", "contains": "Steel", "tip": [[490, -10], [510, 10]]})"));
+    CHECK_FALSE(passesOn(p, R"({"type": "text", "tip": [[590, 90], [610, 110]]})"));
+    CHECK_FALSE(passesOn(p, R"({"type": "text", "contains": "Steel", "height": 25})"));
+
+    CHECK(passesOn(p, R"({"type": "dimension", "dim": "linear", "value": 400})"));
+    CHECK_FALSE(passesOn(p, R"({"type": "dimension", "dim": "aligned", "value": 400})"));
+    CHECK(passesOn(p, R"({"type": "dimension", "dim": "angular", "value": 90})"));
+    CHECK_FALSE(passesOn(p, R"({"type": "dimension", "value": 45})"));
+    CHECK_FALSE(
+        parseLesson(
+            R"({"id": "x", "steps": [{"checks": [{"type": "dimension", "dim": "curly"}]}]})")
+            .ok());
+
+    CHECK(passesOn(p, R"({"type": "object", "kind": "hatch", "box": [[2000, 0], [2300, 200]]})"));
+    CHECK_FALSE(
+        passesOn(p, R"({"type": "object", "kind": "hatch", "box": [[2000, 0], [2400, 200]]})"));
+}
+
 TEST_CASE("layer, colour, selection, view and prompt checks") {
     Practice p("props");
     p.core->submitScript("-LAYER;New;WALL;Color;1;WALL;");

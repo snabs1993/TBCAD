@@ -1,0 +1,159 @@
+{
+  "id": "5.3",
+  "world": 5,
+  "title": {
+    "en": "Chain dimensions",
+    "th": "ขนาดต่อเนื่อง"
+  },
+  "goal": {
+    "en": "Dimension the wall and its 3 windows in one row",
+    "th": "ใส่ขนาดผนังและหน้าต่าง 3 ช่องต่อกันเป็นแถว"
+  },
+  "tip": {
+    "en": "Continue starts from the last dimension you made.",
+    "th": "Continue ต่อจากขนาดอันล่าสุดที่ทำไว้"
+  },
+  "par": 2,
+  "setup": [
+    "LINE;0,0;9000,0;",
+    "LINE;0,200;9000,200;",
+    "LINE;1000,0;1000,200;",
+    "LINE;2500,0;2500,200;",
+    "LINE;3750,0;3750,200;",
+    "LINE;5250,0;5250,200;",
+    "LINE;6500,0;6500,200;",
+    "LINE;8000,0;8000,200;",
+    "ZOOM;W;-500,-2000;9500,1500"
+  ],
+  "ghosts": [
+    {
+      "dot": [
+        0,
+        0
+      ]
+    },
+    {
+      "dot": [
+        1000,
+        0
+      ]
+    },
+    {
+      "dot": [
+        2500,
+        0
+      ]
+    },
+    {
+      "dot": [
+        3750,
+        0
+      ]
+    },
+    {
+      "dot": [
+        5250,
+        0
+      ]
+    },
+    {
+      "dot": [
+        6500,
+        0
+      ]
+    },
+    {
+      "dot": [
+        8000,
+        0
+      ]
+    },
+    {
+      "dot": [
+        9000,
+        0
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Linear dimension (DLI) between the first two dots, placed below the wall.",
+        "th": "ขนาดเส้นตรง (DLI) ระหว่างจุดสองจุดแรก วางไว้ใต้ผนัง"
+      },
+      "hint": {
+        "en": "Click the left end, the first window edge, then below.",
+        "th": "คลิกปลายซ้าย ขอบหน้าต่างแรก แล้วคลิกด้านล่าง"
+      },
+      "checks": [
+        {
+          "type": "dimension",
+          "dim": "linear",
+          "value": 1000
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Start DIMCONTINUE (DCO).",
+        "th": "เรียกคำสั่ง DIMCONTINUE (DCO)"
+      },
+      "hint": {
+        "en": "Type DCO and press Enter.",
+        "th": "พิมพ์ DCO แล้วกด Enter"
+      },
+      "checks": [
+        {
+          "type": "prompt",
+          "command": "DIMCONTINUE"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Click the next dots one by one to the right end, then Enter.",
+        "th": "คลิกจุดถัดไปทีละจุดจนสุดปลายขวา แล้วกด Enter"
+      },
+      "hint": {
+        "en": "Each click adds one dimension next to the last.",
+        "th": "คลิกแต่ละครั้งเพิ่มขนาดต่อจากอันเดิม"
+      },
+      "checks": [
+        {
+          "type": "dimension",
+          "value": 1000,
+          "equals": 2
+        },
+        {
+          "type": "dimension",
+          "value": 1500,
+          "equals": 3
+        },
+        {
+          "type": "dimension",
+          "value": 1250,
+          "equals": 2
+        },
+        {
+          "type": "count",
+          "kind": "dimension",
+          "equals": 7
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "DLI;0,0;1000,0;500,-800",
+    "DCO;2500,0;3750,0;5250,0;6500,0;8000,0;9000,0;"
+  ],
+  "wrong": [
+    [
+      "DLI;0,0;1000,0;500,-800",
+      "DCO;2500,0;3750,0;5250,0;6500,0;8000,0;"
+    ],
+    [
+      "DLI;0,0;1000,0;500,-800",
+      "DCO;2500,0;3750,0;5250,0;6500,0;9000,0;"
+    ]
+  ]
+}
