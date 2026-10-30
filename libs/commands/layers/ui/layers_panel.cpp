@@ -1259,21 +1259,21 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
             "VP Frz", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoSort, 44);
         ImGui::TableSetupColumn("Lck", ImGuiTableColumnFlags_WidthFixed, tick);
         ImGui::TableSetupColumn(flat ? "Col" : "Colour", ImGuiTableColumnFlags_WidthFixed,
-                                flat ? 20 : 40);
+                                flat ? 20.0f : 40.0f);
         // Flat: Linetype, Weight and Plot fit beside the names even in the slim side column.
         const bool hideMore = narrow && !flat;
         ImGui::TableSetupColumn(
             "Linetype",
             ImGuiTableColumnFlags_WidthFixed | (hideMore ? ImGuiTableColumnFlags_DefaultHide : 0),
-            flat ? 56 : 72);
+            flat ? 56.0f : 72.0f);
         ImGui::TableSetupColumn(
             flat ? "Lw" : "Weight",
             ImGuiTableColumnFlags_WidthFixed | (hideMore ? ImGuiTableColumnFlags_DefaultHide : 0),
-            flat ? 40 : 56);
+            flat ? 40.0f : 56.0f);
         ImGui::TableSetupColumn(
             flat ? "Plt" : "Plot",
             ImGuiTableColumnFlags_WidthFixed | (narrow ? ImGuiTableColumnFlags_DefaultHide : 0),
-            flat ? 22 : 34);
+            flat ? 22.0f : 34.0f);
         ImGui::TableSetupColumn(
             "Transp.", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_DefaultHide, 56);
         ImGui::TableSetupColumn(
