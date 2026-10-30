@@ -104,6 +104,19 @@ std::string summary(const Document& doc, const cmd::IHost& host, const PlotSetti
     return t;
 }
 
+// A layout plots on its own sheet, so a paper size or orientation picked while plotting one
+// changes the sheet (viewports and objects keep their places), and the summary shows it.
+void sheetFollows(cmd::CommandContext& ctx, const PlotSettings& s) {
+    const std::string onSheet = plotLayout(ctx.host());
+    const auto sheet = onSheet.empty() ? std::nullopt : layout::findLayout(ctx.doc(), onSheet);
+    if (!sheet)
+        return;
+    auto r = layout::setLayoutPaper(ctx.tx(), sheet->name, s.paperName, s.landscape,
+                                    s.customWidthMm, s.customHeightMm);
+    if (!r)
+        ctx.message(r.error().message);
+}
+
 // PLOT, EXPORTPDF and EXPORTSVG: one option menu, then the output file.
 class PlotCommand final : public cmd::Command {
 public:
@@ -233,6 +246,7 @@ public:
                     }
                     s.paperName = found->name;
                 }
+                sheetFollows(ctx, s);
             } else if (kw == "UpsideDown") {
                 KeywordOptions ko;
                 ko.keywords = {"Yes", "No"};
@@ -245,8 +259,10 @@ public:
                 ko.keywords = {"Landscape", "Portrait"};
                 ko.defaultKeyword = s.landscape ? "Landscape" : "Portrait";
                 auto r = co_await ctx.getKeyword("Orientation", ko);
-                if (r.ok())
+                if (r.ok()) {
                     s.landscape = r.keyword == "Landscape";
+                    sheetFollows(ctx, s);
+                }
             } else if (kw == "Area") {
                 KeywordOptions ko;
                 ko.keywords = {"Extents", "Display", "Window", "View"};

@@ -577,10 +577,32 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeScriptCommand(true));
     (void)registry.add(makeResumeCommand());
     (void)registry.add(makeSetvarCommand());
-    for (const char* v :
-         {"CELTSCALE", "PSLTSCALE", "MSLTSCALE", "PLINEGEN", "ANNOAUTOSCALE", "ANNOALLVISIBLE",
-          "SELECTIONANNODISPLAY", "PICKSTYLE", "MIRRTEXT", "HPORIGIN", "LWDEFAULT", "CLAYER",
-          "CECOLOR", "CELTYPE", "CELWEIGHT", "CETRANSPARENCY", "INSUNITS"})
+    for (const char* v : {"CELTSCALE",
+                          "PSLTSCALE",
+                          "MSLTSCALE",
+                          "PLINEGEN",
+                          "ANNOAUTOSCALE",
+                          "ANNOALLVISIBLE",
+                          "SELECTIONANNODISPLAY",
+                          "PICKSTYLE",
+                          "MIRRTEXT",
+                          "HPORIGIN",
+                          "LWDEFAULT",
+                          "CLAYER",
+                          "CECOLOR",
+                          "CELTYPE",
+                          "CELWEIGHT",
+                          "CETRANSPARENCY",
+                          "INSUNITS",
+                          "LUNITS",
+                          "LUPREC",
+                          "AUNITS",
+                          "AUPREC",
+                          "OSMODE",
+                          "ORTHOMODE",
+                          "SNAPMODE",
+                          "GRIDMODE",
+                          "TEXTSIZE"})
         (void)registry.add(makeVarCommand(v));
     (void)registry.add(makeLwDisplayCommand());
     (void)registry.add(makeQpModeCommand());

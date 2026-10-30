@@ -25,6 +25,7 @@ Settings Settings::withDefaults() {
     o["drafting.polar"] = true;  // as AutoCAD: green polar and object-snap tracking guides
     o["drafting.otrack"] = true;
     o["drafting.osnap"] = true;
+    o["layout.newViewport"] = true;  // LAYOUT New puts one viewport on the new sheet
     o["pick.aperturePx"] = 6;
     o["files.defaultFormat"] = "dxf";
     o["files.dxfVersion"] = "auto";  // auto | r12 | r2000 | r2007

@@ -110,10 +110,11 @@ std::unique_ptr<Document> builtinTemplate(LengthUnit units) {
         h.units = inch ? LengthUnit::Inch : LengthUnit::Millimeter;
         h.currentLayer = kLayerZero;
         // Dimensions, hatches and text land on their own layers, as DIMLAYER, HPLAYER and
-        // TEXTLAYER set them.
+        // TEXTLAYER set them, while layer 0 is current.
         h.custom[kDimLayerKey] = std::to_string(dimLayer.value);
         h.custom[kHatchLayerKey] = std::to_string(hatchLayer.value);
         h.custom[kTextLayerKey] = std::to_string(textLayer.value);
+        h.custom[kCommandLayersAutoKey] = "1";
     });
     // Two empty sheets, as in AutoCAD's templates.
     for (const char* name : {"Layout1", "Layout2"})

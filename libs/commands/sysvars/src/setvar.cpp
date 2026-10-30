@@ -9,6 +9,7 @@
 
 #include "commands.h"
 #include "tbcad/core/groups.h"
+#include "tbcad/drafting/settings.h"
 #include "tbcad/layers/layer_ops.h"
 #include "tbcad/sysvars/variables.h"
 
@@ -53,6 +54,17 @@ bool parseSwitch(std::string_view v, bool& on) {
         return true;
     }
     return false;
+}
+
+// A whole number and nothing else.
+bool parseInt(std::string_view v, int& out) {
+    const std::string t(v);
+    char* end = nullptr;
+    const long n = std::strtol(t.c_str(), &end, 10);
+    if (t.empty() || end != t.c_str() + t.size() || n < -1000000 || n > 1000000)
+        return false;
+    out = static_cast<int>(n);
+    return true;
 }
 
 struct Var {
@@ -271,6 +283,44 @@ const std::vector<Var>& variables() {
              h.currentTransparency = static_cast<std::int8_t>(t.value());
              return {};
          }},
+        {"LUNITS",
+         "how lengths are shown: 1 scientific, 2 decimal, 3 engineering, "
+         "4 architectural, 5 fractional",
+         [](const Document& d) { return std::to_string(lengthUnitsType(d.header())); },
+         [](const Document&, std::string_view v, Header& h) -> std::string {
+             int n = 0;
+             if (!parseInt(v, n) || n < 1 || n > 5)
+                 return "LUNITS is 1 to 5.";
+             setLengthUnitsType(h, n);
+             return {};
+         }},
+        {"LUPREC", "decimal places of lengths (0-8)",
+         [](const Document& d) { return std::to_string(linearPrecision(d.header())); },
+         [](const Document&, std::string_view v, Header& h) -> std::string {
+             int n = 0;
+             if (!parseInt(v, n) || n < 0 || n > 8)
+                 return "LUPREC is 0 to 8.";
+             setLinearPrecision(h, n);
+             return {};
+         }},
+        {"AUNITS", "how angles are shown: 0 degrees, 1 deg/min/sec, 2 grads, 3 radians, 4 surveyor",
+         [](const Document& d) { return std::to_string(angleUnitsType(d.header())); },
+         [](const Document&, std::string_view v, Header& h) -> std::string {
+             int n = 0;
+             if (!parseInt(v, n) || n < 0 || n > 4)
+                 return "AUNITS is 0 to 4.";
+             setAngleUnitsType(h, n);
+             return {};
+         }},
+        {"AUPREC", "decimal places of angles (0-8)",
+         [](const Document& d) { return std::to_string(anglePrecision(d.header())); },
+         [](const Document&, std::string_view v, Header& h) -> std::string {
+             int n = 0;
+             if (!parseInt(v, n) || n < 0 || n > 8)
+                 return "AUPREC is 0 to 8.";
+             setAnglePrecision(h, n);
+             return {};
+         }},
         {"CLAYER", "current layer",
          [](const Document& d) {
              const Layer* l = d.layer(d.header().currentLayer);
@@ -299,6 +349,123 @@ const std::vector<Var>& variables() {
     return vars;
 }
 
+// Variables kept as settings of this installation (drafting aids, text height), not in the
+// drawing: typed as in AutoCAD scripts (OSMODE 35, ORTHOMODE 1, ...).
+struct HostVar {
+    const char* name;
+    const char* help;
+    std::function<std::string(const cmd::IHost&)> get;
+    // Empty string = done, otherwise the error message.
+    std::function<std::string(cmd::IHost&, std::string_view)> set;
+};
+
+// OSMODE bits, in AutoCAD's order; 16384 = object snap off.
+constexpr std::pair<int, drafting::SnapMode> kOsmodeBits[] = {
+    {1, drafting::SnapMode::Endpoint},
+    {2, drafting::SnapMode::Midpoint},
+    {4, drafting::SnapMode::Center},
+    {8, drafting::SnapMode::Node},
+    {16, drafting::SnapMode::Quadrant},
+    {32, drafting::SnapMode::Intersection},
+    {64, drafting::SnapMode::Insertion},
+    {128, drafting::SnapMode::Perpendicular},
+    {256, drafting::SnapMode::Tangent},
+    {512, drafting::SnapMode::Nearest},
+    {1024, drafting::SnapMode::GeometricCenter},
+    {2048, drafting::SnapMode::ApparentIntersection},
+    {4096, drafting::SnapMode::Extension},
+    {8192, drafting::SnapMode::Parallel},
+};
+constexpr int kOsmodeOff = 16384;
+
+// A 0/1 switch among the drafting aids (ORTHOMODE, SNAPMODE, GRIDMODE).
+HostVar switchVar(const char* name, const char* help, const char* key,
+                  bool drafting::DraftingSettings::*field) {
+    return {name, help,
+            [field](const cmd::IHost& host) {
+                return std::string(drafting::DraftingSettings::read(host).*field ? "1" : "0");
+            },
+            [name, key](cmd::IHost& host, std::string_view v) -> std::string {
+                bool on = false;
+                if (!parseSwitch(v, on))
+                    return std::string(name) + " is 0 or 1.";
+                host.setSetting(key, on ? "1" : "0");
+                // Ortho and polar tracking exclude each other.
+                if (on && std::string_view(key) == drafting::keys::ortho)
+                    host.setSetting(drafting::keys::polar, "0");
+                return {};
+            }};
+}
+
+const std::vector<HostVar>& hostVariables() {
+    static const std::vector<HostVar> vars = {
+        {"OSMODE",
+         "object snap modes as AutoCAD's sum: 1 end, 2 mid, 4 cen, 8 node, 16 quad, 32 int, "
+         "64 ins, 128 perp, 256 tan, 512 near, 1024 gcen, 2048 app, 4096 ext, 8192 par; +16384 "
+         "= snap off",
+         [](const cmd::IHost& host) {
+             const auto s = drafting::DraftingSettings::read(host);
+             int v = s.osnap ? 0 : kOsmodeOff;
+             for (const auto& [bit, mode] : kOsmodeBits)
+                 if (s.modes & drafting::maskOf(mode))
+                     v += bit;
+             return std::to_string(v);
+         },
+         [](cmd::IHost& host, std::string_view v) -> std::string {
+             int n = 0;
+             if (!parseInt(v, n) || n < 0 || n > 32767)
+                 return "OSMODE is 0 to 32767.";
+             drafting::SnapModeMask mask = 0;
+             for (const auto& [bit, mode] : kOsmodeBits)
+                 if (n & bit)
+                     mask |= drafting::maskOf(mode);
+             host.setSetting(drafting::keys::osnapModes, drafting::formatSnapModes(mask));
+             host.setSetting(drafting::keys::osnap, (n & kOsmodeOff) || !mask ? "0" : "1");
+             return {};
+         }},
+        switchVar("ORTHOMODE", "ortho on (1) or off (0)", drafting::keys::ortho,
+                  &drafting::DraftingSettings::ortho),
+        switchVar("SNAPMODE", "grid snap on (1) or off (0)", drafting::keys::snap,
+                  &drafting::DraftingSettings::snap),
+        switchVar("GRIDMODE", "grid shown (1) or hidden (0)", drafting::keys::grid,
+                  &drafting::DraftingSettings::grid),
+        {"TEXTSIZE", "height of new text (0 = suits the drawing and its scale)",
+         [](const cmd::IHost& host) {
+             const auto s = host.setting("text.height");
+             return s && !s->empty() ? formatDouble(std::strtod(s->c_str(), nullptr))
+                                     : std::string("0");
+         },
+         [](cmd::IHost& host, std::string_view v) -> std::string {
+             const std::string t(v);
+             char* end = nullptr;
+             const double h = std::strtod(t.c_str(), &end);
+             if (t.empty() || end != t.c_str() + t.size() || !(h >= 0) || !std::isfinite(h))
+                 return "TEXTSIZE is a height of 0 or more.";
+             host.setSetting("text.height", h > 0 ? formatDouble(h) : std::string());
+             return {};
+         }},
+    };
+    return vars;
+}
+
+const HostVar* findHostVar(std::string_view name) {
+    for (const HostVar& v : hostVariables())
+        if (name == v.name)
+            return &v;
+    return nullptr;
+}
+
+// Asks for the new value of a host variable and sets it.
+Task askHostVar(CommandContext& ctx, const HostVar& v, const std::string& prompt) {
+    cmd::StringOptions so;
+    so.defaultValue = v.get(ctx.host());
+    auto val = co_await ctx.getString(prompt + " <" + *so.defaultValue + ">", so);
+    if (!val.ok())
+        co_return;
+    const std::string err = v.set(ctx.host(), cmd::trim(val.text));
+    ctx.message(err.empty() ? std::string(v.name) + " = " + v.get(ctx.host()) : err);
+}
+
 class SetvarCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "SETVAR"; }
@@ -314,6 +481,12 @@ public:
         if (name == "?" || name.empty()) {
             for (const Var& v : variables())
                 ctx.message(std::string(v.name) + " = " + v.get(ctx.doc()) + "  (" + v.help + ")");
+            for (const HostVar& v : hostVariables())
+                ctx.message(std::string(v.name) + " = " + v.get(ctx.host()) + "  (" + v.help + ")");
+            co_return;
+        }
+        if (const HostVar* hv = findHostVar(name)) {
+            co_await askHostVar(ctx, *hv, "New value for " + name);
             co_return;
         }
         const auto it = std::find_if(variables().begin(), variables().end(),
@@ -380,7 +553,27 @@ private:
 };
 }  // namespace
 
+namespace {
+// A command named like one host variable (OSMODE, ORTHOMODE, ...).
+class HostVarCommand final : public cmd::Command {
+public:
+    explicit HostVarCommand(const HostVar& v) : var_(v) {}
+    std::string_view name() const override { return var_.name; }
+    std::string_view description() const override { return var_.help; }
+    // Usable in the middle of another command, as the switches they stand for.
+    bool isTransparent() const override { return true; }
+    Task run(CommandContext& ctx) override {
+        co_await askHostVar(ctx, var_, "Enter new value for " + std::string(var_.name));
+    }
+
+private:
+    const HostVar& var_;
+};
+}  // namespace
+
 std::unique_ptr<cmd::Command> makeVarCommand(const std::string& name) {
+    if (const HostVar* hv = findHostVar(name))
+        return std::make_unique<HostVarCommand>(*hv);
     const auto it = std::find_if(variables().begin(), variables().end(),
                                  [&](const Var& v) { return name == v.name; });
     return std::make_unique<VarCommand>(name, it == variables().end() ? "" : it->help);

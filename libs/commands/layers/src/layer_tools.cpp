@@ -396,8 +396,11 @@ public:
             ctx.message("There is no layer named \"" + name + "\".");
             co_return;
         }
-        (void)ctx.tx().modifyHeader(
-            [k = key_, id = layer->id](Header& h) { h.custom[k] = std::to_string(id.value); });
+        // A layer chosen here is used whatever layer is current.
+        (void)ctx.tx().modifyHeader([k = key_, id = layer->id](Header& h) {
+            h.custom[k] = std::to_string(id.value);
+            h.custom.erase(kCommandLayersAutoKey);
+        });
         ctx.setUndoLabel(name_);
         ctx.message(std::string("New ") + what_ + " go on layer \"" + layer->name + "\".");
     }
