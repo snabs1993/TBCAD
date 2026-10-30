@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstdint>
 #include <cstdlib>
 
 #include "module_state.h"
@@ -100,6 +101,13 @@ void registerUi(ui::UiRegistry& ui) {
         }
         // Object snap tracking: a small cross on every acquired point, and the ray the cursor
         // is snapped to.
+        // Tracking points belong to one command and one state of the drawing (test.10: a cross
+        // stayed where an erased line had been).
+        static std::uint64_t seenRevision = 0;
+        if (st.otrack && (!pc.commandActive || (pc.doc && pc.doc->revision() != seenRevision)))
+            st.otrack->clear();
+        if (pc.doc)
+            seenRevision = pc.doc->revision();
         if (st.otrack && pc.commandActive && drafting::DraftingSettings::read(*pc.host).otrack) {
             render::OverlayStyle ts;
             ts.color = dark ? Rgba{0x3C, 0xE6, 0x3C, 255} : Rgba{0x00, 0x96, 0x00, 255};

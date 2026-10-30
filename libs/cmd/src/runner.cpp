@@ -54,6 +54,11 @@ bool parseReal(const std::string& s, double& out) {
     return true;
 }
 
+bool isPlainNumber(const std::string& s) {
+    double v = 0;
+    return parseReal(s, v);
+}
+
 bool parseInteger(const std::string& s, long long& out) {
     if (s.empty())
         return false;
@@ -993,6 +998,11 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
             }
             switch (req.kind) {
                 case K::Point: {
+                    if (req.freeText && req.numberAsText && isPlainNumber(text)) {
+                        ans.status = Status::Keyword;
+                        ans.keyword = text;
+                        return complete(std::move(ans));
+                    }
                     const PointParseContext pc = parseContext(req);
                     std::optional<Vec2> p;
                     if (parser_)
@@ -1004,8 +1014,18 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                         ans.keyword = text;
                         return complete(std::move(ans));
                     }
-                    if (!p)
+                    if (!p) {
+                        // Letters that start several options: say which, not "Invalid point".
+                        std::string fits;
+                        const std::string up = toUpperAscii(trim(text));
+                        for (const std::string& k : req.keywords)
+                            if (!up.empty() && toUpperAscii(k).rfind(up, 0) == 0)
+                                fits += (fits.empty() ? "" : ", ") + k;
+                        if (fits.find(',') != std::string::npos)
+                            return reject("\"" + text + "\" fits more than one option (" + fits +
+                                          "): type more letters.");
                         return reject("Invalid point \"" + text + "\".");
+                    }
                     lastPoint_ = *p;
                     if (req.base)
                         lastSeg_ = std::make_pair(*req.base, *p);

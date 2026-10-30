@@ -62,7 +62,13 @@ public:
         Widths w;
         bool closed = false;
 
+        std::size_t drawn = v.size();
         for (;;) {
+            // The next segment starts as wide as the last one ended, as AutoCAD does (test.10:
+            // a 20-to-4 width tapered every segment after it again).
+            if (v.size() > drawn)
+                w.start = w.end;
+            drawn = v.size();
             const bool canClose = v.size() >= (arcMode ? 2u : 3u);
             cmd::PointOptions o;
             o.base = v.back().p;

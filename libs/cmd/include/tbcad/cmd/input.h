@@ -79,6 +79,9 @@ struct PointOptions {
     // Text that is neither a point nor a keyword comes back as Status::Keyword with the typed
     // text in `keyword`, instead of being rejected.
     bool freeText = false;
+    // With freeText: a plain number comes back as text too, not as a direct distance from
+    // `base` (ROTATE/SCALE Reference: 45 is the angle, 100 the length).
+    bool numberAsText = false;
     // false: a click is taken where it is, object snaps and the other point filters leave it
     // alone (HATCH pick points: a snap would land on the boundary itself, as AutoCAD knows).
     bool snap = true;

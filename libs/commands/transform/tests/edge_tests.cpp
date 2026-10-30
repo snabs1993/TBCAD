@@ -512,7 +512,10 @@ TEST_CASE(
     REQUIRE(f.host.run("COPY", {ScriptItem::enter(), ScriptItem::enter()}).finished);
     CHECK(f.doc.modelSpace().size() == 2);
     // STRETCH: a window round the right end, Enter, then the last displacement
-    REQUIRE(f.host.run("STRETCH", {"14,3", "30,6", ScriptItem::enter(), "0,-4"}).finished);
+    // (the first Enter ends the selection, as in AutoCAD; the second asks for a displacement)
+    REQUIRE(
+        f.host.run("STRETCH", {"14,3", "30,6", ScriptItem::enter(), ScriptItem::enter(), "0,-4"})
+            .finished);
     bool stretched = false;
     for (EntityId id : f.doc.modelSpace())
         stretched |=

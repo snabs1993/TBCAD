@@ -6,6 +6,7 @@
 #include "commands.h"
 #include "tbcad/blocks/tbcad_blocks.h"
 #include "tbcad/geom/curve.h"
+#include "tbcad/geom/entity.h"
 
 namespace tbcad::block_cmds {
 
@@ -556,6 +557,21 @@ private:
         std::vector<Entity> content;
         for (EntityId id : detail::inDrawOrder(doc, ids))
             content.push_back(*doc.find(id));
+        // The block's origin is a point of the source (its reference point, or the middle of
+        // the rectangular source), and the insert sits there: the grips then land on the items
+        // (test.10: they sat around 0,0, far from the objects).
+        Vec2 base = info.reference;
+        if (info.kind == ArrayInfo::Kind::Rectangular) {
+            BBox2 box;
+            for (const Entity& e : content)
+                box.merge(geom::bounds(e, doc));
+            base = box.empty() ? Vec2{} : (box.min + box.max) * 0.5;
+        }
+        info.center = info.center - base;
+        info.reference = info.reference - base;
+        for (PolyVertex& v : info.path)
+            v.p = v.p - base;
+        const Transform2 toBlock = Transform2::translate(Vec2{} - base);
         Transaction& tx = ctx.tx();
         auto block = tx.addBlock(BlockDef{.name = freeArrayName(doc), .anonymous = true});
         if (!block) {
@@ -564,6 +580,8 @@ private:
         }
         for (Entity& e : content) {
             e.common.id = {};
+            if (auto moved = geom::transformed(e, toBlock))
+                e = std::move(moved.value());
             if (auto r = tx.add(std::move(e), block.value()); !r) {
                 ctx.message(r.error().message);
                 return;  // the transaction is rolled back when the command ends
@@ -571,7 +589,7 @@ private:
         }
         for (EntityId id : ids)
             (void)tx.erase(id);
-        InsertData data{block.value(), {}, {1, 1}, 0};
+        InsertData data{block.value(), base, {1, 1}, 0};
         const long long items = blocks::arrayItemCount(info);
         data.array = std::move(info);
         Entity ins;

@@ -94,7 +94,7 @@ TEST_CASE("AutoCAD's everyday aliases are there") {
         {"FI", "FILTER"},       {"LO", "LAYOUT"},       {"SP", "SPELL"},
         {"NCOPY", "NCOPY"},     {"ATT", "ATTDEF"},      {"ATE", "ATTEDIT"},
         {"XR", "XREF"},         {"XA", "XATTACH"},      {"XB", "XBIND"},
-        {"GR", "DDGRIPS"},      {"DV", "DVIEW"},        {"-INSERT", "INSERT"},
+        {"GR", "DDGRIPS"},      {"DV", "DVIEW"},        {"-INSERT", "-INSERT"},
         {"-BLOCK", "-BLOCK"},   {"-HATCH", "HATCH"},    {"-BOUNDARY", "BOUNDARY"},
         {"-LAYER", "-LAYER"}};
     std::string missing;

@@ -120,7 +120,11 @@ public:
     // Command-line widget callback (public so the ImGui callback trampoline can reach it).
     int inputCallback(ImGuiInputTextCallbackData* data);
     // Rebuilds fonts and style after the window moved to a monitor with another DPI scale.
+    // The rebuild waits for applyPendingScale(): clearing the font atlas inside a frame frees
+    // the font ImGui is drawing with (test.10: moving the Interface scale slider crashed).
     void setDpiScale(float scale);
+    // Call between frames, before ImGui::NewFrame.
+    void applyPendingScale();
     float dpiScale() const { return dpiScale_; }
     // Shows a registered panel (Tools > MCP Settings...).
     void openPanel(const std::string& id) { panelOpen_[id] = true; }
@@ -256,17 +260,14 @@ private:
     void continuePending();
     void* nativeHandle() const;
     // The native file dialogs, run so that nothing typed while they are up reaches the drawing.
-    bool nativeDialogs() const {
-        return fileDialogForTests || platform::nativeDialogsAvailable();
-    }
-    std::optional<std::filesystem::path> openDialog(const std::vector<platform::FileFilter>& filters,
-                                                    const std::string& title,
-                                                    const std::filesystem::path& folder);
-    std::optional<std::filesystem::path> saveDialog(const std::vector<platform::FileFilter>& filters,
-                                                    const std::string& title,
-                                                    const std::string& extension,
-                                                    const std::string& suggested,
-                                                    const std::filesystem::path& folder);
+    bool nativeDialogs() const { return fileDialogForTests || platform::nativeDialogsAvailable(); }
+    std::optional<std::filesystem::path> openDialog(
+        const std::vector<platform::FileFilter>& filters, const std::string& title,
+        const std::filesystem::path& folder);
+    std::optional<std::filesystem::path> saveDialog(
+        const std::vector<platform::FileFilter>& filters, const std::string& title,
+        const std::string& extension, const std::string& suggested,
+        const std::filesystem::path& folder);
     std::optional<std::filesystem::path> modalDialog(
         const std::function<std::optional<std::filesystem::path>()>& show);
 
@@ -309,6 +310,7 @@ private:
     std::string workspaceMessage_{};
     std::map<std::string, bool> panelOpen_{};
     float dpiScale_ = 1.0f;
+    bool scalePending_ = false;
     std::optional<ui::Recovery> recovery_{};
     std::size_t recoveryCount_ = 0;
     std::vector<ui::Recovery> recoveries_{};  // the list in the start-up recovery prompt
@@ -403,6 +405,8 @@ private:
     bool logExpanded_ = false;
     bool cleanScreen_ = false;
     std::vector<std::string> hiddenPanels_{};  // panels HIDEPALETTES closed, for SHOWPALETTES
+    // Panels opened by commands, oldest first: past a few the oldest closes, Esc closes the last.
+    std::vector<std::string> panelOrder_{};
     void windowCommand(const std::string& what);
     // Real-time ZOOM / PAN (Enter at ZOOM, PAN, the navigation bar): left drag zooms or pans until
     // Esc, Enter or a right click.

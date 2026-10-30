@@ -278,7 +278,9 @@ void parseHeaderVariables(BitReader& r, const Format& fmt, HeaderVars& v,
     if (!r2004)
         r.handle();  // current viewport entity header
     skipBits(2);     // DIMASO, DIMSHO
-    skipBits(7);     // PLINEGEN, ORTHOMODE, REGENMODE, FILLMODE, QTEXTMODE, PSLTSCALE, LIMCHECK
+    skipBits(5);     // PLINEGEN, ORTHOMODE, REGENMODE, FILLMODE, QTEXTMODE
+    const bool psltscale = r.b();
+    skipBits(1);  // LIMCHECK
     if (r2004)
         skipBits(1);  // undocumented
     skipBits(4);      // USRTIMER, SKPOLY, ANGDIR, SPLFRAME
@@ -386,12 +388,14 @@ void parseHeaderVariables(BitReader& r, const Format& fmt, HeaderVars& v,
             // The line type scale is read; the units after the dimension variables are not.
             v.valid = true;
             v.insunits = 0;
+            v.psltscale = psltscale ? 1 : 0;
             return;
         }
         v.valid = false;
         return;
     }
     v.insunits = units;
+    v.psltscale = psltscale ? 1 : 0;
     v.valid = true;
 }
 

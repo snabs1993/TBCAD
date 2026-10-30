@@ -352,6 +352,7 @@ void Harness::frame(int n) {
         io.DeltaTime = 1.0f / 60.0f;
         imgui_items::clear();
         core_->updateFrame();
+        gui_->applyPendingScale();
         ImGui::NewFrame();
         if (impl_->captureText)
             ImGui::LogToBuffer(0);  // depth 0: logging must not open tree nodes
@@ -615,6 +616,7 @@ Image Harness::overlayShot(int w, int h, const std::function<void(ImDrawList*)>&
     ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
     imgui_items::clear();
     core_->updateFrame();
+    gui_->applyPendingScale();
     ImGui::NewFrame();
     ViewportRect rect = gui_->frame();
     gui_->showViewport(7, rect);

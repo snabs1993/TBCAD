@@ -44,6 +44,7 @@ Result<bool> readR2000(Bytes file, detail::Drawing& drawing, std::vector<std::st
     drawing.unitsKnown = vars.valid;
     drawing.insunits = vars.insunits;
     drawing.ltscale = vars.ltscale;
+    drawing.psltscale = vars.psltscale;
     detail::decodeObjects(file, map, classes, drawing, notes);
     return true;
 }
@@ -112,6 +113,7 @@ Result<bool> readR2004Plus(Bytes file, Version version, detail::Drawing& drawing
     drawing.unitsKnown = vars.valid;
     drawing.insunits = vars.insunits;
     drawing.ltscale = vars.ltscale;
+    drawing.psltscale = vars.psltscale;
     const auto t2 = Clock::now();
     detail::decodeObjects(objects, map, classes, drawing, notes, fmt);
     const auto t3 = Clock::now();

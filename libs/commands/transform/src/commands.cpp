@@ -275,8 +275,9 @@ static double lastValue(CommandContext& ctx, const char* key, double fallback) {
 }
 
 static void rememberValue(CommandContext& ctx, const char* key, double value) {
+    // 12 digits: a reference scale of 100 to 100 is 0.9999999999999999, offered back as 1.
     char buf[64];
-    std::snprintf(buf, sizeof buf, "%.17g", value);
+    std::snprintf(buf, sizeof buf, "%.12g", value);
     ctx.host().setSetting(key, buf);
 }
 
@@ -322,6 +323,7 @@ public:
                     PointOptions ro;
                     ro.base = b;
                     ro.freeText = true;
+                    ro.numberAsText = true;
                     auto first = co_await ctx.getPoint(
                         "Specify the reference angle <0> or first point", std::move(ro));
                     if (first.status == Status::Cancel)
@@ -436,6 +438,7 @@ public:
                     PointOptions ro;
                     ro.base = b;
                     ro.freeText = true;
+                    ro.numberAsText = true;
                     auto first = co_await ctx.getPoint(
                         "Specify reference length <1> or first point", std::move(ro));
                     if (first.status == Status::Cancel)
@@ -635,12 +638,22 @@ public:
         }
         ctx.message(std::to_string(moving.size()) + " found in the crossing window.");
         Vec2 delta{};
+        // An Enter straight after a window ends the selection, as it does in AutoCAD (where
+        // STRETCH asks "Select objects" again); only a second Enter means Displacement (test.10:
+        // the habitual Enter was taken as the displacement).
+        bool selecting = true;
         for (;;) {
             PointOptions bo;
             bo.keywords = {"Displacement", "Window", "CPolygon", "Remove"};
             auto base = co_await ctx.getPoint(
                 "Specify base point or [Displacement/Window/CPolygon/Remove] <Displacement>",
                 std::move(bo));
+            if (base.status == Status::None && selecting) {
+                selecting = false;
+                ctx.message("Selection done. Specify the base point (Enter again: displacement).");
+                continue;
+            }
+            selecting = false;
             if ((base.status == Status::Keyword && base.keyword == "Displacement") ||
                 base.status == Status::None) {
                 std::optional<Vec2> d;
@@ -699,6 +712,7 @@ public:
                     ctx.message("Nothing left to stretch.");
                     co_return;
                 }
+                selecting = true;
                 continue;
             }
             if (!base.ok())

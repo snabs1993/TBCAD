@@ -978,8 +978,14 @@ void drawInsertDialogPanel(ui::PanelContext& ctx) {
     }
     ImGui::EndChild();
     drawOptions(ctx, true);
-    if (ImGui::Button("OK") || (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
-                                ImGui::IsKeyPressed(ImGuiKey_Enter)))
+    // The Enter that ran INSERT must not press OK in the dialog it opens.
+    static int shownFrame = -100;
+    if (ImGui::IsWindowAppearing())
+        shownFrame = ImGui::GetFrameCount();
+    const bool settled = ImGui::GetFrameCount() - shownFrame > 2;
+    if (ImGui::Button("OK") ||
+        (settled && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+         ImGui::IsKeyPressed(ImGuiKey_Enter, false)))
         insert = true;
     ImGui::SameLine();
     if (ImGui::Button("Cancel") || (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&

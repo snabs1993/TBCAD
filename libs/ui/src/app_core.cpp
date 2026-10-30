@@ -216,7 +216,8 @@ AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
     keybindings_.declare("view.toggleProperties", "Ctrl+1");   // as in AutoCAD
     keybindings_.declare("view.commandPalette", "Ctrl+Shift+P");
     keybindings_.declare("view.search", "Ctrl+K");  // the search box at the top
-    keybindings_.declare("view.cursorHud", "F12");
+    // F12 is Dynamic Input (Tools > Drafting Aids), as in AutoCAD; the cursor box has no key.
+    keybindings_.declare("view.cursorHud", "");
     keybindings_.declare("view.expandLog", "Ctrl+L");
     keybindings_.declare("view.textWindow", "F2");
     keybindings_.declare("view.cleanScreen", "F11");
@@ -225,8 +226,13 @@ AppCore::AppCore(cmd::Registry& registry, platform::AppPaths paths)
     keybindings_.declare("help.practice", "");
     keybindings_.declare("tools.settings", "");
     if (auto r = keybindings_.load(paths_.keybindingsFile()); r) {
+        // The menu actions of the command modules are declared later (setUi loads the file
+        // again and reports then): they are not unknown, only not known yet (test.10: about 170
+        // "unknown action" lines). Same for chords shared with them.
         for (auto& w : r.value())
-            startupWarnings_.push_back(std::move(w));
+            if (w.find("unknown action") == std::string::npos &&
+                w.find("is used by both") == std::string::npos)
+                startupWarnings_.push_back(std::move(w));
     } else {
         startupWarnings_.push_back(r.error().message + " (using default key bindings)");
     }

@@ -1221,13 +1221,23 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
     st.anyKids = std::any_of(rows.begin(), rows.end(), [](const Row& r) { return r.hasKids; });
 
     // Widths, order, shown columns and the sort are remembered with the panel layout (imgui.ini).
-    constexpr ImGuiTableFlags kFlags =
+    // ui.flatTables: spreadsheet rows (tight, grid lines, small tick boxes, slim columns).
+    const bool flat = ctx.host && ctx.host->setting("ui.flatTables").value_or("1") == "1";
+    const ImGuiTableFlags kFlags =
         ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY | ImGuiTableFlags_ScrollX |
         ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingFixedFit |
-        ImGuiTableFlags_Hideable | ImGuiTableFlags_Sortable | ImGuiTableFlags_Reorderable;
+        ImGuiTableFlags_Hideable | ImGuiTableFlags_Sortable | ImGuiTableFlags_Reorderable |
+        (flat ? ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_BordersOuter : 0);
     const float footer = ImGui::GetTextLineHeightWithSpacing() + 6;
     const float availWidth = ImGui::GetContentRegionAvail().x;
-    if (ImGui::BeginTable("##layers2", 11, kFlags, ImVec2(0, -footer))) {
+    if (flat) {
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(1, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(3, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
+    }
+    const float tick = flat ? 18.0f : 30.0f;  // On, Frz and Lck column width
+    if (ImGui::BeginTable(flat ? "##layersflat" : "##layers2", 11, kFlags, ImVec2(0, -footer))) {
         ImGui::TableSetupScrollFreeze(0, 1);
         // Fixed width: the table scrolls sideways in a narrow panel instead of squeezing the names
         // away.
@@ -1237,29 +1247,33 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
         const VpTarget vp = viewportTarget(ctx);
         // Narrow (a slim side column): the names keep their room, Plot waits in the header's
         // right-click menu with Linetype and Weight.
-        const float others = 30 * 3 + 40 + (narrow ? 0 : 34 + 72 + 56) + (vp ? 40 : 0) +
-                             (narrow ? 5 : 8) * ImGui::GetStyle().CellPadding.x * 2;
+        const float others = tick * 3 + (flat ? 20 : 40) +
+                             (narrow && !flat ? 0 : (flat ? 56 + 40 : 34 + 72 + 56)) +
+                             (vp ? 40 : 0) + (narrow ? 5 : 8) * ImGui::GetStyle().CellPadding.x * 2;
         ImGui::TableSetupColumn(
             "Name", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_DefaultSort,
             std::max(90.0f, availWidth - others));
-        ImGui::TableSetupColumn("On", ImGuiTableColumnFlags_WidthFixed, 30);
-        ImGui::TableSetupColumn("Frz", ImGuiTableColumnFlags_WidthFixed, 30);
+        ImGui::TableSetupColumn("On", ImGuiTableColumnFlags_WidthFixed, tick);
+        ImGui::TableSetupColumn("Frz", ImGuiTableColumnFlags_WidthFixed, tick);
         ImGui::TableSetupColumn(
             "VP Frz", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_NoSort, 44);
-        ImGui::TableSetupColumn("Lck", ImGuiTableColumnFlags_WidthFixed, 30);
-        ImGui::TableSetupColumn("Colour", ImGuiTableColumnFlags_WidthFixed, 40);
+        ImGui::TableSetupColumn("Lck", ImGuiTableColumnFlags_WidthFixed, tick);
+        ImGui::TableSetupColumn(flat ? "Col" : "Colour", ImGuiTableColumnFlags_WidthFixed,
+                                flat ? 20.0f : 40.0f);
+        // Flat: Linetype, Weight and Plot fit beside the names even in the slim side column.
+        const bool hideMore = narrow && !flat;
         ImGui::TableSetupColumn(
             "Linetype",
-            ImGuiTableColumnFlags_WidthFixed | (narrow ? ImGuiTableColumnFlags_DefaultHide : 0),
-            72);
+            ImGuiTableColumnFlags_WidthFixed | (hideMore ? ImGuiTableColumnFlags_DefaultHide : 0),
+            flat ? 56.0f : 72.0f);
         ImGui::TableSetupColumn(
-            "Weight",
-            ImGuiTableColumnFlags_WidthFixed | (narrow ? ImGuiTableColumnFlags_DefaultHide : 0),
-            56);
+            flat ? "Lw" : "Weight",
+            ImGuiTableColumnFlags_WidthFixed | (hideMore ? ImGuiTableColumnFlags_DefaultHide : 0),
+            flat ? 40.0f : 56.0f);
         ImGui::TableSetupColumn(
-            "Plot",
+            flat ? "Plt" : "Plot",
             ImGuiTableColumnFlags_WidthFixed | (narrow ? ImGuiTableColumnFlags_DefaultHide : 0),
-            34);
+            flat ? 22.0f : 34.0f);
         ImGui::TableSetupColumn(
             "Transp.", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_DefaultHide, 56);
         ImGui::TableSetupColumn(
@@ -1446,6 +1460,8 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
         }
         ImGui::EndTable();
     }
+    if (flat)
+        ImGui::PopStyleVar(4);
 
     {
         bool ao = doc.header().activeOnly;

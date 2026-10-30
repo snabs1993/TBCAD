@@ -271,6 +271,12 @@ dxf::GroupBuffer emitGroups(const Drawing& d) {
         o.group(9, "$LTSCALE");
         o.group(40, d.ltscale);
     }
+    // Drawings made for PSLTSCALE 0 carry a big LTSCALE; scaling it again by the viewport scale
+    // made layout dashes longer than the lines, so they looked solid (test.10).
+    if (d.psltscale >= 0) {
+        o.group(9, "$PSLTSCALE");
+        o.group(70, d.psltscale);
+    }
     o.endSection();
 
     // Which block header is model space; entities owned by it (or with entity mode 2) are drawn.

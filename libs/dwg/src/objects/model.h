@@ -151,6 +151,7 @@ struct Drawing {
     bool unitsKnown = false;
     int insunits = 0;
     double ltscale = 1;
+    int psltscale = -1;  // -1 = not read
     std::map<std::uint64_t, LayerRec> layers{};
     std::map<std::uint64_t, LinetypeRec> linetypes{};
     std::map<std::uint64_t, StyleRec> styles{};

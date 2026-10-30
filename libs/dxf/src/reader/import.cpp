@@ -2419,10 +2419,16 @@ void Importer::readLayoutObject(const Record& r) {
 // Builds the layout table (Header::custom["tbcad.layouts"], format in libs/layout/layout.h) from
 // the sheets read, naming them from the LAYOUT objects in tab order.
 void Importer::finishLayouts() {
-    // An empty sheet (the default *Paper_Space of a file with no layouts) is not a layout.
+    // An empty sheet (the default *Paper_Space of a file with no layouts) is not a layout. But
+    // two or more layouts named by LAYOUT objects are the user's own even when empty (test.10:
+    // empty Layout1 and Layout2 were lost after a save); a single empty one stays ambiguous.
+    const std::size_t named = static_cast<std::size_t>(
+        std::count_if(layoutRows_.begin(), layoutRows_.end(),
+                      [](const LayoutRow& l) { return fold(l.name) != "model"; }));
+    const bool keepEmpty = named >= 2 && sheets_.size() <= named;
     for (std::size_t i = sheets_.size(); i-- > 0;) {
         const BlockDef* b = doc_->block(sheets_[i].content);
-        if (sheets_[i].viewports.empty() && (!b || b->entities.empty())) {
+        if (!keepEmpty && sheets_[i].viewports.empty() && (!b || b->entities.empty())) {
             if (sheets_[i].content)
                 (void)tx_->eraseBlock(sheets_[i].content);
             sheets_.erase(sheets_.begin() + static_cast<std::ptrdiff_t>(i));

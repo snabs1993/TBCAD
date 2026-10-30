@@ -26,6 +26,7 @@ std::unique_ptr<cmd::Command> makeBLookupTableCommand();
 std::unique_ptr<cmd::Command> makeBTestBlockCommand();
 std::unique_ptr<cmd::Command> makeBAttOrderCommand();
 std::unique_ptr<cmd::Command> makeInsertCommand();
+std::unique_ptr<cmd::Command> makeTypedInsertCommand();
 std::unique_ptr<cmd::Command> makeBlocksPaletteCommand();
 std::unique_ptr<cmd::Command> makeBlocksPaletteCloseCommand();
 std::unique_ptr<cmd::Command> makeMinsertCommand();

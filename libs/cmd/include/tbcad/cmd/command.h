@@ -62,6 +62,7 @@ struct PromptRequest {
     std::optional<double> max{};
     bool allowNone = true;
     bool freeText = false;
+    bool numberAsText = false;
     bool snap = true;  // Point: the point filters (object snaps, ortho...) apply
     bool allowEmptyString = false;
     bool clickAnswers = false;  // String: a click answers as Enter, with its point
