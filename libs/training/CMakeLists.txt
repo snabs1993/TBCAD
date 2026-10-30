@@ -2,10 +2,11 @@
 # stars and the saved progress. No window code; the application draws the panel.
 tbcad_add_library(training
   SOURCES
+    src/badges.cpp
     src/check.cpp
     src/lesson.cpp
     src/run.cpp
-  DEPENDS tbcad::core tbcad::geom tbcad::platform)
+  DEPENDS tbcad::core tbcad::geom tbcad::blocks tbcad::platform)
 
 tbcad_add_tests(training
   SOURCES

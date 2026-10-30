@@ -1,0 +1,262 @@
+{
+  "id": "B6",
+  "world": 6,
+  "boss": true,
+  "title": {
+    "en": "Boss: Meeting room",
+    "th": "บอส: ห้องประชุม"
+  },
+  "goal": {
+    "en": "Make TABLE and CHAIR blocks, then seat 8 chairs around the table",
+    "th": "ทำบล็อก TABLE และ CHAIR แล้ววางเก้าอี้ 8 ตัวรอบโต๊ะ"
+  },
+  "tip": {
+    "en": "Boss beaten!",
+    "th": "ชนะบอสแล้ว!"
+  },
+  "par": 5,
+  "parSeconds": 300,
+  "setup": [
+    "RECTANGLE;-1500,-600;@3000,1200",
+    "RECTANGLE;-1300,-1700;@500,500",
+    "LINE;-1300,-1650;-800,-1650;",
+    "ZOOM;W;-2500,-2200;2500,2200"
+  ],
+  "ghosts": [
+    {
+      "polyline": [
+        [
+          -1300,
+          -1700
+        ],
+        [
+          -800,
+          -1700
+        ],
+        [
+          -800,
+          -1200
+        ],
+        [
+          -1300,
+          -1200
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "polyline": [
+        [
+          -600,
+          -1700
+        ],
+        [
+          -100,
+          -1700
+        ],
+        [
+          -100,
+          -1200
+        ],
+        [
+          -600,
+          -1200
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "polyline": [
+        [
+          100,
+          -1700
+        ],
+        [
+          600,
+          -1700
+        ],
+        [
+          600,
+          -1200
+        ],
+        [
+          100,
+          -1200
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "polyline": [
+        [
+          800,
+          -1700
+        ],
+        [
+          1300,
+          -1700
+        ],
+        [
+          1300,
+          -1200
+        ],
+        [
+          800,
+          -1200
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "polyline": [
+        [
+          -1300,
+          1200
+        ],
+        [
+          -800,
+          1200
+        ],
+        [
+          -800,
+          1700
+        ],
+        [
+          -1300,
+          1700
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "polyline": [
+        [
+          -600,
+          1200
+        ],
+        [
+          -100,
+          1200
+        ],
+        [
+          -100,
+          1700
+        ],
+        [
+          -600,
+          1700
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "polyline": [
+        [
+          100,
+          1200
+        ],
+        [
+          600,
+          1200
+        ],
+        [
+          600,
+          1700
+        ],
+        [
+          100,
+          1700
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "polyline": [
+        [
+          800,
+          1200
+        ],
+        [
+          1300,
+          1200
+        ],
+        [
+          1300,
+          1700
+        ],
+        [
+          800,
+          1700
+        ]
+      ],
+      "closed": true
+    }
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Turn the table into a block TABLE and the chair into a block CHAIR, then place 8 chairs on the dashed spots (Copy, Mirror or Array all work).",
+        "th": "ทำโต๊ะเป็นบล็อก TABLE เก้าอี้เป็นบล็อก CHAIR แล้ววางเก้าอี้ 8 ตัวตามเส้นประ (ใช้ Copy, Mirror หรือ Array ก็ได้)"
+      },
+      "hint": {
+        "en": "Copy the chair along the bottom, then Mirror the row to the top.",
+        "th": "คัดลอกเก้าอี้ตามแนวล่าง แล้ว Mirror ทั้งแถวขึ้นด้านบน"
+      },
+      "checks": [
+        {
+          "type": "block",
+          "name": "TABLE"
+        },
+        {
+          "type": "block",
+          "name": "CHAIR"
+        },
+        {
+          "type": "insert",
+          "name": "TABLE",
+          "equals": 1
+        },
+        {
+          "type": "insert",
+          "name": "CHAIR",
+          "equals": 8
+        },
+        {
+          "type": "count",
+          "kind": "line",
+          "equals": 0
+        },
+        {
+          "type": "count",
+          "kind": "polyline",
+          "equals": 0
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "-BLOCK;TABLE;<Click 0 600>;;0,0;",
+    "<Esc>",
+    "-BLOCK;CHAIR;<Drag -1400 -1800 -700 -1100>;;-1050,-1200;",
+    "<Esc>",
+    "CO;<Click -1050 -1700>;;-1050,-1200;-350,-1200;350,-1200;1050,-1200;",
+    "<Esc>",
+    "MI;<Drag -1400 -1800 1400 -1100>;;-2000,0;2000,0;N"
+  ],
+  "wrong": [
+    [
+      "-BLOCK;TABLE;<Click 0 600>;;0,0;",
+      "<Esc>",
+      "-BLOCK;CHAIR;<Drag -1400 -1800 -700 -1100>;;-1050,-1200;",
+      "<Esc>",
+      "CO;<Click -1050 -1700>;;-1050,-1200;-350,-1200;350,-1200;1050,-1200;"
+    ],
+    [
+      "-BLOCK;TABLE;<Click 0 600>;;0,0;",
+      "<Esc>",
+      "CO;<Drag -1400 -1800 -700 -1100>;;-1050,-1200;-350,-1200;350,-1200;1050,-1200;",
+      "<Esc>",
+      "MI;<Drag -1400 -1800 1400 -1100>;;-2000,0;2000,0;N"
+    ]
+  ]
+}

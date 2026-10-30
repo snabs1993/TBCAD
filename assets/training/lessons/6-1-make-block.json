@@ -1,0 +1,99 @@
+{
+  "id": "6.1",
+  "world": 6,
+  "title": {
+    "en": "Make a block",
+    "th": "สร้างบล็อก"
+  },
+  "goal": {
+    "en": "Turn the chair drawing into a block named CHAIR",
+    "th": "ทำรูปเก้าอี้ให้เป็นบล็อกชื่อ CHAIR"
+  },
+  "tip": {
+    "en": "A block is drawn once and placed many times; the file stays small.",
+    "th": "บล็อกวาดครั้งเดียววางได้หลายที่ ไฟล์ก็ไม่ใหญ่"
+  },
+  "par": 1,
+  "setup": [
+    "RECTANGLE;-250,-500;@500,500",
+    "LINE;-250,-450;250,-450;",
+    "ZOOM;W;-1500,-1200;1500,700"
+  ],
+  "ghosts": [
+    {
+      "dot": [
+        0,
+        0
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Make block (B or บล็อก): the Make Block panel opens. Type the name CHAIR.",
+        "th": "สร้างบล็อก (B หรือ บล็อก) แผง Make Block จะเปิดขึ้น พิมพ์ชื่อ CHAIR"
+      },
+      "hint": {
+        "en": "Or type -BLOCK to answer on the command line instead.",
+        "th": "หรือพิมพ์ -BLOCK เพื่อตอบในบรรทัดคำสั่งแทน"
+      }
+    },
+    {
+      "text": {
+        "en": "Pick the objects (drag a box around the chair) and the base point (the green dot).",
+        "th": "เลือกวัตถุ (ลากกรอบรอบเก้าอี้) และจุดฐาน (จุดเขียว)"
+      },
+      "hint": {
+        "en": "The base point is where the block hangs from the cursor when you place it.",
+        "th": "จุดฐานคือจุดที่บล็อกเกาะเมาส์ตอนวาง"
+      }
+    },
+    {
+      "text": {
+        "en": "Press OK: the chair becomes one block.",
+        "th": "กด OK เก้าอี้จะกลายเป็นบล็อกชิ้นเดียว"
+      },
+      "hint": {
+        "en": "Keep 'Convert' so the chair in the drawing is now the block.",
+        "th": "เลือก Convert ไว้ เก้าอี้ในแบบจะกลายเป็นบล็อก"
+      },
+      "checks": [
+        {
+          "type": "block",
+          "name": "CHAIR",
+          "objects": 2
+        },
+        {
+          "type": "insert",
+          "name": "CHAIR",
+          "center": [
+            0,
+            0
+          ],
+          "equals": 1
+        },
+        {
+          "type": "count",
+          "kind": "line",
+          "equals": 0
+        },
+        {
+          "type": "count",
+          "kind": "polyline",
+          "equals": 0
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "-BLOCK;CHAIR;<Drag -400 -600 400 100>;;0,0;"
+  ],
+  "wrong": [
+    [
+      "-BLOCK;CHAIR;<Drag -400 -600 400 100>;;-250,-500;"
+    ],
+    [
+      "-BLOCK;CHAIR;<Click 0 0>;;0,0;"
+    ]
+  ]
+}

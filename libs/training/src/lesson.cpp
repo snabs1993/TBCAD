@@ -107,6 +107,8 @@ Result<Check::Type> checkType(const std::string& s) {
         {"text", Check::Type::Text},
         {"dimension", Check::Type::Dimension},
         {"object", Check::Type::Object},
+        {"block", Check::Type::Block},
+        {"insert", Check::Type::Insert},
     };
     for (const auto& [name, type] : kTypes)
         if (s == name)
@@ -145,6 +147,7 @@ Result<Check> parseCheck(const Json& o) {
     c.path = std::move(path).value();
     c.closed = boolean(o, "closed");
     c.vertices = integer(o, "vertices");
+    c.objects = integer(o, "objects");
     c.arcs = integer(o, "arcs");
     c.tol = number(o, "tol").value_or(c.tol);
     c.angleTol = number(o, "angleTol").value_or(c.angleTol);
@@ -249,6 +252,7 @@ Result<Lesson> parseLesson(std::string_view json) {
     if (l.id.empty())
         return parseError("the lesson has no id");
     l.world = integer(root, "world").value_or(0);
+    l.boss = boolean(root, "boss").value_or(false);
     l.title = text(root.find("title"));
     l.goal = text(root.find("goal"));
     l.tip = text(root.find("tip"));
@@ -323,6 +327,8 @@ std::vector<Lesson> loadLessons(const std::filesystem::path& folder,
     std::sort(out.begin(), out.end(), [&](const Lesson& a, const Lesson& b) {
         if (a.world != b.world)
             return a.world < b.world;
+        if (a.boss != b.boss)
+            return b.boss;
         return parts(a.id) < parts(b.id);
     });
     return out;

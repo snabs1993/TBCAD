@@ -4,6 +4,7 @@
 #include <cmath>
 #include <iterator>
 
+#include "tbcad/blocks/blocks.h"
 #include "tbcad/geom/entity.h"
 
 namespace tbcad::training {
@@ -61,11 +62,34 @@ bool inBox(const BBox2& b, Vec2 p, double tol) {
            p.y <= b.max.y + tol;
 }
 
+// The objects of model space. An associative array counts as the objects it shows (a polar
+// array of a circle is 8 circles), on the array's layer where they are on layer 0.
 template <class Fn>
 void forEachModelEntity(const Document& doc, Fn&& fn) {
-    for (EntityId id : doc.modelSpace())
-        if (const Entity* e = doc.find(id))
+    for (EntityId id : doc.modelSpace()) {
+        const Entity* e = doc.find(id);
+        if (!e)
+            continue;
+        const auto* ins = entityAs<InsertData>(*e);
+        const BlockDef* def = ins && ins->array ? doc.block(ins->block) : nullptr;
+        if (!def) {
             fn(*e);
+            continue;
+        }
+        for (const Transform2& t : blocks::instanceTransforms(*ins, def->base)) {
+            for (EntityId sid : def->entities) {
+                const Entity* src = doc.find(sid);
+                if (!src)
+                    continue;
+                auto item = geom::transformed(*src, t);
+                if (!item)
+                    continue;
+                if (item.value().common.layer == kLayerZero)
+                    item.value().common.layer = e->common.layer;
+                fn(item.value());
+            }
+        }
+    }
 }
 
 struct Segment {
@@ -409,6 +433,29 @@ bool passes(const Check& c, const Facts& f) {
                     if (distance(b.min, c.box->min) > c.tol || distance(b.max, c.box->max) > c.tol)
                         return;
                 }
+                ++n;
+            });
+            return countOk(c, n, 1);
+        }
+        case Check::Type::Block: {
+            for (const auto& [id, def] : doc.blocks())
+                if (!def.anonymous && sameName(def.name, c.name))
+                    return !c.objects || static_cast<int>(def.entities.size()) == *c.objects;
+            return false;
+        }
+        case Check::Type::Insert: {
+            int n = 0;
+            forEachModelEntity(doc, [&](const Entity& e) {
+                const auto* ins = entityAs<InsertData>(e);
+                if (!ins || !matchesFilters(c, e, doc))
+                    return;
+                const BlockDef* def = doc.block(ins->block);
+                if (!def || (!c.name.empty() && !sameName(def->name, c.name)))
+                    return;
+                if (c.center && distance(ins->position, *c.center) > c.tol)
+                    return;
+                if (c.angle && angleDiff(ins->rotation * 180.0 / kPi, *c.angle, false) > c.angleTol)
+                    return;
                 ++n;
             });
             return countOk(c, n, 1);

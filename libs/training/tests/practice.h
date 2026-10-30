@@ -31,6 +31,7 @@ struct Practice {
             std::make_unique<ui::AppCore>(registry, platform::AppPaths{dir / "cfg", dir / "data"});
         registerAllUi(uiRegistry);
         core->registerBuiltinUi(uiRegistry);
+        core->applyUiKeybindings(uiRegistry);  // snaps, grips and the like, as the window has
         core->setViewportSize(1000, 800);
         core->addCommandListener([this](const ui::CommandEvent& e) {
             if (!run)
@@ -76,7 +77,8 @@ struct Practice {
                 ui::PointerState ps;
                 ps.screen = core->camera().worldToScreen({x, y});
                 core->pointerMoved(ps);
-                core->click(ps);
+                if (!core->pressOnGrip(ps))  // as the window does
+                    core->click(ps);
             } else if (part.rfind("<Drag ", 0) == 0) {
                 double x0 = 0, y0 = 0, x1 = 0, y1 = 0;
                 REQUIRE(std::sscanf(part.c_str(), "<Drag %lf %lf %lf %lf>", &x0, &y0, &x1, &y1) ==

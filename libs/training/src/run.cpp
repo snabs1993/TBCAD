@@ -16,8 +16,9 @@ int starsFor(const Lesson& lesson, bool done, bool hintUsed, int commands, doubl
 }
 
 bool countsTowardsPar(std::string_view command) {
-    static constexpr std::string_view kFree[] = {"ZOOM",  "PAN",   "UNDO",     "U",    "REDO",
-                                                 "MREDO", "REGEN", "REGENALL", "HELP", "PRACTICE"};
+    static constexpr std::string_view kFree[] = {"ZOOM", "PAN",      "UNDO",    "U",
+                                                 "REDO", "MREDO",    "REGEN",   "REGENALL",
+                                                 "HELP", "PRACTICE", "GRIPEDIT"};
     return std::find(std::begin(kFree), std::end(kFree), command) == std::end(kFree);
 }
 
@@ -94,7 +95,15 @@ std::string Progress::toJson() const {
     platform::Json::Array bs;
     for (const std::string& b : badges)
         bs.emplace_back(b);
-    return platform::toJson(platform::Json::Object{{"lessons", ls}, {"badges", bs}}, false);
+    platform::Json::Object ws;
+    for (const auto& [command, w] : ways)
+        ws[command] = w;
+    return platform::toJson(platform::Json::Object{{"lessons", ls},
+                                                   {"badges", bs},
+                                                   {"ways", ws},
+                                                   {"typedLessons", typedLessons},
+                                                   {"noUndoStreak", noUndoStreak}},
+                            false);
 }
 
 Progress Progress::fromJson(std::string_view text) {
@@ -116,6 +125,14 @@ Progress Progress::fromJson(std::string_view text) {
         for (const platform::Json& b : bs->asArray())
             if (b.isString())
                 p.badges.insert(b.asString());
+    if (const platform::Json* ws = root.find("ways"))
+        for (const auto& [command, w] : ws->asObject())
+            if (w.isNumber())
+                p.ways[command] = static_cast<int>(w.asNumber()) & 7;
+    if (const platform::Json* n = root.find("typedLessons"); n && n->isNumber())
+        p.typedLessons = std::max(static_cast<int>(n->asNumber()), 0);
+    if (const platform::Json* n = root.find("noUndoStreak"); n && n->isNumber())
+        p.noUndoStreak = std::max(static_cast<int>(n->asNumber()), 0);
     return p;
 }
 

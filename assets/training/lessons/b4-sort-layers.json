@@ -1,0 +1,92 @@
+{
+  "id": "B4",
+  "world": 4,
+  "boss": true,
+  "title": {
+    "en": "Boss: Sort the mess",
+    "th": "บอส: จัดระเบียบเลเยอร์"
+  },
+  "goal": {
+    "en": "Everything is on layer 0: put each thing on its layer, and make a red layer Electrical for the switch",
+    "th": "ทุกอย่างอยู่ในเลเยอร์ 0 ให้ย้ายแต่ละอย่างเข้าเลเยอร์ของมัน และสร้างเลเยอร์ Electrical สีแดงสำหรับสวิตช์"
+  },
+  "tip": {
+    "en": "Boss beaten!",
+    "th": "ชนะบอสแล้ว!"
+  },
+  "par": 5,
+  "parSeconds": 240,
+  "setup": [
+    "RECTANGLE;0,0;@5000,4000",
+    "LINE;4000,0;4000,900;",
+    "ARC;C;4000,0;4900,0;4000,900",
+    "RECTANGLE;1900,1600;@1200,800",
+    "CIRCLE;2500,1300;200",
+    "CIRCLE;2500,2700;200",
+    "CIRCLE;4800,2000;50",
+    "ZOOM;W;-500,-500;5500,4500"
+  ],
+  "ghosts": [],
+  "steps": [
+    {
+      "text": {
+        "en": "Walls on Walls, the door on Doors-Windows, table and chairs on Furniture, the small switch circle on a new red layer Electrical.",
+        "th": "ผนังไป Walls ประตูไป Doors-Windows โต๊ะและเก้าอี้ไป Furniture วงกลมสวิตช์เล็กไปเลเยอร์ใหม่ Electrical สีแดง"
+      },
+      "hint": {
+        "en": "Layers panel for the new layer; Object Properties (or CHPROP) to move things.",
+        "th": "ใช้แผง Layers สร้างเลเยอร์ใหม่ และแผง Object Properties (หรือ CHPROP) ย้ายของ"
+      },
+      "checks": [
+        {
+          "type": "layer",
+          "name": "Electrical",
+          "color": 1
+        },
+        {
+          "type": "count",
+          "kind": "polyline",
+          "layer": "Walls",
+          "equals": 1
+        },
+        {
+          "type": "count",
+          "layer": "Doors-Windows",
+          "equals": 2
+        },
+        {
+          "type": "count",
+          "layer": "Furniture",
+          "equals": 3
+        },
+        {
+          "type": "count",
+          "kind": "circle",
+          "layer": "Electrical",
+          "equals": 1
+        },
+        {
+          "type": "count",
+          "layer": "0",
+          "equals": 0
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "-LAYER;New;Electrical;Color;1;Electrical;",
+    "CHPROP;<Click 2500 0>;;LA;Walls",
+    "CHPROP;<Click 4000 450>;<Click 4636.4 636.4>;;LA;Doors-Windows",
+    "CHPROP;<Click 2500 1600>;<Click 2700 1300>;<Click 2700 2700>;;LA;Furniture",
+    "CHPROP;<Click 4850 2000>;;LA;Electrical"
+  ],
+  "wrong": [
+    [
+      "-LAYER;New;Electrical;Color;1;Electrical;",
+      "CHPROP;<Click 2500 0>;;LA;Walls",
+      "CHPROP;<Click 4000 450>;<Click 4636.4 636.4>;;LA;Doors-Windows",
+      "CHPROP;<Click 2500 1600>;<Click 2700 1300>;;LA;Furniture",
+      "CHPROP;<Click 4850 2000>;;LA;Electrical"
+    ]
+  ]
+}

@@ -1,0 +1,441 @@
+{
+  "id": "3.6",
+  "world": 3,
+  "title": {
+    "en": "Arrays",
+    "th": "เรียงซ้ำ"
+  },
+  "goal": {
+    "en": "8 bolts around the flange, and 2 rows of 5 parking bays",
+    "th": "สลัก 8 ตัวรอบหน้าแปลน และช่องจอดรถ 2 แถว แถวละ 5 ช่อง"
+  },
+  "tip": {
+    "en": "An array stays one object: select it later to change the count or the spacing.",
+    "th": "Array เป็นวัตถุชิ้นเดียว เลือกภายหลังเพื่อแก้จำนวนหรือระยะได้"
+  },
+  "par": 2,
+  "setup": [
+    "CIRCLE;0,0;1000",
+    "CIRCLE;0,0;300",
+    "CIRCLE;800,0;60",
+    "RECTANGLE;3000,-2500;@2500,5000",
+    "ZOOM;W;-1500,-3000;16000,8000"
+  ],
+  "ghosts": [
+    {
+      "circle": [
+        565.685,
+        565.685
+      ],
+      "radius": 60
+    },
+    {
+      "circle": [
+        0.0,
+        800.0
+      ],
+      "radius": 60
+    },
+    {
+      "circle": [
+        -565.685,
+        565.685
+      ],
+      "radius": 60
+    },
+    {
+      "circle": [
+        -800.0,
+        0.0
+      ],
+      "radius": 60
+    },
+    {
+      "circle": [
+        -565.685,
+        -565.685
+      ],
+      "radius": 60
+    },
+    {
+      "circle": [
+        -0.0,
+        -800.0
+      ],
+      "radius": 60
+    },
+    {
+      "circle": [
+        565.685,
+        -565.685
+      ],
+      "radius": 60
+    },
+    {
+      "polyline": [
+        [
+          5500,
+          -2500
+        ],
+        [
+          8000,
+          -2500
+        ],
+        [
+          8000,
+          2500
+        ],
+        [
+          5500,
+          2500
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "polyline": [
+        [
+          8000,
+          -2500
+        ],
+        [
+          10500,
+          -2500
+        ],
+        [
+          10500,
+          2500
+        ],
+        [
+          8000,
+          2500
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "polyline": [
+        [
+          10500,
+          -2500
+        ],
+        [
+          13000,
+          -2500
+        ],
+        [
+          13000,
+          2500
+        ],
+        [
+          10500,
+          2500
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "polyline": [
+        [
+          13000,
+          -2500
+        ],
+        [
+          15500,
+          -2500
+        ],
+        [
+          15500,
+          2500
+        ],
+        [
+          13000,
+          2500
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "polyline": [
+        [
+          3000,
+          2500
+        ],
+        [
+          5500,
+          2500
+        ],
+        [
+          5500,
+          7500
+        ],
+        [
+          3000,
+          7500
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "polyline": [
+        [
+          5500,
+          2500
+        ],
+        [
+          8000,
+          2500
+        ],
+        [
+          8000,
+          7500
+        ],
+        [
+          5500,
+          7500
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "polyline": [
+        [
+          8000,
+          2500
+        ],
+        [
+          10500,
+          2500
+        ],
+        [
+          10500,
+          7500
+        ],
+        [
+          8000,
+          7500
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "polyline": [
+        [
+          10500,
+          2500
+        ],
+        [
+          13000,
+          2500
+        ],
+        [
+          13000,
+          7500
+        ],
+        [
+          10500,
+          7500
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "polyline": [
+        [
+          13000,
+          2500
+        ],
+        [
+          15500,
+          2500
+        ],
+        [
+          15500,
+          7500
+        ],
+        [
+          13000,
+          7500
+        ]
+      ],
+      "closed": true
+    }
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Open the arrow next to Array and pick Polar (or type ARRAYPOLAR). Click the small bolt circle, Enter, then click the centre of the flange.",
+        "th": "กดลูกศรข้าง Array เลือก Polar (หรือพิมพ์ ARRAYPOLAR) คลิกวงกลมสลักเล็ก กด Enter แล้วคลิกจุดศูนย์กลางหน้าแปลน"
+      },
+      "hint": {
+        "en": "The centre snap shows when you move over the big circle's middle.",
+        "th": "เลื่อนเมาส์ไปกลางวงกลมใหญ่ จะเห็นตัวจับจุดศูนย์กลาง"
+      },
+      "checks": [
+        {
+          "type": "prompt",
+          "command": "ARRAYPOLAR",
+          "contains": "items"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Type I, Enter, 8, Enter, then Enter again to accept.",
+        "th": "พิมพ์ I กด Enter พิมพ์ 8 กด Enter แล้วกด Enter อีกครั้งเพื่อตกลง"
+      },
+      "hint": {
+        "en": "I is Items: how many, counting the first one.",
+        "th": "I คือจำนวน (Items) นับตัวแรกด้วย"
+      },
+      "checks": [
+        {
+          "type": "circle",
+          "center": [
+            565.685,
+            565.685
+          ],
+          "radius": 60,
+          "tol": 1
+        },
+        {
+          "type": "circle",
+          "center": [
+            0.0,
+            800.0
+          ],
+          "radius": 60,
+          "tol": 1
+        },
+        {
+          "type": "circle",
+          "center": [
+            -800.0,
+            0.0
+          ],
+          "radius": 60,
+          "tol": 1
+        },
+        {
+          "type": "circle",
+          "center": [
+            -0.0,
+            -800.0
+          ],
+          "radius": 60,
+          "tol": 1
+        },
+        {
+          "type": "count",
+          "kind": "circle",
+          "equals": 10
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Press Esc, then pick Rectangular (ARRAYRECT): click the parking bay, Enter. Type COU, 5, 2, then S, 2500, 5000, and Enter.",
+        "th": "กด Esc แล้วเลือก Rectangular (ARRAYRECT) คลิกช่องจอด กด Enter พิมพ์ COU, 5, 2 แล้วพิมพ์ S, 2500, 5000 แล้วกด Enter"
+      },
+      "hint": {
+        "en": "COU sets the columns and rows; S the distances between them.",
+        "th": "COU ตั้งจำนวนคอลัมน์และแถว S ตั้งระยะห่าง"
+      },
+      "checks": [
+        {
+          "type": "circle",
+          "center": [
+            565.685,
+            565.685
+          ],
+          "radius": 60,
+          "tol": 1
+        },
+        {
+          "type": "circle",
+          "center": [
+            0.0,
+            800.0
+          ],
+          "radius": 60,
+          "tol": 1
+        },
+        {
+          "type": "circle",
+          "center": [
+            -800.0,
+            0.0
+          ],
+          "radius": 60,
+          "tol": 1
+        },
+        {
+          "type": "circle",
+          "center": [
+            -0.0,
+            -800.0
+          ],
+          "radius": 60,
+          "tol": 1
+        },
+        {
+          "type": "count",
+          "kind": "circle",
+          "equals": 10
+        },
+        {
+          "type": "polyline",
+          "closed": true,
+          "box": [
+            [
+              13000,
+              2500
+            ],
+            [
+              15500,
+              7500
+            ]
+          ],
+          "tol": 1
+        },
+        {
+          "type": "polyline",
+          "closed": true,
+          "box": [
+            [
+              8000,
+              -2500
+            ],
+            [
+              10500,
+              2500
+            ]
+          ],
+          "tol": 1
+        },
+        {
+          "type": "count",
+          "kind": "polyline",
+          "equals": 10
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "ARRAYPOLAR;<Click 860 0>;;0,0;I;8;",
+    "<Esc>",
+    "ARRAYRECT;<Click 4250 -2500>;;COU;5;2;S;2500;5000;"
+  ],
+  "wrong": [
+    [
+      "ARRAYPOLAR;<Click 860 0>;;0,0;",
+      "<Esc>",
+      "ARRAYRECT;<Click 4250 -2500>;;COU;5;2;S;2500;5000;"
+    ],
+    [
+      "ARRAYPOLAR;<Click 860 0>;;0,0;I;8;",
+      "<Esc>",
+      "ARRAYRECT;<Click 4250 -2500>;;COU;5;2;"
+    ]
+  ]
+}

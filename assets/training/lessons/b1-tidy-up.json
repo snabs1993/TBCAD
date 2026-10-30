@@ -1,0 +1,84 @@
+{
+  "id": "B1",
+  "world": 1,
+  "boss": true,
+  "title": {
+    "en": "Boss: Tidy up",
+    "th": "บอส: เก็บกวาด"
+  },
+  "goal": {
+    "en": "Erase the 6 red lines without erasing anything else, then show the whole house",
+    "th": "ลบเส้นสีแดงทั้ง 6 เส้นโดยไม่ลบอย่างอื่น แล้วซูมให้เห็นทั้งบ้าน"
+  },
+  "tip": {
+    "en": "Boss beaten!",
+    "th": "ชนะบอสแล้ว!"
+  },
+  "par": 2,
+  "parSeconds": 90,
+  "setup": [
+    "RECTANGLE;0,0;@8000,6000",
+    "LINE;4000,0;4000,6000;",
+    "CIRCLE;2000,3000;400",
+    "RECTANGLE;5000,1000;@2000,1500",
+    "COLOR;1",
+    "LINE;500,500;1500,500;",
+    "LINE;500,5500;1500,4800;",
+    "LINE;2500,1000;3500,1500;",
+    "LINE;3000,4000;3600,5000;",
+    "LINE;4500,3000;5500,3000;",
+    "LINE;4500,5000;5500,4500;",
+    "COLOR;ByLayer",
+    "ZOOM;W;-200,-200;6000,6200"
+  ],
+  "ghosts": [],
+  "steps": [
+    {
+      "text": {
+        "en": "Erase every red line, keep the rest, and make the whole house fit the screen.",
+        "th": "ลบเส้นแดงทุกเส้น เก็บของอื่นไว้ แล้วซูมให้เห็นบ้านทั้งหลัง"
+      },
+      "hint": {
+        "en": "Click the red lines and press Delete. Double-click the middle button to see everything.",
+        "th": "คลิกเส้นแดงแล้วกด Delete ดับเบิลคลิกปุ่มกลางเพื่อดูทั้งหมด"
+      },
+      "checks": [
+        {
+          "type": "count",
+          "color": 1,
+          "equals": 0
+        },
+        {
+          "type": "count",
+          "equals": 4
+        },
+        {
+          "type": "view",
+          "box": [
+            [
+              0,
+              0
+            ],
+            [
+              8000,
+              6000
+            ]
+          ]
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "ERASE;<Click 1000.0 500.0>;<Click 1000.0 5150.0>;<Click 3000.0 1250.0>;<Click 3300.0 4500.0>;<Click 5000.0 3000.0>;<Click 5000.0 4750.0>;",
+    "ZOOM;E"
+  ],
+  "wrong": [
+    [
+      "ERASE;<Click 1000.0 500.0>;<Click 1000.0 5150.0>;<Click 3000.0 1250.0>;<Click 3300.0 4500.0>;<Click 5000.0 3000.0>;",
+      "ZOOM;E"
+    ],
+    [
+      "ERASE;<Click 1000.0 500.0>;<Click 1000.0 5150.0>;<Click 3000.0 1250.0>;<Click 3300.0 4500.0>;<Click 5000.0 3000.0>;<Click 5000.0 4750.0>;"
+    ]
+  ]
+}

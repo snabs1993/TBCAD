@@ -39,6 +39,7 @@ private:
     void drawMap();
     void drawLesson();
     void drawResult();
+    void drawBadges();
     void drawGhosts(render::Overlay& overlay) const;
     bool inPracticeDrawing() const;
     bool practiceDrawingOpen() const;
@@ -59,6 +60,7 @@ private:
     bool showHint_ = false;
     training::Score score_{};
     bool improved_ = false;
+    std::vector<std::string> newBadges_;
 };
 
 }  // namespace tbcad::app
