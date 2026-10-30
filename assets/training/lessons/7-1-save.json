@@ -1,0 +1,134 @@
+{
+  "id": "7.1",
+  "world": 7,
+  "title": {
+    "en": "Save your work",
+    "th": "บันทึกงาน"
+  },
+  "goal": {
+    "en": "Save the room under a name, change it, and save again",
+    "th": "บันทึกแบบห้องตั้งชื่อ แก้ไข แล้วบันทึกอีกครั้ง"
+  },
+  "tip": {
+    "en": "TBCAD also autosaves every few minutes, but Ctrl+S is the habit to keep.",
+    "th": "TBCAD บันทึกสำรองให้อัตโนมัติทุกไม่กี่นาที แต่ควรกด Ctrl+S จนติดมือ"
+  },
+  "par": 3,
+  "setup": [
+    "RECTANGLE;0,0;@5000,4000",
+    "LINE;4000,0;4000,900;",
+    "ARC;C;4000,0;4900,0;4000,900",
+    "ZOOM;W;-500,-500;5500,4500"
+  ],
+  "ghosts": [
+    {
+      "polyline": [
+        [
+          1900,
+          1600
+        ],
+        [
+          3100,
+          1600
+        ],
+        [
+          3100,
+          2400
+        ],
+        [
+          1900,
+          2400
+        ]
+      ],
+      "closed": true
+    }
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Save As (Ctrl+Shift+S, or File > Save As): pick a folder and a name, for example my-room.",
+        "th": "Save As (Ctrl+Shift+S หรือ File > Save As) เลือกโฟลเดอร์และตั้งชื่อ เช่น my-room"
+      },
+      "hint": {
+        "en": "A practice drawing has no file yet, so Ctrl+S asks for a name too.",
+        "th": "แบบฝึกยังไม่มีไฟล์ กด Ctrl+S ก็จะถามชื่อเหมือนกัน"
+      },
+      "checks": [
+        {
+          "type": "saved"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Draw the table: a rectangle on the dashed outline.",
+        "th": "วาดโต๊ะ: สี่เหลี่ยมทับเส้นประ"
+      },
+      "hint": {
+        "en": "Rectangle from 1900,1600 to @1200,800.",
+        "th": "สี่เหลี่ยมจาก 1900,1600 ไป @1200,800"
+      },
+      "checks": [
+        {
+          "type": "polyline",
+          "closed": true,
+          "box": [
+            [
+              1900,
+              1600
+            ],
+            [
+              3100,
+              2400
+            ]
+          ],
+          "tol": 1
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Press Ctrl+S: the * next to the tab name goes, the change is in the file.",
+        "th": "กด Ctrl+S เครื่องหมาย * ข้างชื่อแท็บจะหายไป งานที่แก้ถูกบันทึกลงไฟล์แล้ว"
+      },
+      "hint": {
+        "en": "The * means there are changes not saved yet.",
+        "th": "เครื่องหมาย * แปลว่ายังมีงานที่ยังไม่ได้บันทึก"
+      },
+      "checks": [
+        {
+          "type": "polyline",
+          "closed": true,
+          "box": [
+            [
+              1900,
+              1600
+            ],
+            [
+              3100,
+              2400
+            ]
+          ],
+          "tol": 1
+        },
+        {
+          "type": "saved"
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "<SaveAs my-room.tbcad>",
+    "RECTANGLE;1900,1600;@1200,800",
+    "<Save>"
+  ],
+  "wrong": [
+    [
+      "<SaveAs my-room.tbcad>",
+      "RECTANGLE;1900,1600;@1200,800"
+    ],
+    [
+      "RECTANGLE;1900,1600;@1200,800"
+    ]
+  ]
+}

@@ -7,6 +7,7 @@
 #include <cstdio>
 
 #include "tbcad/core/math.h"
+#include "tbcad/platform/paths.h"
 #include "tbcad/render/overlay.h"
 #include "tbcad/training/badges.h"
 
@@ -148,6 +149,7 @@ void Practice::start(std::size_t index) {
     showHint_ = false;
     improved_ = false;
     newBadges_.clear();
+    since_ = std::filesystem::file_time_type::clock::now();
     run_->update(facts());
     open();
 }
@@ -188,6 +190,11 @@ training::Facts Practice::facts() const {
         f.runningCommand = p->command;
         f.prompt = p->text;
     }
+    f.file = core_.hasFile() ? core_.file() : std::filesystem::path{};
+    f.modified = core_.modified();
+    f.layout = core_.activeLayout();
+    f.lastPdf = platform::pathFromUtf8(core_.setting("plot.file.pdf").value_or(""));
+    f.since = since_;
     return f;
 }
 

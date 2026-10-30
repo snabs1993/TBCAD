@@ -72,6 +72,9 @@ const std::vector<Badge>& allBadges() {
         {"block-builder",
          {"Block Builder", "นักสร้างบล็อก"},
          {"Finish every Blocks lesson", "จบทุกด่านในบท Blocks"}},
+        {"paper-ready",
+         {"Paper Ready", "พร้อมพิมพ์"},
+         {"Make a PDF in lesson 7.3", "ส่งออก PDF สำเร็จในด่าน 7.3"}},
         {"no-undo",
          {"No Undo", "ไม่ต้องย้อน"},
          {"Finish 3 lessons in a row without Undo", "จบ 3 ด่านติดกันโดยไม่กด Undo"}},
@@ -128,6 +131,7 @@ std::vector<std::string> awardBadges(Progress& p, const std::vector<Lesson>& les
     award("thai-writer", lesson.id == "5.1" && thaiTextDrawn(facts));
     award("measured-up", worldDone(p, lessons, 5));
     award("block-builder", worldDone(p, lessons, 6));
+    award("paper-ready", lesson.id == "7.3");
     award("no-undo", p.noUndoStreak >= 3);
     std::set<int> bossWorlds;
     for (const Lesson& l : lessons)

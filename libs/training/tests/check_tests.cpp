@@ -301,3 +301,27 @@ TEST_CASE("badges: earned once, some counted across lessons") {
     CHECK(findBadge("graduate") != nullptr);
     CHECK(findBadge("nope") == nullptr);
 }
+
+TEST_CASE("saved, layout tab, viewport and PDF checks") {
+    Practice p("paper");
+    p.core->newScratchDocument("Practice t");
+    p.core->submitScript("RECTANGLE;0,0;@5000,4000");
+    CHECK_FALSE(passesOn(p, R"({"type": "saved"})"));  // a practice drawing has no file
+    REQUIRE(p.core->saveAs(p.folder() / "room.tbcad").ok());
+    CHECK(passesOn(p, R"({"type": "saved", "contains": "room"})"));
+    p.core->submitScript("LINE;0,0;100,0;");
+    CHECK_FALSE(passesOn(p, R"({"type": "saved"})"));  // changed since
+
+    CHECK(passesOn(p, R"({"type": "space"})"));
+    REQUIRE(p.core->setActiveLayout("Layout1"));
+    CHECK(passesOn(p, R"({"type": "space", "name": "layout1"})"));
+    CHECK_FALSE(passesOn(p, R"({"type": "viewport", "name": "Layout1"})"));
+    p.core->submitScript("MVIEW;Fit;1:50;");
+    CHECK(passesOn(p, R"({"type": "viewport", "value": 50, "box": [[0, 0], [5000, 4000]]})"));
+    CHECK_FALSE(passesOn(p, R"({"type": "viewport", "value": 100})"));
+    CHECK_FALSE(passesOn(p, R"({"type": "viewport", "box": [[0, 0], [50000, 4000]]})"));
+
+    CHECK_FALSE(passesOn(p, R"({"type": "pdf"})"));
+    p.core->submitScript("EXPORTPDF;;" + platform::pathToUtf8(p.folder() / "room.pdf"));
+    CHECK(passesOn(p, R"({"type": "pdf"})"));
+}

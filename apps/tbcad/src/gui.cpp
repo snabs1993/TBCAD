@@ -4337,6 +4337,11 @@ void Gui::startPage(const ViewportRect& rect) {
             ImGui::BulletText("Enter repeats the last command, Esc cancels.");
             ImGui::BulletText("Middle-drag pans, the wheel zooms.");
             ImGui::BulletText("Ctrl+Shift+P lists every command.");
+            ImGui::Spacing();
+            ImGui::TextUnformatted("New here? / มือใหม่?");
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Try Practice Mode"))
+                practice_->open();
             bool hide = false;
             if (ImGui::Checkbox("Don't show again", &hide) && hide)
                 core_.settings().setBool("ui.gettingAround", false);

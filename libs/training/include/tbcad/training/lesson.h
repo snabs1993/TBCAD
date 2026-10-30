@@ -40,6 +40,10 @@ struct Check {
         Object,     // an object that passes the filters, with box (its extents)
         Block,      // a block definition `name`, holding `objects` objects
         Insert,     // a placed block `name`: center (where it is), angle (its rotation)
+        Saved,     // the drawing has a file (whose name contains `contains`) and no unsaved changes
+        Space,     // the layout tab `name` is shown (empty = Model)
+        Viewport,  // layout `name` has a viewport at 1:`value` that shows `box`
+        Pdf,       // a PDF was written since the lesson started
     };
     Type type = Type::Line;
 
