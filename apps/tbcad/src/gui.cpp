@@ -3991,6 +3991,9 @@ void Gui::gripMenu(const ViewportRect& rect) {
 }
 
 void Gui::tabPreviewTip(const std::string& title, const ui::TabPreview& preview) {
+    // Typing with the mouse left on a tab: the big picture would cover the command line.
+    if (core_.runner().active() || !input_.empty())
+        return;
     if (!ImGui::BeginItemTooltip())
         return;
     ImGui::TextUnformatted(title.c_str());

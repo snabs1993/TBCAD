@@ -49,6 +49,20 @@ TEST_CASE("test.11: Delete removes the viewport picked on the sheet") {
     CHECK(count() == before - 1);
 }
 
+TEST_CASE("test.11: a tab's preview does not cover the command line while a command runs") {
+    Harness h(1920, 1080);
+    h.frame(2);
+    const auto* tab = h.find("Layout1");
+    REQUIRE(tab != nullptr);
+    h.moveMouse((tab->min.x + tab->max.x) / 2, (tab->min.y + tab->max.y) / 2);
+    h.frame(90);
+    REQUIRE(h.windowOpen("##Tooltip"));
+    h.command("LINE");
+    h.frame(5);
+    CHECK_FALSE(h.windowOpen("##Tooltip"));
+    h.key(ImGuiKey_Escape);
+}
+
 TEST_CASE("test.11: LTSCALE changes the dashes already drawn") {
     Harness h(1920, 1080);
     h.frame(2);
