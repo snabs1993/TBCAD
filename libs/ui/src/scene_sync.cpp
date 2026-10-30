@@ -104,8 +104,16 @@ bool SceneSync::readDisplayModes() {
     const int att = attDisplay(doc_.header());
     const bool qt = quickText(doc_.header());
     const double lw = defaultLineweightMm(doc_.header());
-    const bool changed =
-        fill != fillMode_ || att != attDisplay_ || qt != quickText_ || lw != lwDefault_;
+    // The dash lengths of everything drawn hang on these (LTSCALE, MSLTSCALE, PSLTSCALE).
+    const double lt = doc_.header().ltScale;
+    const bool ltView = msLtScale(doc_.header());
+    const bool ltPaper = psLtScale(doc_.header());
+    const bool changed = fill != fillMode_ || att != attDisplay_ || qt != quickText_ ||
+                         lw != lwDefault_ || lt != ltScale_ || ltView != msLtScale_ ||
+                         ltPaper != psLtScale_;
+    ltScale_ = lt;
+    msLtScale_ = ltView;
+    psLtScale_ = ltPaper;
     lwDefault_ = lw;
     quickText_ = qt;
     fillMode_ = fill;

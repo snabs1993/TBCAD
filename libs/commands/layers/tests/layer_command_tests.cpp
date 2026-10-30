@@ -49,6 +49,15 @@ TEST_CASE("LAYER asks the application to show the panel") {
     CHECK(f.host.setting("ui.showPanel") == std::optional<std::string>("layers"));
 }
 
+TEST_CASE("-LAYER takes AutoCAD's short forms M, L and LW") {
+    Fixture f;
+    auto r = f.run("-LAYER", {"m", "Doors", "lw", "0.35", "Doors", "l", "CONTINUOUS", "Doors",
+                              cmd::ScriptItem::enter()});
+    CHECK(r.finished);
+    REQUIRE(f.layer("Doors") != nullptr);
+    CHECK(f.doc.header().currentLayer == f.layer("Doors")->id);
+}
+
 TEST_CASE("-LAYER Make creates a missing layer, or reuses one, and makes it current") {
     Fixture f;
     auto r = f.run("-LAYER", {"Make", "Doors", cmd::ScriptItem::enter()});

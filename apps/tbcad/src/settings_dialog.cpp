@@ -385,9 +385,13 @@ void SettingsDialog::display(ui::AppCore& core) {
                 hooks_.setThemeMode(i);
         ImGui::EndCombo();
     }
-    int percent = static_cast<int>(std::lround(s.getNumber("ui.scale", 1.0) * 100.0));
+    // Saved only on release, so the value being dragged is kept here between frames.
+    static int dragged = -1;
+    int percent = dragged >= 0 ? dragged
+                               : static_cast<int>(std::lround(s.getNumber("ui.scale", 1.0) * 100.0));
     ImGui::SetNextItemWidth(260);
     ImGui::SliderInt("Interface scale (%)", &percent, 75, 200);
+    dragged = ImGui::IsItemActive() ? percent : -1;
     if (ImGui::IsItemDeactivatedAfterEdit()) {  // rebuild fonts once, when the slider is released
         s.setNumber("ui.scale", percent / 100.0);
         if (hooks_.scaleChanged)

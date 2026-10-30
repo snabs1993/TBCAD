@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -5840,9 +5841,20 @@ void Gui::ucsIcon(const ViewportRect& rect) {
 // themselves; every other modal closes here, unless a text box is being edited (Esc then
 // belongs to the box).
 void Gui::closeTopModalOnEscape() {
-    if (!ImGui::IsKeyPressed(ImGuiKey_Escape, false) || ImGui::IsAnyItemActive())
+    if (!ImGui::IsKeyPressed(ImGuiKey_Escape, false))
         return;
     ImGuiContext& g = *ImGui::GetCurrentContext();
+    // An open menu takes the key first, one level at a time, as menus do everywhere else. (The
+    // command line usually holds the keyboard meanwhile, so this comes before the check below.)
+    if (g.OpenPopupStack.Size > 0) {
+        const ImGuiWindow* top = g.OpenPopupStack.back().Window;
+        if (top && std::strstr(top->Name, "###Menu_")) {
+            ImGui::ClosePopupToLevel(g.OpenPopupStack.Size - 1, true);
+            return;
+        }
+    }
+    if (ImGui::IsAnyItemActive())
+        return;
     for (int i = g.OpenPopupStack.Size - 1; i >= 0; --i) {
         const ImGuiWindow* w = g.OpenPopupStack[i].Window;
         if (w && (w->Flags & ImGuiWindowFlags_Modal)) {

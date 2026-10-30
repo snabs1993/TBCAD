@@ -83,7 +83,11 @@ public:
                          "Unlock", "Color",        "Linetype",    "Lineweight", "Plot",
                          "NoPlot", "Rename",       "Delete",      "Isolate",    "ShowAll",
                          "List",   "Transparency", "Description", "Merge"};
-        opts.aliases = {{"N", "New"}, {"S", "Set"}};
+        // The short forms AutoCAD's -LAYER takes, where the first letters alone are ambiguous.
+        opts.aliases = {{"N", "New"},       {"S", "Set"},        {"M", "Make"},
+                        {"L", "Linetype"},  {"LT", "Linetype"},  {"LW", "Lineweight"},
+                        {"LO", "Lock"},     {"O", "On"},         {"P", "Plot"},
+                        {"D", "Description"}};
         while (true) {
             auto k = co_await ctx.getKeyword("Layer option", opts);
             if (!k.ok())
