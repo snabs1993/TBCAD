@@ -243,7 +243,7 @@ public:
                     ctx.message("Placing several copies: Enter or Esc to finish.");
                 } else if (kw == "Rotate") {
                     auto a = co_await ctx.getAngle(
-                        "Specify rotation angle <0>",
+                        "Specify rotation angle",
                         cmd::AngleOptions{.defaultValue = 0.0, .inUcs = true});
                     if (!a.ok())
                         co_return;

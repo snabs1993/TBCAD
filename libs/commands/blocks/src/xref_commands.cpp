@@ -255,7 +255,7 @@ public:
                 }
                 data.scale = {s.value, s.value};
             } else if (p.keyword == "Rotate") {
-                auto a = co_await ctx.getAngle("Specify rotation angle <0>",
+                auto a = co_await ctx.getAngle("Specify rotation angle",
                                                cmd::AngleOptions{.defaultValue = 0.0});
                 if (!a.ok())
                     co_return;

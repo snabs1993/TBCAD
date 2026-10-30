@@ -47,6 +47,18 @@ TEST_CASE("ATTDEF creates an attribute definition text") {
     CHECK(f.modelSpace().empty());
 }
 
+TEST_CASE("ATTDEF Justify centres the attribute on its point") {
+    Fixture f;
+    auto r = f.host->run("ATTDEF", {"", "G", "Grid mark", "A", "J", "MC", "5,5", "3", "0"});
+    CHECK(r.finished);
+    REQUIRE(f.modelSpace().size() == 1);
+    const auto* t = entityAs<TextData>(*f.doc.find(f.modelSpace()[0]));
+    REQUIRE(t);
+    CHECK(t->h == HAlign::Middle);
+    CHECK(t->v == VAlign::Middle);
+    CHECK(t->alignPoint.x == doctest::Approx(5));
+}
+
 TEST_CASE("ATTDEF rejects a tag with spaces and asks again") {
     Fixture f;
     f.host->clearLog();

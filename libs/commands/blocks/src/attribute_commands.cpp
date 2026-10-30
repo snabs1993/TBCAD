@@ -117,9 +117,47 @@ public:
             info.defaultValue = d.text;
         }
 
-        auto pos = co_await ctx.getPoint("Specify start point of the attribute text");
-        if (!pos.ok())
-            co_return;
+        // The start point, or Justify first (a grid mark wants its letter in the middle).
+        struct Just {
+            const char* name;
+            HAlign h;
+            VAlign v;
+        };
+        static constexpr Just kJust[] = {
+            {"Left", HAlign::Left, VAlign::Baseline},  {"Center", HAlign::Center, VAlign::Baseline},
+            {"Right", HAlign::Right, VAlign::Baseline}, {"Middle", HAlign::Middle, VAlign::Baseline},
+            {"TL", HAlign::Left, VAlign::Top},         {"TC", HAlign::Center, VAlign::Top},
+            {"TR", HAlign::Right, VAlign::Top},        {"ML", HAlign::Left, VAlign::Middle},
+            {"MC", HAlign::Middle, VAlign::Middle},    {"MR", HAlign::Right, VAlign::Middle},
+            {"BL", HAlign::Left, VAlign::Bottom},      {"BC", HAlign::Center, VAlign::Bottom},
+            {"BR", HAlign::Right, VAlign::Bottom}};
+        HAlign justH = HAlign::Left;
+        VAlign justV = VAlign::Baseline;
+        Vec2 start{};
+        for (;;) {
+            cmd::PointOptions po;
+            po.keywords = {"Justify"};
+            auto pos = co_await ctx.getPoint("Specify start point of the attribute text", po);
+            if (pos.status == cmd::Status::Keyword) {
+                cmd::KeywordOptions ko;
+                for (const Just& j : kJust)
+                    ko.keywords.emplace_back(j.name);
+                auto k = co_await ctx.getKeyword("Enter an option", ko);
+                if (k.status == cmd::Status::Cancel)
+                    co_return;
+                if (k.ok())
+                    for (const Just& j : kJust)
+                        if (k.keyword == j.name) {
+                            justH = j.h;
+                            justV = j.v;
+                        }
+                continue;
+            }
+            if (!pos.ok())
+                co_return;
+            start = pos.point;
+            break;
+        }
 
         // Sized like new TEXT: 2.5 mm on a sheet-sized drawing, larger in a big plan or a far-out
         // view. Only a height the user typed is remembered.
@@ -141,7 +179,7 @@ public:
                                           cmd::RealOptions{.defaultValue = height, .min = 1e-9});
             if (!h.ok())
                 co_return;
-            auto a = co_await ctx.getAngle("Specify rotation angle <0>",
+            auto a = co_await ctx.getAngle("Specify rotation angle",
                                            cmd::AngleOptions{.defaultValue = 0.0});
             if (!a.ok())
                 co_return;
@@ -153,7 +191,9 @@ public:
         }
 
         TextData text;
-        text.position = pos.point;
+        text.position = text.alignPoint = start;
+        text.h = justH;
+        text.v = justV;
         text.height = heightValue;
         text.rotation = normalizeAngle(rotation);
         text.utf8 = info.tag;
