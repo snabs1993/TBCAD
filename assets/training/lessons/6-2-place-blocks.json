@@ -1,0 +1,250 @@
+{
+  "id": "6.2",
+  "world": 6,
+  "title": {
+    "en": "Place blocks",
+    "th": "วางบล็อก"
+  },
+  "goal": {
+    "en": "Put 4 chairs around the table, facing it",
+    "th": "วางเก้าอี้ 4 ตัวรอบโต๊ะ หันเข้าโต๊ะ"
+  },
+  "tip": {
+    "en": "Enter repeats the last command, so the next chair is one key away.",
+    "th": "กด Enter ซ้ำคำสั่งล่าสุด เก้าอี้ตัวต่อไปจึงห่างแค่ปุ่มเดียว"
+  },
+  "par": 4,
+  "setup": [
+    "RECTANGLE;-250,-500;@500,500",
+    "LINE;-250,-450;250,-450;",
+    "-BLOCK;CHAIR;ALL;;0,0;Delete",
+    "RECTANGLE;-600,-400;@1200,800",
+    "ZOOM;W;-1800,-1400;1800,1400"
+  ],
+  "ghosts": [
+    {
+      "polyline": [
+        [
+          -250.0,
+          -1000.0
+        ],
+        [
+          250.0,
+          -1000.0
+        ],
+        [
+          250.0,
+          -500.0
+        ],
+        [
+          -250.0,
+          -500.0
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "polyline": [
+        [
+          1200.0,
+          -250.0
+        ],
+        [
+          1200.0,
+          250.0
+        ],
+        [
+          700.0,
+          250.0
+        ],
+        [
+          700.0,
+          -250.0
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "polyline": [
+        [
+          250.0,
+          1000.0
+        ],
+        [
+          -250.0,
+          1000.0
+        ],
+        [
+          -250.0,
+          500.0
+        ],
+        [
+          250.0,
+          500.0
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "polyline": [
+        [
+          -1200.0,
+          250.0
+        ],
+        [
+          -1200.0,
+          -250.0
+        ],
+        [
+          -700.0,
+          -250.0
+        ],
+        [
+          -700.0,
+          250.0
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "dot": [
+        0,
+        -500
+      ]
+    },
+    {
+      "dot": [
+        700,
+        0
+      ]
+    },
+    {
+      "dot": [
+        0,
+        500
+      ]
+    },
+    {
+      "dot": [
+        -700,
+        0
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Insert (I or ใส่บล็อก): pick CHAIR and click the green dot below the table.",
+        "th": "ใส่บล็อก (I หรือ ใส่บล็อก) เลือก CHAIR แล้วคลิกจุดเขียวใต้โต๊ะ"
+      },
+      "hint": {
+        "en": "Or type CHAIR on the command line and press Enter.",
+        "th": "หรือพิมพ์ CHAIR ในบรรทัดคำสั่งแล้วกด Enter"
+      },
+      "checks": [
+        {
+          "type": "insert",
+          "name": "CHAIR",
+          "center": [
+            0,
+            -500
+          ],
+          "angle": 0
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Insert again with rotation 90 (type R, Enter, 90, Enter), then click the dot on the right.",
+        "th": "ใส่บล็อกอีกครั้งโดยหมุน 90 (พิมพ์ R กด Enter พิมพ์ 90 กด Enter) แล้วคลิกจุดทางขวา"
+      },
+      "hint": {
+        "en": "Rotation turns anticlockwise.",
+        "th": "การหมุนนับทวนเข็มนาฬิกา"
+      },
+      "checks": [
+        {
+          "type": "insert",
+          "name": "CHAIR",
+          "center": [
+            700,
+            0
+          ],
+          "angle": 90
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Do the top chair (180) and the left one (270) the same way.",
+        "th": "ทำเก้าอี้ด้านบน (180) และด้านซ้าย (270) แบบเดียวกัน"
+      },
+      "hint": {
+        "en": "Each chair faces the table.",
+        "th": "เก้าอี้ทุกตัวหันเข้าโต๊ะ"
+      },
+      "checks": [
+        {
+          "type": "insert",
+          "name": "CHAIR",
+          "center": [
+            0,
+            -500
+          ],
+          "angle": 0
+        },
+        {
+          "type": "insert",
+          "name": "CHAIR",
+          "center": [
+            700,
+            0
+          ],
+          "angle": 90
+        },
+        {
+          "type": "insert",
+          "name": "CHAIR",
+          "center": [
+            0,
+            500
+          ],
+          "angle": 180
+        },
+        {
+          "type": "insert",
+          "name": "CHAIR",
+          "center": [
+            -700,
+            0
+          ],
+          "angle": 270
+        },
+        {
+          "type": "insert",
+          "name": "CHAIR",
+          "equals": 4
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "I;CHAIR;0,-500",
+    "I;CHAIR;R;90;700,0",
+    "I;CHAIR;R;180;0,500",
+    "I;CHAIR;R;270;-700,0"
+  ],
+  "wrong": [
+    [
+      "I;CHAIR;0,-500",
+      "I;CHAIR;R;90;700,0",
+      "I;CHAIR;R;180;0,500",
+      "I;CHAIR;R;90;-700,0"
+    ],
+    [
+      "I;CHAIR;0,-500",
+      "I;CHAIR;R;90;700,0",
+      "I;CHAIR;R;180;0,500"
+    ]
+  ]
+}

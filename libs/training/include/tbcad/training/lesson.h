@@ -38,6 +38,8 @@ struct Check {
                     // box (where it starts), tip (where a leader points)
         Dimension,  // a dimension: dim (its kind), value (its measurement; degrees for angles)
         Object,     // an object that passes the filters, with box (its extents)
+        Block,      // a block definition `name`, holding `objects` objects
+        Insert,     // a placed block `name`: center (where it is), angle (its rotation)
     };
     Type type = Type::Line;
 
@@ -47,7 +49,7 @@ struct Check {
     std::optional<BBox2> box{};
     std::vector<Vec2> path{};
     std::optional<bool> closed{};
-    std::optional<int> vertices{}, arcs{};
+    std::optional<int> vertices{}, arcs{}, objects{};
     double tol = 0.5;         // distance tolerance
     double angleTol = 0.1;    // degrees
     double areaTolPct = 0.5;  // percent of the expected area
@@ -59,7 +61,7 @@ struct Check {
 
     std::optional<int> equals{}, min{}, max{};
 
-    // Layer.
+    // Layer / Block / Insert.
     std::string name{};
     std::optional<bool> on{}, frozen{}, locked{};
 
@@ -94,8 +96,9 @@ struct Ghost {
 };
 
 struct Lesson {
-    std::string id{};  // "2.1"
+    std::string id{};  // "2.1"; a boss is "B2"
     int world = 0;
+    bool boss = false;  // the world's challenge: no steps to follow, the time counts
     Text title{};
     Text goal{};
     Text tip{};                        // shown when the lesson is done
@@ -110,7 +113,8 @@ struct Lesson {
 
 Result<Lesson> parseLesson(std::string_view json);
 Result<Lesson> loadLesson(const std::filesystem::path& file);
-// Every *.json lesson in `folder`, by world and then by id ("2.10" after "2.9"). Files that do not
+// Every *.json lesson in `folder`, by world and then by id ("2.10" after "2.9"), the world's boss
+// last. Files that do not
 // load are skipped and described in `errors` when given.
 std::vector<Lesson> loadLessons(const std::filesystem::path& folder,
                                 std::vector<std::string>* errors = nullptr);

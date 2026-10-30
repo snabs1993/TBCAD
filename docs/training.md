@@ -40,6 +40,17 @@ every command start and end, and every undo and redo, together with how the comm
   takes another route still finishes. The last step must have checks, and they must hold the
   whole goal: a lesson is complete as soon as its last step passes.
 
+A boss (`"boss": true`, id `B1` ... `B7`) closes its world: one step with the whole goal, the
+dashed targets as the picture, and `parSeconds` for the third star. It is listed after the
+world's lessons.
+
+## Badges
+
+`libs/training/include/tbcad/training/badges.h` lists the badges and awards them when a lesson is
+done (`awardBadges`): finishing given lessons or whole worlds, and counts kept in `Progress` across
+lessons (the ways each command was started, lessons where every command was typed, lessons in a
+row without Undo).
+
 ## Checks
 
 Distances are millimetres (`tol`, default 0.5), angles degrees (`angleTol`, default 0.1).
@@ -64,6 +75,11 @@ resolved). Counts: `equals`, or `min` (default 1) and `max`.
 | `text` | a text, multiline text or leader note (not empty) that contains `contains`, with `height`, starting inside `box`; for a leader, `tip`: a box one of its arrows points into |
 | `dimension` | a dimension of kind `dim` (`linear`, `aligned`, `radius`, `diameter`, `angular`) that measures `value` (degrees for `angular`) |
 | `object` | an object that passes the filters, whose extents are `box` |
+| `block` | a block definition `name` exists, holding `objects` objects |
+| `insert` | a placed block `name` at `center`, turned `angle` degrees |
+
+An associative array counts as the objects it shows: a polar array of one circle with 8 items is
+8 circles to every check (and its items take the array's layer where they are on layer 0).
 
 ## Tests
 

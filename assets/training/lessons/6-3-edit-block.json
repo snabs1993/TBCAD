@@ -1,0 +1,124 @@
+{
+  "id": "6.3",
+  "world": 6,
+  "title": {
+    "en": "Edit once, change all",
+    "th": "แก้ครั้งเดียวเปลี่ยนทุกตัว"
+  },
+  "goal": {
+    "en": "Add armrests to CHAIR: all 4 chairs change",
+    "th": "เพิ่มที่วางแขนในบล็อก CHAIR ให้เก้าอี้ทั้ง 4 ตัวเปลี่ยนตาม"
+  },
+  "tip": {
+    "en": "Change a block once and every copy in the drawing follows.",
+    "th": "แก้บล็อกครั้งเดียว ทุกตัวในแบบเปลี่ยนตาม"
+  },
+  "par": 4,
+  "setup": [
+    "RECTANGLE;-250,-500;@500,500",
+    "LINE;-250,-450;250,-450;",
+    "-BLOCK;CHAIR;ALL;;0,0;Delete",
+    "RECTANGLE;-600,-400;@1200,800",
+    "-INSERT;CHAIR;0,-500",
+    "-INSERT;CHAIR;R;90;700,0",
+    "-INSERT;CHAIR;R;180;0,500",
+    "-INSERT;CHAIR;R;270;-700,0",
+    "ZOOM;W;-1800,-1400;1800,1400"
+  ],
+  "ghosts": [
+    {
+      "line": [
+        [
+          -200,
+          -550
+        ],
+        [
+          -200,
+          -900
+        ]
+      ]
+    },
+    {
+      "line": [
+        [
+          200,
+          -550
+        ],
+        [
+          200,
+          -900
+        ]
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Block editor (BEDIT or แก้ไขบล็อก), then click the chair below the table.",
+        "th": "แก้ไขบล็อก (BEDIT หรือ แก้ไขบล็อก) แล้วคลิกเก้าอี้ใต้โต๊ะ"
+      },
+      "hint": {
+        "en": "The other objects fade while you edit the block.",
+        "th": "วัตถุอื่นจะจางลงขณะแก้บล็อก"
+      },
+      "checks": [
+        {
+          "type": "command",
+          "command": "BEDIT"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Draw the two armrests on the dashed lines (Line).",
+        "th": "วาดที่วางแขน 2 เส้นทับเส้นประ (ใช้ Line)"
+      },
+      "hint": {
+        "en": "Type L, click one end of a dashed line, then the other, Enter.",
+        "th": "พิมพ์ L คลิกปลายเส้นประด้านหนึ่ง แล้วอีกด้าน กด Enter"
+      },
+      "checks": [
+        {
+          "type": "count",
+          "kind": "line",
+          "min": 3
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Close the editor (BCLOSE) and save: all 4 chairs change.",
+        "th": "ปิดตัวแก้ไข (BCLOSE) แล้วบันทึก เก้าอี้ทั้ง 4 ตัวจะเปลี่ยนตาม"
+      },
+      "hint": {
+        "en": "Press Enter to keep Save.",
+        "th": "กด Enter เพื่อเลือก Save"
+      },
+      "checks": [
+        {
+          "type": "block",
+          "name": "CHAIR",
+          "objects": 4
+        },
+        {
+          "type": "insert",
+          "name": "CHAIR",
+          "equals": 4
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "BEDIT;<Click 0 -1000>",
+    "LINE;-200,-550;-200,-900;",
+    "LINE;200,-550;200,-900;",
+    "BCLOSE;"
+  ],
+  "wrong": [
+    [
+      "BEDIT;<Click 0 -1000>",
+      "LINE;-200,-550;-200,-900;",
+      "BCLOSE;Discard"
+    ]
+  ]
+}

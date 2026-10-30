@@ -67,6 +67,10 @@ struct LessonRecord {
 struct Progress {
     std::map<std::string, LessonRecord> lessons{};
     std::set<std::string> badges{};
+    // What some badges count across lessons (see badges.h).
+    std::map<std::string, int> ways{};  // per command: 1 button, 2 typed name or alias, 4 Thai word
+    int typedLessons = 0;               // lessons done starting every command by typing
+    int noUndoStreak = 0;               // lessons done in a row without undoing
 
     // Keeps the better stars and the better time. True when something improved.
     bool record(const std::string& lessonId, const Score& score);

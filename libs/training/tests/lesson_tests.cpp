@@ -47,6 +47,16 @@ TEST_CASE("every lesson file loads, with a unique id, a goal and a solution") {
     }
 }
 
+TEST_CASE("each world's boss comes after its lessons") {
+    const std::vector<Lesson> all = lessons();
+    for (std::size_t i = 1; i < all.size(); ++i) {
+        CAPTURE(all[i].id);
+        if (all[i].world == all[i - 1].world)
+            CHECK_FALSE(all[i - 1].boss);  // nothing follows a boss in its world
+    }
+    CHECK(std::count_if(all.begin(), all.end(), [](const Lesson& l) { return l.boss; }) >= 6);
+}
+
 TEST_CASE("every lesson's solution passes within par and its wrong attempts do not") {
     for (const Lesson& l : lessons()) {
         CAPTURE(l.id);

@@ -1,0 +1,161 @@
+{
+  "id": "3.7",
+  "world": 3,
+  "title": {
+    "en": "Grips",
+    "th": "จุดจับ"
+  },
+  "goal": {
+    "en": "Stretch the wall and move the window using grips only",
+    "th": "ยืดผนังและย้ายหน้าต่างด้วยจุดจับ ไม่ใช้คำสั่ง"
+  },
+  "tip": {
+    "en": "Press Space while a grip is hot to switch between stretch, move, rotate, scale and mirror.",
+    "th": "ระหว่างลากจุดจับ กด Space เพื่อสลับเป็นยืด ย้าย หมุน ย่อขยาย หรือพลิก"
+  },
+  "par": 0,
+  "setup": [
+    "LINE;0,0;3000,0;",
+    "LINE;1000,1000;2000,1000;",
+    "ZOOM;W;-1000,-1000;5000,3000"
+  ],
+  "ghosts": [
+    {
+      "line": [
+        [
+          0,
+          0
+        ],
+        [
+          4000,
+          0
+        ]
+      ]
+    },
+    {
+      "dot": [
+        4000,
+        0
+      ]
+    },
+    {
+      "line": [
+        [
+          2000,
+          1500
+        ],
+        [
+          3000,
+          1500
+        ]
+      ]
+    },
+    {
+      "dot": [
+        2500,
+        1500
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Click the long wall line: blue grips appear.",
+        "th": "คลิกเส้นผนังยาว จะเห็นจุดจับสีน้ำเงิน"
+      },
+      "hint": {
+        "en": "Click right on the line, with no command running.",
+        "th": "คลิกบนเส้นพอดี ตอนที่ไม่มีคำสั่งทำงานอยู่"
+      },
+      "checks": [
+        {
+          "type": "selection",
+          "equals": 1,
+          "kind": "line"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Click the grip at its right end, then click the green dot.",
+        "th": "คลิกจุดจับที่ปลายขวา แล้วคลิกจุดเขียว"
+      },
+      "hint": {
+        "en": "The grip turns red while it follows the mouse.",
+        "th": "จุดจับจะเป็นสีแดงขณะเคลื่อนตามเมาส์"
+      },
+      "checks": [
+        {
+          "type": "line",
+          "from": [
+            0,
+            0
+          ],
+          "to": [
+            4000,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Press Esc. Click the window line, click its middle grip and drop it on the dashed line.",
+        "th": "กด Esc คลิกเส้นหน้าต่าง คลิกจุดจับตรงกลาง แล้ววางบนเส้นประ"
+      },
+      "hint": {
+        "en": "The middle grip moves the whole line.",
+        "th": "จุดจับตรงกลางย้ายทั้งเส้น"
+      },
+      "checks": [
+        {
+          "type": "line",
+          "from": [
+            0,
+            0
+          ],
+          "to": [
+            4000,
+            0
+          ]
+        },
+        {
+          "type": "line",
+          "from": [
+            2000,
+            1500
+          ],
+          "to": [
+            3000,
+            1500
+          ]
+        },
+        {
+          "type": "count",
+          "kind": "line",
+          "equals": 2
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "<Click 1500 0>",
+    "<Click 3000 0>",
+    "<Click 4000 0>",
+    "<Esc>",
+    "<Click 1200 1000>",
+    "<Click 1500 1000>",
+    "<Click 2500 1500>"
+  ],
+  "wrong": [
+    [
+      "<Click 1500 0>",
+      "<Click 3000 0>",
+      "<Click 3800 0>",
+      "<Esc>",
+      "<Click 1200 1000>",
+      "<Click 1500 1000>",
+      "<Click 2500 1500>"
+    ]
+  ]
+}

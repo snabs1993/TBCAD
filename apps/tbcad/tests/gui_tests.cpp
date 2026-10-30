@@ -3300,6 +3300,8 @@ TEST_CASE("practice mode: a lesson from the Help menu, played on the command lin
     h.captureText(true);
     h.frame(2);
     CHECK(h.shownText().find("Lesson complete!") != std::string::npos);
+    CHECK(h.shownText().find("New badge: First Line") != std::string::npos);
+    CHECK(h.gui().practice().progress().badges.count("first-line") == 1);
     CHECK_FALSE(h.core().modified());  // a practice drawing never asks to be saved
     CHECK(h.has("Next lesson", "Practice"));
     CHECK(h.imguiErrors().empty());
@@ -3330,6 +3332,7 @@ TEST_CASE("practice mode: a Thai word opens it, Restart and the lesson map work"
     h.frame(2);
     CHECK(h.gui().practice().run() == nullptr);
     CHECK(h.has("1.3  Undo and redo", "Practice"));
+    CHECK(h.has("Boss: Tidy up", "Practice"));  // each world ends with its boss
     CHECK(h.imguiErrors().empty());
 }
 

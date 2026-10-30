@@ -1,0 +1,198 @@
+{
+  "id": "B3",
+  "world": 3,
+  "boss": true,
+  "title": {
+    "en": "Boss: Fix the bathroom",
+    "th": "บอส: แก้ห้องน้ำ"
+  },
+  "goal": {
+    "en": "5 mistakes: thin walls, a wall too many, an open corner, the toilet turned wrong, a basin missing",
+    "th": "ผิด 5 จุด: ผนังบาง ผนังเกิน มุมเปิด สุขภัณฑ์หันผิด และขาดอ่างอีก 1 ใบ"
+  },
+  "tip": {
+    "en": "Boss beaten!",
+    "th": "ชนะบอสแล้ว!"
+  },
+  "par": 6,
+  "parSeconds": 240,
+  "setup": [
+    "RECTANGLE;0,0;@3000,2500",
+    "LINE;1500,2500;1500,3200;",
+    "LINE;2000,100;2000,1200;",
+    "LINE;2100,1300;2900,1300;",
+    "RECTANGLE;500,1500;@700,400",
+    "CIRCLE;1500,2150;150",
+    "ZOOM;W;-500,-500;3500,3500",
+    "FILLET;R;0"
+  ],
+  "ghosts": [
+    {
+      "polyline": [
+        [
+          100,
+          100
+        ],
+        [
+          2900,
+          100
+        ],
+        [
+          2900,
+          2400
+        ],
+        [
+          100,
+          2400
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "polyline": [
+        [
+          100,
+          1500
+        ],
+        [
+          500,
+          1500
+        ],
+        [
+          500,
+          2200
+        ],
+        [
+          100,
+          2200
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "circle": [
+        1000,
+        2150
+      ],
+      "radius": 150
+    },
+    {
+      "dot": [
+        2000,
+        1300
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Make the drawing match the dashed targets: walls 100 thick, no wall sticking out, the partition corner closed, the toilet against the left wall, a second basin.",
+        "th": "แก้แบบให้ตรงเส้นประ: ผนังหนา 100 ไม่มีผนังยื่นเกิน ปิดมุมผนังกั้น สุขภัณฑ์ชิดผนังซ้าย และเพิ่มอ่างใบที่ 2"
+      },
+      "hint": {
+        "en": "Offset 100 inside, Erase, Fillet, Rotate 90 about the toilet's corner, Copy the basin.",
+        "th": "Offset 100 ด้านใน, Erase, Fillet, Rotate 90 รอบมุมสุขภัณฑ์, Copy อ่าง"
+      },
+      "checks": [
+        {
+          "type": "polyline",
+          "closed": true,
+          "box": [
+            [
+              100,
+              100
+            ],
+            [
+              2900,
+              2400
+            ]
+          ]
+        },
+        {
+          "type": "count",
+          "kind": "line",
+          "equals": 2
+        },
+        {
+          "type": "line",
+          "from": [
+            2000,
+            100
+          ],
+          "to": [
+            2000,
+            1300
+          ]
+        },
+        {
+          "type": "line",
+          "from": [
+            2000,
+            1300
+          ],
+          "to": [
+            2900,
+            1300
+          ]
+        },
+        {
+          "type": "polyline",
+          "closed": true,
+          "box": [
+            [
+              100,
+              1500
+            ],
+            [
+              500,
+              2200
+            ]
+          ]
+        },
+        {
+          "type": "circle",
+          "center": [
+            1500,
+            2150
+          ],
+          "radius": 150
+        },
+        {
+          "type": "circle",
+          "center": [
+            1000,
+            2150
+          ],
+          "radius": 150
+        },
+        {
+          "type": "count",
+          "kind": "polyline",
+          "equals": 3
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "O;100;<Click 1500 0>;<Click 1500 1000>;",
+    "ERASE;<Click 1500 2900>;",
+    "F;<Click 2000 700>;<Click 2500 1300>",
+    "RO;<Click 850 1500>;;500,1500;90",
+    "CO;<Click 1650 2150>;;1500,2150;1000,2150;"
+  ],
+  "wrong": [
+    [
+      "O;100;<Click 1500 0>;<Click 1500 1000>;",
+      "ERASE;<Click 1500 2900>;",
+      "RO;<Click 850 1500>;;500,1500;90",
+      "CO;<Click 1650 2150>;;1500,2150;1000,2150;"
+    ],
+    [
+      "O;100;<Click 1500 0>;<Click 1500 1000>;",
+      "ERASE;<Click 1500 2900>;",
+      "F;<Click 2000 700>;<Click 2500 1300>",
+      "RO;<Click 850 1500>;;500,1500;-90",
+      "CO;<Click 1650 2150>;;1500,2150;1000,2150;"
+    ]
+  ]
+}

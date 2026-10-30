@@ -3,6 +3,7 @@
 #include <fstream>
 
 #include "practice.h"
+#include "tbcad/training/badges.h"
 
 using namespace tbcad;
 using namespace tbcad::training;
@@ -238,4 +239,65 @@ TEST_CASE("command, undo and redo checks count what the user did") {
     CHECK(p.run->commandsUsed() == 2);
     CHECK(p.run->undos() == 1);
     CHECK(p.run->score(1).stars == 2);  // over par
+}
+
+TEST_CASE("block and insert checks, and an array counts as the objects it shows") {
+    Practice p("blocks");
+    p.core->submitScript("RECTANGLE;0,0;@100,100");
+    p.core->submitScript("-BLOCK;BOX;ALL;;0,0;Delete");
+    p.core->submitScript("-INSERT;BOX;R;90;500,0");
+    p.core->submitScript("CIRCLE;1000,0;10");
+    p.core->submitScript("ARRAYRECT;L;;COU;3;2;S;50;80;");
+    CHECK(passesOn(p, R"({"type": "block", "name": "box", "objects": 1})"));
+    CHECK_FALSE(passesOn(p, R"({"type": "block", "name": "BOX", "objects": 2})"));
+    CHECK_FALSE(passesOn(p, R"({"type": "block", "name": "CHAIR"})"));
+    CHECK(passesOn(p, R"({"type": "insert", "name": "BOX", "center": [500, 0], "angle": 90})"));
+    CHECK_FALSE(passesOn(p, R"({"type": "insert", "name": "BOX", "angle": 0})"));
+    CHECK(passesOn(p, R"({"type": "insert", "equals": 1})"));  // the array is not an insert here
+    CHECK(passesOn(p, R"({"type": "count", "kind": "circle", "equals": 6})"));
+    CHECK(passesOn(p, R"({"type": "circle", "center": [1100, 80], "radius": 10})"));
+}
+
+TEST_CASE("badges: earned once, some counted across lessons") {
+    Lesson first;
+    first.id = "2.1";
+    first.world = 2;
+    first.par = 1;
+    Lesson other;
+    other.id = "2.2";
+    other.world = 2;
+    const std::vector<Lesson> all{first, other};
+    Progress pr;
+    Facts f;
+    auto finish = [&](const Lesson& l, std::vector<Event> events) {
+        LessonRun run(l);
+        for (const Event& e : events)
+            run.record(e);
+        pr.record(l.id, run.score(1));
+        return awardBadges(pr, all, l, run, f);
+    };
+    const Event typed{Event::Kind::Started, "LINE", Source::Alias};
+    const Event button{Event::Kind::Started, "LINE", Source::Button};
+    const Event thai{Event::Kind::Started, "LINE", Source::Thai};
+    const Event undo{Event::Kind::Undo, "U", Source::Name};
+
+    auto earned = finish(first, {typed});
+    CHECK(std::find(earned.begin(), earned.end(), "first-line") != earned.end());
+    CHECK(finish(first, {typed}).empty());  // once only
+    earned = finish(other, {button, thai});
+    CHECK(std::find(earned.begin(), earned.end(), "three-ways") != earned.end());
+    CHECK(std::find(earned.begin(), earned.end(), "no-undo") != earned.end());  // 3 in a row
+    CHECK(pr.typedLessons == 2);  // the button start broke the third
+    finish(other, {typed, undo});
+    CHECK(pr.noUndoStreak == 0);
+    finish(other, {thai});
+    earned = finish(other, {typed});
+    CHECK(std::find(earned.begin(), earned.end(), "keyboard-pro") != earned.end());
+
+    const Progress back = Progress::fromJson(pr.toJson());
+    CHECK(back.typedLessons == pr.typedLessons);
+    CHECK(back.ways.at("LINE") == 7);
+    CHECK(back.badges == pr.badges);
+    CHECK(findBadge("graduate") != nullptr);
+    CHECK(findBadge("nope") == nullptr);
 }

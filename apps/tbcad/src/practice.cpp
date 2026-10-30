@@ -8,6 +8,7 @@
 
 #include "tbcad/core/math.h"
 #include "tbcad/render/overlay.h"
+#include "tbcad/training/badges.h"
 
 namespace tbcad::app {
 
@@ -77,6 +78,11 @@ void stars(int filled, float size) {
     ImGui::Dummy(ImVec2(size * 3 + 4.0f, size));
 }
 
+// "2.1  Your first line"; a boss goes by its title.
+std::string heading(const training::Lesson& l) {
+    return l.boss ? l.title.en : l.id + "  " + l.title.en;
+}
+
 std::string clock(double seconds) {
     const int s = static_cast<int>(seconds);
     char buf[32];
@@ -141,6 +147,7 @@ void Practice::start(std::size_t index) {
     finished_ = false;
     showHint_ = false;
     improved_ = false;
+    newBadges_.clear();
     run_->update(facts());
     open();
 }
@@ -203,9 +210,13 @@ void Practice::tick() {
     finished_ = true;
     score_ = run_->score(elapsed());
     improved_ = progress_.record(run_->lesson().id, score_);
+    newBadges_ = training::awardBadges(progress_, lessons_, run_->lesson(), *run_, facts());
     saveProgress();
     core_.print("Lesson " + run_->lesson().id + " done: " + std::to_string(score_.stars) +
                 (score_.stars == 1 ? " star." : " stars."));
+    for (const std::string& id : newBadges_)
+        if (const training::Badge* b = training::findBadge(id))
+            core_.print("New badge: " + b->name.en + ".");
     open();
 }
 
@@ -233,6 +244,7 @@ void Practice::drawMap() {
         ImGui::TextWrapped("No lessons were found (assets/training/lessons).");
         return;
     }
+    drawBadges();
     // The first lesson without a star is the one to do next.
     std::optional<std::size_t> next;
     for (std::size_t i = 0; i < lessons_.size() && !next; ++i)
@@ -261,7 +273,7 @@ void Practice::drawMap() {
         for (std::size_t i = first; open && i < end; ++i) {
             const training::Lesson& l = lessons_[i];
             ImGui::PushID(static_cast<int>(i));
-            const std::string label = l.id + "  " + l.title.en + (next == i ? "   < Next" : "");
+            const std::string label = heading(l) + (next == i ? "   < Next" : "");
             const float starSize = ImGui::GetFontSize() * 0.9f;
             const float right = ImGui::GetContentRegionAvail().x - (starSize * 3 + 8.0f);
             if (ImGui::Selectable(label.c_str(), false, 0, ImVec2(std::max(right, 40.0f), 0)))
@@ -279,6 +291,24 @@ void Practice::drawMap() {
     }
 }
 
+// The badges row of the lesson map: earned ones lit, the rest dim; hovering says how to earn it.
+void Practice::drawBadges() {
+    const auto& all = training::allBadges();
+    if (!ImGui::TreeNode("badges", "Badges / เหรียญ   %zu / %zu", progress_.badges.size(),
+                         all.size()))
+        return;
+    for (const training::Badge& b : all) {
+        const bool earned = progress_.badges.count(b.id) > 0;
+        if (earned)
+            ImGui::TextColored(kStar, "%s  /  %s", b.name.en.c_str(), b.name.th.c_str());
+        else
+            ImGui::TextDisabled("%s  /  %s", b.name.en.c_str(), b.name.th.c_str());
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s\n%s", b.how.en.c_str(), b.how.th.c_str());
+    }
+    ImGui::TreePop();
+}
+
 void Practice::drawLesson() {
     const training::Lesson& l = run_->lesson();
     if (ImGui::SmallButton("< All lessons"))
@@ -288,11 +318,14 @@ void Practice::drawLesson() {
     if (!run_)
         return;
     ImGui::Separator();
-    ImGui::Text("%s  %s", l.id.c_str(), l.title.en.c_str());
+    ImGui::Text("%s", heading(l).c_str());
     if (!l.title.th.empty())
         ImGui::TextDisabled("%s", l.title.th.c_str());
     ImGui::Spacing();
     twoLanguages(l.goal);
+    if (l.parSeconds > 0)
+        ImGui::TextColored(kStar, "Third star: no hint, %d commands or fewer, within %s.", l.par,
+                           clock(l.parSeconds).c_str());
     ImGui::Separator();
     if (!inPracticeDrawing()) {
         ImGui::TextColored(kStar, "Go back to the %s tab to carry on.",
@@ -354,7 +387,7 @@ void Practice::drawLesson() {
 
 void Practice::drawResult() {
     const training::Lesson& l = run_->lesson();
-    ImGui::Text("%s  %s", l.id.c_str(), l.title.en.c_str());
+    ImGui::Text("%s", heading(l).c_str());
     ImGui::Spacing();
     ImGui::TextColored(kDone, "Lesson complete!");
     ImGui::TextColored(kDone, "ผ่านด่านแล้ว!");
@@ -363,8 +396,16 @@ void Practice::drawResult() {
     ImGui::Spacing();
     ImGui::Text("Time %s   Commands %d (par %d)%s", clock(score_.seconds).c_str(), score_.commands,
                 l.par, score_.hintUsed ? "   Hint used" : "");
+    if (l.parSeconds > 0)
+        ImGui::TextDisabled("Target time %s", clock(l.parSeconds).c_str());
     if (improved_)
         ImGui::TextDisabled("New best for this lesson.");
+    for (const std::string& id : newBadges_)
+        if (const training::Badge* b = training::findBadge(id)) {
+            ImGui::Spacing();
+            ImGui::TextColored(kStar, "New badge: %s", b->name.en.c_str());
+            ImGui::TextDisabled("%s  -  %s", b->name.th.c_str(), b->how.th.c_str());
+        }
     if (!l.tip.en.empty()) {
         ImGui::Spacing();
         ImGui::Separator();
