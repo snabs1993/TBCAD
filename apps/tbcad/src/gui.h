@@ -383,6 +383,7 @@ private:
     double hoverTipSince_ = 0;
     // A yes/no setting that also reads right when it was set as text (SETTING command, config).
     bool flag(std::string_view key, bool fallback) const;
+    float compactIconPx() const;
     void hoverTooltip();
     // Short non-blocking notices at the bottom right of the viewport (saved, opened, ...).
     void toast(const std::string& text);
