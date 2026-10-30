@@ -1,0 +1,104 @@
+{
+  "id": "1.3",
+  "world": 1,
+  "title": {
+    "en": "Undo and redo",
+    "th": "ย้อนกลับและทำซ้ำ"
+  },
+  "goal": {
+    "en": "Erase the red circle, bring it back, then erase it again with Redo",
+    "th": "ลบวงกลมแดง เอากลับมา แล้วลบอีกครั้งด้วยการทำซ้ำ"
+  },
+  "tip": {
+    "en": "Ctrl+Z can go back many steps, one at a time.",
+    "th": "Ctrl+Z ย้อนได้หลายขั้น ทีละขั้น"
+  },
+  "par": 1,
+  "setup": [
+    "COLOR;5",
+    "RECTANGLE;800,-300;@600,600",
+    "COLOR;1",
+    "CIRCLE;0,0;300",
+    "COLOR;ByLayer",
+    "ZOOM;W;-700,-700;1700,700"
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Click the red circle and press Delete.",
+        "th": "คลิกวงกลมแดงแล้วกด Delete"
+      },
+      "hint": {
+        "en": "Or type E, Enter, click the circle, Enter.",
+        "th": "หรือพิมพ์ E กด Enter คลิกวงกลม แล้วกด Enter"
+      },
+      "checks": [
+        {
+          "type": "count",
+          "kind": "circle",
+          "equals": 0
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Press Ctrl+Z to undo: the circle comes back.",
+        "th": "กด Ctrl+Z เพื่อย้อนกลับ วงกลมจะกลับมา"
+      },
+      "hint": {
+        "en": "Hold Ctrl and press Z. Or type U and Enter.",
+        "th": "กด Ctrl ค้างแล้วกด Z หรือพิมพ์ U แล้ว Enter"
+      },
+      "checks": [
+        {
+          "type": "undo"
+        },
+        {
+          "type": "count",
+          "kind": "circle",
+          "equals": 1
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Press Ctrl+Y to redo: the circle goes again.",
+        "th": "กด Ctrl+Y เพื่อทำซ้ำ วงกลมจะหายไปอีกครั้ง"
+      },
+      "hint": {
+        "en": "Hold Ctrl and press Y. Or type REDO and Enter.",
+        "th": "กด Ctrl ค้างแล้วกด Y หรือพิมพ์ REDO แล้ว Enter"
+      },
+      "checks": [
+        {
+          "type": "redo"
+        },
+        {
+          "type": "count",
+          "kind": "circle",
+          "equals": 0
+        },
+        {
+          "type": "count",
+          "kind": "polyline",
+          "equals": 1
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "ERASE;L;",
+    "U",
+    "REDO"
+  ],
+  "wrong": [
+    [
+      "ERASE;L;"
+    ],
+    [
+      "ERASE;ALL;",
+      "U",
+      "REDO"
+    ]
+  ]
+}

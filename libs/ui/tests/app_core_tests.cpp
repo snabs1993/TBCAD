@@ -67,6 +67,37 @@ TEST_CASE("command line runs commands, aliases, prompts and errors") {
     CHECK(f.core->promptText() == "Command: ");
 }
 
+TEST_CASE("command listeners hear starts, ends, undo and redo with how a command was started") {
+    Fixture f("cmdlisten");
+    std::vector<CommandEvent> heard;
+    f.core->addCommandListener([&](const CommandEvent& e) { heard.push_back(e); });
+
+    f.core->submitText("tl 0,0 100,0");
+    REQUIRE(heard.size() == 2);
+    CHECK(heard[0].kind == CommandEvent::Kind::Started);
+    CHECK(heard[0].command == "TESTLINE");
+    CHECK(heard[0].word == "tl");
+    CHECK_FALSE(heard[0].fromButton);
+    CHECK(heard[1].kind == CommandEvent::Kind::Ended);
+    CHECK_FALSE(heard[1].cancelled);
+
+    heard.clear();
+    f.core->startCommand("TESTLINE");
+    f.core->pressEscape();
+    REQUIRE(heard.size() == 2);
+    CHECK(heard[0].fromButton);
+    CHECK(heard[0].word.empty());
+    CHECK(heard[1].kind == CommandEvent::Kind::Ended);
+    CHECK(heard[1].cancelled);
+
+    heard.clear();
+    CHECK(f.core->undo());
+    CHECK(f.core->redo());
+    REQUIRE(heard.size() == 2);
+    CHECK(heard[0].kind == CommandEvent::Kind::Undo);
+    CHECK(heard[1].kind == CommandEvent::Kind::Redo);
+}
+
 TEST_CASE("lines a panel sends are echoed with short numbers, and answers are not echoed") {
     Fixture f("panelecho");
     f.core->submitPanelText("TESTLINE 3787.4686716791975,5741.311612364243");

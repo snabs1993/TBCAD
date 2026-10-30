@@ -1,0 +1,126 @@
+{
+  "id": "2.4",
+  "world": 2,
+  "title": {
+    "en": "Circles",
+    "th": "วงกลม"
+  },
+  "goal": {
+    "en": "Draw the two circles on the guides",
+    "th": "วาดวงกลม 2 วงตามเส้นนำ"
+  },
+  "tip": {
+    "en": "The small arrow next to a tool button holds its other ways.",
+    "th": "ลูกศรเล็กข้างปุ่มเครื่องมือมีวิธีวาดแบบอื่นซ่อนอยู่"
+  },
+  "par": 2,
+  "setup": [
+    "LINE;1500,-400;1500,400;",
+    "ZOOM;W;-800,-800;2200,800"
+  ],
+  "ghosts": [
+    {
+      "circle": [
+        0,
+        0
+      ],
+      "radius": 500
+    },
+    {
+      "dot": [
+        0,
+        0
+      ]
+    },
+    {
+      "circle": [
+        1500,
+        0
+      ],
+      "radius": 400
+    }
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Start Circle (C), click the green dot, type 500 and press Enter.",
+        "th": "เริ่มคำสั่ง Circle (C) คลิกจุดสีเขียว พิมพ์ 500 แล้วกด Enter"
+      },
+      "hint": {
+        "en": "500 is the radius.",
+        "th": "500 คือรัศมี"
+      },
+      "checks": [
+        {
+          "type": "circle",
+          "center": [
+            0,
+            0
+          ],
+          "radius": 500,
+          "tol": 1
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Open the arrow next to Circle and pick Two points.",
+        "th": "กดลูกศรข้างปุ่ม Circle แล้วเลือก Two points"
+      },
+      "hint": {
+        "en": "Or type C, Enter, 2P, Enter.",
+        "th": "หรือพิมพ์ C Enter แล้ว 2P Enter"
+      },
+      "checks": [
+        {
+          "type": "prompt",
+          "command": "CIRCLE",
+          "contains": "diameter"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Click the two ends of the line.",
+        "th": "คลิกปลายเส้นทั้งสองข้าง"
+      },
+      "hint": {
+        "en": "The cursor jumps to a line end when it is close (object snap).",
+        "th": "เมื่อเมาส์เข้าใกล้ปลายเส้น จะดูดเข้าหาปลายเส้นเอง (object snap)"
+      },
+      "checks": [
+        {
+          "type": "circle",
+          "center": [
+            1500,
+            0
+          ],
+          "radius": 400,
+          "tol": 1
+        },
+        {
+          "type": "circle",
+          "center": [
+            0,
+            0
+          ],
+          "radius": 500,
+          "tol": 1
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "CIRCLE;0,0;500",
+    "CIRCLE;2P;1500,-400;1500,400"
+  ],
+  "wrong": [
+    [
+      "CIRCLE;0,0;500",
+      "CIRCLE;1500,0;300"
+    ],
+    [
+      "CIRCLE;1500,0;400"
+    ]
+  ]
+}

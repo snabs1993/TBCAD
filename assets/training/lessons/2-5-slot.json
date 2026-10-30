@@ -1,0 +1,126 @@
+{
+  "id": "2.5",
+  "world": 2,
+  "title": {
+    "en": "Polyline with arcs",
+    "th": "เส้นต่อเนื่องที่มีส่วนโค้ง"
+  },
+  "goal": {
+    "en": "Draw the slot shape in one go",
+    "th": "วาดรูปร่องยาวปลายโค้งในคำสั่งเดียว"
+  },
+  "tip": {
+    "en": "A polyline is one object, however many pieces it has.",
+    "th": "เส้นต่อเนื่องเป็นวัตถุชิ้นเดียว ไม่ว่าจะมีกี่ช่วง"
+  },
+  "par": 1,
+  "setup": [
+    "ZOOM;W;-600,-600;2600,1200"
+  ],
+  "ghosts": [
+    {
+      "polyline": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          2000,
+          0,
+          1
+        ],
+        [
+          2000,
+          600,
+          0
+        ],
+        [
+          0,
+          600,
+          1
+        ]
+      ],
+      "closed": true
+    },
+    {
+      "dot": [
+        0,
+        0
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Start Polyline (PL), click the green dot, type @2000,0 and Enter.",
+        "th": "เริ่มคำสั่ง Polyline (PL) คลิกจุดสีเขียว พิมพ์ @2000,0 แล้ว Enter"
+      },
+      "hint": {
+        "en": "Type PL, Enter, 0,0, Enter, @2000,0, Enter.",
+        "th": "พิมพ์ PL Enter, 0,0 Enter, @2000,0 Enter"
+      },
+      "checks": [
+        {
+          "type": "prompt",
+          "command": "POLYLINE",
+          "contains": "next point"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Pick Arc on the option bar, type @0,600 and Enter.",
+        "th": "เลือก Arc ในแถบตัวเลือก พิมพ์ @0,600 แล้ว Enter"
+      },
+      "hint": {
+        "en": "Or type A and Enter to switch to arcs.",
+        "th": "หรือพิมพ์ A แล้ว Enter เพื่อเปลี่ยนเป็นโหมดโค้ง"
+      },
+      "checks": [
+        {
+          "type": "prompt",
+          "command": "POLYLINE",
+          "contains": "endpoint of arc"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Pick Line, type @-2000,0 and Enter, then pick Arc and Close.",
+        "th": "เลือก Line พิมพ์ @-2000,0 แล้ว Enter จากนั้นเลือก Arc และ Close"
+      },
+      "hint": {
+        "en": "Line, @-2000,0, Arc, Close.",
+        "th": "Line, @-2000,0, Arc, Close"
+      },
+      "checks": [
+        {
+          "type": "polyline",
+          "closed": true,
+          "arcs": 2,
+          "area": 1482743.3,
+          "box": [
+            [
+              -300,
+              0
+            ],
+            [
+              2300,
+              600
+            ]
+          ],
+          "tol": 1
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "PLINE;0,0;@2000,0;Arc;@0,600;Line;@-2000,0;Arc;Close"
+  ],
+  "wrong": [
+    [
+      "PLINE;0,0;@2000,0;@0,600;@-2000,0;Close"
+    ]
+  ]
+}

@@ -1,0 +1,109 @@
+{
+  "id": "2.1",
+  "world": 2,
+  "title": {
+    "en": "Your first line",
+    "th": "เส้นแรก"
+  },
+  "goal": {
+    "en": "Draw a 1000 mm line on the guide",
+    "th": "วาดเส้นยาว 1000 มม. ทับเส้นนำ"
+  },
+  "tip": {
+    "en": "Space works like Enter.",
+    "th": "กด Space แทน Enter ได้"
+  },
+  "par": 1,
+  "setup": [
+    "ZOOM;W;-200,-500;1200,500"
+  ],
+  "ghosts": [
+    {
+      "line": [
+        [
+          0,
+          0
+        ],
+        [
+          1000,
+          0
+        ]
+      ]
+    },
+    {
+      "dot": [
+        0,
+        0
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "text": {
+        "en": "Start Line: click Line on the Draw tab, or type L and press Enter.",
+        "th": "เริ่มคำสั่ง Line: คลิก Line ในแท็บ Draw หรือพิมพ์ L แล้วกด Enter"
+      },
+      "hint": {
+        "en": "Type L, then press Enter.",
+        "th": "พิมพ์ L แล้วกด Enter"
+      },
+      "checks": [
+        {
+          "type": "prompt",
+          "command": "LINE"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Type 0,0 and press Enter for the first point.",
+        "th": "พิมพ์ 0,0 แล้วกด Enter เป็นจุดแรก"
+      },
+      "hint": {
+        "en": "0,0 is the green dot.",
+        "th": "0,0 คือจุดสีเขียว"
+      },
+      "checks": [
+        {
+          "type": "prompt",
+          "command": "LINE",
+          "contains": "next point"
+        }
+      ]
+    },
+    {
+      "text": {
+        "en": "Type @1000,0 and press Enter, then Enter again to finish.",
+        "th": "พิมพ์ @1000,0 แล้วกด Enter จากนั้นกด Enter อีกครั้งเพื่อจบ"
+      },
+      "hint": {
+        "en": "@ means: measured from the last point. 1000 to the right, 0 up.",
+        "th": "@ แปลว่าวัดจากจุดล่าสุด ไปขวา 1000 ขึ้น 0"
+      },
+      "checks": [
+        {
+          "type": "line",
+          "from": [
+            0,
+            0
+          ],
+          "to": [
+            1000,
+            0
+          ]
+        }
+      ]
+    }
+  ],
+  "solution": [
+    "LINE;0,0;@1000,0;"
+  ],
+  "wrong": [
+    [
+      "LINE;0,0;@900,0;"
+    ],
+    [
+      "LINE;10,10;@1000,0;"
+    ]
+  ]
+}

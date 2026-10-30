@@ -168,6 +168,7 @@ Result<void> CommandRunner::startImpl(std::string_view nameOrAlias, bool transpa
     stack_.push_back(std::move(a));
     if (!transparent)
         lastCommand_ = std::string(c->name());
+    host_.commandStarted(c->name(), transparent);
     stack_.back().task.resume();
     afterResume();
     // Like AutoCAD, a drawing command that starts with objects selected drops the selection
@@ -239,6 +240,7 @@ void CommandRunner::finishTop(bool failed, std::string_view error, bool notify) 
         feedback_ = FilterFeedback{};
         host_.feedbackChanged(feedback_);
         refreshPrompt();
+        host_.commandEnded(a.command->name(), failed || a.ctx->cancelled());
     }
     // A transparent command that worked something out for the prompt under it ('CAL at "Specify
     // next point") answers that prompt now, as if the result had been typed there.
