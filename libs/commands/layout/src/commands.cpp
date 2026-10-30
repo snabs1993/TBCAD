@@ -146,7 +146,8 @@ public:
                 co_return;
             auto r =
                 layout::createLayout(ctx.tx(), name.text, paperName, orient.keyword == "Landscape");
-            if (r)
+            const auto withViewport = ctx.host().setting("layout.newViewport");
+            if (r && withViewport && (*withViewport == "1" || *withViewport == "true"))
                 addDefaultViewport(ctx, name.text);
             report(ctx, r, "Layout \"" + name.text + "\" created.");
             if (r) {
