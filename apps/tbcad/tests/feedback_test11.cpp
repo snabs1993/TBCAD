@@ -199,8 +199,8 @@ TEST_CASE("blank drawing: Select objects takes typed corner points") {
     h.frame(2);
     REQUIRE(h.core().document().modelSpace().size() == 2);
     h.command("ERASE");
-    h.command("-10,-10");
-    h.command("200,50");  // left to right: a window around the first line only
+    h.command("-300,-300");  // away from both lines: the point starts a box
+    h.command("300,50");     // left to right: a window around the first line only
     h.command("");
     h.frame(3);
     CHECK(h.core().document().modelSpace().size() == 1);
