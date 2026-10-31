@@ -1977,6 +1977,29 @@ TEST_CASE(
     CHECK(c.at("tbcad.mleadercurrent") == "Note");
     CHECK(c.at("tbcad.tablestyle.Grid") == "a\tb\nc");
 }
+TEST_CASE("annotation zones survive a DXF round trip") {
+    Document doc;
+    {
+        auto tx = doc.begin("z");
+        REQUIRE(tx.modifyHeader([&](Header& h) {
+                      AnnotationZone z;
+                      z.name = "รายละเอียด A";
+                      z.scale = 20;
+                      z.box.expand({100, 200});
+                      z.box.expand({3100.5, 2200});
+                      setAnnotationZones(h, {z});
+                      h.custom[kAnnoZonesShowKey] = "0";
+                  }).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    const auto zones = annotationZones(rt.back->header());
+    REQUIRE(zones.size() == 1);
+    CHECK(zones[0].name == "รายละเอียด A");
+    CHECK(zones[0].scale == doctest::Approx(20));
+    CHECK(zones[0].box.max.x == doctest::Approx(3100.5));
+    CHECK_FALSE(annotationZonesShown(rt.back->header()));
+}
 TEST_CASE("the unit a drawing shows lengths in survives a DXF round trip") {
     for (LengthUnit u : {LengthUnit::Inch, LengthUnit::Foot, LengthUnit::Centimeter,
                          LengthUnit::Meter, LengthUnit::Millimeter}) {

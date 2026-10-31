@@ -882,7 +882,7 @@ bool Writer::writeMLeader(const Props& p, const Entity& e, const MLeaderData& m,
     if (block && (blockNameOf(m.block).empty() || !blockRec_.count(m.block.value)))
         return false;
     const DimStyle& st = dim::styleOf(doc_, m.style);
-    const double f = annotationFactor(doc_.header(), e.common);
+    const double f = annotationFactor(doc_.header(), e);
     const double k = (st.overallScale > 0 ? st.overallScale : 1.0) * f;
     const dim::Layout lay = dim::layoutMLeader(doc_, m, 0.01, f);
     const double th =

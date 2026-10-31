@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <optional>
@@ -474,6 +475,215 @@ public:
     }
 };
 
+// Redraws every annotative object (after the zones changed, the scale it is drawn at may too).
+void touchAnnotative(CommandContext& ctx) {
+    std::vector<EntityId> ids;
+    ctx.doc().forEachEntity([&](const Entity& e) {
+        if (e.common.annotative && !ctx.doc().ownerBlock(e.common.id))
+            ids.push_back(e.common.id);
+    });
+    for (EntityId id : ids)
+        (void)ctx.tx().modify(id, [](Entity&) {});
+}
+
+std::size_t countInZone(const Document& doc, const AnnotationZone& z) {
+    std::size_t n = 0;
+    doc.forEachEntity([&](const Entity& e) {
+        if (!e.common.annotative || doc.ownerBlock(e.common.id))
+            return;
+        if (const auto at = annotationAnchor(e); at && z.box.contains(*at))
+            ++n;
+    });
+    return n;
+}
+
+std::string lowerAscii(std::string s) {
+    for (char& c : s)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return s;
+}
+
+// ANNOZONE [AZONE]: named rectangles of model space with their own annotation scale. Inside a
+// zone, annotative text, dimensions, leaders, tables and hatches are drawn (and plotted from the
+// model) at the zone's scale, so a 1:20 detail sits next to a 1:100 plan in one model.
+class AnnoZoneCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "ANNOZONE"; }
+    std::vector<std::string> defaultAliases() const override { return {"AZONE"}; }
+    std::string_view description() const override {
+        return "Give an area of the model its own annotation scale";
+    }
+
+    Task run(CommandContext& ctx) override {
+        cmd::PointOptions po;
+        po.keywords = {"Scale", "Rename", "Delete", "List", "Frames"};
+        auto first = co_await ctx.getPoint(
+            "First corner of new zone or [Scale/Rename/Delete/List/Frames]", po);
+        if (first.status == cmd::Status::Keyword) {
+            if (first.keyword == "List")
+                listZones(ctx);
+            else if (first.keyword == "Frames")
+                co_await frames(ctx);
+            else
+                co_await editZone(ctx, first.keyword);
+            co_return;
+        }
+        if (!first.ok())
+            co_return;
+        cmd::PointOptions next;
+        next.base = first.point;
+        next.preview = [a = first.point](Vec2 c, DisplayList& out) {
+            DisplayPolyline pl;
+            pl.pts = {a, {c.x, a.y}, c, {a.x, c.y}};
+            pl.closed = true;
+            out.items.emplace_back(std::move(pl));
+        };
+        auto second = co_await ctx.getPoint("Opposite corner", std::move(next));
+        if (!second.ok())
+            co_return;
+        AnnotationZone z;
+        z.box.expand(first.point);
+        z.box.expand(second.point);
+        if (!(z.box.width() > 0) || !(z.box.height() > 0)) {
+            ctx.message("The zone needs width and height.");
+            co_return;
+        }
+        const Header& h = ctx.doc().header();
+        const std::string def = scaleText(currentAnnotationScale(h)).substr(2);
+        cmd::StringOptions so;
+        so.defaultValue = def;
+        auto r =
+            co_await ctx.getString("Annotation scale in this zone, N or 1:N <" + def + ">", so);
+        if (!r.ok())
+            co_return;
+        const auto parsed = parseScaleN(r.text.empty() ? def : r.text);
+        if (!parsed || !(*parsed > 0)) {
+            ctx.message("Enter the scale as N or 1:N, a number above zero.");
+            co_return;
+        }
+        z.scale = *parsed;
+        std::vector<AnnotationZone> zones = annotationZones(ctx.doc().header());
+        const std::string defName = "Zone " + std::to_string(zones.size() + 1);
+        cmd::StringOptions no;
+        no.defaultValue = defName;
+        auto nm = co_await ctx.getString("Zone name <" + defName + ">", no);
+        if (!nm.ok() && nm.status != cmd::Status::None)
+            co_return;
+        z.name = nm.text.empty() ? defName : nm.text;
+        zones.push_back(z);
+        (void)ctx.tx().modifyHeader([&](Header& hh) { setAnnotationZones(hh, zones); });
+        touchAnnotative(ctx);
+        ctx.message("Zone \"" + z.name + "\" at " + scaleText(z.scale) + ": " +
+                    std::to_string(countInZone(ctx.doc(), z)) +
+                    " annotative object(s) inside are drawn at that scale.");
+        ctx.setUndoLabel("Annotation zone");
+    }
+
+private:
+    static void listZones(CommandContext& ctx) {
+        const auto zones = annotationZones(ctx.doc().header());
+        if (zones.empty()) {
+            ctx.message("No annotation zones. The whole model uses " +
+                        scaleText(currentAnnotationScale(ctx.doc().header())) + ".");
+            return;
+        }
+        for (const AnnotationZone& z : zones) {
+            char buf[160];
+            std::snprintf(buf, sizeof buf, "  %s  (%g x %g)", scaleText(z.scale).c_str(),
+                          z.box.width(), z.box.height());
+            ctx.message(z.name + buf);
+        }
+        ctx.message("Outside the zones: " + scaleText(currentAnnotationScale(ctx.doc().header())));
+    }
+
+    static Task frames(CommandContext& ctx) {
+        const bool now = annotationZonesShown(ctx.doc().header());
+        cmd::KeywordOptions ko;
+        ko.keywords = {"On", "Off"};
+        ko.defaultKeyword = now ? "Off" : "On";
+        auto k = co_await ctx.getKeyword(
+            std::string("Show zone frames [On/Off] <") + (now ? "Off" : "On") + ">", ko);
+        if (!k.ok())
+            co_return;
+        const bool on = k.keyword == "On";
+        (void)ctx.tx().modifyHeader([&](Header& h) {
+            if (on)
+                h.custom.erase(kAnnoZonesShowKey);
+            else
+                h.custom[kAnnoZonesShowKey] = "0";
+        });
+        ctx.message(on ? "Zone frames shown (they never plot)." : "Zone frames hidden.");
+        ctx.setUndoLabel("Annotation zone frames");
+    }
+
+    static Task editZone(CommandContext& ctx, std::string action) {
+        std::vector<AnnotationZone> zones = annotationZones(ctx.doc().header());
+        if (zones.empty()) {
+            ctx.message("No annotation zones yet: pick two corners to make one.");
+            co_return;
+        }
+        cmd::PointOptions po;
+        po.freeText = true;
+        po.numberAsText = true;
+        po.snap = false;
+        auto pick = co_await ctx.getPoint("Click inside the zone or type its name", po);
+        std::size_t idx = zones.size();
+        if (pick.ok()) {
+            double area = 0;
+            for (std::size_t i = 0; i < zones.size(); ++i) {
+                const double a = zones[i].box.width() * zones[i].box.height();
+                if (zones[i].box.contains(pick.point) && (idx == zones.size() || a < area)) {
+                    idx = i;
+                    area = a;
+                }
+            }
+        } else if (pick.status == cmd::Status::Keyword) {
+            const std::string want = lowerAscii(pick.keyword);
+            for (std::size_t i = 0; i < zones.size(); ++i)
+                if (lowerAscii(zones[i].name) == want)
+                    idx = i;
+        } else {
+            co_return;
+        }
+        if (idx == zones.size()) {
+            ctx.message("No zone there.");
+            co_return;
+        }
+        AnnotationZone& z = zones[idx];
+        const std::string old = z.name;
+        if (action == "Delete") {
+            zones.erase(zones.begin() + static_cast<std::ptrdiff_t>(idx));
+            ctx.message("Zone \"" + old + "\" deleted.");
+        } else if (action == "Rename") {
+            cmd::StringOptions so;
+            so.defaultValue = old;
+            auto r = co_await ctx.getString("New name <" + old + ">", so);
+            if (!r.ok() || r.text.empty())
+                co_return;
+            z.name = r.text;
+            ctx.message("Zone \"" + old + "\" is now \"" + z.name + "\".");
+        } else {
+            const std::string def = scaleText(z.scale).substr(2);
+            cmd::StringOptions so;
+            so.defaultValue = def;
+            auto r = co_await ctx.getString(
+                "Annotation scale of \"" + old + "\", N or 1:N <" + def + ">", so);
+            if (!r.ok())
+                co_return;
+            const auto parsed = parseScaleN(r.text.empty() ? def : r.text);
+            if (!parsed || !(*parsed > 0)) {
+                ctx.message("Enter the scale as N or 1:N, a number above zero.");
+                co_return;
+            }
+            z.scale = *parsed;
+            ctx.message("Zone \"" + old + "\" now uses " + scaleText(z.scale) + ".");
+        }
+        (void)ctx.tx().modifyHeader([&](Header& h) { setAnnotationZones(h, zones); });
+        touchAnnotative(ctx);
+        ctx.setUndoLabel("Annotation zone");
+    }
+};
+
 }  // namespace
 
 std::unique_ptr<cmd::Command> makeAnnoResetCommand() {
@@ -496,6 +706,9 @@ std::unique_ptr<cmd::Command> makeAnnoScaleCommand() {
 }
 std::unique_ptr<cmd::Command> makeScaleListCommand() {
     return std::make_unique<ScaleListCommand>();
+}
+std::unique_ptr<cmd::Command> makeAnnoZoneCommand() {
+    return std::make_unique<AnnoZoneCommand>();
 }
 
 }  // namespace tbcad::textcmd

@@ -96,7 +96,7 @@ void hatchDisplay(const Document& doc, const Entity& e, const geom::DisplayConte
     HatchData annotated;
     const HatchData* hd = h;
     if (e.common.annotative && !h->solid) {
-        const double f = annotationFactor(doc.header(), e.common, ctx.annoScale);
+        const double f = annotationFactor(doc.header(), e, ctx.annoScale);
         if (f > 0 && std::isfinite(f) && f != 1) {
             annotated = *h;
             annotated.patternScale *= f;

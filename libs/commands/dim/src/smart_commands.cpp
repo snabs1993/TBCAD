@@ -528,7 +528,7 @@ public:
         if (mls.annotative && !e.common.annotative) {
             e.common.annotative = true;
             e.common.annoScales =
-                ScaleList(std::vector<double>{currentAnnotationScale(ctx.doc().header())});
+                ScaleList(std::vector<double>{newAnnotationScale(ctx.doc().header(), e)});
         }
         auto id = ctx.tx().add(std::move(e));
         if (!id)

@@ -1167,8 +1167,12 @@ EffectiveLayer Document::effective(const EntityCommon& c) const {
     EffectiveLayer e = effective(c.layer);
     // ANNOALLVISIBLE off: an annotative object made for other scales is not there.
     if (c.annotative && !header_.custom.empty() && !annoAllVisible(header_) &&
-        !supportsCurrentAnnotationScale(header_, c))
-        e.on = false;
+        !supportsCurrentAnnotationScale(header_, c)) {
+        // ... unless it sits in an annotation zone, which draws it at the zone's scale.
+        const Entity* self = header_.custom.count(kAnnoZonesKey) ? find(c.id) : nullptr;
+        if (!self || annotationZoneScale(header_, *self) <= 0)
+            e.on = false;
+    }
     const Level* lv = level(c.level);
     if (!lv)
         return e;
@@ -2679,6 +2683,166 @@ double annotationFactor(const Header& h, const EntityCommon& c, double override)
     if (!supportsCurrentAnnotationScale(h, c) && c.annoScales.front() > 0)
         return c.annoScales.front();
     return currentAnnotationScale(h);
+}
+
+namespace {
+
+// Zones parsed once per thread for each zone text (scenes are built on several threads).
+const std::vector<AnnotationZone>& cachedZones(const std::string& text) {
+    thread_local std::string src;
+    thread_local std::vector<AnnotationZone> zones;
+    thread_local bool ready = false;
+    if (!ready || src != text) {
+        zones.clear();
+        std::size_t at = 0;
+        while (at < text.size()) {
+            std::size_t nl = text.find('\n', at);
+            if (nl == std::string::npos)
+                nl = text.size();
+            const std::string line = text.substr(at, nl - at);
+            at = nl + 1;
+            const std::size_t t1 = line.find('\t');
+            const std::size_t t2 = t1 == std::string::npos ? t1 : line.find('\t', t1 + 1);
+            if (t2 == std::string::npos)
+                continue;
+            AnnotationZone z;
+            z.name = line.substr(0, t1);
+            const std::string nums = line.substr(t1 + 1);
+            double v[5];
+            const char* p = nums.c_str();
+            bool ok = true;
+            for (double& x : v) {
+                char* end = nullptr;
+                x = std::strtod(p, &end);
+                if (end == p || !std::isfinite(x)) {
+                    ok = false;
+                    break;
+                }
+                p = end;
+            }
+            if (!ok || !(v[0] > 0))
+                continue;
+            z.scale = v[0];
+            z.box.min = {std::min(v[1], v[3]), std::min(v[2], v[4])};
+            z.box.max = {std::max(v[1], v[3]), std::max(v[2], v[4])};
+            if (!(z.box.max.x > z.box.min.x) || !(z.box.max.y > z.box.min.y))
+                continue;
+            zones.push_back(std::move(z));
+        }
+        src = text;
+        ready = true;
+    }
+    return zones;
+}
+
+}  // namespace
+
+std::vector<AnnotationZone> annotationZones(const Header& h) {
+    auto it = h.custom.find(kAnnoZonesKey);
+    if (it == h.custom.end())
+        return {};
+    return cachedZones(it->second);
+}
+
+void setAnnotationZones(Header& h, const std::vector<AnnotationZone>& zones) {
+    std::string text;
+    for (const AnnotationZone& z : zones) {
+        if (!(z.scale > 0) || z.box.empty())
+            continue;
+        std::string name = z.name;
+        for (char& ch : name)
+            if (ch == '\t' || ch == '\n' || ch == '\r')
+                ch = ' ';
+        char buf[160];
+        std::snprintf(buf, sizeof buf, "\t%.12g\t%.17g %.17g %.17g %.17g\n", z.scale, z.box.min.x,
+                      z.box.min.y, z.box.max.x, z.box.max.y);
+        text += name;
+        text += buf;
+    }
+    if (text.empty())
+        h.custom.erase(kAnnoZonesKey);
+    else
+        h.custom[kAnnoZonesKey] = std::move(text);
+}
+
+bool annotationZonesShown(const Header& h) {
+    auto it = h.custom.find(kAnnoZonesShowKey);
+    return it == h.custom.end() || it->second != "0";
+}
+
+double annotationZoneScaleAt(const Header& h, Vec2 p) {
+    auto it = h.custom.find(kAnnoZonesKey);
+    if (it == h.custom.end())
+        return 0;
+    double best = 0;
+    double bestArea = 0;
+    for (const AnnotationZone& z : cachedZones(it->second)) {
+        if (!z.box.contains(p))
+            continue;
+        const double area = z.box.width() * z.box.height();
+        if (best == 0 || area < bestArea) {
+            best = z.scale;
+            bestArea = area;
+        }
+    }
+    return best;
+}
+
+std::optional<Vec2> annotationAnchor(const Entity& e) {
+    if (const auto* t = entityAs<TextData>(e))
+        return t->position;
+    if (const auto* m = entityAs<MTextData>(e))
+        return m->position;
+    if (const auto* d = entityAs<DimensionData>(e))
+        return d->defPts[0];
+    if (const auto* l = entityAs<LeaderData>(e))
+        return l->vertices.empty() ? l->textPos : l->vertices.front();
+    if (const auto* m = entityAs<MLeaderData>(e))
+        return m->landing;
+    if (const auto* t = entityAs<TableData>(e))
+        return t->origin;
+    if (const auto* ins = entityAs<InsertData>(e))
+        return ins->position;
+    if (const auto* hd = entityAs<HatchData>(e)) {
+        for (const HatchLoop& loop : hd->loops) {
+            BBox2 b;
+            for (const HatchEdge& edge : loop.edges) {
+                if (const auto* l = std::get_if<HatchLineEdge>(&edge)) {
+                    b.expand(l->a);
+                    b.expand(l->b);
+                } else if (const auto* a = std::get_if<HatchArcEdge>(&edge)) {
+                    b.expand(a->center);
+                } else if (const auto* el = std::get_if<HatchEllipseEdge>(&edge)) {
+                    b.expand(el->center);
+                } else if (const auto* sp = std::get_if<HatchSplineEdge>(&edge)) {
+                    for (const Vec2& c : sp->spline.control)
+                        b.expand(c);
+                } else if (const auto* pl = std::get_if<HatchPolylineEdge>(&edge)) {
+                    for (const PolyVertex& v : pl->v)
+                        b.expand(v.p);
+                }
+            }
+            if (!b.empty())
+                return Vec2{(b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2};
+        }
+    }
+    return std::nullopt;
+}
+
+double annotationZoneScale(const Header& h, const Entity& e) {
+    if (!e.common.annotative || h.custom.empty() || !h.custom.count(kAnnoZonesKey))
+        return 0;
+    const auto at = annotationAnchor(e);
+    return at ? annotationZoneScaleAt(h, *at) : 0;
+}
+
+double annotationFactor(const Header& h, const Entity& e, double override) {
+    if (e.common.annotative && !(override > 0)) {
+        const double z = annotationZoneScale(h, e);
+        if (z > 0)
+            return z;
+    }
+    return annotationFactor(h, e.common, override);
 }
 
 LayerId commandLayerFor(const Header& h, const Entity& e) {
