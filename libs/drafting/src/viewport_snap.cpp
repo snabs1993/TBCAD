@@ -34,7 +34,7 @@ std::vector<SnapCandidate> findViewportSnapCandidates(const Document& doc,
             mr.base = modelFromSheet(vp, *rq.base);
         for (SnapCandidate c : findSnapCandidates(doc, modelIndex, mr, providers)) {
             const Entity* e = doc.find(c.entity);
-            if (e && layout::frozenInViewport(doc, vp, e->common.layer))
+            if (e && layout::hiddenInViewport(doc, layout, vp, e->common.layer))
                 continue;
             c.point = sheetFromModel(vp, c.point);
             // A snap point outside the viewport's outline is not visible there.

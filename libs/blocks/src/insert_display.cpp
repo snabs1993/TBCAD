@@ -139,7 +139,7 @@ std::shared_ptr<DisplayList> buildBlockSpace(const Document& doc, const BlockDef
         // (layer 0 took the insert's layer just above, which is shown or the insert would not be
         // here).
         if (resolved.common.layer != insert.common.layer &&
-            !doc.effective(resolved.common.layer).visible())
+            !child.layer(doc, resolved.common.layer).visible())
             continue;
         if (kind(resolved) == EntityKind::Insert) {
             buildInsertDisplay(doc, resolved, child, *list);
@@ -269,7 +269,8 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
                child.chordTolMm,
                ctx.showTransparency ? child.byBlockTransparency : -1,
                ctx.fillMode,
-               ctx.quickText};
+               ctx.quickText,
+               ctx.layerAdjust};
         blockSpace = cache->find(key);
     }
     // Far too much to draw (blocks that hold each other many times over): the outline.

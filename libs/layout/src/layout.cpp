@@ -60,7 +60,15 @@ std::string serialize(const std::vector<Layout>& all) {
             for (std::size_t i = 0; i < v.clip.size(); ++i)
                 o << (i ? ";" : "") << num(v.clip[i].x) << ':' << num(v.clip[i].y);
             o << '\t' << (v.border ? 1 : 0) << '\t' << v.borderLayer.value << '\n';
+            // P: an override of this viewport alone (after its V line).
+            for (const LayerOverride& ov : v.overrides)
+                if (!ov.empty())
+                    o << "P\t" << ov.layer.value << '\t' << overrideFields(ov) << '\n';
         }
+        // O: an override of the whole sheet (after the viewports; older versions skip it).
+        for (const LayerOverride& ov : l.layerOverrides)
+            if (!ov.empty())
+                o << "O\t" << ov.layer.value << '\t' << overrideFields(ov) << '\n';
     }
     return o.str();
 }
@@ -191,6 +199,15 @@ std::vector<Layout> layouts(const Document& doc) {
                 v.borderLayer =
                     LayerId{static_cast<std::uint32_t>(std::strtoul(f[15].c_str(), nullptr, 10))};
             out.back().viewports.push_back(std::move(v));
+        } else if (f.size() >= 2 && (f[0] == "O" || f[0] == "P") && !out.empty()) {
+            LayerOverride ov = parseOverrideFields(f, 2);
+            ov.layer = LayerId{static_cast<std::uint32_t>(std::strtoul(f[1].c_str(), nullptr, 10))};
+            if (!ov.layer || ov.empty())
+                continue;
+            if (f[0] == "O")
+                out.back().layerOverrides.push_back(ov);
+            else if (!out.back().viewports.empty())
+                out.back().viewports.back().overrides.push_back(ov);
         }
     }
     return out;
@@ -574,6 +591,203 @@ Result<void> setViewportLevel(Transaction& tx, const std::string& layoutName, in
     Edit ed = std::move(e.value());
     ed.vp->level = level;
     return store(tx, ed.all);
+}
+
+const LayerOverride* Layout::findOverride(LayerId layer) const {
+    for (const LayerOverride& o : layerOverrides)
+        if (o.layer == layer)
+            return &o;
+    return nullptr;
+}
+
+std::string overrideFields(const LayerOverride& o) {
+    std::string t;
+    if (o.on)
+        t += *o.on ? "1" : "0";
+    t += '\t';
+    if (o.color) {
+        char buf[32];
+        if (o.color->kind == ColorKind::Rgb)
+            std::snprintf(buf, sizeof buf, "r%u,%u,%u", unsigned{o.color->r}, unsigned{o.color->g},
+                          unsigned{o.color->b});
+        else
+            std::snprintf(buf, sizeof buf, "i%u", unsigned{o.color->indexValue()});
+        t += buf;
+    }
+    t += '\t';
+    if (o.linetype)
+        t += std::to_string(o.linetype->value);
+    t += '\t';
+    if (o.lineweight)
+        t += std::to_string(o.lineweight->v);
+    t += '\t';
+    if (o.transparency)
+        t += std::to_string(*o.transparency);
+    t += '\t';
+    if (o.plot)
+        t += *o.plot ? "1" : "0";
+    return t;
+}
+
+LayerOverride parseOverrideFields(const std::vector<std::string>& f, std::size_t first) {
+    LayerOverride o;
+    auto at = [&](std::size_t k) -> const std::string* {
+        return first + k < f.size() && !f[first + k].empty() ? &f[first + k] : nullptr;
+    };
+    if (const std::string* v = at(0))
+        o.on = *v == "1";
+    if (const std::string* v = at(1)) {
+        if ((*v)[0] == 'r') {
+            unsigned r = 0, g = 0, b = 0;
+            if (std::sscanf(v->c_str() + 1, "%u,%u,%u", &r, &g, &b) == 3 && r < 256 && g < 256 &&
+                b < 256)
+                o.color = Color::rgb(static_cast<std::uint8_t>(r), static_cast<std::uint8_t>(g),
+                                     static_cast<std::uint8_t>(b));
+        } else if ((*v)[0] == 'i') {
+            const long i = std::strtol(v->c_str() + 1, nullptr, 10);
+            if (i >= 1 && i <= 255)
+                o.color = Color::index(static_cast<std::uint8_t>(i));
+        }
+    }
+    if (const std::string* v = at(2))
+        if (const unsigned long id = std::strtoul(v->c_str(), nullptr, 10); id != 0)
+            o.linetype = LinetypeId{static_cast<std::uint32_t>(id)};
+    if (const std::string* v = at(3)) {
+        const long w = std::strtol(v->c_str(), nullptr, 10);
+        if (w == -3 || (w >= 0 && w <= 211))
+            o.lineweight = LineWeight::hundredths(static_cast<std::int16_t>(w));
+    }
+    if (const std::string* v = at(4)) {
+        const long tr = std::strtol(v->c_str(), nullptr, 10);
+        if (tr >= 0 && tr <= 90)
+            o.transparency = static_cast<int>(tr);
+    }
+    if (const std::string* v = at(5))
+        o.plot = *v == "1";
+    return o;
+}
+
+Result<void> setSheetLayerOverride(Transaction& tx, const std::string& layoutName,
+                                   const LayerOverride& o) {
+    if (!o.layer || !tx.document().layer(o.layer))
+        return err(ErrorCode::NotFound, "No such layer");
+    if (o.linetype && !tx.document().linetype(*o.linetype))
+        return err(ErrorCode::NotFound, "No such linetype");
+    auto ed = openEdit(tx, layoutName, 0, false);
+    if (!ed)
+        return ed.error();
+    auto& list = ed.value().layout->layerOverrides;
+    auto it = std::find_if(list.begin(), list.end(),
+                           [&](const LayerOverride& x) { return x.layer == o.layer; });
+    if (it != list.end()) {
+        if (*it == o)
+            return {};
+        list.erase(it);
+    } else if (o.empty()) {
+        return {};
+    }
+    if (!o.empty())
+        list.push_back(o);
+    return store(tx, ed.value().all);
+}
+
+Result<void> clearSheetLayerOverrides(Transaction& tx, const std::string& layoutName,
+                                      LayerId layer) {
+    auto ed = openEdit(tx, layoutName, 0, false);
+    if (!ed)
+        return ed.error();
+    Layout& l = *ed.value().layout;
+    bool changed = false;
+    auto drop = [&](std::vector<LayerOverride>& list) {
+        const std::size_t before = list.size();
+        list.erase(
+            std::remove_if(list.begin(), list.end(),
+                           [&](const LayerOverride& x) { return !layer || x.layer == layer; }),
+            list.end());
+        changed = changed || list.size() != before;
+    };
+    drop(l.layerOverrides);
+    for (Viewport& v : l.viewports)
+        drop(v.overrides);
+    if (!changed)
+        return {};
+    return store(tx, ed.value().all);
+}
+
+namespace {
+
+void applyOne(const LayerOverride& o, EffectiveLayer& e) {
+    if (o.on) {
+        e.on = *o.on;
+        if (*o.on)
+            e.frozen = false;
+    }
+    if (o.color)
+        e.color = *o.color;
+    if (o.linetype)
+        e.linetype = *o.linetype;
+    if (o.lineweight)
+        e.lineweight = *o.lineweight;
+    if (o.transparency)
+        e.transparency = static_cast<std::uint8_t>(std::clamp(*o.transparency, 0, 90));
+    if (o.plot)
+        e.plot = *o.plot;
+}
+
+const LayerOverride* findIn(const std::vector<LayerOverride>& list, LayerId layer) {
+    for (const LayerOverride& o : list)
+        if (o.layer == layer)
+            return &o;
+    return nullptr;
+}
+
+}  // namespace
+
+void applySheetOverrides(const Document& doc, const Layout& layout, const Viewport* vp,
+                         EffectiveLayer& e) {
+    if (layout.layerOverrides.empty() && (!vp || vp->overrides.empty()))
+        return;
+    // A parent hidden on the sheet hides its sub-layers (unless a nearer one shows them).
+    std::optional<bool> inherited;
+    const Layer* own = doc.layer(e.id);
+    if (const Layer* l = own)
+        for (LayerId up = l->parent; up && !inherited;) {
+            const LayerOverride* v = vp ? findIn(vp->overrides, up) : nullptr;
+            if (v && v->on)
+                inherited = v->on;
+            else if (const LayerOverride* s = findIn(layout.layerOverrides, up); s && s->on)
+                inherited = s->on;
+            const Layer* p = doc.layer(up);
+            up = p ? p->parent : LayerId{};
+        }
+    if (inherited && !*inherited) {
+        e.on = false;
+    } else if (inherited && own && own->on && !own->frozen) {
+        // Shown on the sheet: a sub-layer hidden only through its parent shows with it.
+        e.on = true;
+        e.frozen = false;
+    }
+    if (const LayerOverride* s = findIn(layout.layerOverrides, e.id))
+        applyOne(*s, e);
+    if (vp)
+        if (const LayerOverride* v = findIn(vp->overrides, e.id))
+            applyOne(*v, e);
+}
+
+EffectiveLayer sheetLayer(const Document& doc, const Layout& layout, const Viewport* vp,
+                          LayerId layer) {
+    EffectiveLayer e = doc.effective(layer);
+    applySheetOverrides(doc, layout, vp, e);
+    return e;
+}
+
+bool hiddenInViewport(const Document& doc, const Layout& layout, const Viewport& vp,
+                      LayerId layer) {
+    if (frozenInViewport(doc, vp, layer))
+        return true;
+    if (layout.layerOverrides.empty() && vp.overrides.empty())
+        return false;
+    return !sheetLayer(doc, layout, &vp, layer).visible();
 }
 
 bool frozenInViewport(const Document& doc, const Viewport& vp, LayerId layer) {

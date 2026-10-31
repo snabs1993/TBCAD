@@ -310,7 +310,7 @@ int resolveTransparency(const Document& doc, const Entity& e, const DisplayConte
     if (t == kTransparencyByBlock)
         v = ctx.byBlockTransparency;
     else if (t == kTransparencyByLayer)
-        v = doc.effective(e.common.layer).transparency;
+        v = ctx.layer(doc, e.common.layer).transparency;
     else
         v = t;
     return std::clamp(v, 0, static_cast<int>(kTransparencyMax));
@@ -318,7 +318,7 @@ int resolveTransparency(const Document& doc, const Entity& e, const DisplayConte
 
 DisplayStyle resolveStyle(const Document& doc, const Entity& e, const DisplayContext& ctx) {
     const EntityCommon& c = e.common;
-    EffectiveLayer layer = doc.effective(c.layer);
+    EffectiveLayer layer = ctx.layer(doc, c.layer);
     DisplayStyle s;
     switch (c.color.kind) {
         case ColorKind::ByBlock:

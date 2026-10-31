@@ -48,6 +48,7 @@ enum Type : std::uint32_t {
     kLayoutObject = 0x52,
     kSortEnts = 200000,
     kSpatialFilter = 400000,
+    kXrecord = 500000,
     kMLeader = 300000,
     kViewport = 0x22,
     kDimOrdinate = 0x14,
@@ -618,6 +619,8 @@ private:
                 type = kSortEnts;
             else if (cls == "SPATIAL_FILTER")
                 type = kSpatialFilter;
+            else if (cls == "XRECORD")
+                type = kXrecord;
             else if (cls == "LAYOUT") {
                 type = kLayoutObject;
                 ++out_.layoutSeen;
@@ -703,6 +706,9 @@ private:
                 return;
             case kSpatialFilter:
                 decodeSpatialFilter(r, self.value);
+                return;
+            case kXrecord:
+                decodeXrecord(r, self.value);
                 return;
             case kBlock:
             case kEndBlk:
@@ -1780,6 +1786,24 @@ private:
 
     // SPATIAL_FILTER (the clip of an XCLIP): points, the plane, the display and front/back clip
     // switches and the two transforms (ODA spec, class-based object).
+    // XRECORD: only the records a layer's extension dictionary names for viewport overrides are
+    // used; their data is a short list of groups.
+    void decodeXrecord(BitReader& r, std::uint64_t self) {
+        std::uint32_t reactors = 0;
+        commonObjectPrefix(r, reactors);
+        const std::uint32_t n = r.bl();
+        if (r.failed() || n == 0 || n > (1u << 16))
+            return;
+        std::vector<std::uint8_t> bytes(n);
+        for (std::uint32_t i = 0; i < n && !r.failed(); ++i)
+            bytes[i] = r.rc();
+        if (r.failed())
+            return;
+        std::vector<Group> items = parseXrecordData(bytes, fmt_.r2007);
+        if (!items.empty())
+            out_.xrecords[self] = std::move(items);
+    }
+
     void decodeSpatialFilter(BitReader& r, std::uint64_t self) {
         std::uint32_t reactors = 0;
         commonObjectPrefix(r, reactors);
@@ -3128,6 +3152,124 @@ private:
 };
 
 }  // namespace
+
+std::vector<Group> parseXrecordData(const std::vector<std::uint8_t>& b, bool unicode) {
+    std::vector<Group> out;
+    std::size_t at = 0;
+    auto have = [&](std::size_t n) { return at + n <= b.size(); };
+    auto u16 = [&] {
+        const unsigned v = b[at] | (b[at + 1] << 8);
+        at += 2;
+        return v;
+    };
+    auto u32 = [&] {
+        std::uint32_t v = 0;
+        for (int k = 0; k < 4; ++k)
+            v |= static_cast<std::uint32_t>(b[at + k]) << (8 * k);
+        at += 4;
+        return v;
+    };
+    auto u64 = [&] {
+        std::uint64_t v = 0;
+        for (int k = 0; k < 8; ++k)
+            v |= static_cast<std::uint64_t>(b[at + k]) << (8 * k);
+        at += 8;
+        return v;
+    };
+    auto f64 = [&] {
+        const std::uint64_t v = u64();
+        double d = 0;
+        std::memcpy(&d, &v, sizeof d);
+        return d;
+    };
+    auto isString = [](int c) {
+        return (c >= 0 && c <= 9) || c == 100 || c == 102 || c == 105 || (c >= 300 && c <= 309) ||
+               (c >= 410 && c <= 419) || (c >= 430 && c <= 439) || (c >= 470 && c <= 479) ||
+               c == 999 || (c >= 1000 && c <= 1003) || (c >= 1005 && c <= 1009);
+    };
+    while (have(2) && out.size() < 4096) {
+        const int code = static_cast<int>(u16());
+        Group g;
+        g.code = code;
+        if (isString(code)) {
+            std::string text;
+            if (unicode) {
+                if (!have(2))
+                    break;
+                const unsigned len = u16();
+                if (!have(2 * std::size_t{len}))
+                    break;
+                for (unsigned k = 0; k < len; ++k) {
+                    const unsigned ch = u16();
+                    // Only plain characters matter here (the override record markers).
+                    text += ch < 0x80 ? static_cast<char>(ch) : '?';
+                }
+            } else {
+                // Length then code page; the length is a short in files AutoCAD writes, a byte in
+                // the description: a zero second byte with a code page after it means a short.
+                if (!have(2))
+                    break;
+                std::size_t len = b[at];
+                if (have(3) && b[at + 1] == 0 && b[at + 2] != 0)
+                    at += 3;  // RS length, RC code page
+                else
+                    at += 2;  // RC length, RC code page
+                if (!have(len))
+                    break;
+                text.assign(reinterpret_cast<const char*>(b.data() + at), len);
+                at += len;
+            }
+            g.value = std::move(text);
+        } else if ((code >= 10 && code <= 18) || (code >= 110 && code <= 112) || code == 210 ||
+                   (code >= 1010 && code <= 1013)) {
+            if (!have(24))
+                break;
+            g.value = f64();
+            out.push_back(g);
+            (void)f64();
+            (void)f64();
+            continue;
+        } else if ((code >= 40 && code <= 59) || (code >= 140 && code <= 149) ||
+                   (code >= 460 && code <= 469) || (code >= 1040 && code <= 1042)) {
+            if (!have(8))
+                break;
+            g.value = f64();
+        } else if ((code >= 60 && code <= 79) || (code >= 170 && code <= 179) ||
+                   (code >= 270 && code <= 279) || (code >= 370 && code <= 389) ||
+                   (code >= 400 && code <= 409) || (code >= 1060 && code <= 1070)) {
+            if (!have(2))
+                break;
+            g.value = static_cast<long long>(static_cast<std::int16_t>(u16()));
+        } else if ((code >= 90 && code <= 99) || (code >= 420 && code <= 429) ||
+                   (code >= 440 && code <= 459) || code == 1071) {
+            if (!have(4))
+                break;
+            g.value = static_cast<long long>(static_cast<std::int32_t>(u32()));
+        } else if (code >= 160 && code <= 169) {
+            if (!have(8))
+                break;
+            g.value = static_cast<long long>(u64());
+        } else if ((code >= 280 && code <= 299)) {
+            if (!have(1))
+                break;
+            g.value = static_cast<long long>(b[at++]);
+        } else if (code >= 320 && code <= 369) {
+            if (!have(8))
+                break;
+            g.value = static_cast<long long>(u64());  // the handle as a number
+        } else if ((code >= 310 && code <= 319) || code == 1004) {
+            if (!have(1) || !have(1 + std::size_t{b[at]}))
+                break;
+            const std::size_t len = b[at];
+            at += 1 + len;
+            continue;  // binary chunks are not needed
+        } else {
+            break;  // unknown size: the rest cannot be read
+        }
+        out.push_back(std::move(g));
+    }
+    return out;
+}
 
 int lineweightToDxf(int code) {
     static constexpr int kStandard[24] = {0,  5,  9,  13, 15, 18,  20,  25,  30,  35,  40,  50,

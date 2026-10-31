@@ -70,6 +70,10 @@ struct PanelState {
     int sortColumn = -1;
     bool sortDescending = false;
     std::set<std::string> collapsedXrefs{};  // external references whose layers are folded away
+    // "This sheet": the On, colour, linetype, weight, plot and transparency cells change how the
+    // layers look on the layout sheet in front of the user only (SHEETLAYER), not the drawing.
+    bool sheetMode = false;
+    std::string sheetName{};  // the sheet those cells act on this frame (empty: in model space)
     LayerId selected{};
     std::set<std::uint32_t> multi{};     // Ctrl / Shift click selection; always holds `selected`
     LayerId anchor{};                    // where a Shift range starts
@@ -490,6 +494,9 @@ void drawNameCell(tbcad::ui::PanelContext& ctx, const Row& row, bool dimmed, boo
             }
             if (ImGui::MenuItem("Show All"))
                 exec(ctx, {"-LAYER ShowAll"});
+            if (st.sheetMode && !st.sheetName.empty() &&
+                ImGui::MenuItem(("Use drawing settings on this sheet" + group).c_str()))
+                exec(ctx, {"SHEETLAYER Reset", selectedRefs(st)});
             if (ImGui::MenuItem("Select Objects"))
                 selectObjectsOn(ctx, row.id);
             ImGui::Separator();
@@ -531,16 +538,22 @@ void drawNameCell(tbcad::ui::PanelContext& ctx, const Row& row, bool dimmed, boo
 
 // The cell helpers below take the layer by value: a pick runs -LAYER, which replaces the row, and
 // the rest of the combo list still reads the layer.
-void drawLinetypeCell(tbcad::ui::PanelContext& ctx, const Layer l) {
+// `cmd` is "-LAYER" (the drawing's layer) or "SHEETLAYER" (this sheet only, which offers
+// "Drawing" to go back to the layer's own value instead of ByParent).
+void drawLinetypeCell(tbcad::ui::PanelContext& ctx, const Layer l,
+                      const std::string& cmd = "-LAYER") {
     const Document& doc = *ctx.doc;
+    const bool sheet = cmd != "-LAYER";
     ImGui::SetNextItemWidth(-1);
     if (ImGui::BeginCombo("##lt", linetypeName(doc, l.linetype).c_str(),
                           ImGuiComboFlags_HeightLarge)) {
-        if (l.parent && ImGui::Selectable("ByParent", l.linetype == kLinetypeByParent))
+        if (sheet && ImGui::Selectable("Drawing (as the layer)"))
+            exec(ctx, {cmd + " Linetype Drawing", idRef(l.id)});
+        if (!sheet && l.parent && ImGui::Selectable("ByParent", l.linetype == kLinetypeByParent))
             exec(ctx, {"-LAYER Linetype ByParent", idRef(l.id)});
         for (const auto& [id, lt] : doc.linetypes()) {
             if (ImGui::Selectable(lt.name.c_str(), l.linetype == id))
-                exec(ctx, {"-LAYER Linetype #" + std::to_string(id.value), idRef(l.id)});
+                exec(ctx, {cmd + " Linetype #" + std::to_string(id.value), idRef(l.id)});
         }
         ImGui::Separator();
         if (ImGui::Selectable("Load more linetypes..."))
@@ -549,34 +562,41 @@ void drawLinetypeCell(tbcad::ui::PanelContext& ctx, const Layer l) {
     }
 }
 
-void drawLineweightCell(tbcad::ui::PanelContext& ctx, const Layer l) {
+void drawLineweightCell(tbcad::ui::PanelContext& ctx, const Layer l,
+                        const std::string& cmd = "-LAYER") {
+    const bool sheet = cmd != "-LAYER";
     static const char* const kWeights[] = {"0.00", "0.05", "0.09", "0.13", "0.15", "0.18",
                                            "0.20", "0.25", "0.30", "0.35", "0.40", "0.50",
                                            "0.60", "0.70", "0.80", "1.00", "1.40", "2.00"};
     ImGui::SetNextItemWidth(-1);
     if (ImGui::BeginCombo("##lw", lineweightName(l.lineweight).c_str(),
                           ImGuiComboFlags_HeightLarge)) {
-        if (l.parent && ImGui::Selectable("ByParent", l.lineweight.isByParent()))
+        if (sheet && ImGui::Selectable("Drawing (as the layer)"))
+            exec(ctx, {cmd + " Lineweight Drawing", idRef(l.id)});
+        if (!sheet && l.parent && ImGui::Selectable("ByParent", l.lineweight.isByParent()))
             exec(ctx, {"-LAYER Lineweight ByParent", idRef(l.id)});
         if (ImGui::Selectable("Default", l.lineweight.isDefault()))
-            exec(ctx, {"-LAYER Lineweight Default", idRef(l.id)});
+            exec(ctx, {cmd + " Lineweight Default", idRef(l.id)});
         for (const char* w : kWeights) {
             bool sel =
                 l.lineweight.isValue() && std::abs(l.lineweight.toMm() - std::atof(w)) < 1e-6;
             if (ImGui::Selectable((std::string(w) + " mm").c_str(), sel))
-                exec(ctx, {std::string("-LAYER Lineweight ") + w, idRef(l.id)});
+                exec(ctx, {cmd + " Lineweight " + w, idRef(l.id)});
         }
         ImGui::EndCombo();
     }
 }
 
-void drawTransparencyCell(tbcad::ui::PanelContext& ctx, const Layer l) {
+void drawTransparencyCell(tbcad::ui::PanelContext& ctx, const Layer l,
+                          const std::string& cmd = "-LAYER") {
     ImGui::SetNextItemWidth(-1);
     const std::string shown = std::to_string(l.transparency) + "%";
     if (ImGui::BeginCombo("##tr", shown.c_str(), ImGuiComboFlags_HeightLarge)) {
+        if (cmd != "-LAYER" && ImGui::Selectable("Drawing (as the layer)"))
+            exec(ctx, {cmd + " Transparency Drawing", idRef(l.id)});
         for (int v = 0; v <= 90; v += 10)
             if (ImGui::Selectable((std::to_string(v) + "%").c_str(), l.transparency == v))
-                exec(ctx, {"-LAYER Transparency " + std::to_string(v), idRef(l.id)});
+                exec(ctx, {cmd + " Transparency " + std::to_string(v), idRef(l.id)});
         ImGui::EndCombo();
     }
 }
@@ -1237,6 +1257,40 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
     }
     const float tick = flat ? 18.0f : 30.0f;  // On, Frz and Lck column width
+
+    // A layout sheet in front of the user (or one of its viewports entered from model space): the
+    // cells can change the layers on that sheet only.
+    std::optional<layout::Layout> sheetLay;
+    if (ctx.host &&
+        (ctx.host->drawingOwner() != BlockId{} || ctx.host->setting("tmp.layout.editing")))
+        if (auto cur = ctx.host->setting("layout.current"); cur && !cur->empty())
+            sheetLay = layout::findLayout(doc, *cur);
+    st.sheetName = sheetLay ? sheetLay->name : std::string();
+    const bool sheetMode = st.sheetMode && sheetLay;
+    if (sheetLay) {
+        if (ImGui::RadioButton("Drawing", !st.sheetMode))
+            st.sheetMode = false;
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Changes go to the layers everywhere: model and every sheet");
+        ImGui::SameLine();
+        if (ImGui::RadioButton(("This sheet: " + sheetLay->name).c_str(), st.sheetMode))
+            st.sheetMode = true;
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip(
+                "Show, hide or restyle layers on this sheet only.\nModel space and the other "
+                "sheets keep theirs. Right-click a layer to go back to the drawing.");
+        if (sheetMode && !sheetLay->layerOverrides.empty()) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("%zu changed", sheetLay->layerOverrides.size());
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Reset sheet"))
+                exec(ctx, {"SHEETLAYER ResetAll"});
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Every layer on this sheet looks as in the drawing again");
+        }
+    }
+    // Both act on the current layout, the one shown here.
+    const std::string cellCmd = sheetMode ? "SHEETLAYER" : "-LAYER";
     if (ImGui::BeginTable(flat ? "##layersflat" : "##layers2", 11, kFlags, ImVec2(0, -footer))) {
         ImGui::TableSetupScrollFreeze(0, 1);
         // Fixed width: the table scrolls sideways in a narrow panel instead of squeezing the names
@@ -1367,22 +1421,64 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
                 if (dimmed)
                     ImGui::PushStyleColor(ImGuiCol_Text,
                                           ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+                // This sheet's override of the layer, and the layer as the cells show it there.
+                const layout::LayerOverride* ov =
+                    sheetMode ? sheetLay->findOverride(row.id) : nullptr;
+                const auto sheetView = [&] {
+                    Layer shown = *l;
+                    if (!sheetMode)
+                        return shown;
+                    const EffectiveLayer se = layout::sheetLayer(doc, *sheetLay, nullptr, row.id);
+                    shown.on = se.visible();
+                    if (ov && ov->color)
+                        shown.color = *ov->color;
+                    if (ov && ov->linetype)
+                        shown.linetype = *ov->linetype;
+                    if (ov && ov->lineweight)
+                        shown.lineweight = *ov->lineweight;
+                    if (ov && ov->transparency)
+                        shown.transparency = static_cast<std::uint8_t>(*ov->transparency);
+                    shown.plot = se.plot;
+                    return shown;
+                };
+                // An overridden cell is tinted so the sheet's changes stand out.
+                const auto tint = [&](bool overridden) {
+                    if (overridden)
+                        ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg,
+                                               ImGui::GetColorU32(ImGuiCol_CheckMark, 0.28f));
+                };
                 auto flag = [&](int col, const char* id, bool value, const char* onCmd,
-                                const char* offCmd, const char* tip) {
+                                const char* offCmd, const char* tip, bool sheetCell = false) {
                     ImGui::TableSetColumnIndex(col);
+                    const bool bySheet = sheetMode && sheetCell;
+                    const bool locked = sheetMode && !sheetCell;
+                    if (locked)
+                        ImGui::BeginDisabled();
                     bool v = value;
                     if (ImGui::Checkbox(id, &v))
-                        exec(ctx,
-                             {std::string("-LAYER ") + (v ? onCmd : offCmd) + " " + idRef(row.id)});
-                    if (ImGui::IsItemHovered())
-                        ImGui::SetTooltip("%s", tip);
+                        exec(ctx, {(bySheet ? std::string("SHEETLAYER ") : std::string("-LAYER ")) +
+                                   (v ? onCmd : offCmd) + " " + idRef(row.id)});
+                    if (locked)
+                        ImGui::EndDisabled();
+                    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                        ImGui::SetTooltip("%s", locked ? "Belongs to the drawing: switch the panel "
+                                                         "to Drawing to change it"
+                                                       : tip);
                 };
                 // A cell that runs a command can change the layer table and move the layer, so it
                 // is looked up again after each one (a stale pointer read freed memory).
                 const auto again = [&] { return (l = doc.layer(row.id)) != nullptr; };
                 do {
-                    flag(1, "##on", l->on, "On", "Off",
-                         l->on ? "Visible; click to turn off" : "Off; click to turn on");
+                    {
+                        const Layer shown = sheetView();
+                        flag(1, "##on", shown.on, "On", "Off",
+                             sheetMode ? (shown.on ? "Shown on this sheet; click to hide it here"
+                                                   : "Hidden on this sheet; click to show it here")
+                             : l->on   ? "Visible; click to turn off"
+                                       : "Off; click to turn on",
+                             true);
+                        tint(ov && ov->on.has_value());
+                    }
                     if (!again())
                         break;
                     flag(2, "##frz", l->frozen, "Freeze", "Thaw",
@@ -1391,6 +1487,8 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
                         break;
                     if (vp) {
                         ImGui::TableSetColumnIndex(3);
+                        if (sheetMode)
+                            ImGui::BeginDisabled();
                         const bool fz = std::find(vp.frozen.begin(), vp.frozen.end(), row.id) !=
                                         vp.frozen.end();
                         bool v = fz;
@@ -1399,6 +1497,8 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
                                                  vp.layout + ":" + std::to_string(vp.id));
                             exec(ctx, {std::string("VPLAYER ") + (v ? "Freeze" : "Thaw"), l->name});
                         }
+                        if (sheetMode)
+                            ImGui::EndDisabled();
                         if (ImGui::IsItemHovered())
                             ImGui::SetTooltip("Freeze in viewport %d only (%s)", vp.id,
                                               fz ? "frozen" : "visible");
@@ -1410,7 +1510,33 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
                     if (!again())
                         break;
                     ImGui::TableSetColumnIndex(5);
-                    {
+                    if (sheetMode) {
+                        // This sheet's colour: the swatch picks one; Drawing goes back.
+                        tint(ov && ov->color.has_value());
+                        const Layer shown = sheetView();
+                        const Color c = ov && ov->color ? *ov->color : eff.color;
+                        if (ImGui::ColorButton(
+                                "##scol", swatch(c),
+                                ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoAlpha,
+                                ImVec2(22, ImGui::GetFrameHeight() - 4))) {
+                            st.colorFor = row.id;
+                            ImGui::OpenPopup("##scolour");
+                        }
+                        if (ImGui::IsItemHovered())
+                            ImGui::SetTooltip(
+                                "%s on this sheet%s", colorName(c).c_str(),
+                                ov && ov->color ? " (right-click: as the drawing)" : "");
+                        if (ov && ov->color && ImGui::IsItemClicked(ImGuiMouseButton_Right))
+                            exec(ctx, {"SHEETLAYER Color Drawing", idRef(row.id)});
+                        if (st.colorFor == row.id) {
+                            ColorChoices allowed;
+                            std::string chosen;
+                            if (colorPopup("##scolour", shown.color, allowed, chosen)) {
+                                exec(ctx, {"SHEETLAYER Color " + chosen, idRef(row.id)});
+                                st.colorFor = {};
+                            }
+                        }
+                    } else {
                         ImVec4 col = swatch(eff.color);
                         if (ImGui::ColorButton(
                                 "##col", col,
@@ -1436,18 +1562,23 @@ void drawLayersPanel(tbcad::ui::PanelContext& ctx) {
                     if (!again())
                         break;
                     ImGui::TableSetColumnIndex(6);
-                    drawLinetypeCell(ctx, *l);
+                    tint(ov && ov->linetype.has_value());
+                    drawLinetypeCell(ctx, sheetView(), cellCmd);
                     if (!again())
                         break;
                     ImGui::TableSetColumnIndex(7);
-                    drawLineweightCell(ctx, *l);
+                    tint(ov && ov->lineweight.has_value());
+                    drawLineweightCell(ctx, sheetView(), cellCmd);
                     if (!again())
                         break;
-                    flag(8, "##plot", l->plot, "Plot", "NoPlot", "Plot this layer");
+                    flag(8, "##plot", sheetView().plot, "Plot", "NoPlot",
+                         sheetMode ? "Plot this layer on this sheet" : "Plot this layer", true);
+                    tint(ov && ov->plot.has_value());
                     if (!again())
                         break;
                     ImGui::TableSetColumnIndex(9);
-                    drawTransparencyCell(ctx, *l);
+                    tint(ov && ov->transparency.has_value());
+                    drawTransparencyCell(ctx, sheetView(), cellCmd);
                     if (!again())
                         break;
                     ImGui::TableSetColumnIndex(10);

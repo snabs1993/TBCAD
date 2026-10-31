@@ -19,6 +19,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeLayWalkCommand());
     (void)registry.add(makeLayerPCommand());
     (void)registry.add(makeLayWalkStepCommand());
+    (void)registry.add(makeSheetLayerCommand());
     registerLayerTools(registry);
 }
 

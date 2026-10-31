@@ -227,7 +227,12 @@ Result<exportlib::PlotSheet> buildLayoutSheet(const Document& doc, const std::st
         vl.origin = vp.paper.min;
         vl.overflows = false;
         vl.annoScale = vp.scaleN;
-        vl.layerHidden = [&doc, &vp](LayerId l) { return frozenInViewport(doc, vp, l); };
+        vl.layerHidden = [&doc, &l, &vp](LayerId id) { return hiddenInViewport(doc, l, vp, id); };
+        // The sheet's layer overrides (and the viewport's own) change how the model looks here.
+        if (!l.layerOverrides.empty() || !vp.overrides.empty())
+            vl.layerAdjust = [&doc, &l, &vp](EffectiveLayer& e) {
+                applySheetOverrides(doc, l, &vp, e);
+            };
 
         sheet.prims.emplace_back(exportlib::PlotClip{vp.paper, true, vp.clip});
         const BBox2 reach = vl.area.inflated(2.0 / vl.paperPerUnit);
@@ -240,7 +245,7 @@ Result<exportlib::PlotSheet> buildLayoutSheet(const Document& doc, const std::st
                 std::find(e.common.annoScales.begin(), e.common.annoScales.end(), vp.scaleN) ==
                     e.common.annoScales.end())
                 return true;  // made for other scales
-            return frozenInViewport(doc, vp, e.common.layer) ||
+            return hiddenInViewport(doc, l, vp, e.common.layer) ||
                    (vp.level.value != 0 && e.common.level != vp.level);
         });
         sheet.prims.emplace_back(exportlib::PlotClip{vp.paper, false, {}});

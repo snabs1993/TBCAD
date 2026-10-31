@@ -268,6 +268,12 @@ void Writer::prepareSheets() {
                     v.clip.clear();
             }
             sheets_.back().viewports.push_back(std::move(v));
+        } else if (f.size() >= 3 && (f[0] == "O" || f[0] == "P") && !sheets_.empty()) {
+            std::vector<std::string> row(f.begin() + 1, f.end());
+            if (f[0] == "O")
+                sheets_.back().overrides.push_back(std::move(row));
+            else if (!sheets_.back().viewports.empty())
+                sheets_.back().viewports.back().overrides.push_back(std::move(row));
         }
     }
     // The sheets' own blocks are written as the paper space blocks, not as user blocks.
@@ -326,8 +332,34 @@ void Writer::writeSheetBlock(Out& o, const Sheet& sheet, const std::string& bloc
         if (!r12_)
             for (LayerId id : v.frozen)
                 o.h(331, layerHandleOf(id));
-        if (!v.frozen.empty() || !v.clip.empty() || v.locked || !v.border || v.level != 0) {
+        // Layer overrides (ours: by name, the linetype by name too). The sheet's go with its first
+        // viewport; they only change what viewports show.
+        std::vector<std::string> overrides;
+        auto overrideText = [&](const char* tag, const std::vector<std::string>& row) {
+            const LayerId layer{
+                static_cast<std::uint32_t>(std::strtoul(row[0].c_str(), nullptr, 10))};
+            if (!layer.value || !doc_.layer(layer))
+                return;
+            std::string t = std::string(tag) + layerNameOf(layer);
+            for (std::size_t k = 1; k <= 6; ++k) {
+                std::string value = k < row.size() ? row[k] : std::string();
+                if (k == 3 && !value.empty())
+                    value = linetypeNameOf(LinetypeId{
+                        static_cast<std::uint32_t>(std::strtoul(value.c_str(), nullptr, 10))});
+                t += "\t" + value;
+            }
+            overrides.push_back(std::move(t));
+        };
+        if (&v == &sheet.viewports.front())
+            for (const auto& row : sheet.overrides)
+                overrideText("sovr=", row);
+        for (const auto& row : v.overrides)
+            overrideText("ovr=", row);
+        if (!v.frozen.empty() || !v.clip.empty() || v.locked || !v.border || v.level != 0 ||
+            !overrides.empty()) {
             o.raw(1001, "TBCAD");
+            for (const std::string& t : overrides)
+                o.str(1000, t);
             if (v.locked)
                 o.str(1000, "locked=1");
             if (!v.border)

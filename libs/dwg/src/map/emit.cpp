@@ -2,7 +2,10 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
+#include <optional>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -159,6 +162,80 @@ void emitClip(DxfText& o, const EntityRec& e, const Names& n) {
     }
 }
 
+// AutoCAD keeps a viewport's layer overrides in each layer's extension dictionary: one XRECORD per
+// property listing { 335 viewport, value } pairs. As our VIEWPORT XDATA "ovr=layer TAB on TAB
+// colour TAB linetype TAB lineweight TAB transparency TAB plot".
+std::vector<std::string> viewportOverrides(const Drawing& d, std::uint64_t viewport,
+                                           const Names& n) {
+    std::vector<std::string> out;
+    if (d.xrecords.empty())
+        return out;
+    static const char* const kKeys[] = {"ADSK_XREC_LAYER_COLOR_OVR", "ADSK_XREC_LAYER_LINETYPE_OVR",
+                                        "ADSK_XREC_LAYER_LINEWT_OVR",
+                                        "ADSK_XREC_LAYER_TRANSPARENCY_OVR"};
+    auto num = [](const Value& v) -> std::optional<long long> {
+        if (const auto* i = std::get_if<long long>(&v.v))
+            return *i;
+        return std::nullopt;
+    };
+    for (const auto& [lh, layer] : d.layers) {
+        if (!layer.xdic)
+            continue;
+        const auto dict = d.dictionaries.find(layer.xdic);
+        if (dict == d.dictionaries.end())
+            continue;
+        std::string f[6];  // on, colour, linetype, lineweight, transparency, plot
+        for (const auto& [key, xh] : dict->second) {
+            int field = -1;
+            for (int k = 0; k < 4; ++k)
+                if (key == kKeys[k])
+                    field = k + 1;
+            const auto rec = field < 0 ? d.xrecords.end() : d.xrecords.find(xh);
+            if (rec == d.xrecords.end())
+                continue;
+            bool mine = false;
+            for (const Group& g : rec->second) {
+                const std::optional<long long> v = num(g.value);
+                if (g.code == 102) {
+                    mine = false;
+                } else if (g.code == 335) {
+                    mine = v && static_cast<std::uint64_t>(*v) == viewport;
+                } else if (mine && v) {
+                    const auto c = static_cast<std::uint32_t>(*v);
+                    if (field == 1 && (g.code == 420 || g.code == 90)) {
+                        if ((c >> 24) == 0xC3 && (c & 0xFF) >= 1)
+                            f[1] = "i" + std::to_string(c & 0xFF);
+                        else if ((c >> 24) == 0xC2 || (c >> 24) == 0)
+                            f[1] = "r" + std::to_string((c >> 16) & 0xFF) + "," +
+                                   std::to_string((c >> 8) & 0xFF) + "," + std::to_string(c & 0xFF);
+                    } else if (field == 2 && (g.code == 343 || g.code == 340)) {
+                        f[2] = n.linetype(static_cast<std::uint64_t>(*v));
+                    } else if (field == 3 && (g.code == 91 || g.code == 90 || g.code == 370)) {
+                        if (*v == -3 || (*v >= 0 && *v <= 211))
+                            f[3] = std::to_string(*v);
+                    } else if (field == 4 && (g.code == 440 || g.code == 91 || g.code == 90)) {
+                        // 0x02000000 | alpha
+                        if ((c & 0xFF000000u) == 0x02000000u) {
+                            const long pct = std::lround(100.0 * (255 - (c & 0xFF)) / 255.0);
+                            if (pct >= 0 && pct <= 90)
+                                f[4] = std::to_string(pct);
+                        }
+                    }
+                }
+            }
+        }
+        bool any = false;
+        std::string t = "ovr=" + layer.name;
+        for (const std::string& v : f) {
+            t += "\t" + v;
+            any = any || !v.empty();
+        }
+        if (any)
+            out.push_back(std::move(t));
+    }
+    return out;
+}
+
 void emitEntity(DxfText& o, const EntityRec& e, const Names& n) {
     o.begin(e.dxfType);
     o.group(8, n.layer(e.layer));
@@ -209,11 +286,16 @@ void emitEntity(DxfText& o, const EntityRec& e, const Names& n) {
         emitGroup(o, g);
     if (e.dxfType == "INSERT")
         emitClip(o, e, n);
-    if (e.dxfType == "VIEWPORT" && !e.frozenLayers.empty()) {
-        // The layers frozen in this viewport, by name (read back by the importer).
-        o.group(1001, "TBCAD");
+    if (e.dxfType == "VIEWPORT") {
+        // The layers frozen in this viewport and the layer overrides of it, by name (read back by
+        // the importer).
+        const std::vector<std::string> overrides = viewportOverrides(n.d, e.handle, n);
+        if (!e.frozenLayers.empty() || !overrides.empty())
+            o.group(1001, "TBCAD");
         for (std::uint64_t h : e.frozenLayers)
             o.group(1000, "frozen=" + n.layer(h));
+        for (const std::string& t : overrides)
+            o.group(1000, t);
     }
 }
 
