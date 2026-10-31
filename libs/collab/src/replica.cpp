@@ -176,4 +176,12 @@ Result<ChangeSet> Replica::reject(std::uint64_t clientSeq) {
     return undone;
 }
 
+std::vector<Replica::PendingEdit> Replica::pendingEdits() const {
+    std::vector<PendingEdit> out;
+    for (const Pending& p : pending_)
+        if (p.live)
+            out.push_back({p.op, p.applied});
+    return out;
+}
+
 }  // namespace tbcad::collab

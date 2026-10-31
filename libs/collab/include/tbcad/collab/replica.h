@@ -57,6 +57,14 @@ public:
     Result<ChangeSet> reject(std::uint64_t clientSeq);
 
     std::size_t pendingCount() const { return pending_.size(); }
+    // The local edits the host has not answered yet, oldest first: the Op as it would be sent and
+    // the change it made to this copy (true before-images, for checkUndoRedo). For carrying work
+    // over to a new connection after the old one was lost.
+    struct PendingEdit {
+        Op op{};
+        ChangeSet applied{};
+    };
+    std::vector<PendingEdit> pendingEdits() const;
     // True while the Replica itself changes the document (replays); observers that mirror the
     // document for another purpose can use it to tell these changes from the user's.
     bool busy() const { return busy_; }
