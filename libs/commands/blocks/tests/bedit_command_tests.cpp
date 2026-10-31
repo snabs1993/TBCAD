@@ -66,6 +66,12 @@ TEST_CASE(
 TEST_CASE("BCLOSE Discard drops the copies and leaves the block alone - BSAVE keeps editing") {
     BEditFixture f;
     f.host->run("BEDIT", {cmd::ScriptItem::pick(f.second)});
+    for (EntityId id : f.modelSpace())  // a change, so BCLOSE asks Save or Discard
+        if (kind(*f.doc.find(id)) == EntityKind::Line) {
+            Transaction tx = f.doc.begin("edit");
+            REQUIRE(tx.modify(id, [](Entity& e) { entityAs<LineData>(e)->b = {120, 50}; }).ok());
+            tx.commit();
+        }
     f.host->run("BCLOSE", {"Discard"});
     CHECK(f.lines() == 0);
     CHECK(near(entityAs<LineData>(*f.doc.find(f.def().entities[0]))->b, {10, 0}));
@@ -193,4 +199,32 @@ TEST_CASE("BSAVE keeps the draw order of the edited objects in the block") {
     REQUIRE(f.def().entities.size() == 2);
     const auto* first = entityAs<LineData>(*f.doc.find(f.def().entities[0]));
     CHECK(near(first->a, {0, 10}));  // the new line is now at the back
+}
+
+TEST_CASE("test.14: BCLOSE with nothing changed leaves the editor without asking Save or Discard") {
+    BEditFixture f;
+    f.host->run("BEDIT", {cmd::ScriptItem::pick(f.second)});
+    REQUIRE(f.lines() == 1);
+    const auto r = f.host->run("BCLOSE", {});
+    CHECK(r.finished);
+    CHECK(f.lines() == 0);
+    CHECK_FALSE(f.host->logContains("[Save/Discard]"));
+    for (const std::string& p : f.host->prompts())
+        CHECK(p.find("Save/Discard") == std::string::npos);
+    CHECK(near(entityAs<LineData>(*f.doc.find(f.def().entities[0]))->b, {10, 0}));
+
+    // After a change it still asks.
+    f.host->run("BEDIT", {cmd::ScriptItem::pick(f.second)});
+    EntityId copy;
+    for (EntityId id : f.modelSpace())
+        if (kind(*f.doc.find(id)) == EntityKind::Line)
+            copy = id;
+    {
+        Transaction tx = f.doc.begin("edit");
+        REQUIRE(tx.modify(copy, [](Entity& e) { entityAs<LineData>(e)->b = {130, 50}; }).ok());
+        tx.commit();
+    }
+    const auto r2 = f.host->run("BCLOSE", {});
+    CHECK_FALSE(r2.finished);  // waits for Save or Discard
+    f.host->feed({cmd::ScriptItem::esc()});
 }

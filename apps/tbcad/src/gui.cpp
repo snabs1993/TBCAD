@@ -3619,8 +3619,13 @@ void Gui::commandWindow() {
                 prompt += " <" + *info->defaultText + ">";
             prompt += ": ";
         }
-        if (textEditorActive_)
-            prompt = "Typing in the text box (Ctrl+Enter accepts, Esc cancels): ";
+        if (textEditorActive_) {
+            // The same keys as the hint under the text box: Enter for one line, Ctrl+Enter when
+            // the box takes several.
+            const bool multiline = info && info->editor && info->editor->multiline;
+            prompt = multiline ? "Typing in the text box (Ctrl+Enter accepts, Esc cancels): "
+                               : "Typing in the text box (Enter accepts, Esc cancels): ";
+        }
         ImGui::TextUnformatted(prompt.c_str());
         ImGui::SameLine(0, 0);
         ImGui::SetNextItemWidth(-1);

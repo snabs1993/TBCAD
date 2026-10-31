@@ -34,6 +34,9 @@ constexpr const char* kHiddenKey = "tmp.bedit.hidden";  // copies hidden by the 
 constexpr const char* kTestKey = "tmp.bedit.test";      // BTESTBLOCK references
 constexpr const char* kStateKey = "tmp.bedit.vstate";   // visibility state shown in the editor
 constexpr const char* kSavedKey = "tmp.bedit.saved";    // the block was written during the edit
+// The drawing's revision once the edit started or was last saved (the command's own commit
+// included): BCLOSE with nothing changed since closes without asking Save or Discard.
+constexpr const char* kRevKey = "tmp.bedit.rev";
 constexpr const char* kPanelId = "block_authoring";
 
 std::string encodeXform(const Transform2& t) {
@@ -149,7 +152,7 @@ std::vector<EntityId> editedIds(const Document& doc, const cmd::IHost& host) {
 
 void forget(cmd::IHost& host) {
     for (const char* k : {kBlockKey, kIdsKey, kXformKey, kMarkKey, kExclKey, kPairsKey, kHiddenKey,
-                          kTestKey, kStateKey, kSavedKey})
+                          kTestKey, kStateKey, kSavedKey, kRevKey})
         host.setSetting(k, "");
     host.closePanel(kPanelId);
 }
@@ -268,6 +271,7 @@ bool saveBack(cmd::CommandContext& ctx, bool removeCopies, BlockId into = {}) {
     } else {
         ctx.host().setSetting(kPairsKey, encodePairs(newPairs));
         ctx.host().setSetting(kSavedKey, "1");
+        ctx.host().setSetting(kRevKey, std::to_string(doc.revision() + 1));
     }
     ctx.message("Block \"" + doc.block(block)->name + "\" updated from " + std::to_string(n) +
                 " objects.");
@@ -318,6 +322,7 @@ bool startBlockEdit(cmd::CommandContext& ctx, const BlockDef& def, const Transfo
     ctx.host().setSetting(kBlockKey, def.name);
     ctx.host().setSetting(kIdsKey, encodeIds(made));
     ctx.host().setSetting(kXformKey, encodeXform(xf));
+    ctx.host().setSetting(kRevKey, std::to_string(doc.revision() + 1));  // after this commit
     ctx.host().setSelection(made);
     ctx.setUndoLabel("Edit block " + def.name);
     ctx.message("Editing block \"" + def.name + "\" (" + std::to_string(made.size()) +
@@ -373,6 +378,7 @@ void showEditState(cmd::CommandContext& ctx, const std::string& state) {
     if (!edit)
         return;
     ctx.host().setSetting(kStateKey, state);
+    ctx.host().setSetting(kRevKey, "");  // a visibility state was shown: BCLOSE asks again
     // What the state hides: objects named by some state but not by this one.
     std::unordered_set<EntityId> hideBlock;
     const BlockDef* def = doc.block(edit->block);
@@ -506,7 +512,13 @@ public:
             co_return;
         }
         bool save = true;
-        if (close_) {
+        const std::string rev = ctx.host().setting(kRevKey).value_or("");
+        const bool untouched = !rev.empty() && rev == std::to_string(ctx.doc().revision());
+        if (close_ && untouched) {
+            // Nothing was changed since BEDIT or the last BSAVE: close as Save would (it writes
+            // back what is already there) without asking.
+            save = true;
+        } else if (close_) {
             auto k = co_await ctx.getKeyword(
                 "Closing block \"" + editedBlock(ctx.host()) +
                     "\": save the changes to the block or throw them away [Save/Discard] <Save>",
@@ -586,6 +598,7 @@ public:
         }
         ctx.host().setSetting(kIdsKey, encodeIds(ids));
         ctx.host().setSetting(kExclKey, encodeIds(excl));
+        ctx.host().setSetting(kRevKey, "");  // the working set changed: BCLOSE asks again
         ctx.message(std::to_string(n) + (add ? " objects added to" : " objects removed from") +
                     " the working set.");
     }
