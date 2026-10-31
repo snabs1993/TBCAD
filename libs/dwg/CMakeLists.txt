@@ -23,4 +23,5 @@ if(TBCAD_BUILD_TESTS)
   target_compile_definitions(tbcad_dwg_tests PRIVATE
     TBCAD_TEST_CORPUS_DIR="${CMAKE_SOURCE_DIR}/tests/corpus")
   target_include_directories(tbcad_dwg_tests PRIVATE src)
+  target_link_libraries(tbcad_dwg_tests PRIVATE tbcad::layout)
 endif()
