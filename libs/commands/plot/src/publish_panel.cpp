@@ -122,7 +122,10 @@ void drawPublish(ui::PanelContext& pc) {
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("%s", platform::pathToUtf8(e.file).c_str());
             ImGui::TableNextColumn();
-            ImGui::TextUnformatted(e.layout.empty() ? "Model" : e.layout.c_str());
+            const std::string sheetName = !e.layout.empty()  ? e.layout
+                                          : !e.frame.empty() ? "Model: " + e.frame
+                                                             : std::string("Model");
+            ImGui::TextUnformatted(sheetName.c_str());
             ImGui::TableNextColumn();
             ImGui::SetNextItemWidth(-1);
             const char* shown =

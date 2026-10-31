@@ -7,6 +7,7 @@
 
 #include "tbcad/io/tbcad.h"
 #include "tbcad/layout/layout.h"
+#include "tbcad/layout/plotframes.h"
 
 namespace tbcad::sheets {
 
@@ -45,7 +46,12 @@ Result<std::vector<SheetEntry>> parseSheetList(const std::string& text,
             std::string rest = line.substr(bar + 1);
             auto bar2 = rest.find('|');
             if (bar2 != std::string::npos) {
-                e.pageSetup = trim(rest.substr(bar2 + 1));
+                std::string setup = rest.substr(bar2 + 1);
+                if (auto bar3 = setup.find('|'); bar3 != std::string::npos) {
+                    e.frame = trim(setup.substr(bar3 + 1));
+                    setup = setup.substr(0, bar3);
+                }
+                e.pageSetup = trim(setup);
                 rest = rest.substr(0, bar2);
             }
             e.layout = trim(rest);
@@ -85,10 +91,12 @@ std::string formatSheetList(const std::vector<SheetEntry>& entries,
         }
         const std::u8string u = file.generic_u8string();
         out += std::string(u.begin(), u.end());
-        if (!e.layout.empty() || !e.pageSetup.empty())
+        if (!e.layout.empty() || !e.pageSetup.empty() || !e.frame.empty())
             out += " | " + e.layout;
-        if (!e.pageSetup.empty())
+        if (!e.pageSetup.empty() || !e.frame.empty())
             out += " | " + e.pageSetup;
+        if (!e.frame.empty())
+            out += " | " + e.frame;
         out += "\n";
     }
     return out;
@@ -105,6 +113,8 @@ std::string writeSheetList(const std::vector<SheetEntry>& entries,
 
 std::vector<SheetEntry> sheetsOf(const Document& doc, const std::filesystem::path& file) {
     std::vector<SheetEntry> out{{file, {}, {}}};
+    for (const layout::PlotFrame& f : layout::plotFrames(doc))
+        out.push_back({file, {}, {}, f.name});
     for (const layout::Layout& l : layout::layouts(doc))
         out.push_back({file, l.name, {}});
     return out;
@@ -123,8 +133,9 @@ Result<SheetSet> buildSheetList(const std::vector<SheetEntry>& entries,
                std::filesystem::equivalent(a, b, ec);
     };
     for (const SheetEntry& e : entries) {
-        const std::string what =
-            e.file.filename().string() + (e.layout.empty() ? "" : " / " + e.layout);
+        const std::string what = e.file.filename().string() + (!e.layout.empty()  ? " / " + e.layout
+                                                               : !e.frame.empty() ? " / " + e.frame
+                                                                                  : "");
         const Document* doc = nullptr;
         if (options.current && sameFile(e.file, options.currentFile)) {
             doc = options.current;
@@ -155,7 +166,16 @@ Result<SheetSet> buildSheetList(const std::vector<SheetEntry>& entries,
             setup = e.layout.empty() ? layout::pageSetupOfModel(*doc)
                                      : layout::pageSetupOfLayout(*doc, e.layout);
         }
-        const exportlib::PlotSettings s = setup ? layout::settingsFor(base, *setup, styles) : base;
+        exportlib::PlotSettings s = setup ? layout::settingsFor(base, *setup, styles) : base;
+        if (!e.frame.empty() && e.layout.empty()) {
+            auto frame = layout::findPlotFrame(*doc, e.frame);
+            if (!frame)
+                return invalid(what + ": no plot frame named \"" + e.frame + "\"");
+            // The entry's page setup wins over the frame's own.
+            if (!e.pageSetup.empty())
+                frame->pageSetup.clear();
+            s = layout::frameSettings(*doc, e.pageSetup.empty() ? base : s, *frame, styles);
+        }
         auto sheet = e.layout.empty() ? exportlib::buildSheet(*doc, s)
                                       : layout::buildLayoutSheet(*doc, e.layout, s);
         if (!sheet)
