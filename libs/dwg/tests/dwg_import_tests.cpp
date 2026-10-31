@@ -8,6 +8,7 @@
 
 #include "dwg_builder.h"
 #include "tbcad/dwg/dwg.h"
+#include "tbcad/layout/layout.h"
 
 using namespace tbcad;
 using namespace tbcad::dwg;
@@ -551,6 +552,55 @@ std::vector<std::uint8_t> linearDimObj(std::uint64_t h) {
     commonHandles(o, 2, 0, kLayer0);
     o.handles.handle(5, kDimStyle);
     o.handles.handle(5, kDimBlock);
+    return o.finish();
+}
+
+// A VIEWPORT on the paper space sheet showing model space at 1:`scale`, with layers frozen in it.
+std::vector<std::uint8_t> viewportObj(std::uint64_t h, double cx, double cy, double w, double hgt,
+                                      double scale, const std::vector<std::uint64_t>& frozen) {
+    ObjectWriter o(0x22, h);
+    o.entityCommon(0, 256, 0);
+    for (double v : {cx, cy, 0.0})
+        o.main.bd(v);  // centre on the sheet
+    o.main.bd(w);
+    o.main.bd(hgt);
+    for (double v : {0.0, 0.0, 0.0, 0.0, 0.0, 1.0})
+        o.main.bd(v);        // view target, view direction
+    o.main.bd(0.0);          // twist
+    o.main.bd(hgt * scale);  // view height (model units)
+    for (int i = 0; i < 4; ++i)
+        o.main.bd(i == 0 ? 50.0 : 0.0);  // lens, front clip, back clip, snap angle
+    o.main.rd(500.0);                    // view centre (model)
+    o.main.rd(400.0);
+    for (int i = 0; i < 6; ++i)
+        o.main.rd(i < 2 ? 0.0 : 10.0);  // snap base, snap spacing, grid spacing
+    o.main.bs(100);                     // circle zoom
+    if (gR2007)
+        o.main.bs(5);  // grid major
+    o.main.bl(static_cast<int>(frozen.size()));
+    o.main.bl(32768);  // status flags
+    o.main.text("");   // style sheet
+    o.main.rc(0);      // render mode
+    o.main.b(true);
+    o.main.b(false);
+    for (double v : {0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0})
+        o.main.bd(v);  // UCS origin and axes
+    o.main.bd(0.0);    // elevation
+    o.main.bs(0);      // ortho view type
+    if (gR2004)
+        o.main.bs(0);  // shade plot mode
+    if (gR2007) {
+        o.main.b(true);
+        o.main.rc(1);
+        o.main.bd(0.0);
+        o.main.bd(0.0);
+        o.cmc(250);
+    }
+    commonHandles(o, 0, kPaper, kLayer0);
+    for (std::uint64_t l : frozen)
+        o.handles.handle(5, l);
+    for (int i = 0; i < (gR2007 ? 7 : 3); ++i)
+        o.handles.handle(5, 0);  // clip boundary, named and base UCS (background, styles, sun)
     return o.finish();
 }
 
@@ -1340,6 +1390,60 @@ TEST_CASE("perf: open of a big DWG") {
         if (d.message.rfind("timing (ms)", 0) == 0 || d.message.rfind("read stages", 0) == 0)
             std::printf("  %s\n", d.message.c_str());
     std::printf("  open of %d objects (%zu KB file): %.0f ms\n", 3 * n, file.size() / 1024, total);
+}
+
+TEST_CASE("layers frozen in a layout viewport come through to the layout (R2000 and R2018)") {
+    // test.12: S2312 layout "-" plotted a block (ROAD RESERVE LINE) that the original sheet
+    // leaves out; the layers of a viewport must reach the layout from a DWG.
+    for (const bool r2018 : {false, true}) {
+        CAPTURE(r2018);
+        gR2004 = gR2007 = gR2013 = r2018;
+        gLinksBit = !r2018;
+        DwgFile f;
+        f.add(kLtype, linetype(kLtype, "Continuous"));
+        f.add(kLayer0, layer(kLayer0, "0", 7, kLtype));
+        f.add(kWalls, layer(kWalls, "WALLS", 3, kLtype));
+        f.add(0x19, layer(0x19, "BASE LAYOUT$0$A-_ANOTTEXT_A", 7, kLtype));
+        f.add(kStyle, style(kStyle, "Standard"));
+        f.add(kModel, blockHeader(kModel, "*Model_Space", 0, 0));
+        f.add(kPaper, blockHeader(kPaper, "*Paper_Space", 0, 0));
+        f.add(0x20, line(0x20, 2, 0, 0, 0, 100, 50));
+        f.add(0x40, viewportObj(0x40, 210, 148.5, 420, 297, 1, {}));  // the sheet's own
+        f.add(0x41, viewportObj(0x41, 150, 100, 200, 150, 100, {kWalls, 0x19}));
+        std::vector<std::uint8_t> bytes;
+        if (r2018) {
+            std::vector<std::uint8_t> objects, handles;
+            f.sections(objects, handles);
+            Dwg2004File c;
+            c.section("AcDb:AcDbObjects", objects);
+            c.section("AcDb:Handles", handles, 0x80);
+            bytes = c.build("AC1032");
+        } else {
+            bytes = f.build();
+        }
+        gR2004 = gR2007 = gR2013 = false;
+        gLinksBit = true;
+        dxf::Report report;
+        auto r = importDwg(asBytes(bytes), dxf::ImportOptions{}, report);
+        REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
+        const Document& doc = *r.value().document;
+        const auto sheets = layout::layouts(doc);
+        REQUIRE(sheets.size() == 1);
+        // (No LAYOUT object gives the paper size, so the sheet's own viewport stays too.)
+        const layout::Viewport* found = nullptr;
+        for (const layout::Viewport& v : sheets[0].viewports)
+            if (std::abs(v.scaleN - 100) < 1e-6)
+                found = &v;
+        REQUIRE(found);
+        const layout::Viewport& vp = *found;
+        const Layer* walls = doc.layerByName("WALLS");
+        const Layer* text = doc.layerByName("BASE LAYOUT$0$A-_ANOTTEXT_A");
+        REQUIRE(walls);
+        REQUIRE(text);
+        CHECK(layout::frozenInViewport(doc, vp, walls->id));
+        CHECK(layout::frozenInViewport(doc, vp, text->id));
+        CHECK_FALSE(layout::frozenInViewport(doc, vp, kLayerZero));
+    }
 }
 
 TEST_CASE("an entity of a class the reader does not know is reported as not shown") {
