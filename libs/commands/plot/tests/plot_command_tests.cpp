@@ -338,6 +338,39 @@ TEST_CASE("EXPORTPNG and EXPORTJPG write images at the chosen resolution") {
     CHECK(bad.finished);
 }
 
+TEST_CASE("PLOT on a layout tab starts from that layout's own plot style table") {
+    // test.12: a DWG layout names its .ctb; plotting the tab used the global monochrome.ctb.
+    Fixture f;
+    {
+        auto tx = f.doc.begin("layout");
+        REQUIRE(layout::createLayout(tx, "Sheet", "A3", true).ok());
+        tx.commit();
+    }
+    CHECK(f.host->run("EXPORTSVG", {"Style", "grayscale.ctb", "", f.path("a.svg")}).finished);
+    CHECK(f.host->run("PAGESETUP", {"Save", "Own"}).finished);
+    CHECK(f.host->run("PAGESETUP", {"Assign", "Own", "Sheet"}).finished);
+    CHECK(f.host->run("EXPORTSVG", {"Style", "monochrome.ctb", "", f.path("b.svg")}).finished);
+    REQUIRE(plot::plotStyleName(*f.host) == "monochrome.ctb");
+
+    // Switching to the tab names the layout (as the app does); PLOT then uses its setup.
+    plot::setPlotLayout(*f.host, "Sheet");
+    CHECK(f.host->run("EXPORTSVG", {"", f.path("c.svg")}).finished);
+    CHECK(f.host->logContains("Page setup \"Own\" applied (layout Sheet)."));
+    CHECK(plot::plotStyleName(*f.host) == "grayscale.ctb");
+
+    // A table picked while plotting that layout stays for the next plot of it.
+    CHECK(f.host->run("EXPORTSVG", {"Style", "monochrome.ctb", "", f.path("d.svg")}).finished);
+    CHECK(f.host->run("EXPORTSVG", {"", f.path("e.svg")}).finished);
+    CHECK(plot::plotStyleName(*f.host) == "monochrome.ctb");
+
+    // Coming back to the tab after model space brings the layout's own table again.
+    plot::setPlotLayout(*f.host, "");
+    CHECK(f.host->run("EXPORTSVG", {"", f.path("f.svg")}).finished);
+    plot::setPlotLayout(*f.host, "Sheet");
+    CHECK(f.host->run("EXPORTSVG", {"", f.path("g.svg")}).finished);
+    CHECK(plot::plotStyleName(*f.host) == "grayscale.ctb");
+}
+
 TEST_CASE("forFormat swaps an export extension - dpi and quality have defaults") {
     CHECK(plot::forFormat("a.pdf", plot::Format::Png) == "a.png");
     CHECK(plot::forFormat("dir.x/a", plot::Format::Jpeg) == "dir.x/a.jpg");

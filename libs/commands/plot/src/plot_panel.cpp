@@ -151,6 +151,11 @@ void draw(ui::PanelContext& pc) {
         st.styleLoaded.clear();
     }
     if (!st.loaded) {
+        if (!pc.commandActive)
+            if (std::string m = followPlottedLayoutSetup(*pc.doc, *pc.host); !m.empty()) {
+                st.message = std::move(m);
+                st.styleLoaded.clear();
+            }
         st.settings = loadSettings(*pc.host);
         st.scaleInput = scaleText(st.settings);
         st.fileInput = defaultFile(*pc.host, st.format);
@@ -174,7 +179,8 @@ void draw(ui::PanelContext& pc) {
             }
         ImGui::EndCombo();
         if (picked) {  // a layout with a page setup brings its options along
-            st.message = applyAssignedPageSetup(*pc.doc, *pc.host);
+            pc.host->setSetting("tmp.plot.setupFollowed", "");
+            st.message = followPlottedLayoutSetup(*pc.doc, *pc.host);
             st.loaded = false;
             st.styleLoaded.clear();
             return;

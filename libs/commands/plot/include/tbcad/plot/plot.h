@@ -88,6 +88,9 @@ void applyPageSetup(cmd::IHost& host, const layout::PageSetup& setup);
 // When the layout chosen for plotting (or model space) has a page setup assigned, applies it and
 // returns a line for the command line; empty otherwise.
 std::string applyAssignedPageSetup(const Document& doc, cmd::IHost& host);
+// applyAssignedPageSetup the first time the layout chosen for plotting is plotted (in this
+// drawing), so PLOT on a layout tab starts from that layout's own page setup.
+std::string followPlottedLayoutSetup(const Document& doc, cmd::IHost& host);
 
 // Adds the extension for the format when the path has none.
 std::string withExtension(std::string path, Format format);
