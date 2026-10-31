@@ -3,6 +3,7 @@
 #include <imgui.h>
 
 #include <algorithm>
+#include <filesystem>
 #include <string>
 #include <utility>
 #include <vector>
@@ -239,4 +240,49 @@ TEST_CASE("test.14: the menu bar shows which build this is and an Update button"
     h.frame(3);
     CHECK(h.shownText().find("TBCAD " TBCAD_VERSION) != std::string::npos);
     CHECK(h.shownText().find("Update") != std::string::npos);
+}
+
+TEST_CASE("test.14: while typing TEXT the command line names the same accept key as the box") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    h.core().submitText("TEXT");
+    h.core().submitText("0,0");
+    h.core().submitText("5");
+    h.core().submitText("0");
+    h.frame(8);
+    REQUIRE(h.windowOpen("##textedit"));
+    h.captureText(true);
+    h.frame(3);
+    CHECK(h.shownText().find("Typing in the text box (Enter accepts") != std::string::npos);
+    CHECK(h.shownText().find("Ctrl+Enter") == std::string::npos);
+    h.core().pressEscape();
+    h.frame(3);
+}
+
+TEST_CASE("test.14: double click in a viewport of an unchanged drawing leaves it unchanged") {
+    // The drawing's annotation scale is 1:1, the viewport's 1:100: entering it sets 1:100 to
+    // follow the viewport, but that is not an edit, so no "*" and no Save question on close.
+    Harness h(1920, 1080);
+    h.frame(2);
+    ui::AppCore& core = h.core();
+    {
+        auto tx = core.document().begin("layout");
+        REQUIRE(layout::createLayout(tx, "A", "A3").ok());
+        REQUIRE(layout::addViewport(tx, "A", BBox2{{20, 20}, {220, 170}}, {5000, 3000}, 100).ok());
+        tx.commit();
+    }
+    const auto dir = std::filesystem::temp_directory_path() / "tbcad_t14_vp";
+    std::filesystem::create_directories(dir);
+    REQUIRE(core.saveAs(dir / "sheet.dxf").ok());
+    REQUIRE_FALSE(core.modified());
+    REQUIRE(core.setActiveLayout("A"));
+    h.frame(3);
+    core.zoomExtents();
+    h.frame(2);
+    core.doubleClick({core.camera().worldToScreen({100, 100}), false, false});
+    h.frame(3);
+    REQUIRE_FALSE(core.inPaperSpace());
+    CHECK(currentAnnotationScale(core.document().header()) == doctest::Approx(100));
+    CHECK_FALSE(core.modified());
+    CHECK(core.windowTitle().find('*') == std::string::npos);
 }

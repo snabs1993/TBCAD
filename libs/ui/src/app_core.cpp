@@ -2681,8 +2681,13 @@ void AppCore::enterViewport(const std::string& layoutName, const layout::Viewpor
         !runner().active()) {
         char buf[40];
         std::snprintf(buf, sizeof buf, "%.10g", annoN);
+        // Following the viewport is not an edit by the person: a drawing that was unchanged
+        // (a read-only DWG above all) stays unchanged, with no "*" and no Save question.
+        const bool wasModified = modified();
         submitText("CANNOSCALE");
         submitText(buf);
+        if (!wasModified && !runner().active())
+            session_->savedRevision = session_->doc.revision();
     }
     zoomToBox({{center.x - halfW, center.y - halfH}, {center.x + halfW, center.y + halfH}});
     editingLayout_ = layoutName;
@@ -2739,8 +2744,11 @@ void AppCore::followLockedViewport() {
     char buf[40];
     std::snprintf(buf, sizeof buf, "%.10g", readableScale(vp->scaleN));
     print(std::string("The viewport is locked: the annotation scale stays 1:") + buf + ".");
+    const bool wasModified = modified();
     submitText("CANNOSCALE");
     submitText(buf);
+    if (!wasModified && !runner().active())
+        session_->savedRevision = session_->doc.revision();
     annoSyncRevision_ = session_->doc.revision();
 }
 
