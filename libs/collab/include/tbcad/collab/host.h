@@ -83,6 +83,9 @@ public:
     // Called for every accepted edit, the host's own included, in sequence order. This is where
     // a session sends it to the guests.
     std::function<void(const Accepted&)> onAccepted{};
+    // Extra rule for guests' edits (who may edit what), asked after the built-in checks pass and
+    // before the edit is applied. A non-empty answer refuses the edit with that sentence.
+    std::function<std::string(PeerId, const Op&, const Document&)> policy{};
 
 private:
     void onChanged(const ChangeSet& changes) override;

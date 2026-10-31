@@ -294,3 +294,21 @@ TEST_CASE("host: a guest that sends too fast is slowed down, and size limits hol
     std::vector<std::uint8_t> big(100, 0);
     CHECK(t.host.submitEncoded(g.peer, big, 1).rejection->reason == RejectReason::TooLarge);
 }
+
+TEST_CASE("host: an extra policy can refuse a guest's edit before it is applied") {
+    Session s;
+    auto& g = s.join();
+    s.host.policy = [&](PeerId from, const Op& op, const Document&) -> std::string {
+        CHECK(from == g.peer);
+        CHECK(op.delta.entities.size() == 1);
+        return "that layer belongs to somebody else";
+    };
+    EntityId e;
+    Op op = draw(g, {0, 0}, {5, 5}, &e);
+    Submitted r = s.host.submit(g.peer, op, 100);
+    REQUIRE_FALSE(r.ok());
+    CHECK(r.rejection->reason == RejectReason::NotAllowed);
+    CHECK(r.rejection->message == "that layer belongs to somebody else");
+    CHECK_FALSE(s.hostDoc.contains(e));
+    CHECK(s.host.sequence() == 0);
+}

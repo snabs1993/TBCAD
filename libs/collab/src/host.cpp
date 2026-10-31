@@ -127,6 +127,11 @@ Submitted Host::submit(PeerId from, const Op& op, std::uint64_t nowMs) {
                           Key{Space::Entity, e.id.value});
     }
 
+    if (policy) {
+        if (std::string why = policy(from, op, *doc_); !why.empty())
+            return reject(RejectReason::NotAllowed, std::move(why));
+    }
+
     Result<ChangeSet> cs = io::materialize(op.delta, *doc_);
     if (!cs)
         return reject(RejectReason::Invalid, cs.error().message);
