@@ -7,6 +7,7 @@
 //   plans/roof.tbcad                  <- no layout: model space with the plot settings
 //   plans/roof.tbcad | A1 Roof | Half size   <- plotted with the page setup "Half size"
 //   plans/site.tbcad | | Site A3      <- model space with a page setup
+//   plans/site.tbcad | | | Sheet 3    <- a model space plot frame (see layout/plotframes.h)
 //
 // Relative paths are relative to the list file. The PUBLISH panel saves its sheet lists (.tbdsd)
 // in this format.
@@ -29,6 +30,9 @@ struct SheetEntry {
     // A named page setup to plot with instead of the one the layout has: looked up in the sheet's
     // drawing, then in BuildOptions::setupSource. Empty: the layout's own setup.
     std::string pageSetup{};
+    // A model space plot frame (layout empty): its window, paper and scale, with the page setup
+    // above (or the frame's own) for the other options.
+    std::string frame{};
     bool operator==(const SheetEntry&) const = default;
 };
 
@@ -43,7 +47,8 @@ std::string formatSheetList(const std::vector<SheetEntry>& entries,
 // Writes the list file (paths relative to its folder). Returns an error text, empty on success.
 std::string writeSheetList(const std::vector<SheetEntry>& entries,
                            const std::filesystem::path& listFile);
-// The sheets of one drawing: model space first, then each layout in tab order.
+// The sheets of one drawing: model space first, then each plot frame, then each layout in tab
+// order.
 std::vector<SheetEntry> sheetsOf(const Document& doc, const std::filesystem::path& file);
 
 struct SheetSetReport {

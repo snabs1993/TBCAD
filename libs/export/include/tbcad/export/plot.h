@@ -68,6 +68,10 @@ struct PlotSettings {
     // Used for lineweight 0 ("thinnest") and when lineweights are off.
     double hairlineMm = 0.1;
     double chordTolMm = 0.01;  // on paper
+    // Scale N of 1:N for annotative objects in a model space plot; 0 = the drawing's current
+    // annotation scale. A plot frame sets its own scale, so sheets at 1:50 and 1:100 plotted
+    // together each print annotative text at its paper height.
+    double annoScale = 0;
     // The drawing's file: relative paths of pictures (IMAGEATTACH) are taken from its folder.
     // Pictures whose file cannot be found are left out.
     std::filesystem::path hostFile{};
