@@ -85,6 +85,9 @@ struct PointOptions {
     // false: a click is taken where it is, object snaps and the other point filters leave it
     // alone (HATCH pick points: a snap would land on the boundary itself, as AutoCAD knows).
     bool snap = true;
+    // The prompt text again, asked as the cursor moves: a prompt that shows settings a panel can
+    // change while it waits (HATCH's pattern) stays up to date. Empty: the text never changes.
+    std::function<std::string()> liveText{};
 };
 struct DistanceOptions {  // a number, or a point that is measured from `base`
     std::optional<Vec2> base{};

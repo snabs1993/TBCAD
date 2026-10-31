@@ -52,6 +52,7 @@ struct PromptRequest {
     std::vector<std::pair<std::string, std::string>> keywordAliases{};  // typed -> keyword
     std::optional<Vec2> base{};
     PreviewFn preview{};
+    std::function<std::string()> liveText{};  // PointOptions::liveText
     TextPreviewFn textPreview{};
     EntityFilterFn filter{};
     std::optional<double> defaultReal{};

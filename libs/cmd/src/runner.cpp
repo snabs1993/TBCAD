@@ -383,6 +383,12 @@ void CommandRunner::pointerMoved(const RawInput& raw) {
         req.preview(p, previewList_);
         host_.setPreview(&previewList_);
     }
+    if (req.liveText && prompt_) {
+        if (std::string t = req.liveText(); t != prompt_->text) {
+            prompt_->text = std::move(t);
+            host_.promptChanged(&*prompt_);
+        }
+    }
 }
 
 void CommandRunner::textEdited(const std::string& text) {

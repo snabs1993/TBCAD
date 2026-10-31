@@ -96,6 +96,12 @@ std::string summary(const Document& doc, const cmd::IHost& host, const PlotSetti
     } else {
         t += ", " + s.paperName + (s.landscape ? " landscape" : " portrait");
     }
+    if (sheet) {
+        // The sheet plots at 1:1; the area and scale settings are for model space.
+        t += ", scale 1:1 (viewports keep their own scales)";
+        t += ", " + styleLabel(s);
+        return t;
+    }
     t += s.area == PlotArea::Extents   ? ", Extents"
          : s.area == PlotArea::Display ? ", Display"
                                        : ", Window";

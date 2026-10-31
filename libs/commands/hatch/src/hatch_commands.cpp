@@ -327,6 +327,12 @@ public:
                 hover.draw(ctx, p, cursor, out);
             };
             opt.snap = false;  // a snapped pick would sit on the boundary
+            // A pattern clicked in the Hatch panel shows in the prompt as the cursor moves on.
+            opt.liveText = [&] {
+                takePanelEdits();
+                return "Pick internal point (" + (gradient_ ? gradientSummary(p) : summary(p)) +
+                       ")";
+            };
             std::string what = gradient_ ? gradientSummary(p) : summary(p);
             auto r = co_await ctx.getPoint("Pick internal point (" + what + ")", opt);
             if (r.status == Status::Keyword) {
