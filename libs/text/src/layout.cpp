@@ -954,7 +954,7 @@ TextLayout layoutMText(const Document& doc, const MTextData& d) {
 }
 
 TextLayout layoutEntity(const Document& doc, const Entity& e, double annoScale) {
-    const double f = annotationFactor(doc.header(), e.common, annoScale);
+    const double f = annotationFactor(doc.header(), e, annoScale);
     if (const auto* t = entityAs<TextData>(e)) {
         if (f == 1.0)
             return layoutText(doc, *t);

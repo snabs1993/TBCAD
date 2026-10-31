@@ -443,7 +443,7 @@ public:
             // asks.
             if (annotateNewObjects(ctx.doc().header())) {
                 const BlockDef* annoDef = ctx.doc().block(data.block);
-                const double n = currentAnnotationScale(ctx.doc().header());
+                const double n = newAnnotationScale(ctx.doc().header(), e);
                 if (annoDef && annoDef->xrefPath.empty() && !data.array) {
                     e.common.annotative = true;
                     e.common.annoScales = ScaleList(std::vector<double>{n});

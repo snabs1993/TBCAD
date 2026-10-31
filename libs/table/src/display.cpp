@@ -46,7 +46,7 @@ void buildTableDisplay(const Document& doc, const Entity& e, const geom::Display
         pl.style = style;
         out.items.emplace_back(std::move(pl));
     }
-    const double f = annotationFactor(doc.header(), e.common, ctx.annoScale);
+    const double f = annotationFactor(doc.header(), e, ctx.annoScale);
     for (const TextItem& item : L.texts)
         text::buildTextDisplay(doc, textEntity(e, *t, item, f), ctx, out);
 }
@@ -102,7 +102,7 @@ Result<std::vector<Entity>> explodeTable(const Document& doc, const Entity& e) {
         n.data = LineData{a, b};
         out.push_back(std::move(n));
     }
-    const double f = annotationFactor(doc.header(), e.common);
+    const double f = annotationFactor(doc.header(), e);
     for (const TextItem& item : L.texts)
         out.push_back(textEntity(e, *t, item, f));
     return out;

@@ -24,6 +24,7 @@ std::unique_ptr<cmd::Command> makeFieldCommand();
 std::unique_ptr<cmd::Command> makeFontAltCommand();
 std::unique_ptr<cmd::Command> makeFontMapCommand();
 std::unique_ptr<cmd::Command> makeScaleListCommand();
+std::unique_ptr<cmd::Command> makeAnnoZoneCommand();
 std::unique_ptr<cmd::Command> makeObjectScaleCommand();
 std::unique_ptr<cmd::Command> makeAnnoResetCommand();
 std::unique_ptr<cmd::Command> makeAnnoUpdateCommand();

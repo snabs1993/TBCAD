@@ -112,7 +112,7 @@ TextStyleId textStyleOf(const DimStyle& st) {
 }
 
 Layout layoutOf(const Document& doc, const Entity& e, double tol, double annoScale = 0) {
-    const double f = annotationFactor(doc.header(), e.common, annoScale);
+    const double f = annotationFactor(doc.header(), e, annoScale);
     if (const auto* d = entityAs<DimensionData>(e))
         return layoutDimension(doc, *d, tol, f);
     if (const auto* l = entityAs<LeaderData>(e))
@@ -127,7 +127,7 @@ std::optional<Entity> blockContent(const Document& doc, const Entity& e, double 
     const auto* m = entityAs<MLeaderData>(e);
     if (!m || m->content != MLeaderData::Content::Block || !doc.block(m->block))
         return std::nullopt;
-    const double f = annotationFactor(doc.header(), e.common, annoScale);
+    const double f = annotationFactor(doc.header(), e, annoScale);
     InsertData ins;
     ins.block = m->block;
     ins.position = m->contentPos;
