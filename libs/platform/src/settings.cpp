@@ -45,7 +45,8 @@ Settings Settings::withDefaults() {
 }
 
 void Settings::resetToDefaults() {
-    // The options of the Settings dialog; recent files, workspaces and folders stay.
+    // The options of the Settings dialog, the plot style search folders of the Files page
+    // included; recent files, workspaces and the last folders opened stay.
     static constexpr std::string_view kPrefixes[] = {"ui.theme",
                                                      "ui.scale",
                                                      "ui.wheel.",
@@ -62,6 +63,9 @@ void Settings::resetToDefaults() {
                                                      "files.isavePercent",
                                                      "grips.",
                                                      "osnap.",
+                                                     "plot.stylepaths",
+                                                     "template.default",
+                                                     "update.",
                                                      "ui.viewportBackground"};
     auto& o = root_.object();
     for (auto it = o.begin(); it != o.end();) {

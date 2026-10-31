@@ -316,7 +316,7 @@ public:
                     ao.base = pickPoint;
                     ao.defaultValue = normalizeAngle(data.rotation - ctx.host().ucsAngle());
                     ao.inUcs = true;
-                    auto a = co_await ctx.getAngle("Specify rotation angle <0>", std::move(ao));
+                    auto a = co_await ctx.getAngle("Specify rotation angle", std::move(ao));
                     if (!a.ok())
                         co_return;
                     data.rotation = normalizeAngle(a.value);

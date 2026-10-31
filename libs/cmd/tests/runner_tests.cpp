@@ -201,6 +201,17 @@ public:
     }
 };
 
+// Asks one angle with a 30 degree default.
+class AngleDefault final : public Command {
+public:
+    std::string_view name() const override { return "ANGLEDEF"; }
+    Task run(CommandContext& ctx) override {
+        auto a = co_await ctx.getAngle("Specify rotation angle",
+                                       AngleOptions{.base = Vec2{0, 0}, .defaultValue = kPi / 6});
+        (void)a;
+    }
+};
+
 struct Fixture {
     Document doc;
     Registry reg;
@@ -213,6 +224,7 @@ struct Fixture {
         (void)reg.add(std::make_unique<Stubborn>());
         (void)reg.add(std::make_unique<UsesHelper>());
         (void)reg.add(std::make_unique<Everything>());
+        (void)reg.add(std::make_unique<AngleDefault>());
         (void)reg.add(std::make_unique<PickCmd>());
         (void)reg.add(std::make_unique<ZoomT>());
         (void)reg.add(std::make_unique<WaitsForPoint>());
@@ -751,4 +763,13 @@ TEST_CASE("keywords match by prefix, by the capitals that lead them, and by inne
     CHECK(matchKeyword(ch, "e") == std::optional<std::string>("mEthod"));
     CHECK(matchKeyword(ch, "method") == std::optional<std::string>("mEthod"));
     CHECK(matchKeyword(ch, "mu") == std::optional<std::string>("Multiple"));
+}
+
+TEST_CASE("test.13: an angle default shows once and without trailing zeros") {
+    Fixture f;
+    ScriptHost host(f.doc, f.reg);
+    host.run("ANGLEDEF", {});
+    REQUIRE_FALSE(host.prompts().empty());
+    CHECK(host.prompts().back() == "Specify rotation angle <30>: ");
+    host.feed({ScriptItem::esc()});
 }
