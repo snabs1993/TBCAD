@@ -92,3 +92,48 @@ TEST_CASE("frameBoxForPaper and frameSettings") {
     CHECK(s.centerOnPaper);
     CHECK(s.marginMm == 5);  // other options come from the base settings
 }
+
+TEST_CASE("plot sets: numbers and ranges, save, copy, add, remove, follow frame renames") {
+    Document doc;
+    for (int i = 1; i <= 10; ++i)
+        run(doc, [&](Transaction& tx) {
+            return savePlotFrame(tx, frame("Sheet " + std::to_string(i), i * 50000.0));
+        });
+    auto list = resolveFrameList(doc, "1, 5,7-9 , Sheet 10");
+    REQUIRE(list);
+    CHECK(list.value() == std::vector<std::string>{"Sheet 1", "Sheet 5", "Sheet 7", "Sheet 8",
+                                                   "Sheet 9", "Sheet 10"});
+    CHECK(resolveFrameList(doc, "3-1").value() ==
+          std::vector<std::string>{"Sheet 3", "Sheet 2", "Sheet 1"});
+    CHECK_FALSE(resolveFrameList(doc, "11"));
+    CHECK_FALSE(resolveFrameList(doc, "Roof"));
+
+    CHECK(nextPlotSetName(doc) == "Set 1");
+    run(doc, [](Transaction& tx) {
+        return savePlotSet(tx, {"Issue 1", {"Sheet 1", "sheet 5", "Sheet 7", "Sheet 1"}});
+    });
+    auto s = findPlotSet(doc, "issue 1");
+    REQUIRE(s);
+    CHECK(s->frames == std::vector<std::string>{"Sheet 1", "Sheet 5", "Sheet 7"});
+    CHECK_FALSE(validatePlotSetName(doc, "ISSUE 1").ok());
+
+    run(doc, [](Transaction& tx) { return copyPlotSet(tx, "Issue 1", "Issue 2"); });
+    run(doc, [](Transaction& tx) { return addToPlotSet(tx, "Issue 2", {"Sheet 9", "Sheet 5"}); });
+    run(doc, [](Transaction& tx) { return removeFromPlotSet(tx, "Issue 2", {"sheet 1"}); });
+    CHECK(findPlotSet(doc, "Issue 2")->frames ==
+          std::vector<std::string>{"Sheet 5", "Sheet 7", "Sheet 9"});
+    CHECK(findPlotSet(doc, "Issue 1")->frames.size() == 3);
+
+    // Frames renamed or deleted follow into every set.
+    run(doc, [](Transaction& tx) { return renamePlotFrame(tx, "Sheet 5", "Roof"); });
+    run(doc, [](Transaction& tx) { return deletePlotFrame(tx, "Sheet 7"); });
+    CHECK(findPlotSet(doc, "Issue 1")->frames == std::vector<std::string>{"Sheet 1", "Roof"});
+    CHECK(findPlotSet(doc, "Issue 2")->frames == std::vector<std::string>{"Roof", "Sheet 9"});
+
+    run(doc, [](Transaction& tx) { return renamePlotSet(tx, "Issue 2", "Tender"); });
+    run(doc, [](Transaction& tx) { return deletePlotSet(tx, "Issue 1"); });
+    REQUIRE(plotSets(doc).size() == 1);
+    CHECK(plotSets(doc)[0].name == "Tender");
+    auto tx = doc.begin("bad");
+    CHECK_FALSE(savePlotSet(tx, {"X", {"Nope"}}).ok());
+}

@@ -20,7 +20,7 @@ void registerUi(ui::UiRegistry& registry) {
     registry.addMenuItem("File/Plot...", "PLOTPANEL", "file.plot",
                          "Ctrl+P");  // the dialog; PLOT is the typed form
     registry.addMenuItem("File/Publish...", "PUBLISH", "file.publish");
-    registry.addMenuItem("File/Plot Frames", "PLOTFRAME", "file.plot_frames");
+    registry.addMenuItem("File/Plot Frames...", "PLOTFRAMEPANEL", "file.plot_frames");
     registry.addMenuItem("File/Plot Style Tables...", "PLOTSTYLE", "file.plot_styles");
     registry.addMenuItem("File/Export PDF", "EXPORTPDF", "file.export_pdf");
     registry.addMenuItem("File/Export SVG", "EXPORTSVG", "file.export_svg");

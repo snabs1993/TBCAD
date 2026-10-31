@@ -3,7 +3,7 @@ set(_plot_sources src/commands.cpp src/compare.cpp src/export_file.cpp src/frame
 # The dialog panel draws with Dear ImGui, which only exists when the application is built.
 if(TBCAD_BUILD_APP)
   include(deps/imgui)
-  list(APPEND _plot_sources src/plot_panel.cpp src/publish_panel.cpp src/style_panel.cpp)
+  list(APPEND _plot_sources src/plot_panel.cpp src/publish_panel.cpp src/style_panel.cpp src/frames_panel.cpp)
 endif()
 
 tbcad_add_library(plot

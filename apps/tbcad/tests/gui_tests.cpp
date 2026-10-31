@@ -2843,6 +2843,35 @@ TEST_CASE("Publish dialog: the drawing's sheets, save the list, publish one PDF"
     CHECK(fs::exists(dir / "pub.pdf"));
 }
 
+TEST_CASE("Plot Frames panel: check sheets and plot them into one PDF") {
+    const fs::path dir = scratchDir("plotframes");
+    Harness h(1920, 1080);
+    for (const char* t : {"LINE", "0,0", "90000,20000", ""})
+        h.core().submitText(t);
+    REQUIRE(h.core().saveAs(dir / "frames.tbcad").ok());
+    // Plots go to the folder used last (never the drawing's own).
+    fs::create_directories(dir / "out");
+    h.core().setSetting("plot.file.pdf", (dir / "out" / "last.pdf").string());
+    for (const char* corner : {"0,0", "50000,0"}) {
+        h.core().submitText("PLOTFRAME");
+        for (const char* t : {"New", "A3", "Landscape", "1:100", corner, ""})
+            h.core().submitText(t);
+    }
+    h.frame(2);
+    h.core().submitText("PLOTFRAMEPANEL");
+    h.frame(3);
+    REQUIRE(h.windowOpen("Plot Frames"));
+    REQUIRE(h.click("All", "Plot Frames"));
+    h.frame(2);
+    REQUIRE(h.click("Plot checked", "Plot Frames"));
+    h.frame(3);
+    CHECK(fs::exists(dir / "out" / "frames-plot.pdf"));
+    bool plotted = false;
+    for (const auto& line : h.core().history())
+        plotted = plotted || line.find("Plotted 2 plot frames") != std::string::npos;
+    CHECK(plotted);
+}
+
 TEST_CASE("Purge dialog removes an unused layer, the units, properties and recovery windows open") {
     Harness h(1920, 1080);
     run(h, "-LAYER New Junk");

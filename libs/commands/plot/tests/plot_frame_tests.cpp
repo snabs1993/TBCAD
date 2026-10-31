@@ -129,3 +129,43 @@ TEST_CASE("PLOT Area Frame plots with the frame's paper and scale") {
     CHECK(f.host->logContains("scale 1:200"));
     CHECK(f.host->logContains("A2"));
 }
+
+TEST_CASE("FRAMESET: a named set of sheets, copied, changed and plotted on its own") {
+    FrameFixture f;
+    for (int i = 0; i < 4; ++i)
+        REQUIRE(f.host
+                    ->run("PLOTFRAME",
+                          {"New", "A3", "Landscape", "1:100", std::to_string(i * 50000) + ",0", ""})
+                    .finished);
+    REQUIRE(f.host->run("FRAMESET", {"New", "Issue 1", "1,3-4"}).finished);
+    auto set = layout::findPlotSet(f.doc, "Issue 1");
+    REQUIRE(set);
+    CHECK(set->frames == std::vector<std::string>{"Sheet 1", "Sheet 3", "Sheet 4"});
+
+    REQUIRE(f.host->run("FRAMESET", {"Copy", "Issue 1", "Issue 2"}).finished);
+    REQUIRE(f.host->run("FRAMESET", {"Remove", "Issue 2", "3"}).finished);
+    REQUIRE(f.host->run("FRAMESET", {"Add", "Issue 2", "Sheet 2"}).finished);
+    CHECK(layout::findPlotSet(f.doc, "Issue 2")->frames ==
+          std::vector<std::string>{"Sheet 1", "Sheet 4", "Sheet 2"});
+    CHECK(f.host->undo());  // the Add
+    CHECK(layout::findPlotSet(f.doc, "Issue 2")->frames.size() == 2);
+
+    // New with an existing name replaces its sheets (the panel saves checked sheets so).
+    REQUIRE(f.host->run("FRAMESET", {"New", "Issue 2", "2"}).finished);
+    CHECK(layout::findPlotSet(f.doc, "Issue 2")->frames == std::vector<std::string>{"Sheet 2"});
+
+    const std::string out = f.path("issue1.pdf");
+    REQUIRE(f.host->run("FRAMESET", {"Plot", "Issue 1", out}).finished);
+    CHECK(f.host->logContains("Plotted 3 plot frames"));
+    CHECK(pdfPages(out) == 3);
+
+    // PLOTFRAME Plot takes numbers too.
+    const std::string two = f.path("two.pdf");
+    REQUIRE(f.host->run("PLOTFRAME", {"Plot", "2,4", two}).finished);
+    CHECK(pdfPages(two) == 2);
+
+    REQUIRE(f.host->run("FRAMESET", {"Rename", "Issue 2", "Tender"}).finished);
+    REQUIRE(f.host->run("FRAMESET", {"Delete", "Issue 1"}).finished);
+    REQUIRE(layout::plotSets(f.doc).size() == 1);
+    CHECK(layout::plotSets(f.doc)[0].name == "Tender");
+}

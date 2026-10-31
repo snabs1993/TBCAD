@@ -22,27 +22,6 @@ std::string lowerText(std::string s) {
     return s;
 }
 
-std::string trimText(const std::string& s) {
-    const auto a = s.find_first_not_of(" \t");
-    if (a == std::string::npos)
-        return {};
-    return s.substr(a, s.find_last_not_of(" \t") - a + 1);
-}
-
-std::vector<std::string> splitNames(const std::string& text) {
-    std::vector<std::string> out;
-    std::size_t i = 0;
-    for (;;) {
-        const std::size_t j = text.find(',', i);
-        std::string n = trimText(text.substr(i, j == std::string::npos ? j : j - i));
-        if (!n.empty())
-            out.push_back(std::move(n));
-        if (j == std::string::npos)
-            return out;
-        i = j + 1;
-    }
-}
-
 std::vector<Vec2> ring(const BBox2& b) {
     return {b.min, {b.max.x, b.min.y}, b.max, {b.min.x, b.max.y}};
 }
@@ -91,6 +70,23 @@ cmd::Task askPaperAndScale(cmd::CommandContext& ctx, layout::PlotFrame& f, bool&
         ctx.message("Not a scale: \"" + sc.text + "\". Use 1:N.");
     }
     ok = true;
+}
+
+// Frame names typed as numbers or names ("1,5,7-9"); asked again after a bad entry, empty when
+// cancelled.
+cmd::Task askFrames(cmd::CommandContext& ctx, const char* prompt, std::vector<std::string>& out) {
+    out.clear();
+    for (;;) {
+        auto t = co_await ctx.getString(prompt);
+        if (!t.ok() || t.text.empty())
+            co_return;
+        auto names = layout::resolveFrameList(ctx.doc(), t.text);
+        if (names) {
+            out = std::move(names.value());
+            co_return;
+        }
+        ctx.message(names.error().message);
+    }
 }
 
 // Frames sorted the way sheets are read: rows from the top, left to right in a row.
@@ -154,10 +150,16 @@ public:
         if (kw == "Plot" || kw == "All") {
             std::vector<std::string> names;
             if (kw == "Plot") {
-                auto n = co_await ctx.getString("Plot frames to plot (names separated by commas)");
+                auto n = co_await ctx.getString(
+                    "Plot frames to plot (numbers or names, for example 1,5,7-9)");
                 if (!n.ok() || n.text.empty())
                     co_return;
-                names = splitNames(n.text);
+                auto resolved = layout::resolveFrameList(ctx.doc(), n.text);
+                if (!resolved) {
+                    ctx.message(resolved.error().message);
+                    co_return;
+                }
+                names = std::move(resolved.value());
             } else {
                 for (const auto& f : layout::plotFrames(ctx.doc()))
                     names.push_back(f.name);
@@ -293,6 +295,135 @@ public:
     }
 };
 
+// FRAMESET: named sets of plot frames ("Issue 1": sheets 1, 5 and 7), saved in the drawing.
+class FrameSetCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "FRAMESET"; }
+    std::vector<std::string> defaultAliases() const override { return {"PLOTSETS"}; }
+    std::string_view description() const override {
+        return "Named sets of plot frames (for example sheets 1, 5 and 7): save, copy, add or "
+               "remove sheets and plot only the set";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.setUndoLabel("FRAMESET");
+        if (layout::plotFrames(ctx.doc()).empty()) {
+            ctx.message("This drawing has no plot frames yet. Add them with PLOTFRAME first.");
+            co_return;
+        }
+        KeywordOptions menu;
+        menu.keywords = {"New", "Add", "Remove", "Copy", "Rename", "Delete", "List", "Plot"};
+        menu.defaultKeyword = layout::plotSets(ctx.doc()).empty() ? "New" : "Plot";
+        auto choice = co_await ctx.getKeyword("Plot sets", menu);
+        if (!choice.ok())
+            co_return;
+        const std::string kw = choice.keyword;
+        if (kw == "List") {
+            const auto sets = layout::plotSets(ctx.doc());
+            if (sets.empty())
+                ctx.message("This drawing has no plot sets. Use New to make one.");
+            for (const auto& p : sets) {
+                std::string line = "  " + p.name + " (" + std::to_string(p.frames.size()) + "): ";
+                for (std::size_t i = 0; i < p.frames.size(); ++i)
+                    line += (i ? ", " : "") + p.frames[i];
+                ctx.message(line);
+            }
+            co_return;
+        }
+        std::string setName;
+        if (kw == "New") {
+            cmd::StringOptions no;
+            const std::string def = layout::nextPlotSetName(ctx.doc());
+            no.defaultValue = def;
+            auto n = co_await ctx.getString("Name of the plot set", no);
+            if (!n.ok())
+                co_return;
+            setName = n.text.empty() ? def : n.text;
+            // An existing set's name replaces its sheets (the panel saves checked sheets so).
+            const bool replacing = layout::findPlotSet(ctx.doc(), setName).has_value();
+            if (auto ok =
+                    replacing ? Result<void>{} : layout::validatePlotSetName(ctx.doc(), setName);
+                !ok) {
+                ctx.message(ok.error().message);
+                co_return;
+            }
+            std::vector<std::string> frames;
+            co_await askFrames(ctx, "Frames in the set (numbers or names, for example 1,5,7-9)",
+                               frames);
+            if (frames.empty())
+                co_return;
+            auto r = layout::savePlotSet(ctx.tx(), {setName, frames});
+            ctx.message(r ? "Plot set \"" + setName + "\" saved with " +
+                                std::to_string(frames.size()) + " frames."
+                          : r.error().message);
+            co_return;
+        }
+        {
+            cmd::StringOptions so;
+            if (const auto sets = layout::plotSets(ctx.doc()); !sets.empty())
+                so.defaultValue = sets.front().name;
+            auto n = co_await ctx.getString("Plot set", so);
+            if (!n.ok() || n.text.empty())
+                co_return;
+            auto found = layout::findPlotSet(ctx.doc(), n.text);
+            if (!found) {
+                ctx.message("No plot set named \"" + n.text + "\".");
+                co_return;
+            }
+            setName = found->name;
+        }
+        if (kw == "Add" || kw == "Remove") {
+            std::vector<std::string> frames;
+            co_await askFrames(ctx,
+                               kw == "Add" ? "Frames to add (numbers or names)"
+                                           : "Frames to take out (numbers or names)",
+                               frames);
+            if (frames.empty())
+                co_return;
+            auto r = kw == "Add" ? layout::addToPlotSet(ctx.tx(), setName, frames)
+                                 : layout::removeFromPlotSet(ctx.tx(), setName, frames);
+            if (!r) {
+                ctx.message(r.error().message);
+                co_return;
+            }
+            ctx.message("Plot set \"" + setName + "\" now has " +
+                        std::to_string(layout::findPlotSet(ctx.doc(), setName)->frames.size()) +
+                        " frames.");
+        } else if (kw == "Copy" || kw == "Rename") {
+            cmd::StringOptions no;
+            if (kw == "Copy")
+                no.defaultValue = setName + " copy";
+            auto nn = co_await ctx.getString("New name", no);
+            if (!nn.ok())
+                co_return;
+            const std::string newName =
+                nn.text.empty() && kw == "Copy" ? setName + " copy" : nn.text;
+            auto r = kw == "Copy" ? layout::copyPlotSet(ctx.tx(), setName, newName)
+                                  : layout::renamePlotSet(ctx.tx(), setName, newName);
+            ctx.message(r ? (kw == "Copy" ? "Copied to \"" : "Renamed to \"") + newName + "\"."
+                          : r.error().message);
+        } else if (kw == "Delete") {
+            auto r = layout::deletePlotSet(ctx.tx(), setName);
+            ctx.message(r ? "Plot set \"" + setName + "\" deleted." : r.error().message);
+        } else if (kw == "Plot") {
+            const auto set = layout::findPlotSet(ctx.doc(), setName);
+            if (set->frames.empty()) {
+                ctx.message("Plot set \"" + setName + "\" is empty.");
+                co_return;
+            }
+            cmd::StringOptions fo;
+            std::string def = defaultFile(ctx.host(), Format::Pdf);
+            const auto dot = def.rfind('.');
+            fo.defaultValue =
+                (dot == std::string::npos ? def : def.substr(0, dot)) + " " + setName + ".pdf";
+            auto file = co_await ctx.getString("Output PDF file (or Printer / Dialog)", fo);
+            if (!file.ok() || file.text.empty())
+                co_return;
+            auto r = plotFramesTo(ctx.doc(), ctx.host(), set->frames, file.text);
+            ctx.message(r ? r.value() : r.error().message);
+        }
+    }
+};
+
 }  // namespace
 
 Result<std::vector<exportlib::PlotSheet>> buildFrameSheets(const Document& doc,
@@ -352,6 +483,10 @@ Result<std::string> plotFramesTo(const Document& doc, const cmd::IHost& host,
 
 std::unique_ptr<cmd::Command> makePlotFrameCommand() {
     return std::make_unique<PlotFrameCommand>();
+}
+
+std::unique_ptr<cmd::Command> makeFrameSetCommand() {
+    return std::make_unique<FrameSetCommand>();
 }
 
 }  // namespace tbcad::plot
