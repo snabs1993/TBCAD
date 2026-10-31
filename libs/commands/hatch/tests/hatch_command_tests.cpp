@@ -667,3 +667,14 @@ TEST_CASE("HATCH: a pattern picked in the panel shows in the prompt as the curso
     CHECK(f.host->prompts().back().find("LINE45") != std::string::npos);
     f.host->feed({ScriptItem::esc()});
 }
+
+TEST_CASE("HATCH: a pattern picked in the panel shows in the prompt without moving into the drawing") {
+    Fixture f;
+    f.rect({0, 0}, {100, 60});
+    f.host->setSetting("hatch.pattern", "SOLID");
+    f.host->run("HATCH", {});
+    f.host->setSetting("hatch.pattern", "LINE45");  // the pointer is still over the panel
+    f.host->runner().refreshLiveText();             // what every frame does
+    CHECK(f.host->prompts().back().find("LINE45") != std::string::npos);
+    f.host->feed({ScriptItem::esc()});
+}

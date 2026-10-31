@@ -2648,6 +2648,24 @@ std::vector<render::ImageDraw> AppCore::underlayImages() {
     return out;
 }
 
+namespace {
+
+// A viewport scale as a person would write it: 100.000000808 (a DWG's float noise) is 100.
+double readableScale(double n) {
+    if (!(n > 0))
+        return n;
+    const double r = std::round(n);
+    if (r > 0 && std::abs(n - r) <= 1e-6 * std::max(1.0, n))
+        return r;
+    return n;
+}
+
+bool sameScale(double a, double b) {
+    return std::abs(a - b) <= 1e-6 * std::max({1.0, std::abs(a), std::abs(b)});
+}
+
+}  // namespace
+
 void AppCore::enterViewport(const std::string& layoutName, const layout::Viewport& vp) {
     const BBox2 paper = vp.paper;
     const Vec2 center = vp.center;
@@ -2656,10 +2674,13 @@ void AppCore::enterViewport(const std::string& layoutName, const layout::Viewpor
     const double halfH = paper.height() * scaleN / 2;
     leavePaper();
     // The annotation scale follows the viewport being edited, so new notes come out right.
-    if (scaleN > 0 && currentAnnotationScale(session_->doc.header()) != scaleN &&
+    // A DWG viewport often stores 1:100.000000808; that is 1:100, the same as the drawing's own
+    // annotation scale, so nothing changes and the drawing is not marked as edited.
+    const double annoN = readableScale(scaleN);
+    if (annoN > 0 && !sameScale(currentAnnotationScale(session_->doc.header()), annoN) &&
         !runner().active()) {
         char buf[40];
-        std::snprintf(buf, sizeof buf, "%.12g", scaleN);
+        std::snprintf(buf, sizeof buf, "%.10g", annoN);
         submitText("CANNOSCALE");
         submitText(buf);
     }
@@ -2713,10 +2734,10 @@ void AppCore::followLockedViewport() {
     const auto lay = layout::findLayout(session_->doc, editingLayout_);
     const layout::Viewport* vp = lay ? lay->findViewport(editingViewport_) : nullptr;
     if (!vp || !vp->locked || !(vp->scaleN > 0) ||
-        currentAnnotationScale(session_->doc.header()) == vp->scaleN)
+        sameScale(currentAnnotationScale(session_->doc.header()), readableScale(vp->scaleN)))
         return;
     char buf[40];
-    std::snprintf(buf, sizeof buf, "%.12g", vp->scaleN);
+    std::snprintf(buf, sizeof buf, "%.10g", readableScale(vp->scaleN));
     print(std::string("The viewport is locked: the annotation scale stays 1:") + buf + ".");
     submitText("CANNOSCALE");
     submitText(buf);
@@ -3065,6 +3086,7 @@ void AppCore::applyPendingLayout() {
 
 void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
     applyPendingLayout();
+    runner().refreshLiveText();  // a hatch pattern picked in the panel shows in the prompt now
     {
         profile::EditTimer t("frame: autosave");
         tickAutosave(now);

@@ -52,6 +52,9 @@ public:
 
     // Cursor moved: updates the rubber-band preview and snap feedback of the active prompt.
     void pointerMoved(const RawInput& raw);
+    // Re-reads a prompt whose text follows state outside the command (PointOptions::liveText),
+    // e.g. a hatch pattern picked in a panel while the pointer is still over that panel.
+    void refreshLiveText();
 
     bool active() const { return !stack_.empty(); }
     // Prompt of the innermost running command, or null.

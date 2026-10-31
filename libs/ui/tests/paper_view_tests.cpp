@@ -549,3 +549,34 @@ TEST_CASE("tab previews: the drawing and its layouts give a line picture") {
     CHECK(sheet.width > 0);
     CHECK(sheet.height > 0);
 }
+
+TEST_CASE("test.13: double click in a DWG viewport at 1:100.000000808 leaves the drawing unchanged") {
+    // A DWG stores the viewport scale as a float; the drawing's annotation scale is already 1:100.
+    auto registry = makeRegistry();
+    AppCore core(*registry,
+                 platform::AppPaths{tempDir("paper13") / "cfg", tempDir("paper13") / "data"});
+    core.setViewportSize(1000, 800);
+    {
+        auto tx = core.document().begin("layout");
+        REQUIRE(layout::createLayout(tx, "A", "A3").ok());
+        REQUIRE(layout::addViewport(tx, "A", BBox2{{20, 20}, {220, 170}}, {5000, 3000},
+                                    100.000000808)
+                    .ok());
+        tx.commit();
+    }
+    {
+        auto tx = core.document().begin("anno");
+        (void)tx.modifyHeader([](Header& h) { h.custom[kAnnoScaleKey] = "100"; });
+        tx.commit();
+    }
+    REQUIRE(currentAnnotationScale(core.document().header()) == doctest::Approx(100));
+    REQUIRE(core.setActiveLayout("A"));
+    core.zoomExtents();
+    const auto rev = core.document().revision();
+    core.doubleClick({core.camera().worldToScreen({100, 100}), false, false});
+    REQUIRE_FALSE(core.inPaperSpace());
+    core.updateFrame(std::chrono::steady_clock::now());
+    CHECK(core.document().revision() == rev);
+    for (const std::string& line : core.history())
+        CHECK(line.find("100.000000808") == std::string::npos);
+}

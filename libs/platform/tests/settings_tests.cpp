@@ -96,6 +96,13 @@ TEST_CASE("resetToDefaults restores the dialog's options and keeps recent files"
     CHECK(s.dirty());
 }
 
+TEST_CASE("test.13: resetToDefaults also clears the plot style search folders of the Files page") {
+    Settings s = Settings::withDefaults();
+    s.setString("plot.stylepaths", "D:/tb/shots/ctb");
+    s.resetToDefaults();
+    CHECK(s.getString("plot.stylepaths", "") == "");
+}
+
 TEST_CASE("repair puts back values a hand-edited file made unusable") {
     fs::path d = tempDir("repair");
     {

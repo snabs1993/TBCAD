@@ -150,6 +150,7 @@ void SettingsDialog::draw(ui::AppCore& core) {
             ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
         ImGui::TextUnformatted(
             "Put every option on these pages back to its default?\n"
+            "The plot style search folders are emptied too.\n"
             "Key bindings, aliases, recent files and workspaces are kept.");
         if (ImGui::Button("Reset", ImVec2(100, 0))) {
             core.settings().resetToDefaults();

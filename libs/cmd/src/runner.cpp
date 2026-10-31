@@ -301,8 +301,17 @@ void CommandRunner::refreshPrompt() {
                 info.defaultText = formatDouble(*req.defaultReal);
             break;
         case detail::PromptKind::Angle:
-            if (req.defaultReal)
-                info.defaultText = formatAngle(*req.defaultReal, 6, AngleUnit::Degrees);
+            if (req.defaultReal) {
+                // "<30>", not "<30.000000>".
+                std::string t = formatAngle(*req.defaultReal, 6, AngleUnit::Degrees);
+                if (t.find('.') != std::string::npos) {
+                    while (t.back() == '0')
+                        t.pop_back();
+                    if (t.back() == '.')
+                        t.pop_back();
+                }
+                info.defaultText = std::move(t);
+            }
             break;
         case detail::PromptKind::Real:
             if (req.defaultReal)
@@ -383,11 +392,18 @@ void CommandRunner::pointerMoved(const RawInput& raw) {
         req.preview(p, previewList_);
         host_.setPreview(&previewList_);
     }
-    if (req.liveText && prompt_) {
-        if (std::string t = req.liveText(); t != prompt_->text) {
-            prompt_->text = std::move(t);
-            host_.promptChanged(&*prompt_);
-        }
+    refreshLiveText();
+}
+
+void CommandRunner::refreshLiveText() {
+    if (stack_.empty() || !stack_.back().ctx->hasPending() || !prompt_)
+        return;
+    const detail::PromptRequest& req = *stack_.back().ctx->pending();
+    if (!req.liveText)
+        return;
+    if (std::string t = req.liveText(); t != prompt_->text) {
+        prompt_->text = std::move(t);
+        host_.promptChanged(&*prompt_);
     }
 }
 
