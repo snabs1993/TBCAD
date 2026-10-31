@@ -101,3 +101,18 @@ TEST_CASE("ids: edits of entities outside the window are recorded with their bef
         CHECK_FALSE(doc.contains(EntityId{100}));
     }
 }
+
+TEST_CASE("replica: pending edits can be read back in order while unanswered") {
+    tbcad::collab::testing::Session s;
+    auto& g = s.join();
+    for (int i = 0; i < 3; ++i) {
+        Transaction tx = g.doc->begin("line");
+        (void)tx.add(tbcad::collab::testing::line(kLayerZero, {0, double(i)}, {1, double(i)}));
+        tx.commit();
+    }
+    const auto edits = g.replica->pendingEdits();
+    REQUIRE(edits.size() == 3);
+    CHECK(edits[0].op.clientSeq < edits[1].op.clientSeq);
+    CHECK(edits[1].op.clientSeq < edits[2].op.clientSeq);
+    CHECK(edits[2].applied.entities.size() == 1);
+}
