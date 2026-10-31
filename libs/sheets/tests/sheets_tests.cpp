@@ -7,6 +7,7 @@
 
 #include "tbcad/io/tbcad.h"
 #include "tbcad/layout/layout.h"
+#include "tbcad/layout/plotframes.h"
 #include "tbcad/sheets/sheets.h"
 
 using namespace tbcad;
@@ -189,5 +190,56 @@ TEST_CASE("sheet list: page setup override, the open drawing, and a decorate hoo
     REQUIRE(all.size() == 2);
     CHECK(all[0].layout.empty());
     CHECK(all[1].layout == "Fresh");
+    fs::remove_all(dir);
+}
+
+TEST_CASE("sheet list: model space plot frames at their own scales") {
+    const fs::path dir = fs::temp_directory_path() / "tbcad_sheets_frames";
+    fs::create_directories(dir);
+    Document doc;
+    {
+        auto tx = doc.begin("frames");
+        REQUIRE(tx.add(line({0, 0}, {50000, 20000})).ok());
+        layout::PlotFrame a;
+        a.name = "Plan";
+        a.window.expand({0, 0});
+        a.window.expand({20000, 10000});
+        a.scaleN = 100;
+        REQUIRE(layout::savePlotFrame(tx, a).ok());
+        layout::PlotFrame b = a;
+        b.name = "Detail";
+        b.scaleN = 50;
+        b.paperName = "A1";
+        REQUIRE(layout::savePlotFrame(tx, b).ok());
+        tx.commit();
+    }
+    const fs::path file = dir / "frames.tbcad";
+    const auto all = sheetsOf(doc, file);
+    REQUIRE(all.size() == 3);  // model space, then both frames
+    CHECK(all[1].frame == "Plan");
+    CHECK(all[2].frame == "Detail");
+
+    // The frame column round trips; old three-column lines still read.
+    const std::string text = formatSheetList({all[2]}, dir);
+    CHECK(text.find("frames.tbcad |  |  | Detail") != std::string::npos);
+    auto parsed = parseSheetList(text + "frames.tbcad | | Mono\n", dir);
+    REQUIRE(parsed);
+    REQUIRE(parsed.value().size() == 2);
+    CHECK(parsed.value()[0].frame == "Detail");
+    CHECK(parsed.value()[1].frame.empty());
+    CHECK(parsed.value()[1].pageSetup == "Mono");
+
+    BuildOptions opts;
+    opts.current = &doc;
+    opts.currentFile = file;
+    auto set = buildSheetList({all[1], all[2]}, {}, {}, opts);
+    REQUIRE(set);
+    REQUIRE(set.value().sheets.size() == 2);
+    CHECK(set.value().sheets[0].layout.paperPerUnit == doctest::Approx(1.0 / 100));
+    CHECK(set.value().sheets[1].layout.paperPerUnit == doctest::Approx(1.0 / 50));
+    CHECK(set.value().sheets[1].layout.annoScale == doctest::Approx(50));
+    CHECK(set.value().sheets[1].layout.pageWidthMm == doctest::Approx(841));
+    SheetEntry missing{file, {}, {}, "Nope"};
+    CHECK_FALSE(buildSheetList({missing}, {}, {}, opts));
     fs::remove_all(dir);
 }

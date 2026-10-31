@@ -369,6 +369,7 @@ Rgba plotColor(Rgba c, ColorMode mode) {
 
 Result<PlotLayout> computeLayout(const Document& doc, const PlotSettings& s) {
     PlotLayout lay;
+    lay.annoScale = s.annoScale > 0 ? s.annoScale : 0;
     double w, h;
     if (s.paperName == "Custom") {
         w = s.customWidthMm;

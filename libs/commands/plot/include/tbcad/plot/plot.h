@@ -166,4 +166,15 @@ Result<std::string> exportFile(const Document& doc, const cmd::IHost& host,
                                exportlib::PlotSettings settings, Format format,
                                const std::string& path);
 
+// ---- plot frames (named model space sheets, see layout/plotframes.h) --------------------------
+// One sheet per named frame, in the order given, with the current plot options (or each frame's
+// page setup), the plot stamp, upside down and PDF layer choices applied.
+Result<std::vector<exportlib::PlotSheet>> buildFrameSheets(const Document& doc,
+                                                           const cmd::IHost& host,
+                                                           const std::vector<std::string>& names);
+// Plots the frames into one multi-page PDF (`file` "Printer" / "Dialog": to the printer). The
+// returned text is the summary for the command line.
+Result<std::string> plotFramesTo(const Document& doc, const cmd::IHost& host,
+                                 const std::vector<std::string>& names, const std::string& file);
+
 }  // namespace tbcad::plot

@@ -320,3 +320,58 @@ TEST_CASE("ANNORESET makes the current scale the drawn one, ANNOUPDATE follows t
     f.host.run("ANNOUPDATE", {});
     CHECK(f.host.logContains("0 object(s) updated"));
 }
+
+TEST_CASE("an annotation zone draws the annotative objects inside it at its own scale") {
+    Fixture f;
+    f.host.run("CANNOSCALE", {"100"});
+    f.host.run("TEXT", {"0,0", "2.5", "0", "Plan"});
+    f.host.run("TEXT", {"5000,0", "2.5", "0", "Detail"});
+    f.host.run("TEXT", {"5000,100", "2.5", "0", "Plain"});
+    std::vector<EntityId> ids;
+    f.doc.forEachEntity([&](const Entity& e) { ids.push_back(e.common.id); });
+    std::sort(ids.begin(), ids.end());
+    REQUIRE(ids.size() == 3);
+    f.host.run("ANNOTATIVE",
+               {cmd::ScriptItem::pick(ids[0], {0, 0}), cmd::ScriptItem::pick(ids[1], {5000, 0}),
+                cmd::ScriptItem::enter(), "On"});
+    const double plan = textHeightOnScreen(f.doc, *f.doc.find(ids[0]));
+    CHECK(textHeightOnScreen(f.doc, *f.doc.find(ids[1])) == doctest::Approx(plan).epsilon(0.01));
+
+    // A 1:20 zone around the detail: only the annotative object inside changes.
+    f.host.run("ANNOZONE", {"4000,-1000", "7000,1000", "1:20", "Detail A"});
+    auto zones = annotationZones(f.doc.header());
+    REQUIRE(zones.size() == 1);
+    CHECK(zones[0].name == "Detail A");
+    CHECK(zones[0].scale == doctest::Approx(20));
+    CHECK(textHeightOnScreen(f.doc, *f.doc.find(ids[0])) == doctest::Approx(plan).epsilon(0.01));
+    CHECK(textHeightOnScreen(f.doc, *f.doc.find(ids[1])) ==
+          doctest::Approx(plan / 5).epsilon(0.01));
+    const double plain = textHeightOnScreen(f.doc, *f.doc.find(ids[2]));
+    CHECK(plain == doctest::Approx(plan / 100).epsilon(0.01));
+    // A layout viewport still draws at its own scale.
+    CHECK(textHeightOnScreen(f.doc, *f.doc.find(ids[1]), 50) ==
+          doctest::Approx(plan / 2).epsilon(0.01));
+
+    // New annotative text placed in the zone is made for the zone's scale.
+    f.host.run("ANNONEW", {"On"});
+    f.host.run("TEXT", {"5000,200", "2.5", "0", "New"});
+    EntityId last{};
+    f.doc.forEachEntity([&](const Entity& e) { last = std::max(last, e.common.id); });
+    REQUIRE(f.doc.find(last)->common.annotative);
+    CHECK(f.doc.find(last)->common.annoScales.front() == doctest::Approx(20));
+
+    // Change the scale by clicking inside the zone, rename by name, then delete.
+    f.host.run("ANNOZONE", {"Scale", "5000,0", "10"});
+    CHECK(annotationZones(f.doc.header())[0].scale == doctest::Approx(10));
+    CHECK(textHeightOnScreen(f.doc, *f.doc.find(ids[1])) ==
+          doctest::Approx(plan / 10).epsilon(0.01));
+    f.host.run("ANNOZONE", {"Rename", "detail a", "Kitchen"});
+    CHECK(annotationZones(f.doc.header())[0].name == "Kitchen");
+    f.host.run("ANNOZONE", {"Frames", "Off"});
+    CHECK_FALSE(annotationZonesShown(f.doc.header()));
+    f.host.run("ANNOZONE", {"Delete", "5000,0"});
+    CHECK(annotationZones(f.doc.header()).empty());
+    CHECK(textHeightOnScreen(f.doc, *f.doc.find(ids[1])) == doctest::Approx(plan).epsilon(0.01));
+    f.host.undo();
+    CHECK(annotationZones(f.doc.header()).size() == 1);
+}

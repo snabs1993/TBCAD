@@ -22,6 +22,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(makeFontAltCommand());
     (void)registry.add(makeFontMapCommand());
     (void)registry.add(makeScaleListCommand());
+    (void)registry.add(makeAnnoZoneCommand());
     (void)registry.add(makeObjectScaleCommand());
     (void)registry.add(makeAnnoResetCommand());
     (void)registry.add(makeAnnoUpdateCommand());

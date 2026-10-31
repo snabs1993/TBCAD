@@ -8,6 +8,7 @@
 
 #include "tbcad/dxf/reader.h"
 #include "tbcad/io/tbcad.h"
+#include "tbcad/layout/plotframes.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/plot/plot.h"
 #include "tbcad/sheets/sheets.h"
@@ -17,6 +18,7 @@ namespace tbcad::plot {
 std::unique_ptr<cmd::Command> makePrinterCommand();
 std::unique_ptr<cmd::Command> makeETransmitCommand();
 std::unique_ptr<cmd::Command> makeCompareCommand();
+std::unique_ptr<cmd::Command> makePlotFrameCommand();
 
 Result<std::unique_ptr<Document>> readDrawingFile(const std::filesystem::path& file) {
     std::string ext = file.extension().string();
@@ -149,6 +151,8 @@ public:
         // the command with an "Error:" message instead of falling back to the old setting.
         bool strict = false;
         bool colorChosen = false;  // Color picked in this run (warn only then)
+        // Area Frame picked: annotative objects print at the frame's scale.
+        bool frameArea = false;
         for (;;) {
             KeywordOptions menu;
             menu.keywords = {"Paper",   "Orientation", "Area",        "Scale",        "Center",
@@ -208,6 +212,7 @@ public:
                     if (!over.ok() || over.keyword != "Yes")
                         continue;  // back to the plot options to pick another name
                 }
+                s.annoScale = frameArea && !s.fitToPaper ? s.scaleN : 0;
                 Result<std::string> r = std::string();
                 timePhase("export file",
                           [&] { r = exportFile(ctx.doc(), ctx.host(), s, format, file.text); });
@@ -276,13 +281,29 @@ public:
             } else if (kw == "Area") {
                 KeywordOptions ko;
                 ko.keywords = {"Extents", "Display", "Window", "View"};
+                const auto frames = layout::plotFrames(ctx.doc());
+                if (!frames.empty() && plotLayout(ctx.host()).empty())
+                    ko.keywords.push_back("Frame");
                 ko.defaultKeyword = s.area == PlotArea::Extents   ? "Extents"
                                     : s.area == PlotArea::Display ? "Display"
                                                                   : "Window";
                 auto r = co_await ctx.getKeyword("Plot area", ko);
                 if (!r.ok())
                     continue;
-                if (r.keyword == "Window") {
+                frameArea = false;
+                if (r.keyword == "Frame") {
+                    cmd::StringOptions fo;
+                    fo.defaultValue = frames.front().name;
+                    auto n = co_await ctx.getString("Plot frame", fo);
+                    if (!n.ok())
+                        continue;
+                    if (auto f = layout::findPlotFrame(ctx.doc(), n.text)) {
+                        s = layout::frameSettings(ctx.doc(), s, *f, styleResolver(ctx.host()));
+                        frameArea = true;
+                    } else {
+                        ctx.message("There is no plot frame named \"" + n.text + "\".");
+                    }
+                } else if (r.keyword == "Window") {
                     auto a = co_await ctx.getPoint("Specify first corner");
                     if (!a.ok())
                         continue;
@@ -1151,6 +1172,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<PlotStampCommand>());
     (void)registry.add(makeETransmitCommand());
     (void)registry.add(makeCompareCommand());
+    (void)registry.add(makePlotFrameCommand());
     (void)registry.add(std::make_unique<PlotStyleCommand>());
     (void)registry.add(std::make_unique<PageSetupCommand>());
     (void)registry.add(std::make_unique<PageSetupPanelCommand>());

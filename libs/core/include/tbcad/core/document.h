@@ -196,6 +196,33 @@ std::vector<double> annotationScaleList(const Header& h);
 // 1 for ordinary objects; for annotative ones `override` when positive, else the current scale.
 double annotationFactor(const Header& h, const EntityCommon& c, double override = 0);
 
+// Annotation zones (ANNOZONE): named rectangles of model space with an annotation scale of their
+// own, so a 1:20 detail and a 1:100 plan can share one model. In model space (on screen and when
+// plotting the model), an annotative object whose anchor lies in a zone is drawn at the zone's
+// scale, whatever the drawing's current scale and the scales the object lists. A layout viewport
+// still draws at its own scale. Kept in Header::custom as one "name<TAB>scale<TAB>x1 y1 x2 y2" line
+// per zone; "tbcad.annozones.show" = "0" hides the zone frames on screen (they never plot).
+inline constexpr const char* kAnnoZonesKey = "tbcad.annozones";
+inline constexpr const char* kAnnoZonesShowKey = "tbcad.annozones.show";
+struct AnnotationZone {
+    std::string name{};
+    double scale = 0;  // N of 1:N
+    BBox2 box{};
+};
+std::vector<AnnotationZone> annotationZones(const Header& h);
+void setAnnotationZones(Header& h, const std::vector<AnnotationZone>& zones);
+bool annotationZonesShown(const Header& h);
+// The scale of the zone holding `p` (the smallest one where zones overlap); 0 outside every zone.
+double annotationZoneScaleAt(const Header& h, Vec2 p);
+// The point that decides which zone an annotation object belongs to (text insertion point,
+// dimension's first point, leader's first vertex, table origin, hatch's first boundary point).
+std::optional<Vec2> annotationAnchor(const Entity& e);
+// The zone scale for an annotative object; 0 when it is ordinary or in no zone.
+double annotationZoneScale(const Header& h, const Entity& e);
+// annotationFactor above, with annotation zones: in model space (no override) an annotative
+// object in a zone is drawn at the zone's scale.
+double annotationFactor(const Header& h, const Entity& e, double override = 0);
+
 enum class Direction { Undo, Redo };
 
 template <class Row>
@@ -786,11 +813,20 @@ inline bool canScaleAnnotatively(EntityKind k) {
            k == EntityKind::Leader || k == EntityKind::MLeader || k == EntityKind::Table;
 }
 bool annotateNewObjects(const Header& h);
+// The scale a new annotative object is made for: the annotation zone's where it is placed, else
+// the drawing's current scale.
+inline double newAnnotationScale(const Header& h, const Entity& e) {
+    if (!h.custom.empty() && h.custom.count(kAnnoZonesKey))
+        if (const auto at = annotationAnchor(e))
+            if (const double z = annotationZoneScaleAt(h, *at); z > 0)
+                return z;
+    return currentAnnotationScale(h);
+}
 // New objects start annotative at the current scale when the drawing asks for it.
 inline void applyAnnotativeDefault(const Header& h, Entity& e) {
     if (canScaleAnnotatively(kind(e)) && annotateNewObjects(h)) {
         e.common.annotative = true;
-        e.common.annoScales = ScaleList(std::vector<double>{currentAnnotationScale(h)});
+        e.common.annoScales = ScaleList(std::vector<double>{newAnnotationScale(h, e)});
     }
 }
 
@@ -807,7 +843,7 @@ inline void applyStyleAnnotative(const Document& doc, Entity& e) {
     const TextStyle* st = doc.textStyle(sid.value != 0 ? sid : doc.header().currentTextStyle);
     if (st && st->annotative) {
         e.common.annotative = true;
-        e.common.annoScales = ScaleList(std::vector<double>{currentAnnotationScale(doc.header())});
+        e.common.annoScales = ScaleList(std::vector<double>{newAnnotationScale(doc.header(), e)});
     }
 }
 

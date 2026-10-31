@@ -387,7 +387,7 @@ std::vector<AnnotationGhost> annotationGhosts(const Document& doc, std::span<con
         if (!e || !e->common.annotative || e->common.annoScales.size() < 2 ||
             kind(*e) == EntityKind::Insert)
             continue;
-        const double shown = annotationFactor(doc.header(), e->common, ctx.annoScale);
+        const double shown = annotationFactor(doc.header(), *e, ctx.annoScale);
         for (double n : e->common.annoScales) {
             if (n == shown || !(n > 0))
                 continue;

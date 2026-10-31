@@ -5624,6 +5624,34 @@ ViewportRect Gui::frame() {
             dl->PopClipRect();
         }
     }
+    // Annotation zones (ANNOZONE): a thin frame and "name 1:N" label for each, model space only.
+    // They are guides on screen and never plot.
+    if (!core_.inPaperSpace() && annotationZonesShown(core_.document().header())) {
+        const auto zones = annotationZones(core_.document().header());
+        if (!zones.empty()) {
+            const double sc = ImGui::GetIO().DisplayFramebufferScale.x;
+            ImDrawList* dl = ImGui::GetBackgroundDrawList();
+            dl->PushClipRect(ImVec2(rect.x, rect.y), ImVec2(rect.x + rect.w, rect.y + rect.h));
+            const ImU32 col = IM_COL32(61, 139, 253, 150);
+            for (const AnnotationZone& z : zones) {
+                const Vec2 a = core_.camera().worldToScreen({z.box.min.x, z.box.max.y});
+                const Vec2 b = core_.camera().worldToScreen({z.box.max.x, z.box.min.y});
+                const ImVec2 p0(rect.x + static_cast<float>(std::min(a.x, b.x) / sc),
+                                rect.y + static_cast<float>(std::min(a.y, b.y) / sc));
+                const ImVec2 p1(rect.x + static_cast<float>(std::max(a.x, b.x) / sc),
+                                rect.y + static_cast<float>(std::max(a.y, b.y) / sc));
+                dl->AddRect(p0, p1, col, 0.0f, 0, 1.0f);
+                if (p1.x - p0.x > 40 * dpiScale_) {
+                    char buf[48];
+                    std::snprintf(buf, sizeof buf, "  1:%g", z.scale);
+                    const std::string label = z.name + buf;
+                    dl->AddText(ImVec2(p0.x + 4 * dpiScale_, p0.y + 3 * dpiScale_), col,
+                                label.c_str());
+                }
+            }
+            dl->PopClipRect();
+        }
+    }
     if (const auto n = core_.dragSelectCount(); n && (*n > 0 || core_.inPaperSpace())) {
         const ImVec2 at(ImGui::GetIO().MousePos.x + 16 * dpiScale_,
                         ImGui::GetIO().MousePos.y + 20 * dpiScale_);

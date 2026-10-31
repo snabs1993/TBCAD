@@ -1220,7 +1220,7 @@ std::string Writer::objectsSection() {
         "tbcad.view.",          "tbcad.prop.",          "tbcad.textlayer",   "tbcad.hatchlayer",
         "tbcad.dimlayer",       "tbcad.insbase",        "tbcad.link.",       "tbcad.lintypes",
         "tbcad.selannodisplay", "tbcad.spell.words",    "tbcad.annonew",     "tbcad.pdfosnap",
-        "tbcad.cmdlayers.auto"};
+        "tbcad.cmdlayers.auto", "tbcad.annozones"};
     std::vector<std::pair<std::string, std::string>> settings;
     if (!r12_)
         for (const auto& [key, value] : custom) {
