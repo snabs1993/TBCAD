@@ -1677,7 +1677,8 @@ TEST_CASE("every menu item can be clicked without trouble") {
         h.frame(3);
         for (const auto& it : imgui_items::items())
             if (it.window.find("MainMenuBar") != std::string::npos && !it.label.empty() &&
-                it.label.rfind("##", 0) != 0)  // not the search box
+                it.label.rfind("##", 0) != 0 &&  // not the search box
+                it.label != "Update")            // the version corner's button, not a menu
                 tops.push_back(it.label);
     }
     REQUIRE(tops.size() >= 5);

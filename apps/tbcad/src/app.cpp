@@ -1682,9 +1682,11 @@ void App::frame() {
     if (PhaseTimer::enabled())
         gPhase[0] += pt.lap();
 
-    const std::string title = core_->windowTitle();
+    // "TBCAD 0.1.0-test.14 - drawing.dxf*": the build right after the program name.
+    const std::string title = std::string("TBCAD " TBCAD_VERSION " - ") + core_->displayName() +
+                              (core_->modified() ? "*" : "");
     if (title != lastTitle_) {
-        glfwSetWindowTitle(window_, (title + " " TBCAD_VERSION).c_str());
+        glfwSetWindowTitle(window_, title.c_str());
         lastTitle_ = title;
     }
 

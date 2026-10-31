@@ -91,6 +91,7 @@ public:
     // Looks for a newer version in the background (the program start does this once a day when the
     // setting allows; Help > Check for Updates does it on request and always answers).
     void checkForUpdates(bool manual);
+    void versionCorner();
     // After the main loop: runs the downloaded installer when the user chose "Install and restart".
     void launchPendingInstaller();
     // The window's close button: asks to save first when needed. Returns true when it is fine to

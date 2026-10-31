@@ -232,3 +232,11 @@ TEST_CASE("blank drawing: text goes on the layer the user made current") {
     h.frame(2);
     CHECK(textOn("0,100") == "S-NOTE");
 }
+
+TEST_CASE("test.14: the menu bar shows which build this is and an Update button") {
+    Harness h(1920, 1080);
+    h.captureText(true);
+    h.frame(3);
+    CHECK(h.shownText().find("TBCAD " TBCAD_VERSION) != std::string::npos);
+    CHECK(h.shownText().find("Update") != std::string::npos);
+}

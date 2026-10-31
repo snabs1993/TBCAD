@@ -1639,7 +1639,28 @@ void Gui::menuBar() {
     if (compact_ && flag("ui.toolstrip", true))
         toolStrip(true);
     searchBox();
+    versionCorner();
     ImGui::EndMainMenuBar();
+}
+
+// The right end of the menu bar: which build this is, and a button that looks for a newer one
+// (Help > Check for Updates).
+void Gui::versionCorner() {
+    const std::string label = std::string("TBCAD ") + TBCAD_VERSION;
+    const ImGuiStyle& st = ImGui::GetStyle();
+    const float textW = ImGui::CalcTextSize(label.c_str()).x;
+    const float buttonW = ImGui::CalcTextSize("Update").x + st.FramePadding.x * 2;
+    const float width = textW + st.ItemSpacing.x + buttonW + st.WindowPadding.x;
+    const float x = ImGui::GetWindowWidth() - width;
+    if (x < ImGui::GetCursorPosX() + 8.0f * dpiScale_)
+        return;  // the window is too narrow for it
+    ImGui::SetCursorPosX(x);
+    ImGui::TextDisabled("%s", label.c_str());
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Update"))
+        checkForUpdates(true);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Look for a newer TBCAD and install it");
 }
 
 // The search box in the middle of the menu bar: type a command name, an alias, a description word
