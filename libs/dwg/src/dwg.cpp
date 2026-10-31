@@ -281,6 +281,96 @@ Result<dxf::ImportResult> importDwg(std::span<const std::byte> bytes,
                 report.summary(code::kSkippedObject, t);
             }
         }
+        {
+            // Inserts of a block named like TBCAD_DWG_TRACE_BLOCK (default "RRL", the road reserve
+            // line block an S2312 sheet hides): where they sit and what could hide them.
+            const char* env = std::getenv("TBCAD_DWG_TRACE_BLOCK");
+            const std::string needle = env && *env ? env : "RRL";
+            auto nameOf = [&](std::uint64_t h) {
+                const auto b = drawing.blocks.find(h);
+                return b == drawing.blocks.end() ? std::string("?") : b->second.name;
+            };
+            auto dictText = [&](std::uint64_t h) {
+                std::string t;
+                const auto d = drawing.dictionaries.find(h);
+                if (d == drawing.dictionaries.end())
+                    return std::string(h ? " not read" : " none");
+                for (const auto& [nm, th] : d->second) {
+                    const auto ty = drawing.rawType.find(th);
+                    t += " [" + nm + " type " +
+                         (ty == drawing.rawType.end() ? std::string("?")
+                                                      : std::to_string(ty->second));
+                    if (const auto sub = drawing.dictionaries.find(th);
+                        sub != drawing.dictionaries.end())
+                        for (const auto& [n2, h2] : sub->second)
+                            t += " {" + n2 + "}";
+                    t += "]";
+                }
+                return t;
+            };
+            std::size_t shown = 0;
+            for (const auto& e : drawing.entities) {
+                if (e.dxfType != "INSERT" || shown >= 8)
+                    continue;
+                const std::string bn = nameOf(e.blockHeader);
+                if (bn.find(needle) == std::string::npos)
+                    continue;
+                ++shown;
+                const auto l = drawing.layers.find(e.layer);
+                std::string listedBy;
+                for (const auto& [bh, blk] : drawing.blocks)
+                    if (std::find(blk.members.begin(), blk.members.end(), e.handle) !=
+                        blk.members.end())
+                        listedBy += " " + blk.name;
+                std::string t =
+                    "block trace: insert " + std::to_string(e.handle) + " of " + bn +
+                    " entity mode " + std::to_string(e.entmode) + " owner " + nameOf(e.owner) +
+                    " listed by" + (listedBy.empty() ? std::string(" none") : listedBy) +
+                    " layer " + (l == drawing.layers.end() ? std::string("?") : l->second.name) +
+                    (e.invisible ? " INVISIBLE" : "") + " xdic" + dictText(e.xdic) + " groups:";
+                for (const auto& g : e.groups) {
+                    t += " " + std::to_string(g.code) + "=";
+                    if (const auto* str = std::get_if<std::string>(&g.value.v))
+                        t += *str;
+                    else if (const auto* d = std::get_if<double>(&g.value.v))
+                        t += std::to_string(*d);
+                    else
+                        t += std::to_string(std::get<long long>(g.value.v));
+                }
+                report.summary(code::kSkippedObject, t);
+                if (shown == 1) {
+                    // The block itself: flags and what its members are.
+                    std::map<std::string, std::size_t> kinds;
+                    std::size_t hidden = 0;
+                    for (const auto& m : drawing.entities)
+                        if (m.entmode == 0 && m.owner == e.blockHeader) {
+                            const auto ml = drawing.layers.find(m.layer);
+                            ++kinds[m.dxfType + " on " +
+                                    (ml == drawing.layers.end() ? std::string("?")
+                                                                : ml->second.name)];
+                            hidden += m.invisible ? 1 : 0;
+                        }
+                    const auto b = drawing.blocks.find(e.blockHeader);
+                    std::string u =
+                        "block trace: block " + bn + " flags " +
+                        std::to_string(b == drawing.blocks.end() ? -1 : b->second.flags) + ", " +
+                        std::to_string(hidden) + " invisible members;";
+                    for (const auto& [k, c] : kinds)
+                        u += " " + k + " x" + std::to_string(c);
+                    report.summary(code::kSkippedObject, u);
+                }
+            }
+            std::map<std::string, std::size_t> wipeouts;
+            for (const auto& e : drawing.entities)
+                if (e.dxfType == "WIPEOUT")
+                    ++wipeouts[e.entmode == 0   ? nameOf(e.owner)
+                               : e.entmode == 1 ? "paper space"
+                                                : "model space"];
+            std::string w = "wipeouts by owner:";
+            for (const auto& [k, c] : wipeouts)
+                w += " " + k + " x" + std::to_string(c);
+            report.summary(code::kSkippedObject, w);
+        }
         if (!drawing.entityFailures.empty()) {
             std::string t = "entities left out (damaged / number out of range):";
             for (const auto& [type, c] : drawing.entityFailures)

@@ -1448,13 +1448,13 @@ TEST_CASE("layers frozen in a layout viewport come through to the layout (R2000 
 
 TEST_CASE("an entity of a class the reader does not know is reported as not shown") {
     DwgFile f;
-    const int wipeType = f.addClass("WIPEOUT");
+    const int imageType = f.addClass("IMAGE");
     f.add(kLtype, linetype(kLtype, "Continuous"));
     f.add(kLayer0, layer(kLayer0, "0", 7, kLtype));
     f.add(kStyle, style(kStyle, "Standard"));
     f.add(kModel, blockHeader(kModel, "*Model_Space", 0, 0));
     f.add(kPaper, blockHeader(kPaper, "*Paper_Space", 0, 0));
-    ObjectWriter o(wipeType, 0x70);
+    ObjectWriter o(imageType, 0x70);
     o.entityCommon(2, 256, 0);
     f.add(0x70, o.finish());
     dxf::Report report;
@@ -1462,8 +1462,65 @@ TEST_CASE("an entity of a class the reader does not know is reported as not show
     REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
     bool told = false;
     for (const auto& d : report.diagnostics())
-        if (d.severity == dxf::Severity::Warning &&
-            d.message.find("WIPEOUT x1") != std::string::npos)
+        if (d.severity == dxf::Severity::Warning && d.message.find("IMAGE x1") != std::string::npos)
             told = true;
     CHECK(told);
+}
+
+TEST_CASE("a WIPEOUT comes through as a wipeout that hides what is behind it") {
+    // test.13: drawings mask parts of a plan with wipeouts; the reader used to leave them out,
+    // so what the original sheet hides showed through. (R2000 file: the test writer has no
+    // R2004+ class section; R2010+ only adds the clip mode bit.)
+    DwgFile f;
+    const int wipeType = f.addClass("WIPEOUT");
+    f.add(kLtype, linetype(kLtype, "Continuous"));
+    f.add(kLayer0, layer(kLayer0, "0", 7, kLtype));
+    f.add(kStyle, style(kStyle, "Standard"));
+    f.add(kModel, blockHeader(kModel, "*Model_Space", 0, 0));
+    f.add(kPaper, blockHeader(kPaper, "*Paper_Space", 0, 0));
+    f.add(0x20, line(0x20, 2, 0, 0, 0, 100, 50));
+    ObjectWriter o(wipeType, 0x70);
+    o.entityCommon(2, 256, 0);
+    o.main.bl(0);  // class version
+    for (double v : {10.0, 20.0, 0.0, 40.0, 0.0, 0.0, 0.0, 30.0, 0.0})
+        o.main.bd(v);  // insertion point, u and v vectors: a 40 x 30 frame
+    o.main.rd(1.0);
+    o.main.rd(1.0);  // image size
+    o.main.bs(7);    // display properties
+    o.main.b(true);  // clipping
+    o.main.rc(50);
+    o.main.rc(50);
+    o.main.rc(0);
+    o.main.bs(2);  // polygon boundary
+    o.main.bl(5);
+    for (double v : {-0.5, 0.5, 0.5, 0.5, 0.5, -0.5, -0.5, -0.5, -0.5, 0.5})
+        o.main.rd(v);
+    commonHandles(o, 2, 0, kLayer0);
+    o.handles.handle(5, 0);  // image definition
+    o.handles.handle(3, 0);  // its reactor
+    f.add(0x70, o.finish());
+    dxf::Report report;
+    auto r = importDwg(asBytes(f.build()), dxf::ImportOptions{}, report);
+    REQUIRE_MESSAGE(r.ok(), (r.ok() ? "" : r.error().message));
+    const Document& doc = *r.value().document;
+    int wipeouts = 0;
+    for (EntityId id : doc.modelSpace()) {
+        const Entity& e = *doc.find(id);
+        if (!e.common.wipeout)
+            continue;
+        ++wipeouts;
+        const auto* pl = entityAs<PolylineData>(e);
+        REQUIRE(pl);
+        REQUIRE(pl->v.size() == 4);
+        BBox2 box;
+        for (const PolyVertex& v : pl->v)
+            box.expand(v.p);
+        CHECK(box.min.x == doctest::Approx(10));
+        CHECK(box.min.y == doctest::Approx(20));
+        CHECK(box.max.x == doctest::Approx(50));
+        CHECK(box.max.y == doctest::Approx(50));
+    }
+    CHECK(wipeouts == 1);
+    for (const auto& d : report.diagnostics())
+        CHECK(d.message.find("WIPEOUT x") == std::string::npos);
 }
