@@ -655,3 +655,15 @@ TEST_CASE("HATCH starts at HPORIGIN, and SUPERHATCH fills an area with whole cop
     // 20 mm cells from (5,7): 4 columns and 2 rows fit wholly inside 100 x 60.
     CHECK(inserts == 8);
 }
+
+TEST_CASE("HATCH: a pattern picked in the panel shows in the prompt as the cursor moves") {
+    Fixture f;
+    f.rect({0, 0}, {100, 60});
+    f.host->setSetting("hatch.pattern", "SOLID");
+    f.host->run("HATCH", {});  // waits for a point
+    REQUIRE(f.host->prompts().back().find("SOLID") != std::string::npos);
+    f.host->setSetting("hatch.pattern", "LINE45");  // what a click in the panel does
+    f.host->runner().pointerMoved(RawInput{{500, 500}, {}, 1});
+    CHECK(f.host->prompts().back().find("LINE45") != std::string::npos);
+    f.host->feed({ScriptItem::esc()});
+}

@@ -45,6 +45,7 @@ CommandContext::Awaiter<PointResult> CommandContext::getPoint(std::string prompt
     auto r = make(detail::PromptKind::Point, std::move(prompt), std::move(opts.keywords));
     r.base = opts.base;
     r.preview = std::move(opts.preview);
+    r.liveText = std::move(opts.liveText);
     r.allowNone = opts.allowNone;
     r.freeText = opts.freeText;
     r.numberAsText = opts.numberAsText;

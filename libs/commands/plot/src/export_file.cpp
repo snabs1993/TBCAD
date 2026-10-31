@@ -79,9 +79,15 @@ Result<std::string> exportFile(const Document& doc, const cmd::IHost& host,
     char size[64], scale[32];
     std::snprintf(size, sizeof size, "%.0f x %.0f mm", lay.pageWidthMm, lay.pageHeightMm);
     std::snprintf(scale, sizeof scale, "1:%.4g", 1.0 / lay.paperPerUnit);
+    // A layout plots on its own sheet at 1:1 (its viewports keep their scales): name that sheet,
+    // not the paper of the page settings.
+    std::string paper = settings.paperName;
+    if (!layoutName.empty())
+        if (const auto l = layout::findLayout(doc, layoutName))
+            paper = l->paperName;
     std::string text = (layoutName.empty() ? std::string() : "Layout " + layoutName + ": ") +
                        "Plotted " + std::to_string(sheet.value().entityCount) + " objects to " +
-                       file + " (" + settings.paperName + ", " + size + ", scale " + scale + ")";
+                       file + " (" + paper + ", " + size + ", scale " + scale + ")";
     if (format == Format::Png || format == Format::Jpeg) {
         char res[48];
         std::snprintf(res, sizeof res, ", %.0f dpi", dpi);
