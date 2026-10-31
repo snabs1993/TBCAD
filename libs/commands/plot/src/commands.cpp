@@ -19,6 +19,7 @@ std::unique_ptr<cmd::Command> makePrinterCommand();
 std::unique_ptr<cmd::Command> makeETransmitCommand();
 std::unique_ptr<cmd::Command> makeCompareCommand();
 std::unique_ptr<cmd::Command> makePlotFrameCommand();
+std::unique_ptr<cmd::Command> makeFrameSetCommand();
 
 Result<std::unique_ptr<Document>> readDrawingFile(const std::filesystem::path& file) {
     std::string ext = file.extension().string();
@@ -510,6 +511,19 @@ public:
     std::string_view description() const override { return "Show the Plot panel with preview"; }
     cmd::Task run(cmd::CommandContext& ctx) override {
         ctx.host().openPanel("plot");
+        co_return;
+    }
+};
+
+// PLOTFRAMEPANEL: the Plot Frames panel (PLOTFRAME and FRAMESET are its typed forms).
+class PlotFramePanelCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "PLOTFRAMEPANEL"; }
+    std::string_view description() const override {
+        return "Show the Plot Frames panel: model space sheets and plot sets";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().openPanel("plotframes");
         co_return;
     }
 };
@@ -1167,12 +1181,14 @@ void registerCommands(cmd::Registry& registry) {
         std::make_unique<PlotCommand>("EXPORTJPG", std::vector<std::string>{"EXPORTJPEG"},
                                       "Export the drawing to a JPEG image", Format::Jpeg));
     (void)registry.add(std::make_unique<PlotPanelCommand>());
+    (void)registry.add(std::make_unique<PlotFramePanelCommand>());
     (void)registry.add(std::make_unique<PlotSetCommand>());
     (void)registry.add(std::make_unique<PublishCommand>());
     (void)registry.add(std::make_unique<PlotStampCommand>());
     (void)registry.add(makeETransmitCommand());
     (void)registry.add(makeCompareCommand());
     (void)registry.add(makePlotFrameCommand());
+    (void)registry.add(makeFrameSetCommand());
     (void)registry.add(std::make_unique<PlotStyleCommand>());
     (void)registry.add(std::make_unique<PageSetupCommand>());
     (void)registry.add(std::make_unique<PageSetupPanelCommand>());

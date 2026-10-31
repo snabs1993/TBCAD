@@ -54,4 +54,37 @@ exportlib::PlotSettings frameSettings(const Document& doc, const exportlib::Plot
 // "A3 landscape 1:100" (or "Fit").
 std::string describeFrame(const PlotFrame& frame);
 
+// ---- plot sets: named lists of frames plotted together ------------------------------------------
+// ("Issue 1": sheets 1, 5 and 7 of 100). Kept in Header::custom["tbcad.plotsets"]; renaming a
+// frame renames it in every set, deleting a frame takes it out of every set.
+inline constexpr const char* kPlotSetKey = "tbcad.plotsets";
+
+struct PlotSet {
+    std::string name{};
+    std::vector<std::string> frames{};  // frame names, in plot order
+};
+
+std::vector<PlotSet> plotSets(const Document& doc);
+std::optional<PlotSet> findPlotSet(const Document& doc, std::string_view name);
+// The same rules as frame names.
+Result<void> validatePlotSetName(const Document& doc, std::string_view name,
+                                 std::string_view ignore = {});
+// Creates the set or replaces the one with the same name in its place. Every frame must exist
+// (spelling is taken from the frame); a frame listed twice is kept once.
+Result<void> savePlotSet(Transaction& tx, const PlotSet& set);
+Result<void> deletePlotSet(Transaction& tx, const std::string& name);
+Result<void> renamePlotSet(Transaction& tx, const std::string& name, const std::string& newName);
+// A copy of the set under a new name.
+Result<void> copyPlotSet(Transaction& tx, const std::string& name, const std::string& newName);
+// Adds frames at the end (ones already in the set are skipped) or takes them out.
+Result<void> addToPlotSet(Transaction& tx, const std::string& name,
+                          const std::vector<std::string>& frames);
+Result<void> removeFromPlotSet(Transaction& tx, const std::string& name,
+                               const std::vector<std::string>& frames);
+// The first free "Set N".
+std::string nextPlotSetName(const Document& doc);
+// Frame names from typed text: names and frame numbers (1-based, as listed) separated by commas,
+// and ranges of numbers ("1, 5, 7-9, Roof plan"). An unknown name or number is an error naming it.
+Result<std::vector<std::string>> resolveFrameList(const Document& doc, const std::string& text);
+
 }  // namespace tbcad::layout

@@ -711,6 +711,7 @@ void registerPlotPanel(ui::UiRegistry& registry) {
     registry.addPanel("plotpreview", "Plot Preview", drawPlotPreview, false);
     registerStylePanel(registry);
     registerPublishPanel(registry);
+    registerFramesPanel(registry);
 }
 
 }  // namespace tbcad::plot

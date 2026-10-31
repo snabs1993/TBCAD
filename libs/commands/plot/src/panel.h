@@ -11,5 +11,7 @@ void registerPlotPanel(ui::UiRegistry& registry);
 void registerStylePanel(ui::UiRegistry& registry);
 // The PUBLISH dialog ("publish"): sheet list, page setup per sheet, one multi-page PDF.
 void registerPublishPanel(ui::UiRegistry& registry);
+// The Plot Frames panel ("plotframes"): model space sheets and plot sets.
+void registerFramesPanel(ui::UiRegistry& registry);
 
 }  // namespace tbcad::plot
