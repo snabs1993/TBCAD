@@ -50,6 +50,7 @@ enum Type : std::uint32_t {
     kSpatialFilter = 400000,
     kXrecord = 500000,
     kMLeader = 300000,
+    kWipeout = 600000,
     kViewport = 0x22,
     kDimOrdinate = 0x14,
     kDimLinear = 0x15,
@@ -617,6 +618,8 @@ private:
                 type = kMLeader;
             else if (cls == "SORTENTSTABLE")
                 type = kSortEnts;
+            else if (cls == "WIPEOUT")
+                type = kWipeout;
             else if (cls == "SPATIAL_FILTER")
                 type = kSpatialFilter;
             else if (cls == "XRECORD")
@@ -686,6 +689,7 @@ private:
             case kViewport:
             case kLeader:
             case kMLeader:
+            case kWipeout:
             case kDimOrdinate:
             case kDimLinear:
             case kDimAligned:
@@ -1502,6 +1506,9 @@ private:
             case kMLeader:
                 mleader(r, e);
                 break;
+            case kWipeout:
+                wipeout(r, e);
+                break;
             case kDimOrdinate:
             case kDimLinear:
             case kDimAligned:
@@ -2177,6 +2184,39 @@ private:
     static void point2(EntityRec& e, int code, double x, double y) {
         add(e, code, x);
         add(e, code + 10, y);
+    }
+
+    // WIPEOUT (stored like IMAGE, ODA spec 20.4.89): an image frame whose clip boundary hides
+    // what is drawn before it. The image definition handles that follow are not needed.
+    void wipeout(BitReader& r, EntityRec& e) {
+        e.dxfType = "WIPEOUT";
+        add(e, 90, static_cast<long long>(r.bl()));  // class version
+        point3(e, 10, bd3(r));                       // insertion point
+        point3(e, 11, bd3(r));                       // u vector (one pixel)
+        point3(e, 12, bd3(r));                       // v vector
+        const double w = r.rd();
+        const double h = r.rd();
+        point2(e, 13, w, h);                    // image size in pixels
+        add(e, 70, static_cast<int>(r.bs()));   // display properties
+        add(e, 280, static_cast<int>(r.b()));   // clipping on
+        add(e, 281, static_cast<int>(r.rc()));  // brightness
+        add(e, 282, static_cast<int>(r.rc()));  // contrast
+        add(e, 283, static_cast<int>(r.rc()));  // fade
+        if (fmt_.r2010)
+            add(e, 290, static_cast<int>(r.b()));  // clip mode (inverted)
+        const int boundary = r.bs();
+        add(e, 71, boundary);
+        const std::uint32_t n = boundary == 1 ? 2 : r.bl();
+        if (n > 100000) {
+            r.fail();
+            return;
+        }
+        add(e, 91, static_cast<long long>(n));
+        for (std::uint32_t i = 0; i < n && !r.failed(); ++i) {
+            const double x = r.rd();
+            const double y = r.rd();
+            point2(e, 14, x, y);
+        }
     }
 
     // HATCH (ODA spec 20.4.75, R2000 layout). Angles are taken as radians, as for the other
@@ -3391,7 +3431,7 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r89: MULTILEADER read from its embedded annotation context (leader lines and note); "
+    return "r90: WIPEOUT read (masks what is drawn before it), block trace in --dwg-info; r89: MULTILEADER read from its embedded annotation context (leader lines and note); "
            "r88: layers with transparency listed by name and value; r88: the stream walk is used "
            "when it finds 70% of the map entries, stray damaged "
            "layouts left out, up to 200 lost places listed; r87: entity and layer transparency "
