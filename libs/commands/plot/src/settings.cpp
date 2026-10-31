@@ -622,4 +622,15 @@ std::string applyAssignedPageSetup(const Document& doc, cmd::IHost& host) {
     return msg;
 }
 
+std::string followPlottedLayoutSetup(const Document& doc, cmd::IHost& host) {
+    // AutoCAD keeps plot settings per layout: the first plot of a layout (the tab on screen) uses
+    // its own page setup, e.g. the plot style table the drawing names; a change made while
+    // plotting it stays until another layout or another drawing is plotted.
+    const std::string key = host.documentFile() + '\n' + plotLayout(host);
+    if (host.setting("tmp.plot.setupFollowed").value_or("") == key)
+        return {};
+    host.setSetting("tmp.plot.setupFollowed", key);
+    return applyAssignedPageSetup(doc, host);
+}
+
 }  // namespace tbcad::plot

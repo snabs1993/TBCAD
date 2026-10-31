@@ -139,7 +139,11 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         PlotSettings s;
-        timePhase("load settings", [&] { s = loadSettings(ctx.host()); });
+        timePhase("load settings", [&] {
+            if (const std::string m = followPlottedLayoutSetup(ctx.doc(), ctx.host()); !m.empty())
+                ctx.message(m);
+            s = loadSettings(ctx.host());
+        });
         Format format = format_;
         // Strict (set by scripted callers such as the MCP tools): a value that cannot be used ends
         // the command with an "Error:" message instead of falling back to the old setting.
@@ -414,7 +418,8 @@ public:
                     std::string m;
                     timePhase("layout page setup", [&] {
                         setPlotLayout(ctx.host(), name);
-                        m = applyAssignedPageSetup(ctx.doc(), ctx.host());
+                        ctx.host().setSetting("tmp.plot.setupFollowed", "");
+                        m = followPlottedLayoutSetup(ctx.doc(), ctx.host());
                     });
                     if (!m.empty()) {
                         s = loadSettings(ctx.host());
