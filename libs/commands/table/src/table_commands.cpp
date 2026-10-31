@@ -91,13 +91,13 @@ public:
         cmd::DistanceOptions dop;
         dop.allowZero = false;
         dop.defaultValue = style.colWidth * k;
-        auto cw = co_await ctx.getDistance(
-            "Column width <" + shortNumber(style.colWidth * k) + ">", dop);
+        auto cw =
+            co_await ctx.getDistance("Column width <" + shortNumber(style.colWidth * k) + ">", dop);
         if (!cw.ok())
             co_return;
         dop.defaultValue = style.rowHeight * k;
-        auto rh = co_await ctx.getDistance(
-            "Row height <" + shortNumber(style.rowHeight * k) + ">", dop);
+        auto rh =
+            co_await ctx.getDistance("Row height <" + shortNumber(style.rowHeight * k) + ">", dop);
         if (!rh.ok())
             co_return;
         // Text, margin and cell text heights follow the row height chosen.
@@ -112,8 +112,8 @@ public:
 
         const std::size_t nrows =
             static_cast<std::size_t>(rows.value) + (titleText.empty() ? 0u : 1u);
-        const double textHeight = rh.value == style.rowHeight ? style.textHeight
-                                                              : style.textHeight * size;
+        const double textHeight =
+            rh.value == style.rowHeight ? style.textHeight : style.textHeight * size;
         auto build = [=](Vec2 at) {
             return table::make(nrows, static_cast<std::size_t>(cols.value), cw.value, rh.value,
                                titleText, at, textHeight);
@@ -222,10 +222,16 @@ public:
             if (k == "Next" || k == "Previous") {
                 // Tab / Shift+Tab: step to the neighbouring cell (wrapping across rows), then edit
                 // it.
+                // Cells covered by a merge (the title row) are stepped over.
                 const std::size_t cols = table::colCount(*t), rows = table::rowCount(*t);
                 std::size_t idx = cur.row * cols + cur.col;
-                idx = k == "Next" ? (idx + 1) % (rows * cols)
-                                  : (idx + rows * cols - 1) % (rows * cols);
+                for (std::size_t n = 0; n < rows * cols; ++n) {
+                    idx = k == "Next" ? (idx + 1) % (rows * cols)
+                                      : (idx + rows * cols - 1) % (rows * cols);
+                    const table::CellRef a = table::anchorOf(*t, idx / cols, idx % cols);
+                    if (a.row == idx / cols && a.col == idx % cols)
+                        break;
+                }
                 cur.row = idx / cols;
                 cur.col = idx % cols;
                 k = "Text";

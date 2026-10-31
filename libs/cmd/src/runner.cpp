@@ -1,5 +1,6 @@
 #include "tbcad/cmd/runner.h"
 
+#include <algorithm>
 #include <cerrno>
 #include <cmath>
 #include <cstdlib>
@@ -510,6 +511,42 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
         const EffectiveLayer l = doc_.effective(e.common.layer);
         return l.on && !l.frozen && !l.locked;
     };
+    // The objects under a typed point, as a click there with the pick box would find them
+    // (the newest first). Empty when the host cannot select by shape.
+    auto pickAt = [&](Vec2 p) {
+        double px = 6;
+        if (auto a = host_.setting("pick.aperturePx")) {
+            const double v = std::strtod(a->c_str(), nullptr);
+            if (v > 0)
+                px = v;
+        }
+        const double scale = host_.view().scale > 0 ? host_.view().scale : 1;
+        // A small box first, growing to the pick box: the object nearest the point wins.
+        std::vector<EntityId> out;
+        for (double f : {0.125, 0.25, 0.5, 1.0}) {
+            const double d = f * px * scale;
+            auto found = host_.selectShape(IHost::SelectShape::Crossing,
+                                           {Vec2{p.x - d, p.y - d}, Vec2{p.x + d, p.y + d}});
+            if (!found)
+                return out;
+            for (EntityId id : *found)
+                if (const Entity* e = doc_.find(id); e && pickable(*e) && accepts(id))
+                    out.push_back(id);
+            if (!out.empty())
+                break;
+        }
+        std::sort(out.begin(), out.end(), [](EntityId a, EntityId b) { return a > b; });
+        return out;
+    };
+    // The newest object the user could pick by hand (Last).
+    auto lastPickable = [&]() -> EntityId {
+        const Entity* last = nullptr;
+        doc_.forEachEntity([&](const Entity& e) {
+            if (pickable(e) && accepts(e.common.id) && (!last || e.common.id > last->common.id))
+                last = &e;
+        });
+        return last ? last->common.id : EntityId{};
+    };
     auto addCollected = [&](EntityId id) {
         if (collectedSet_.insert(id).second)
             collected_.push_back(id);
@@ -956,6 +993,11 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                     if (!p)
                         p = parsePointText(text, pc);
                     if (p) {
+                        // On an object it picks that object, as a click there does.
+                        if (auto under = pickAt(*p); !under.empty()) {
+                            lastPoint_ = *p;
+                            return applyBatch({under.front()}, false, "No objects found.");
+                        }
                         shape_ = SelShape::Box;
                         shapePts_.clear();
                         return addShapePoint(*p);
@@ -1113,6 +1155,37 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
                     ans.status = Status::Ok;
                     ans.integer = v;
                     return complete(std::move(ans));
+                }
+                case K::Entity: {
+                    // Typed instead of clicked: Last, or a point on the object.
+                    const std::string up = upper(text);
+                    EntityId id{};
+                    std::optional<Vec2> p;
+                    if (up == "L" || up == "LAST") {
+                        id = lastPickable();
+                        if (!id)
+                            return reject("No objects found.");
+                    } else {
+                        const PointParseContext pc = parseContext(req);
+                        if (parser_)
+                            p = parser_->parsePoint(text, pc);
+                        if (!p)
+                            p = parsePointText(text, pc);
+                        if (p) {
+                            auto under = pickAt(*p);
+                            if (under.empty())
+                                return reject("No object at " + text + ".");
+                            id = under.front();
+                            lastPoint_ = *p;
+                        }
+                    }
+                    if (id) {
+                        ans.status = Status::Ok;
+                        ans.entity = id;
+                        ans.point = p ? *p : lastPoint_;
+                        return complete(std::move(ans));
+                    }
+                    [[fallthrough]];
                 }
                 default: {
                     std::string why = "Invalid option \"" + text + "\".";
