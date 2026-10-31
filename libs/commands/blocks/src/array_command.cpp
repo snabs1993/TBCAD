@@ -330,7 +330,7 @@ private:
                     " degrees [Items/Angle/Between/Rotate/Associative] <Accept>",
                 cmd::KeywordOptions{
                     .keywords = {"Accept", "Items", "Angle", "Fill", "Between", "Rotate",
-                                 "Associative"},
+                                 "Associative", "eXit"},
                     .defaultKeyword = "Accept",
                     .preview = [&doc, source, c, n, fillAngle, rotate, pixel](Vec2,
                                                                               DisplayList& out) {
@@ -342,7 +342,7 @@ private:
                     }});
             if (!opt.ok())
                 co_return;
-            if (opt.keyword == "Accept")
+            if (opt.keyword == "Accept" || opt.keyword == "eXit")  // eXit as AutoCAD scripts type
                 break;
             if (opt.keyword == "Items") {
                 auto v = co_await ctx.getInteger(
@@ -446,14 +446,14 @@ private:
                     " [COUnt/Rows/Columns/Spacing/Angle/Associative] <Accept>",
                 cmd::KeywordOptions{
                     .keywords = {"Accept", "COUnt", "Rows", "Columns", "Spacing", "Angle",
-                                 "Associative"},
+                                 "Associative", "eXit"},
                     .defaultKeyword = "Accept",
                     .preview = [&doc, source, spec, pixel](Vec2, DisplayList& out) {
                         previewCopies(doc, source, blocks::rectangularTransforms(spec), pixel, out);
                     }});
             if (!opt.ok())
                 co_return;
-            if (opt.keyword == "Accept")
+            if (opt.keyword == "Accept" || opt.keyword == "eXit")  // eXit as AutoCAD scripts type
                 break;
             if (opt.keyword == "COUnt") {
                 // As AutoCAD: columns, then rows, in one go.

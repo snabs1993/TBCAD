@@ -168,6 +168,7 @@ public:
             return pick - Vec2{v.x * c - v.y * sn, v.x * sn + v.y * c};
         };
         Vec2 pickPoint{};
+        bool scaleChosen = false, rotationChosen = false;  // set by the keywords before the point
         for (std::size_t placed = 0;; ++placed) {
             data.attribs = blocks::defaultAttribs(doc, block);
             for (;;) {
@@ -222,6 +223,7 @@ public:
                         continue;
                     }
                     data.scale = {s.value, s.value};
+                    scaleChosen = true;
                 } else if (kw == "X" || kw == "Y") {
                     auto s = co_await ctx.getReal("Specify " + kw + " scale factor <1>",
                                                   cmd::RealOptions{.defaultValue = 1});
@@ -232,6 +234,7 @@ public:
                         continue;
                     }
                     (kw == "X" ? data.scale.x : data.scale.y) = s.value;
+                    scaleChosen = true;
                 } else if (kw == "Explode") {
                     explodeAfter = !explodeAfter;
                     ctx.message(explodeAfter ? "The block will be exploded when placed."
@@ -248,6 +251,7 @@ public:
                     if (!a.ok())
                         co_return;
                     data.rotation = normalizeAngle(a.value);
+                    rotationChosen = true;
                 }
             }
 
@@ -288,6 +292,35 @@ public:
                 if (!a.ok())
                     co_return;
                 data.rotation = normalizeAngle(a.value);
+            }
+            // -INSERT asks X and Y scale and rotation after the point, as AutoCAD scripts answer
+            // them ("1", "1", "0"); Enter keeps each. Not between the copies of a series.
+            if (typed_ && placed == 0 && !multiple && !fromPanel && !askScale && !askRotation) {
+                if (!scaleChosen) {
+                    auto x = co_await ctx.getReal(
+                        "Enter X scale factor <" + formatDouble(data.scale.x) + ">",
+                        cmd::RealOptions{.defaultValue = data.scale.x});
+                    if (!x.ok())
+                        co_return;
+                    if (x.value != 0)
+                        data.scale = {x.value, x.value};
+                    auto y = co_await ctx.getReal("Enter Y scale factor <use X scale factor>",
+                                                  cmd::RealOptions{.defaultValue = data.scale.x});
+                    if (!y.ok())
+                        co_return;
+                    if (y.value != 0)
+                        data.scale.y = y.value;
+                }
+                if (!rotationChosen) {
+                    cmd::AngleOptions ao;
+                    ao.base = pickPoint;
+                    ao.defaultValue = normalizeAngle(data.rotation - ctx.host().ucsAngle());
+                    ao.inUcs = true;
+                    auto a = co_await ctx.getAngle("Specify rotation angle <0>", std::move(ao));
+                    if (!a.ok())
+                        co_return;
+                    data.rotation = normalizeAngle(a.value);
+                }
             }
             data.position = origin(data, pickPoint);
 

@@ -245,7 +245,7 @@ TEST_CASE("block and insert checks, and an array counts as the objects it shows"
     Practice p("blocks");
     p.core->submitScript("RECTANGLE;0,0;@100,100");
     p.core->submitScript("-BLOCK;BOX;ALL;;0,0;Delete");
-    p.core->submitScript("-INSERT;BOX;R;90;500,0");
+    p.core->submitScript("-INSERT;BOX;R;90;500,0;1;1");
     p.core->submitScript("CIRCLE;1000,0;10");
     p.core->submitScript("ARRAYRECT;L;;COU;3;2;S;50;80;");
     CHECK(passesOn(p, R"({"type": "block", "name": "box", "objects": 1})"));

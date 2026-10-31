@@ -321,7 +321,7 @@ public:
                     : std::vector<std::string>{"Objects",      "Pattern",   "Scale",      "Angle",
                                                "Base",         "Gap",       "Island",     "Link",
                                                "SEparate",     "DRaworder", "ANnotative", "DOuble",
-                                               "Transparency", "Undo"};
+                                               "Transparency", "Undo",      "PRoperties", "SELect"};
             opt.preview = [&](Vec2 cursor, DisplayList& out) {
                 takePanelEdits();
                 hover.draw(ctx, p, cursor, out);
@@ -330,7 +330,32 @@ public:
             std::string what = gradient_ ? gradientSummary(p) : summary(p);
             auto r = co_await ctx.getPoint("Pick internal point (" + what + ")", opt);
             if (r.status == Status::Keyword) {
-                if (r.keyword == "Pattern") {
+                // The words of AutoCAD's -HATCH, for scripts: Properties asks the pattern, then
+                // its scale and angle (none for SOLID); Select is Objects.
+                if (r.keyword == "SELect")
+                    r.keyword = "Objects";
+                if (r.keyword == "PRoperties") {
+                    cmd::StringOptions so;
+                    so.defaultValue = p.pattern;
+                    auto s = co_await ctx.getString("Enter a pattern name or [?/Solid]", so);
+                    if (s.ok())
+                        setPattern(ctx, p, s.text);
+                    if (s.ok() && cmd::toUpperAscii(p.pattern) != "SOLID") {
+                        cmd::RealOptions ro;
+                        ro.defaultValue = p.scale;
+                        ro.min = 1e-6;
+                        auto sc = co_await ctx.getReal("Specify a scale for the pattern", ro);
+                        if (sc.ok()) {
+                            p.scale = sc.value;
+                            p.scaleAuto = false;
+                        }
+                        cmd::AngleOptions ao;
+                        ao.defaultValue = p.angle;
+                        auto a = co_await ctx.getAngle("Specify an angle for the pattern", ao);
+                        if (a.ok())
+                            p.angle = a.value;
+                    }
+                } else if (r.keyword == "Pattern") {
                     cmd::StringOptions so;
                     so.defaultValue = p.pattern;
                     auto s = co_await ctx.getString("Pattern name, ? to list", so);

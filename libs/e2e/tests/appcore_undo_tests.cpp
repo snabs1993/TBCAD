@@ -135,12 +135,14 @@ TEST_CASE("random commands mixed with undo, redo and save keep the drawing and i
         while (pos > 0) {
             REQUIRE(s.core->undo());
             --pos;
+            dirty = true;  // even when the walk ends on the saved state
             CHECK(s.dump() == states[pos]);
         }
         CHECK_FALSE(s.core->undo());
         while (pos + 1 < states.size()) {
             REQUIRE(s.core->redo());
             ++pos;
+            dirty = true;
             CHECK(s.dump() == states[pos]);
         }
         CHECK_FALSE(s.core->redo());

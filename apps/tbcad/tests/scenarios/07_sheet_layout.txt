@@ -121,7 +121,8 @@ OPEN
 @expect objects 14
 @expect on-layer hatch S-COLNHATC 4
 @expect dimension 1
-# A layout with one viewport at 1:100 on the middle of the plan.
+# A layout with one viewport at 1:100 on the middle of the plan (the viewport of the whole plan
+# a new layout comes with is deleted first).
 LAYOUT
 New
 S2312
@@ -132,6 +133,8 @@ Set
 S2312
 @frames 5
 @expect layout S2312
+VPDELETE
+1
 MVIEW
 20,20
 400,277

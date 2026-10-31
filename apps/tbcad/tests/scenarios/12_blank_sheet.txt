@@ -1,0 +1,226 @@
+# A structural floor plan drawn from a blank drawing by typing only, as an engineer would on a
+# first day: drafting variables, layers, a grid with bubbles (a block), columns by ARRAY with a
+# solid fill, beams by OFFSET, dimensions, a note, a load table, then an A1 sheet with a title
+# block, plotted to PDF. Every step that needs the mouse elsewhere is a limit to fix.
+FILEDIA
+0
+OSMODE
+35
+ORTHOMODE
+1
+LUPREC
+0
+TEXTSIZE
+250
+@expect setting drafting.ortho true
+@expect setting text.height 250
+# Layers: -LAYER Make also makes the layer current.
+-LAYER
+Make
+S-GRID
+Color
+1
+S-GRID
+Make
+S-COLN
+Make
+S-BEAM
+Color
+3
+S-BEAM
+Make
+S-DIM
+Color
+2
+S-DIM
+Make
+S-TEXT
+Make
+S-GRID
+
+@expect current-layer S-GRID
+# Grid 1-4 (vertical, 6 m bays) and A-C (horizontal, 5 m bays).
+LINE
+0,-1500
+0,11500
+
+OFFSET
+6000
+L
+18000,0
+
+OFFSET
+6000
+L
+18000,0
+
+OFFSET
+6000
+L
+18000,0
+
+LINE
+-1500,0
+19500,0
+
+OFFSET
+5000
+L
+0,11000
+
+OFFSET
+5000
+L
+0,11000
+
+@expect on-layer line S-GRID 7
+# A grid bubble block: a circle, inserted at each grid end.
+CIRCLE
+0,0
+500
+-BLOCK
+GRIDHEAD
+L
+
+0,0
+Delete
+@expect objects 7
+-INSERT
+GRIDHEAD
+0,-2000
+1
+1
+0
+-INSERT
+GRIDHEAD
+6000,-2000
+1
+1
+0
+@expect insert 2
+# Columns 400 x 400 at every grid crossing: one RECTANG, then a 4 x 3 rectangular array.
+CLAYER
+S-COLN
+RECTANG
+-200,-200
+200,200
+ARRAY
+L
+
+Rectangular
+COUnt
+4
+3
+Spacing
+6000
+5000
+Associative
+No
+X
+@frames 3
+@expect on-layer polyline S-COLN 12
+# A solid fill in the column at grid A-1, picked by a typed point on its edge.
+-HATCH
+Properties
+SOLID
+Select
+200,100
+
+
+@expect hatch 1
+# Beams: offset grid line A both ways by 150 mm on layer S-BEAM.
+CLAYER
+S-BEAM
+OFFSET
+Layer
+Current
+150
+9000,0
+9000,100
+9000,0
+9000,-100
+
+@expect on-layer line S-BEAM 2
+# Dimensions between grids 1-2-3-4 on S-DIM: DIMLINEAR then DIMCONTINUE.
+CLAYER
+S-DIM
+DIMLINEAR
+0,11500
+6000,11500
+3000,13000
+DIMCONTINUE
+12000,11500
+18000,11500
+
+@expect on-layer dimension S-DIM 3
+# A note on S-TEXT: it must stay on the current layer.
+CLAYER
+S-TEXT
+TEXT
+0,-4000
+
+0
+FLOOR PLAN FP-10  SCALE 1:100
+@key Escape
+@expect on-layer text S-TEXT 1
+# A load table on S-TEXT beside the plan, filled cell by cell from the keyboard.
+TABLE
+3
+3
+3000
+800
+FLOOR LOADS
+22000,11000
+@expect table 1
+TABLEEDIT
+L
+Next
+ZONE
+Next
+LL (kg/m2)
+Next
+SDL (kg/m2)
+Next
+OFFICE
+Next
+300
+Next
+150
+
+@shot 12_table.png
+# A note in MTEXT.
+MTEXT
+22000,4000
+30000,2000
+NOTES: 1. ALL DIMENSIONS IN MM.  2. CONCRETE fc' = 280 KSC.
+@expect mtext 1
+# A select by typed corners: erase the two test grid heads' first one with a window.
+ERASE
+-700,-2700
+700,-1300
+
+@expect insert 1
+# The sheet: an A1 layout that already shows the plan, a title block, plotted to PDF.
+-LAYOUT
+New
+FP-10
+A1
+Landscape
+@expect layout FP-10
+@expect viewport FP-10 1 scale 50
+@frames 5
+TITLEBLOCK
+HOUSE BKK
+FP-10 FLOOR PLAN
+1:50
+S-101
+31/10/2026
+@frames 3
+@shot 12_sheet.png
+PLOT
+Paper
+A1
+Export
+{out}/12_fp10.pdf
+@expect file 12_fp10.pdf
+@expect log 841 x 594 mm
