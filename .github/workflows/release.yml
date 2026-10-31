@@ -23,6 +23,11 @@ on:
         type: boolean
         required: false
         default: false
+      public:
+        description: 'With publish: make it a PUBLIC pre-release instead of a draft, so Help > Check for Updates (and the Update button) in test builds finds it'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -118,7 +123,10 @@ jobs:
           $target = @('--verify-tag')
           $manual = -not ($tag -like 'v*')
           if ($manual) { $tag = 'v${{ steps.ver.outputs.version }}'; $target = @('--target', $env:GITHUB_SHA) }
-          gh release create $tag --draft --prerelease @target `
+          $draft = @('--draft')
+          $kind = 'Draft'
+          if ($manual -and '${{ inputs.public }}' -eq 'true') { $draft = @(); $kind = 'Test build' }
+          gh release create $tag @draft --prerelease @target `
             --title "TBCAD ${{ steps.ver.outputs.version }}" `
-            --notes "Draft. Windows installer and portable ZIP. Not code signed yet: Windows SmartScreen may warn on first run (More info, then Run anyway)." `
+            --notes "$kind. Windows installer and portable ZIP. Not code signed yet: Windows SmartScreen may warn on first run (More info, then Run anyway)." `
             $files
