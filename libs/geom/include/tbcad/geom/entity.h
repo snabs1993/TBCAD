@@ -40,6 +40,17 @@ struct DisplayContext {
     // True for the objects of a layout sheet itself (not the model shown in a viewport): their
     // linetypes are not scaled by the model-space annotation scale (MSLTSCALE).
     bool paperSpace = false;
+    // Changes how a layer looks in this view only (per-sheet layer overrides of a layout): applied
+    // to the drawing's layer wherever ByLayer colour, linetype, lineweight or transparency is
+    // resolved. Null = the drawing's layers as they are.
+    const std::function<void(EffectiveLayer&)>* layerAdjust = nullptr;
+
+    EffectiveLayer layer(const Document& doc, LayerId id) const {
+        EffectiveLayer e = doc.effective(id);
+        if (layerAdjust && *layerAdjust)
+            (*layerAdjust)(e);
+        return e;
+    }
 
     double tolerance() const { return chordTolMm > 0 ? chordTolMm : pixelSizeMm * 0.25; }
 };

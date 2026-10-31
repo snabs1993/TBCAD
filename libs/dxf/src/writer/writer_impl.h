@@ -436,10 +436,13 @@ private:
         bool border = true;
         LayerId borderLayer{};  // group 8 of the VIEWPORT; null = layer 0
         std::uint32_t level = 0;
+        // Layer overrides as stored in the layout table (P lines: layer id, then the values).
+        std::vector<std::vector<std::string>> overrides{};
     };
     struct Sheet {
         std::string name{};
         BlockId content{};
+        std::vector<std::vector<std::string>> overrides{};  // the sheet's (O lines)
         double w = 420, h = 297;
         std::uint64_t rec = 0, layout = 0;
         std::vector<SheetViewport> viewports{};

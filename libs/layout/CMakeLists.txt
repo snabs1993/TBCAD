@@ -9,5 +9,6 @@ tbcad_add_tests(layout
     tests/main.cpp
     tests/layout_tests.cpp
     tests/pagesetup_tests.cpp
+    tests/sheet_layer_tests.cpp
     tests/plotframes_tests.cpp
   DEPENDS tbcad::pdf tbcad::io tbcad::blocks tbcad::dxf)

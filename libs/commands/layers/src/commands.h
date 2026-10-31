@@ -23,6 +23,7 @@ std::unique_ptr<cmd::Command> makeLayerFilterCommand();  // -LAYERFILTER
 
 std::unique_ptr<cmd::Command> makeLayWalkCommand();      // LAYWALK
 std::unique_ptr<cmd::Command> makeLayerPCommand();       // LAYERP
+std::unique_ptr<cmd::Command> makeSheetLayerCommand();   // SHEETLAYER
 std::unique_ptr<cmd::Command> makeLayWalkStepCommand();  // -LAYWALK
 
 void registerLayerTools(cmd::Registry& registry);  // LAYOFF, LAYFRZ, LAYISO, LAYMRG ...

@@ -348,6 +348,9 @@ private:
     void resolveExtDictionaries();
     ScaleList annotativeScalesOf(const std::vector<std::pair<std::string, std::string>>& xd);
     void applyLayerAlphaXrecords();
+    // AutoCAD's per-viewport layer overrides (colour, linetype, lineweight, transparency), kept in
+    // each layer's extension dictionary: added to the viewports they name.
+    void collectViewportOverrides();
     std::vector<std::string> layerRawNames_{};  // raw bytes of each row's name
     bool layersCreated_ = false;
     std::vector<LevelRow> levelRows_{};
@@ -383,11 +386,17 @@ private:
         std::string level;                  // TBCAD XDATA "vlevel=<name>"
         bool locked = false;                // TBCAD XDATA "locked=1"
         int border = -1;                    // TBCAD XDATA "border=0/1"; -1 = from the layer
+        std::string handle{};               // group 5 (upper case): AutoCAD's layer overrides
+                                            // name the viewport by it
+        // Layer overrides of this viewport: layer name, then on, colour, linetype name,
+        // lineweight, transparency, plot (TBCAD XDATA "ovr=", or AutoCAD's layer XRECORDs).
+        std::vector<std::vector<std::string>> overrides{};
     };
     struct Sheet {
         std::string foldedName{};
         BlockId content{};
         std::vector<SheetViewport> viewports{};
+        std::vector<std::vector<std::string>> overrides{};  // the sheet's ("sovr="), as above
         double extentX = 0, extentY = 0;  // of the drawn objects, for a size when none is stored
     };
     struct LayoutRow {

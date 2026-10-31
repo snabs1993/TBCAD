@@ -2744,8 +2744,9 @@ void AppCore::followLockedViewport() {
     annoSyncRevision_ = session_->doc.revision();
 }
 
-// While a layout viewport is edited from model space, the layers frozen in it are hidden there
-// too, as on the sheet (VPLAYER, the VP Frz column of the Layers panel).
+// While a layout viewport is edited from model space, the layers frozen in it or hidden on its
+// sheet are hidden there too, as on the sheet (VPLAYER, the VP Frz column of the Layers panel,
+// SHEETLAYER).
 void AppCore::hideViewportFrozenLayers() {
     if (!session_)
         return;
@@ -2762,7 +2763,7 @@ void AppCore::hideViewportFrozenLayers() {
         if (const auto lay = layout::findLayout(session_->doc, editingLayout_))
             if (const layout::Viewport* vp = lay->findViewport(editingViewport_))
                 for (const auto& [id, l] : session_->doc.layers())
-                    if (layout::frozenInViewport(session_->doc, *vp, id))
+                    if (layout::hiddenInViewport(session_->doc, *lay, *vp, id))
                         hidden.insert(id);
     const bool changed = hidden != session_->doc.viewHiddenLayers();
     session_->doc.setViewHiddenLayers(hidden);

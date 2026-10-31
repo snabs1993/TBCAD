@@ -8,6 +8,7 @@
 // coordinates are millimetres on the sheet with the origin at the lower-left corner.
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -20,6 +21,24 @@ inline constexpr const char* kHeaderKey = "tbcad.layouts";
 // Layers that are frozen in every viewport added from now on (VPLAYER New freeze, the "frozen in
 // new viewports" flag of a DXF layer): a comma list of layer ids.
 inline constexpr const char* kNewViewportFrozenKey = "tbcad.vpnewfrozen";
+
+// How one layer looks on one sheet, apart from the drawing and from other sheets (SHEETLAYER, the
+// "This sheet" mode of the Layers panel). Each value left empty follows the drawing's layer.
+// It acts on the model shown in the sheet's viewports, not on the sheet's own objects.
+struct LayerOverride {
+    LayerId layer{};
+    std::optional<bool> on{};      // shown or hidden on this sheet (true also shows a frozen layer)
+    std::optional<Color> color{};  // Index or Rgb
+    std::optional<LinetypeId> linetype{};    // a real linetype
+    std::optional<LineWeight> lineweight{};  // Default or a value
+    std::optional<int> transparency{};       // percent, 0 to 90
+    std::optional<bool> plot{};
+
+    bool empty() const {
+        return !on && !color && !linetype && !lineweight && !transparency && !plot;
+    }
+    friend bool operator==(const LayerOverride&, const LayerOverride&) = default;
+};
 
 struct Viewport {
     int id = 0;     // unique within the layout, starts at 1
@@ -36,6 +55,9 @@ struct Viewport {
     bool border = true;     // the rectangle is drawn and plotted (false: its layer does not plot)
     LayerId borderLayer{};  // MVIEW Layer: the border takes this layer's colour and goes with its
                             // on / frozen / plot state (null = the border is always drawn)
+    // Overrides of this viewport alone (read from other programs' files, which keep them per
+    // viewport); they win over the sheet's.
+    std::vector<LayerOverride> overrides{};
 };
 
 // True when the sheet point is inside the viewport's outline.
@@ -52,8 +74,10 @@ struct Layout {
     BlockId content{};                 // block holding the sheet's own objects
     std::string pageSetup{};           // name of the assigned page setup (pagesetup.h), or empty
     std::vector<Viewport> viewports{};
+    std::vector<LayerOverride> layerOverrides{};  // this sheet's, one per layer
 
     const Viewport* findViewport(int id) const;
+    const LayerOverride* findOverride(LayerId layer) const;
 };
 
 // All layouts, in creation order. Unreadable lines are skipped.
@@ -114,6 +138,30 @@ Result<void> setLayerFrozenInNewViewports(const Document& doc, Transaction& tx, 
 
 // True when the layer, or one of its parents, is frozen in the viewport.
 bool frozenInViewport(const Document& doc, const Viewport& vp, LayerId layer);
+
+// ---- per-sheet layer overrides --------------------------------------------------------------
+
+// Sets the sheet's override of `o.layer` (replacing the old one); an empty override removes it.
+Result<void> setSheetLayerOverride(Transaction& tx, const std::string& layout,
+                                   const LayerOverride& o);
+// Removes every override of the sheet (and of its viewports); `layer` set: only that layer's.
+Result<void> clearSheetLayerOverrides(Transaction& tx, const std::string& layout,
+                                      LayerId layer = {});
+// The layer as it shows in the viewport of the layout: the drawing's layer with the sheet's
+// override and then the viewport's own applied. A hidden parent (on = false) hides its sub-layers.
+EffectiveLayer sheetLayer(const Document& doc, const Layout& layout, const Viewport* vp,
+                          LayerId layer);
+// Applies the overrides to a layer already resolved for the drawing (what sheetLayer does).
+void applySheetOverrides(const Document& doc, const Layout& layout, const Viewport* vp,
+                         EffectiveLayer& layer);
+// True when the layer does not show in the viewport: frozen there, or hidden on the sheet.
+bool hiddenInViewport(const Document& doc, const Layout& layout, const Viewport& vp, LayerId layer);
+
+// Text form of one override's values (TAB separated: on, colour, linetype id, lineweight,
+// transparency, plot; an empty field is not overridden), as stored and as written to DXF with the
+// linetype id replaced by its name by the caller.
+std::string overrideFields(const LayerOverride& o);
+LayerOverride parseOverrideFields(const std::vector<std::string>& fields, std::size_t first);
 
 // Adds a framed title block with the standard fields (project, drawing, scale, date, sheet) to
 // the layout's sheet: a border and text objects in the lower right corner.

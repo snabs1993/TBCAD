@@ -27,6 +27,10 @@ struct Group {
     Value value{};
 };
 
+// The data bytes of an XRECORD (ODA spec 20.4.104): group code (RS) then the value as the code
+// says. Stops at the first code it cannot size. `unicode`: R2007+ strings (RS length, UTF-16).
+std::vector<Group> parseXrecordData(const std::vector<std::uint8_t>& bytes, bool unicode);
+
 struct LayerRec {
     std::uint64_t handle = 0;
     std::string name{};
@@ -171,6 +175,9 @@ struct Drawing {
     std::vector<LayoutRec> layoutObjects{};
     std::map<std::uint64_t, std::vector<std::pair<std::string, std::uint64_t>>> dictionaries{};
     std::map<std::uint64_t, SpatialFilterRec> spatialFilters{};  // by object handle
+    // XRECORD data by object handle: group code and value (a handle as its number). Kept for the
+    // layer records' per-viewport overrides (ADSK_XREC_LAYER_*_OVR).
+    std::map<std::uint64_t, std::vector<Group>> xrecords{};
     // SORTENTSTABLE (draw order): block handle -> entity handle -> sort key. Entities that are not
     // listed sort by their own handle.
     std::map<std::uint64_t, std::map<std::uint64_t, std::uint64_t>> sortKeys{};

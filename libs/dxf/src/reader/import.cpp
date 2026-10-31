@@ -1090,6 +1090,86 @@ void Importer::keepObjects() {
     });
 }
 
+void Importer::collectViewportOverrides() {
+    // Each record lists { 335 viewport, value } pairs between "{ADSK_LYR_..." and "}" (102).
+    struct Kind {
+        const char* key;
+        std::size_t field;  // in the override row: 2 colour, 3 linetype, 4 lineweight, 5 transp.
+    };
+    static const Kind kKinds[] = {{"ADSK_XREC_LAYER_COLOR_OVR", 2},
+                                  {"ADSK_XREC_LAYER_LINETYPE_OVR", 3},
+                                  {"ADSK_XREC_LAYER_LINEWT_OVR", 4},
+                                  {"ADSK_XREC_LAYER_TRANSPARENCY_OVR", 5}};
+    std::unordered_map<std::string, SheetViewport*> byHandle;
+    for (Sheet& sh : sheets_)
+        for (SheetViewport& v : sh.viewports)
+            if (!v.handle.empty())
+                byHandle[v.handle] = &v;
+    if (byHandle.empty())
+        return;
+    auto rowFor = [](SheetViewport& v, const std::string& layer) -> std::vector<std::string>& {
+        for (auto& row : v.overrides)
+            if (!row.empty() && fold(row[0]) == fold(layer))
+                return row;
+        v.overrides.push_back({layer, "", "", "", "", "", ""});
+        return v.overrides.back();
+    };
+    for (const auto& [layerName, dictHandle] : layerXdicts_) {
+        auto d = dicts_.find(dictHandle);
+        if (d == dicts_.end())
+            continue;
+        for (const auto& [key, handle] : d->second) {
+            const Kind* kind = nullptr;
+            for (const Kind& k : kKinds)
+                if (key == k.key)
+                    kind = &k;
+            auto x = kind ? xrecItems_.find(handle) : xrecItems_.end();
+            if (x == xrecItems_.end())
+                continue;
+            SheetViewport* vp = nullptr;
+            for (const DataItem& it : x->second) {
+                if (it.code == 102) {
+                    vp = nullptr;
+                } else if (it.code == 335) {
+                    auto f = byHandle.find(upperHandle(it.text));
+                    vp = f == byHandle.end() ? nullptr : f->second;
+                } else if (vp) {
+                    std::string value;
+                    if (kind->field == 2 && (it.code == 420 || it.code == 90 || it.code == 62)) {
+                        // AcCmColor: 0xC3 = palette index in the low byte, 0xC2 (or none) = RGB.
+                        const auto c = static_cast<std::uint32_t>(it.integer);
+                        const std::uint32_t method = c >> 24;
+                        if (it.code == 62 || method == 0xC3) {
+                            const std::uint32_t i = it.code == 62 ? c : (c & 0xFF);
+                            if (i >= 1 && i <= 255)
+                                value = "i" + std::to_string(i);
+                        } else if (method == 0xC2 || method == 0) {
+                            value = "r" + std::to_string((c >> 16) & 0xFF) + "," +
+                                    std::to_string((c >> 8) & 0xFF) + "," +
+                                    std::to_string(c & 0xFF);
+                        }
+                    } else if (kind->field == 3 && (it.code == 343 || it.code == 340)) {
+                        auto lt = ltypeNameByHandle_.find(upperHandle(it.text));
+                        if (lt != ltypeNameByHandle_.end())
+                            value = lt->second;
+                    } else if (kind->field == 4 &&
+                               (it.code == 91 || it.code == 90 || it.code == 370)) {
+                        if (it.integer == -3 || (it.integer >= 0 && it.integer <= 211))
+                            value = std::to_string(it.integer);
+                    } else if (kind->field == 5 &&
+                               (it.code == 440 || it.code == 91 || it.code == 90)) {
+                        const int t = transparencyFromGroup(it.integer);
+                        if (t >= 0 && t <= 90)
+                            value = std::to_string(t);
+                    }
+                    if (!value.empty())
+                        rowFor(*vp, layerName)[kind->field] = value;
+                }
+            }
+        }
+    }
+}
+
 void Importer::applyLayerAlphaXrecords() {
     for (const auto& [layerName, dictHandle] : layerXdicts_) {
         auto d = dicts_.find(dictHandle);
@@ -2309,6 +2389,7 @@ void Importer::readViewport(const Record& r, BlockId sheetBlock) {
         v.on = r.integer(68, 1) != 0;
         v.layer = dec(r.raw(8));
         v.id = static_cast<int>(sh.viewports.size()) + 1;
+        v.handle = upperHandle(r.raw(5));
         // Status flags (group 90): 16384 zoom locking, 65536 non-rectangular clipping, 131072 off.
         const long long status = r.integer(90, 0);
         if (status & 65536)
@@ -2336,6 +2417,21 @@ void Importer::readViewport(const Record& r, BlockId sheetBlock) {
                 if (t.rfind("frozen=", 0) == 0) {
                     if (std::find(v.frozen.begin(), v.frozen.end(), t.substr(7)) == v.frozen.end())
                         v.frozen.push_back(t.substr(7));
+                } else if (t.rfind("ovr=", 0) == 0 || t.rfind("sovr=", 0) == 0) {
+                    // A layer override: name TAB on TAB colour TAB linetype TAB lineweight TAB
+                    // transparency TAB plot (sovr: of the whole sheet).
+                    const bool whole = t[0] == 's';
+                    std::vector<std::string> f;
+                    std::size_t pos = whole ? 5 : 4;
+                    for (;;) {
+                        const std::size_t tab = t.find('\t', pos);
+                        f.push_back(t.substr(pos, tab == std::string::npos ? tab : tab - pos));
+                        if (tab == std::string::npos)
+                            break;
+                        pos = tab + 1;
+                    }
+                    if (f.size() >= 2 && !f[0].empty())
+                        (whole ? sh.overrides : v.overrides).push_back(std::move(f));
                 } else if (t.rfind("vlevel=", 0) == 0) {
                     v.level = t.substr(7);
                 } else if (t == "locked=1") {
@@ -2436,6 +2532,29 @@ void Importer::finishLayouts() {
     }
     if (sheets_.empty())
         return;
+    collectViewportOverrides();
+    // An override row as stored in the layout table: layer id, then the values with the linetype
+    // named by id. Empty when the layer is unknown or nothing is overridden.
+    auto overrideLine = [&](const char* tag, const std::vector<std::string>& row) {
+        if (row.size() < 2)
+            return std::string();
+        const auto layer = layerByFold_.find(fold(row[0]));
+        if (layer == layerByFold_.end())
+            return std::string();
+        std::vector<std::string> f(row.begin() + 1, row.end());
+        f.resize(6);
+        if (!f[2].empty()) {
+            const auto lt = ltypeByRaw_.find(fold(f[2]));
+            f[2] = lt == ltypeByRaw_.end() ? std::string() : std::to_string(lt->second.value);
+        }
+        bool any = false;
+        std::string out = std::string(tag) + "\t" + std::to_string(layer->second.value);
+        for (const std::string& v : f) {
+            out += "\t" + v;
+            any = any || !v.empty();
+        }
+        return any ? out + "\n" : std::string();
+    };
     // Sheets in creation order: "*Paper_Space", "*Paper_Space0", "*Paper_Space1", ...
     std::vector<std::size_t> order(sheets_.size());
     for (std::size_t i = 0; i < order.size(); ++i)
@@ -2577,7 +2696,11 @@ void Importer::finishLayouts() {
                     num(v.center.y) + "\t" + num(v.scaleN) + "\t" + (v.on ? "1" : "0") + "\t" +
                     frozenIds + "\t" + levelId + "\t" + (v.locked ? "1" : "0") + "\t" + clipText +
                     "\t" + (border ? "1" : "0") + "\t" + borderLayerId + "\n";
+            for (const auto& row : v.overrides)
+                text += overrideLine("P", row);
         }
+        for (const auto& row : sh.overrides)
+            text += overrideLine("O", row);
     }
     (void)tx_->modifyHeader([&](Header& h) {
         h.custom["tbcad.layouts"] = text;

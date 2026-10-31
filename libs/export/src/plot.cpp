@@ -55,10 +55,13 @@ bool isDefpoints(const Document& doc, LayerId id) {
     return name == "defpoints";
 }
 
-bool plottable(const Document& doc, const Entity& e) {
+bool plottable(const Document& doc, const Entity& e,
+               const std::function<void(EffectiveLayer&)>* adjust = nullptr) {
     if (!e.common.visible || isDefpoints(doc, e.common.layer))
         return false;
     EffectiveLayer l = doc.effective(e.common.layer);
+    if (adjust && *adjust)
+        (*adjust)(l);
     // Plots show every level that is switched on, whatever the on-screen view of other levels.
     const Level* level = doc.level(e.common.level);
     return l.visible() && l.plot && (!level || level->visible);
@@ -510,6 +513,8 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
     ctx.chordTolMm = s.chordTolMm / lay.paperPerUnit;
     ctx.annoScale = lay.annoScale;
     ctx.paperSpace = lay.paperSpace;
+    if (lay.layerAdjust)
+        ctx.layerAdjust = &lay.layerAdjust;
     // A "pixel" on paper is a hairline: hatches denser than that are drawn as a tone.
     ctx.pixelSizeMm = s.hairlineMm / lay.paperPerUnit;
     ctx.defaultLineweightMm = defaultLineweightMm(doc.header());
@@ -541,10 +546,10 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
             if (!def || def->xrefPath.empty() || !underlay::isImagePath(def->xrefPath))
                 continue;
             pictures.insert(id.value);
-            if (!plottable(doc, *e) || (skip && skip(*e)))
+            if (!plottable(doc, *e, &lay.layerAdjust) || (skip && skip(*e)))
                 continue;
             if (const Layer* xl = doc.layerByName(def->name);
-                xl && !doc.effective(xl->id).visible())
+                xl && !ctx.layer(doc, xl->id).visible())
                 continue;
             if (!haveParams) {
                 params = underlay::readImageParams(doc.header());
@@ -636,7 +641,7 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
     paperWindow = paperWindow.inflated(1.0);
     for (EntityId id : ids) {
         const Entity* e = doc.find(id);
-        if (!e || !plottable(doc, *e) || (skip && skip(*e)))
+        if (!e || !plottable(doc, *e, &lay.layerAdjust) || (skip && skip(*e)))
             continue;
         if (pictures.count(id.value))
             continue;
@@ -688,7 +693,8 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
             if (const auto* np = std::get_if<DisplayPolyline>(&it); np && np->style.noPlot)
                 continue;
             if (li != LayerId{} && li != e->common.layer &&
-                (isDefpoints(doc, li) || !doc.effective(li).visible() ||
+                (isDefpoints(doc, li) || !ctx.layer(doc, li).visible() ||
+                 (lay.layerAdjust && !ctx.layer(doc, li).plot) ||
                  (lay.layerHidden && lay.layerHidden(li))))
                 continue;
             const std::size_t before = sheet.prims.size();

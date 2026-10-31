@@ -20,6 +20,7 @@ set(_layers_sources
   src/standards_commands.cpp
   src/laywalk.cpp
   src/property_commands.cpp
+  src/sheet_layer_command.cpp
   src/register.cpp
   "${CMAKE_CURRENT_BINARY_DIR}/builtin_linetypes.cpp")
 set(_layers_deps tbcad::cmd tbcad::ui tbcad::core tbcad::geom tbcad::blocks tbcad::xref tbcad::layout tbcad::text tbcad::dim tbcad::hatch)
@@ -50,6 +51,7 @@ tbcad_add_tests(layers
     tests/linetype_tests.cpp
     tests/properties_tests.cpp
     tests/standards_tests.cpp
+    tests/sheet_layer_tests.cpp
   DEPENDS tbcad_layers tbcad_command_registry tbcad::io)
 if(TARGET tbcad_layers_tests)
   target_compile_definitions(tbcad_layers_tests PRIVATE TBCAD_SOURCE_ASSETS_DIR="${CMAKE_SOURCE_DIR}/assets")

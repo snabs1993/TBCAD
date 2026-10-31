@@ -1435,7 +1435,7 @@ Result<std::unique_ptr<Document>> layoutDrawing(const Document& doc, const std::
             const Entity* e = doc.find(id);
             if (!e || !e->common.visible || !doc.effective(e->common).visible())
                 continue;
-            if (layout::frozenInViewport(doc, vp, e->common.layer) ||
+            if (layout::hiddenInViewport(doc, l, vp, e->common.layer) ||
                 (vp.level.value != 0 && e->common.level != vp.level))
                 continue;
             if (e->common.annotative && !e->common.annoScales.empty() &&

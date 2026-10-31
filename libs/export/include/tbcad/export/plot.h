@@ -95,6 +95,9 @@ struct PlotLayout {
     // Layers hidden in this view only (frozen in a layout viewport). Checked for every drawn part,
     // so a block's contents on such a layer disappear too.
     std::function<bool(LayerId)> layerHidden{};
+    // How layers look in this view only (per-sheet overrides of a layout): colour, linetype,
+    // lineweight, transparency, on and plot. Empty = as in the drawing.
+    std::function<void(EffectiveLayer&)> layerAdjust{};
 
     Vec2 toPaper(Vec2 p) const {
         return {(p.x - area.min.x) * paperPerUnit + origin.x,
