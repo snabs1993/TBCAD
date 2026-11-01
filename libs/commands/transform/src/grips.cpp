@@ -57,7 +57,8 @@ std::vector<Grip> collectGrips(const Document& doc, std::span<const EntityId> id
     out.reserve(ids.size() * 2);
     for (EntityId id : ids) {
         const Entity* e = doc.find(id);
-        if (!e)
+        // Objects on a locked layer show no grips, so they cannot be dragged out of shape.
+        if (!e || doc.effective(e->common).locked)
             continue;
         auto pts = geom::gripPoints(*e);
         for (std::size_t i = 0; i < pts.size(); ++i)
