@@ -42,3 +42,20 @@ The host owns the authoritative document. Every edit is a `ChangeSet`; what trav
 ## Tests
 
 `libs/io/tests/delta_tests.cpp` (round trip of an edit series, refused changes, limits, decoder fuzz, optional chunk), `libs/collab/tests/*`: versions, ids, ops (incl. fuzz), host rules, `undo_guard_tests.cpp`, `session_tests.cpp` (join, peers, random edits by three guests and the host with frames delivered in random order for 20 seeds, id top-up, conflict messages with the name of who was first, undo, kick, viewer and promotion, refused joins, damaged frames) and `convergence_tests.cpp`, which runs a host and three guests with random edits and random message delays for 40 seeds and requires identical drawings, versions and sequence numbers at the end (600 seeds were run while developing).
+
+## In the program: local network (free)
+
+`libs/collabapp` puts the engine into TBCAD. Tools > Collaboration (command `COLLAB`) opens the panel:
+
+- **Share** the open drawing with a password (TLS 1.3, key from the password). Other computers on the
+  network find it by UDP announcement (port 47801) or by typing the address and port (default 47800).
+  The host can ask before anyone joins, admit people as editors or view-only, remove them, and hand the
+  host role to someone else.
+- **Join**: the shared drawing opens as a new tab. Other people's cursors show in their colour with their
+  name.
+- **Team**: keep a layer for yourself (the host refuses others' edits on it), chat.
+- **Offline**: when a guest loses the host, the drawing stays editable; Reconnect sends what was done
+  meanwhile, and an edit to something another person changed meanwhile waits for Keep mine / Keep theirs.
+
+Different places work through any VPN (Tailscale, ZeroTier). Collaboration over the internet without a VPN
+(a relay server) is not part of this program.
