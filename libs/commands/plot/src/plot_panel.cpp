@@ -3,6 +3,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <vector>
 #include <filesystem>
 #include <string>
 
@@ -238,14 +240,18 @@ void draw(ui::PanelContext& pc) {
         st.styleLoaded = styleName;
     }
 
-    // Paper
+    // Paper. Plotting a layout, the sheet itself takes the paper and orientation picked here
+    // (as typed PLOT does), so the sheet on screen matches what is plotted.
+    bool sheetChanged = false;
     if (ImGui::BeginCombo("Paper", s.paperName.c_str())) {
         for (const auto& p : exportlib::paperSizes())
             if (ImGui::Selectable(p.name.c_str(), p.name == s.paperName)) {
+                sheetChanged |= s.paperName != p.name;
                 s.paperName = p.name;
                 changed = true;
             }
         if (ImGui::Selectable("Custom", s.paperName == "Custom")) {
+            sheetChanged |= s.paperName != "Custom";
             s.paperName = "Custom";
             changed = true;
         }
@@ -254,16 +260,35 @@ void draw(ui::PanelContext& pc) {
     if (s.paperName == "Custom") {
         changed |= ImGui::InputDouble("Width (mm)", &s.customWidthMm, 1, 10, "%.1f",
                                       ImGuiInputTextFlags_AutoSelectAll);
+        sheetChanged |= ImGui::IsItemDeactivatedAfterEdit();
         changed |= ImGui::InputDouble("Height (mm)", &s.customHeightMm, 1, 10, "%.1f",
                                       ImGuiInputTextFlags_AutoSelectAll);
+        sheetChanged |= ImGui::IsItemDeactivatedAfterEdit();
         s.customWidthMm = std::max(1.0, s.customWidthMm);
         s.customHeightMm = std::max(1.0, s.customHeightMm);
     }
     int orient = s.landscape ? 0 : 1;
-    changed |= ImGui::RadioButton("Landscape", &orient, 0);
+    bool orientChanged = ImGui::RadioButton("Landscape", &orient, 0);
     ImGui::SameLine();
-    changed |= ImGui::RadioButton("Portrait", &orient, 1);
+    orientChanged |= ImGui::RadioButton("Portrait", &orient, 1);
+    changed |= orientChanged;
+    sheetChanged |= orientChanged && (orient == 0) != s.landscape;
     s.landscape = orient == 0;
+    if (const std::string sheet = plotLayout(*pc.host);
+        sheetChanged && !sheet.empty() && pc.runCommand) {
+        char w[32], h[32];
+        std::snprintf(w, sizeof w, "%g", std::min(s.customWidthMm, s.customHeightMm));
+        std::snprintf(h, sizeof h, "%g", std::max(s.customWidthMm, s.customHeightMm));
+        if (pc.cancelCommand)
+            pc.cancelCommand();
+        for (const std::string& l : s.paperName == "Custom"
+                                        ? std::vector<std::string>{"LAYOUT", "Paper", sheet,
+                                                                   "Custom", w, h}
+                                        : std::vector<std::string>{"LAYOUT", "Paper", sheet,
+                                                                   s.paperName})
+            pc.runCommand(l);
+        pc.runCommand(s.landscape ? "Landscape" : "Portrait");
+    }
     ImGui::SameLine();
     changed |= ImGui::Checkbox("Upside down", &s.upsideDown);
 
@@ -557,7 +582,7 @@ void drawPageSetups(ui::PanelContext& pc) {
                 (ps.settings.paperName + (ps.settings.landscape ? " landscape" : " portrait"))
                     .c_str());
             ImGui::TableNextColumn();
-            ImGui::TextUnformatted(scaleText(ps.settings).c_str());
+            ImGui::TextUnformatted(pageSetupScaleText(*pc.doc, ps).c_str());
             ImGui::TableNextColumn();
             ImGui::TextUnformatted(ps.styleName.empty() ? "none" : ps.styleName.c_str());
             ImGui::TableNextColumn();
@@ -645,7 +670,8 @@ void drawPageSetups(ui::PanelContext& pc) {
         const auto& ss = p->settings;
         ImGui::SeparatorText("Details");
         ImGui::Text("%s, %s, scale %s, margins %.4g mm", ss.paperName.c_str(),
-                    ss.landscape ? "landscape" : "portrait", scaleText(ss).c_str(), ss.marginMm);
+                    ss.landscape ? "landscape" : "portrait",
+                    pageSetupScaleText(*pc.doc, *p).c_str(), ss.marginMm);
         ImGui::Text("Plot style %s, %s", p->styleName.empty() ? "none" : p->styleName.c_str(),
                     ss.lineweights ? "with lineweights" : "no lineweights");
     }

@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <map>
 
 #include "panel_util.h"
@@ -11,6 +12,7 @@
 #include "tbcad/blocks/assembly.h"
 #include "tbcad/layers/layer_ops.h"
 #include "tbcad/layers/properties.h"
+#include "tbcad/layout/layout.h"
 
 namespace tbcad::layers {
 
@@ -612,13 +614,87 @@ void assemblySection(tbcad::ui::PanelContext& ctx, Cache& c) {
     }
 }
 
+// A viewport picked by its border on the sheet: it is not an object, so the panel shows its own
+// rows (number, layer of the border, scale, on, lock). Returns false when none is picked.
+bool viewportSection(tbcad::ui::PanelContext& ctx) {
+    if (!ctx.host || ctx.host->drawingOwner() == BlockId{})
+        return false;
+    const std::string sel = ctx.host->setting("tmp.layout.viewport").value_or("");
+    const auto colon = sel.find(':');
+    if (colon == std::string::npos)
+        return false;
+    const std::string layoutName = sel.substr(0, colon);
+    if (layoutName != ctx.host->setting("layout.current").value_or(layoutName))
+        return false;
+    auto lay = layout::findLayout(*ctx.doc, layoutName);
+    const layout::Viewport* vp =
+        lay ? lay->findViewport(std::atoi(sel.c_str() + colon + 1)) : nullptr;
+    if (!vp)
+        return false;
+    ImGui::TextUnformatted(("Viewport " + std::to_string(vp->id)).c_str());
+    if (!ImGui::BeginTable("##viewport", 2, propTableFlags()))
+        return true;
+    ImGui::TableSetupColumn("##k", ImGuiTableColumnFlags_WidthFixed, 90);
+    ImGui::TableSetupColumn("##v", ImGuiTableColumnFlags_WidthStretch);
+    auto row = [](const char* key) {
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::TextUnformatted(key);
+        ImGui::TableSetColumnIndex(1);
+        ImGui::SetNextItemWidth(-1);
+    };
+    const Layer* border = vp->borderLayer.value ? ctx.doc->layer(vp->borderLayer) : nullptr;
+    row("Layer");
+    const std::string current = border ? border->name : "(none: always shown)";
+    if (ImGui::BeginCombo("##vplayer", current.c_str(), ImGuiComboFlags_HeightLarge)) {
+        std::vector<std::string> names;
+        for (const auto& [id, l] : ctx.doc->layers())
+            names.push_back(l.name);
+        std::sort(names.begin(), names.end());
+        for (const std::string& n : names)
+            if (ImGui::Selectable(n.c_str(), border && border->name == n))
+                exec(ctx, {"MVIEW", "Layer", n});
+        ImGui::EndCombo();
+    }
+    if (border && (!border->on || border->frozen)) {
+        row("");
+        ImGui::TextDisabled(border->frozen ? "Layer is frozen: border hidden"
+                                           : "Layer is off: border hidden");
+    }
+    row("Scale");
+    char buf[48];
+    std::snprintf(buf, sizeof buf, "1:%g", vp->scaleN);
+    std::string scale = buf;
+    if (ImGui::InputText("##vpscale", &scale, ImGuiInputTextFlags_EnterReturnsTrue) &&
+        scale != buf)
+        exec(ctx, {"VPSCALE", scale});
+    row("Size (mm)");
+    std::snprintf(buf, sizeof buf, "%g x %g", vp->paper.width(), vp->paper.height());
+    ImGui::TextUnformatted(buf);
+    row("View centre");
+    std::snprintf(buf, sizeof buf, "%g, %g", vp->center.x, vp->center.y);
+    ImGui::TextUnformatted(buf);
+    row("On");
+    bool on = vp->on;
+    if (ImGui::Checkbox("##vpon", &on))
+        exec(ctx, {"MVIEW", on ? "ON" : "OFF"});
+    row("Locked");
+    bool locked = vp->locked;
+    if (ImGui::Checkbox("##vplock", &locked))
+        exec(ctx, {"VPLOCK"});
+    ImGui::EndTable();
+    ImGui::TextDisabled("Delete key or VPDELETE removes it.");
+    return true;
+}
+
 // Both the palette and the quick properties box draw this: the type drop-down, then General and
 // Geometry. The box leaves out Delete, assemblies and the per-type sections.
 void drawBody(tbcad::ui::PanelContext& ctx, bool compact) {
     if (!ctx.doc || !ctx.selection)
         return;
     if (ctx.selection->empty()) {
-        currentSection(ctx);
+        if (!viewportSection(ctx))
+            currentSection(ctx);
         return;
     }
     refresh(ctx);

@@ -175,6 +175,8 @@ Result<void> addTitleBlock(Transaction& tx, const std::string& layout,
 
 struct LayoutPlotOptions {
     bool viewportBorders = true;  // draw each viewport's rectangle
+    // On screen a border on a layer that does not plot still shows (off / frozen hide it).
+    bool screen = false;
 };
 // The sheet at 1:1: the layout's own objects, then each viewport's model-space view clipped to the
 // viewport. `base` supplies lineweights, colour mode, chord tolerance and hairline width; its

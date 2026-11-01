@@ -1,6 +1,9 @@
 #include <algorithm>
 #include <charconv>
 #include <cmath>
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
 
 #include "dim_internal.h"
 #include "tbcad/dim/dim.h"
@@ -1137,6 +1140,27 @@ public:
     }
 };
 
+// AutoCAD's DIMBLK block names (_OBLIQUE, _ARCHTICK, _OPEN, _DOT, ".") as our arrow names; other
+// text is passed on unchanged.
+std::string arrowFromBlockName(std::string v) {
+    std::string up;
+    for (char c : v)
+        up += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    if (!up.empty() && up[0] == '_')
+        up.erase(0, 1);
+    if (up == "." || up == "CLOSEDFILLED" || up == "CLOSEDBLANK" || up == "CLOSED")
+        return "Filled";
+    if (up == "OBLIQUE" || up == "ARCHTICK" || up == "INTEGRAL")
+        return "Tick";
+    if (up == "OPEN" || up == "OPEN30" || up == "OPEN90")
+        return "Open";
+    if (up == "DOT" || up == "DOTSMALL" || up == "DOTBLANK" || up == "ORIGIN" || up == "ORIGIN2")
+        return "Dot";
+    if (up == "NONE")
+        return "None";
+    return v;
+}
+
 // DIMSCALE, DIMTXT, DIMDEC, ... typed as commands, as in AutoCAD: shows and changes one setting of
 // the current dimension style (dimensions of that style follow).
 class DimVarCommand final : public cmd::Command {
@@ -1158,7 +1182,9 @@ public:
             "Enter new value for " + name_ + " (style " + style.name + ") <" + now + ">", so);
         if (!val.ok())
             co_return;
-        const std::string text(cmd::trim(val.text));
+        std::string text(cmd::trim(val.text));
+        if (key_ == "ArrowType")
+            text = arrowFromBlockName(text);
         if (text.empty() || text == now)
             co_return;
         if (std::string err = applyProperty(ctx.doc(), style, key_, text); !err.empty()) {
@@ -1176,6 +1202,57 @@ public:
 
 private:
     std::string name_, key_, help_;
+};
+
+// DIMTSZ as in AutoCAD: a size above 0 draws ticks (oblique strokes) of that size instead of
+// arrowheads; 0 goes back to filled arrows.
+class DimTszCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "DIMTSZ"; }
+    std::string_view description() const override {
+        return "Tick size of the current dimension style (0 = arrowheads)";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        const DimStyleId id = ctx.doc().header().currentDimStyle;
+        DimStyle style = dim::styleOf(ctx.doc(), id);
+        const bool ticks = style.arrowType == ArrowType::ArchTick;
+        char buf[32];
+        std::snprintf(buf, sizeof buf, "%g", ticks ? style.arrowSize : 0.0);
+        const std::string now = buf;
+        cmd::StringOptions so;
+        so.defaultValue = now;
+        auto val = co_await ctx.getString("Enter new value for DIMTSZ (style " + style.name +
+                                              ", 0 = arrowheads) <" + now + ">",
+                                          so);
+        if (!val.ok())
+            co_return;
+        const std::string text(cmd::trim(val.text));
+        if (text.empty() || text == now)
+            co_return;
+        char* end = nullptr;
+        const double v = std::strtod(text.c_str(), &end);
+        if (end == text.c_str() || *end != '\0' || !(v >= 0)) {
+            ctx.message("DIMTSZ is a size of 0 or more.");
+            co_return;
+        }
+        if (v > 0) {
+            style.arrowType = ArrowType::ArchTick;
+            style.arrowType2.reset();
+            style.arrowSize = v;
+        } else if (ticks) {
+            style.arrowType = ArrowType::ClosedFilled;
+            style.arrowType2.reset();
+        }
+        ctx.setUndoLabel("DIMTSZ");
+        if (auto r = ctx.tx().modifyDimStyle(id, [&](DimStyle& s) { s = style; }); !r) {
+            ctx.message(r.error().message);
+            co_return;
+        }
+        ctx.message(v > 0 ? "DIMTSZ = " + text + ": dimensions of style " + style.name +
+                                " draw ticks."
+                          : "DIMTSZ = 0: dimensions of style " + style.name +
+                                " draw arrowheads (DIMBLK sets which).");
+    }
 };
 
 class DimStylesPanelCommand final : public cmd::Command {
@@ -1225,6 +1302,10 @@ void registerDimVarCommands(cmd::Registry& registry) {
     };
     for (const Spec& v : kVars)
         (void)registry.add(std::make_unique<DimVarCommand>(v.name, v.key, v.help));
+    (void)registry.add(std::make_unique<DimVarCommand>(
+        "DIMBLK", "ArrowType",
+        "Arrowhead of the current dimension style: Filled, Open, Tick (Oblique), Dot or None"));
+    (void)registry.add(std::make_unique<DimTszCommand>());
 }
 
 std::unique_ptr<cmd::Command> makeDimStyleCommand() {

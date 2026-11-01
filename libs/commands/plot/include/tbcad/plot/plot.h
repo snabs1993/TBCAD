@@ -102,6 +102,9 @@ BBox2 viewWindow(const cmd::IHost& host);
 // "Fit", "1:100", "100" -> settings (fit / scaleN). False when the text is not a scale.
 bool parseScale(const std::string& text, exportlib::PlotSettings& settings);
 std::string scaleText(const exportlib::PlotSettings& settings);
+// The scale a page setup plots at: a setup used only by layouts plots their sheets at 1:1 (the
+// viewports carry the drawing scale), whatever scale was saved in it from model space.
+std::string pageSetupScaleText(const Document& doc, const layout::PageSetup& setup);
 
 // The sheet the plot settings describe: the chosen layout, or model space. Display areas are
 // resolved from the host's view.

@@ -588,6 +588,16 @@ std::string scaleText(const PlotSettings& s) {
     return s.fitToPaper ? "Fit" : "1:" + fmt(s.scaleN);
 }
 
+std::string pageSetupScaleText(const Document& doc, const layout::PageSetup& setup) {
+    const std::string own = scaleText(setup.settings);
+    if (layout::modelPageSetup(doc) == setup.name)
+        return own;
+    for (const auto& l : layout::layouts(doc))
+        if (l.pageSetup == setup.name)
+            return own == "1:1" ? own : "1:1 on the sheet";
+    return own;
+}
+
 layout::StyleResolver styleResolver(const cmd::IHost& host) {
     return [&host](const std::string& name) -> std::shared_ptr<const plotstyle::PlotStyleTable> {
         auto t = resolveStyleTable(host, name);

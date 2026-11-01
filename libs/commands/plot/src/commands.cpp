@@ -1040,7 +1040,7 @@ public:
             for (const auto& p : all) {
                 std::string line = "  " + p.name + ": " + p.settings.paperName +
                                    (p.settings.landscape ? " landscape" : " portrait") + ", " +
-                                   scaleText(p.settings) + ", " +
+                                   pageSetupScaleText(ctx.doc(), p) + ", " +
                                    (p.styleName.empty() ? "no style" : p.styleName);
                 std::string users;
                 if (p.name == model)

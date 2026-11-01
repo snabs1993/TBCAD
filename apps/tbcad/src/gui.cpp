@@ -1285,6 +1285,39 @@ void Gui::shortcuts() {
         }
     }
 
+    // Ctrl+V of several lines into the command line (focused, or a command waiting): each line
+    // is entered as if typed and followed by Enter, as a script; text after the last line break
+    // stays on the line. The text field alone would join the lines with spaces.
+    if (io.KeyCtrl && !io.KeyShift && !io.KeyAlt &&
+        ImGui::IsKeyPressed(ImGuiKey_V, ImGuiInputFlags_None) &&
+        ((io.WantTextInput && ImGui::GetActiveID() == inputId_ && inputId_ != 0) ||
+         (!io.WantTextInput && core_.runner().active()))) {
+        const char* text = ImGui::GetClipboardText();
+        if (text && std::strpbrk(text, "\r\n") && !isOwnClipText(text)) {
+            std::string all = input_ + text;
+            std::vector<std::string> lines;
+            std::size_t start = 0;
+            for (std::size_t i = 0; i < all.size(); ++i) {
+                if (all[i] != '\r' && all[i] != '\n')
+                    continue;
+                lines.push_back(all.substr(start, i - start));
+                if (all[i] == '\r' && i + 1 < all.size() && all[i + 1] == '\n')
+                    ++i;
+                start = i + 1;
+            }
+            ImGui::SetKeyOwner(ImGuiKey_V, ImGuiKeyOwner_NoOwner, ImGuiInputFlags_LockThisFrame);
+            ImGui::ClearActiveID();
+            input_ = all.substr(start);
+            for (const std::string& line : lines) {
+                inputHistory_.push(line);
+                core_.submitText(line);
+            }
+            refocusInput_ = true;
+            anyActivity_ = true;
+            return;
+        }
+    }
+
     // Ctrl+V while a command waits for input and the command line is not focused (a text prompt
     // such as "Output file"): paste the clipboard text into the prompt, not objects into the
     // drawing.
