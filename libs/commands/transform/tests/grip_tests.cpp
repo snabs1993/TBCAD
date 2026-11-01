@@ -5,6 +5,7 @@
 
 #include "common.h"
 #include "tbcad/blocks/attributes.h"
+#include "tbcad/core/dump.h"
 #include "tbcad/geom/geom.h"
 #include "tbcad/transform/grips.h"
 #include "tbcad/transform/transform.h"
@@ -555,4 +556,44 @@ TEST_CASE("a picture offers four corner grips and a corner scales it") {
     CHECK(near(get<InsertData>(f.doc, ins).scale, {2, 2}));
     f.host.undo();
     CHECK(near(get<InsertData>(f.doc, ins).scale, {1, 1}));
+}
+
+TEST_CASE("objects on a locked layer show no grips and GRIPEDIT leaves them alone") {
+    Fixture f;
+    f.host.run("DIMLINEAR", {"0,0", "10,0", "5,5"});
+    std::vector<EntityId> ids;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (entityAs<DimensionData>(e))
+            ids.push_back(e.common.id);
+    });
+    REQUIRE(ids.size() == 1);
+    ids.push_back(add(f.doc, ArcData{{0, 30}, 6, 0.3, 2.5}));
+    EllipseData el;
+    el.center = {40, 0};
+    el.majorAxis = {8, 0};
+    el.ratio = 0.5;
+    el.endParam = kTwoPi;
+    ids.push_back(add(f.doc, Indirect<EllipseData>(el)));
+    SplineData sp;
+    sp.fit = {{0, 0}, {5, 4}, {10, 0}, {15, 4}};
+    if (auto r = geom::interpolateSpline(sp.fit, {})) {
+        sp.degree = r.value().degree;
+        sp.knots = r.value().knots;
+        sp.control = r.value().control;
+    }
+    ids.push_back(add(f.doc, Indirect<SplineData>(sp)));
+    REQUIRE(tf::collectGrips(f.doc, ids).size() > 0);
+    {
+        Transaction tx = f.doc.begin("lock");
+        const LayerId locked = tx.addLayer(Layer{.name = "LOCKED", .locked = true}).value();
+        for (EntityId id : ids)
+            REQUIRE(tx.modify(id, [&](Entity& e) { e.common.layer = locked; }));
+        tx.commit();
+    }
+    CHECK(tf::collectGrips(f.doc, ids).empty());
+    const std::string before = canonicalDump(f.doc);
+    f.host.setSelection(ids);
+    for (const char* from : {"0,0", "10,0", "40,0", "48,0", "5,4"})
+        f.host.run("GRIPEDIT", {from, "60,60"});
+    CHECK(canonicalDump(f.doc) == before);
 }
