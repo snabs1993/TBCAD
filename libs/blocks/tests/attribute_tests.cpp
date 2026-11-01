@@ -225,3 +225,41 @@ TEST_CASE("attributeText of a multiple-line attribute with line breaks is multil
     CHECK(breaksFromPrompt(breaksToPrompt("a\nb")) == "a\nb");
     CHECK(breaksFromPrompt("x\\Py") == "x\ny");
 }
+
+TEST_CASE("a mirrored insert keeps its attribute values reading left to right") {
+    registerInsertDisplay();
+    registerFakeText();
+    Document doc;
+    BlockId b = addBlock(
+        doc, "B",
+        {line(0, 0, 1, 0), attdef("A", "dd", {2, 5}), attdef("C", "const", {2, 7}, false, true)});
+    Entity ins = insertWith(b, {10, 0}, {{"A", "abc"}});
+    entityAs<InsertData>(ins)->scale = {-1, 1};  // MIRROR about a vertical line
+    EntityId id = addEntity(doc, std::move(ins));
+    geom::DisplayContext ctx;
+    ctx.pixelSizeMm = 0.1;
+    DisplayList l;
+    geom::buildDisplay(doc, *doc.find(id), ctx, l);
+    REQUIRE(l.items.size() == 3);
+    // The value sits where the mirror put its start and still runs to the right.
+    bool sawValue = false, sawConstant = false;
+    for (const DisplayItem& item : l.items) {
+        const auto* p = std::get_if<DisplayPolyline>(&item);
+        if (!p || p->pts.size() != 2)
+            continue;
+        if (near(p->pts[0], {8, 5})) {
+            CHECK(near(p->pts[1], {11, 5}));
+            sawValue = true;
+        } else if (near(p->pts[0], {8, 7})) {
+            // A constant attribute is part of the block's picture and mirrors with it.
+            CHECK(near(p->pts[1], {3, 7}));
+            sawConstant = true;
+        }
+    }
+    CHECK(sawValue);
+    CHECK(sawConstant);
+    // Bounds cover the value where it is drawn.
+    BBox2 box = insertBounds(doc, *doc.find(id));
+    CHECK(box.max.x >= 11 - 1e-9);
+    geom::DisplayRegistry::clear(EntityKind::Text);
+}
