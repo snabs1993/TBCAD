@@ -2752,6 +2752,31 @@ void AppCore::followLockedViewport() {
     annoSyncRevision_ = session_->doc.revision();
 }
 
+// While a block is edited in place (BEDIT), its references stay drawn under the working copies
+// but cannot be picked, so a click or a pick box takes the copy (a circle of the block), not the
+// whole reference.
+void AppCore::syncBlockEditPicking() {
+    if (!session_)
+        return;
+    Document& doc = session_->doc;
+    const std::string block = setting("tmp.bedit.block").value_or("");
+    if (block == unpickBlock_ && (block.empty() || doc.revision() == unpickRevision_))
+        return;
+    unpickBlock_ = block;
+    unpickRevision_ = doc.revision();
+    std::unordered_set<EntityId> ids;
+    if (const BlockDef* def = block.empty() ? nullptr : doc.blockByName(block)) {
+        for (EntityId id : doc.modelSpace())
+            if (const Entity* e = doc.find(id))
+                if (const auto* ins = entityAs<InsertData>(*e); ins && ins->block == def->id)
+                    ids.insert(id);
+    }
+    if (ids != doc.viewUnpickable()) {
+        doc.setViewUnpickable(std::move(ids));
+        pruneSelection();
+    }
+}
+
 // While a layout viewport is edited from model space, the layers frozen in it or hidden on its
 // sheet are hidden there too, as on the sheet (VPLAYER, the VP Frz column of the Layers panel,
 // SHEETLAYER).
@@ -3115,6 +3140,7 @@ void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
     }
     followLockedViewport();
     hideViewportFrozenLayers();
+    syncBlockEditPicking();
     session_->sync->setLockedFade(settings_.getNumber("view.lockFade", 60));
     {
         profile::EditTimer t("frame: re-tile");

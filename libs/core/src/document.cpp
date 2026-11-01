@@ -984,6 +984,7 @@ std::shared_ptr<const Document> Document::snapshot() const {
     d->blocks_ = blocks_;
     d->filePath_ = filePath_;
     d->viewHidden_ = viewHidden_;
+    d->viewUnpickable_ = viewUnpickable_;
     d->revision_ = revision_;
     return d;
 }

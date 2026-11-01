@@ -528,7 +528,8 @@ SubmitResult CommandRunner::answerTop(const Input& in) {
     // All and Last take what the user could pick by hand: shown, in this space, and not on a
     // locked, frozen or switched-off layer.
     auto pickable = [&](const Entity& e) {
-        if (!e.common.visible || doc_.ownerBlock(e.common.id) != host_.drawingOwner())
+        if (!e.common.visible || doc_.ownerBlock(e.common.id) != host_.drawingOwner() ||
+            (!doc_.viewUnpickable().empty() && doc_.viewUnpickable().contains(e.common.id)))
             return false;
         const EffectiveLayer l = doc_.effective(e.common.layer);
         return l.on && !l.frozen && !l.locked;

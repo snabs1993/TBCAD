@@ -167,7 +167,7 @@ void eraseTests(cmd::CommandContext& ctx) {
 
 // Writes the copies back into the definition. Returns false (with a message) when it cannot.
 // `into` (another block, made by BSAVEAS with a copy of the definition) receives them instead.
-bool saveBack(cmd::CommandContext& ctx, bool removeCopies, BlockId into = {}) {
+bool saveBack(cmd::CommandContext& ctx, bool removeCopies, BlockId into = {}, bool quiet = false) {
     Document& doc = ctx.doc();
     const BlockDef* def = into ? doc.block(into) : doc.blockByName(editedBlock(ctx.host()));
     if (!def) {
@@ -242,7 +242,7 @@ bool saveBack(cmd::CommandContext& ctx, bool removeCopies, BlockId into = {}) {
             ctx.host().setSetting(kSavedKey, "1");
         }
         ctx.message("Reference \"" + name + "\" saved to its file from " + std::to_string(n) +
-                    " objects.");
+                    (n == 1 ? " object." : " objects."));
         return true;
     }
     (void)tx.eraseAllIn(block);
@@ -273,8 +273,11 @@ bool saveBack(cmd::CommandContext& ctx, bool removeCopies, BlockId into = {}) {
         ctx.host().setSetting(kSavedKey, "1");
         ctx.host().setSetting(kRevKey, std::to_string(doc.revision() + 1));
     }
-    ctx.message("Block \"" + doc.block(block)->name + "\" updated from " + std::to_string(n) +
-                " objects.");
+    if (quiet)
+        ctx.message("Block editor closed: nothing was changed.");
+    else
+        ctx.message("Block \"" + doc.block(block)->name + "\" updated from " + std::to_string(n) +
+                    (n == 1 ? " object." : " objects."));
     return true;
 }
 
@@ -529,11 +532,12 @@ public:
         }
         if (save) {
             ctx.setUndoLabel(close_ ? "Close block edit" : "Save block");
-            (void)saveBack(ctx, close_);
+            (void)saveBack(ctx, close_, {}, close_ && untouched);
             co_return;
         }
         const bool savedBefore = ctx.host().setting(kSavedKey).value_or("") == "1";
-        for (EntityId id : decodeIds(ctx.host().setting(kIdsKey).value_or("")))
+        // The working copies and everything drawn during the edit go.
+        for (EntityId id : editedIds(ctx.doc(), ctx.host()))
             if (ctx.doc().find(id))
                 (void)ctx.tx().erase(id);
         eraseTests(ctx);
