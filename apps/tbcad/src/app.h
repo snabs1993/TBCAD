@@ -113,6 +113,7 @@ private:
     std::unique_ptr<ui::UiRegistry> uiRegistry_;
     std::unique_ptr<ui::AppCore> core_;
     std::unique_ptr<mcpapp::McpController> mcp_;
+    std::function<void()> collabPump_;     // from collabapp::attach, run once per loop turn
     std::function<void()> extensionPump_;  // from tbcad::pro::attach, run once per loop turn
     std::unique_ptr<Gui> gui_;
     std::unique_ptr<WindowLink> windowLink_;  // the other TBCAD windows

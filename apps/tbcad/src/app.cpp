@@ -4,6 +4,7 @@
 #include <backends/imgui_impl_glfw.h>
 #include <backends/imgui_impl_opengl3.h>
 #include <glad/gl.h>
+#include <tbcad/collabapp/collabapp.h>
 #ifdef TBCAD_HAS_PRO
 #include <tbcad/pro/pro.h>
 #endif
@@ -1936,6 +1937,11 @@ int App::run() {
     uiRegistry_ = std::make_unique<ui::UiRegistry>();
     registerAllUi(*uiRegistry_);
     plugins_->registerUi(*uiRegistry_);
+    // Live collaboration on the local network (libs/collabapp).
+    collabPump_ = collabapp::attach(*core_, *registry_, *uiRegistry_, [this] {
+        if (windowReady_)
+            glfwPostEmptyEvent();
+    });
 #ifdef TBCAD_HAS_PRO
     extensionPump_ = tbcad::pro::attach(*core_, *registry_, *uiRegistry_, [this] {
         if (windowReady_)
@@ -2039,6 +2045,8 @@ int App::run() {
             glfwSetWindowShouldClose(window_, GLFW_FALSE);
 
         mcp_->pump();
+        if (collabPump_)
+            collabPump_();
         if (extensionPump_)
             extensionPump_();
         frame();
