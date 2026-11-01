@@ -448,6 +448,9 @@ Result<int> addViewport(Transaction& tx, const std::string& layoutName, const BB
     v.center = center;
     v.scaleN = scaleN;
     v.frozen = layersFrozenInNewViewports(tx.document());
+    // The border goes on the current layer, as other objects do: turning that layer off or
+    // freezing it hides the border on screen and in the plot.
+    v.borderLayer = tx.document().header().currentLayer;
     int id = v.id;
     ed.layout->viewports.push_back(std::move(v));
     if (auto r = store(tx, ed.all); !r)

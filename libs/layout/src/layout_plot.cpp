@@ -253,7 +253,8 @@ Result<exportlib::PlotSheet> buildLayoutSheet(const Document& doc, const std::st
         // The border goes with its layer: off, frozen or not plotting leaves the sheet without it.
         const Layer* borderLayer = vp.borderLayer.value ? doc.layer(vp.borderLayer) : nullptr;
         const bool layerShows =
-            !borderLayer || (borderLayer->on && !borderLayer->frozen && borderLayer->plot);
+            !borderLayer ||
+            (borderLayer->on && !borderLayer->frozen && (borderLayer->plot || options.screen));
         if (options.viewportBorders && vp.border && layerShows) {
             exportlib::PlotPath border;
             border.closed = true;

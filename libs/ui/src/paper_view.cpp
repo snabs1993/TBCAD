@@ -307,7 +307,9 @@ std::string PaperView::build(const Document& doc, const std::string& layoutName)
         return "No layout named \"" + layoutName + "\".";
     exportlib::PlotSettings base;
     base.color = exportlib::ColorMode::AsDisplayed;
-    auto built = layout::buildLayoutSheet(doc, layoutName, base);
+    layout::LayoutPlotOptions options;
+    options.screen = true;
+    auto built = layout::buildLayoutSheet(doc, layoutName, base, options);
     if (!built)
         return built.error().message;
     sheet_.expand({0, 0});

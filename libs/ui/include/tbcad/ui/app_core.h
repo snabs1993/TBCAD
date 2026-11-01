@@ -731,6 +731,7 @@ private:
     void enterViewport(const std::string& layoutName, const layout::Viewport& vp);
     double pendingZoomXp_ = 0;  // ZOOM nXP: the viewport scale as a fraction of paper space
     void hideViewportFrozenLayers();
+    void hintViewportBorder(Vec2 world);
     void syncBlockEditPicking();
     std::string vpHiddenKey_{};  // layout:viewport:revision the hidden layers were found for
     const void* vpHiddenSession_ = nullptr;

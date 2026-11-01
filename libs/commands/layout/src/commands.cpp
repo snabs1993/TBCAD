@@ -531,6 +531,24 @@ void addDefaultViewport(cmd::CommandContext& ctx, const std::string& name) {
         ctx.message(id.error().message);
 }
 
+// A viewport reaching past the edge of the sheet is plotted cut off: say so, with the sheet's
+// size and how to change it.
+void warnOffSheet(cmd::CommandContext& ctx, const std::string& name, const BBox2& r) {
+    const auto lay = layout::findLayout(ctx.doc(), name);
+    if (!lay || !(lay->widthMm > 0) || !(lay->heightMm > 0))
+        return;
+    constexpr double tol = 0.01;
+    if (r.min.x >= -tol && r.min.y >= -tol && r.max.x <= lay->widthMm + tol &&
+        r.max.y <= lay->heightMm + tol)
+        return;
+    char buf[200];
+    std::snprintf(buf, sizeof buf,
+                  "Warning: the viewport goes outside the sheet (%s, 0,0 to %g,%g mm) and will "
+                  "be cut off when plotted. LAYOUT Paper changes the sheet size.",
+                  lay->paperName.c_str(), lay->widthMm, lay->heightMm);
+    ctx.message(buf);
+}
+
 // MVIEW: a viewport on the current layout. Corners are typed on the sheet in millimetres, or the
 // viewport fills the sheet inside its margins (Fit), or follows a polygon (Polygonal) or a closed
 // polyline on the sheet (Object). ON / OFF and Lock act on viewports already there.
@@ -723,6 +741,8 @@ public:
             ctx.message(id ? "Viewport " + std::to_string(id.value()) + " added to \"" + target +
                                  "\"" + (fit ? " at 1:" + formatScale(n) : std::string()) + "."
                            : id.error().message);
+            if (id)
+                warnOffSheet(ctx, target, r);
         }
     }
 
