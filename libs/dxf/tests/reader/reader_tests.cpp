@@ -1196,6 +1196,39 @@ TEST_CASE("dimension: a relative height in the middle of the text is not the tex
     CHECK(near(heightFor("{\\Fromans|c0;\\H0.5x;<>}"), 1.0));
 }
 
+TEST_CASE("hatch: the file's pattern lines are kept in pattern units for an unknown name") {
+    // DASH at scale 2, angle 30: one line family at 30 degrees through (1, 2), spaced 10 apart
+    // (offset vector perpendicular to the lines), dash 4 gap 2 in drawing units.
+    const double a = 30 * kPi / 180;
+    Pairs p;
+    p.section("ENTITIES");
+    p.g(0, "HATCH").g(8, "0").g(10, 0.0).g(20, 0.0).g(30, 0.0).g(2, "DASH").g(70, 0).g(71, 0);
+    p.g(91, 1).g(92, 2).g(72, 0).g(73, 1).g(93, 4);
+    p.g(10, 0.0).g(20, 0.0).g(10, 100.0).g(20, 0.0).g(10, 100.0).g(20, 100.0).g(10, 0.0);
+    p.g(20, 100.0).g(97, 0).g(75, 0).g(76, 1).g(52, 30.0).g(41, 2.0).g(77, 0).g(78, 1);
+    p.g(53, 30.0).g(43, 1.0).g(44, 2.0).g(45, -10 * std::sin(a)).g(46, 10 * std::cos(a));
+    p.g(79, 2).g(49, 4.0).g(49, -2.0).g(47, 1.0).g(98, 0);
+    p.end().g(0, "EOF");
+    Loaded l = load(p.text);
+    auto hatches = modelEntities<HatchData>(l.doc());
+    REQUIRE(hatches.size() == 1);
+    const HatchData& h = *hatches[0];
+    CHECK(h.pattern == "DASH");
+    REQUIRE(h.filePattern.lines.size() == 1);
+    CHECK(h.filePattern.name == "DASH");
+    const HatchFileLine& line = h.filePattern.lines[0];
+    CHECK(near(line.angle, 0.0));  // relative to the pattern angle
+    CHECK(line.delta.x == doctest::Approx(0).epsilon(1e-9));
+    CHECK(line.delta.y == doctest::Approx(5));  // 10 at scale 2
+    REQUIRE(line.dashes.size() == 2);
+    CHECK(line.dashes[0] == doctest::Approx(2));
+    CHECK(line.dashes[1] == doctest::Approx(-1));
+    // Scale and angle put the origin back where the file had it.
+    const Vec2 o = line.origin * h.patternScale;
+    const Vec2 world{o.x * std::cos(a) - o.y * std::sin(a), o.x * std::sin(a) + o.y * std::cos(a)};
+    CHECK(near(world, Vec2{1, 2}));
+}
+
 TEST_CASE("hatch: gradient colours, angle and name are kept") {
     Pairs p;
     p.section("ENTITIES");

@@ -17,6 +17,11 @@ namespace tbcad::hatch {
 // than once. The command module calls it from its registerCommands.
 void registerHatchDisplay();
 
+// The pattern a hatch draws with: the lines its file carried for its pattern name when it has
+// them (HatchData::filePattern), otherwise the library pattern of that name (null when unknown).
+// `scratch` holds the file pattern; the result may point into it.
+const Pattern* hatchPattern(const HatchData& hatch, Pattern& scratch);
+
 // Bounding box of all loops (curve bounds, not flattened).
 BBox2 hatchBounds(const HatchData& hatch);
 

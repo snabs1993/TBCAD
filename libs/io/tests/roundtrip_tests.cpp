@@ -753,6 +753,42 @@ TEST_CASE("round trip: a double hatch stays double") {
     CHECK(canonicalDump(*back) == canonicalDump(doc));
 }
 
+TEST_CASE("round trip: a hatch keeps the pattern lines its file carried") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("hatch");
+        HatchData h;
+        HatchLoop loop;
+        loop.edges.push_back(HatchLineEdge{{0, 0}, {10, 0}});
+        loop.edges.push_back(HatchLineEdge{{10, 0}, {10, 10}});
+        loop.edges.push_back(HatchLineEdge{{10, 10}, {0, 0}});
+        h.loops.push_back(loop);
+        h.solid = false;
+        h.pattern = "DASH";
+        h.filePattern.name = "DASH";
+        h.filePattern.lines.push_back(HatchFileLine{0.5, {1, 2}, {0.25, 3}, {2, -1, 0}});
+        h.filePattern.lines.push_back(HatchFileLine{1.0, {}, {0, 4}, {}});
+        for (bool doubled : {false, true}) {
+            h.doubled = doubled;
+            Entity e;
+            e.data = h;
+            (void)tx.add(std::move(e));
+        }
+        tx.commit();
+    }
+    auto back = readOrFail(writeOrFail(doc));
+    CHECK(canonicalDump(*back) == canonicalDump(doc));
+    for (EntityId id : {EntityId{1}, EntityId{2}}) {
+        const HatchData* h = entityAs<HatchData>(*back->find(id));
+        REQUIRE(h != nullptr);
+        CHECK(h->doubled == (id == EntityId{2}));
+        REQUIRE(h->filePattern.lines.size() == 2);
+        CHECK(h->filePattern.name == "DASH");
+        CHECK(h->filePattern.lines[0].dashes == std::vector<double>{2, -1, 0});
+        CHECK(h->filePattern.lines[0].delta.y == doctest::Approx(3));
+    }
+}
+
 TEST_CASE("round trip: a gradient hatch keeps its gradient") {
     Document doc;
     {

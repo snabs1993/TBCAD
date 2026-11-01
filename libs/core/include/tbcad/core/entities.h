@@ -476,6 +476,25 @@ struct GradientData {
     double tint = 1;
 };
 
+// One line family of a pattern read from a DXF/DWG file (HATCH groups 53 to 49), in TBCAD's own
+// pattern units: mm at pattern scale 1 and relative to the hatch's pattern angle, like
+// hatch::PatternFamily. `delta` is (along, perpendicular) to the line.
+struct HatchFileLine {
+    double angle = 0;
+    Vec2 origin{};
+    Vec2 delta{};
+    std::vector<double> dashes{};
+};
+
+// The pattern definition a file carried for the pattern `name`. It is drawn instead of a pattern
+// of the same name in TBCAD's library (the file is what AutoCAD drew); picking another pattern
+// name leaves it unused.
+struct HatchFilePattern {
+    std::string name{};
+    std::vector<HatchFileLine> lines{};
+    bool empty() const { return lines.empty(); }
+};
+
 struct HatchData {
     std::vector<HatchLoop> loops{};
     bool solid = true;
@@ -487,6 +506,7 @@ struct HatchData {
     Color fill = Color::byLayer();
     std::vector<EntityId> sourceBoundary{};  // for later associativity
     std::optional<GradientData> gradient{};  // set: fill with a colour gradient
+    HatchFilePattern filePattern{};          // lines from the file; see HatchFilePattern
 };
 
 // Value of one attribute of an Insert, matched to the block's attribute definition by tag.

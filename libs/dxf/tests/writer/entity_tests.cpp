@@ -2462,6 +2462,43 @@ TEST_CASE("a drawing in metres is written in metres ($INSUNITS 6) and reads back
     CHECK(limits.find("\n42.0\n") != std::string::npos);  // 42 m
 }
 
+TEST_CASE("a hatch with its file's pattern lines writes them back, also in inches") {
+    for (const LengthUnit unit : {LengthUnit::Millimeter, LengthUnit::Inch}) {
+        Document doc;
+        {
+            Transaction tx = doc.begin("t");
+            HatchData h;
+            HatchLoop loop;
+            loop.edges.push_back(HatchLineEdge{{0, 0}, {100, 0}});
+            loop.edges.push_back(HatchLineEdge{{100, 0}, {100, 50}});
+            loop.edges.push_back(HatchLineEdge{{100, 50}, {0, 0}});
+            h.loops.push_back(loop);
+            h.solid = false;
+            h.pattern = "DASH";
+            h.patternScale = 2;
+            h.patternAngle = 0.5;
+            h.filePattern.name = "DASH";
+            h.filePattern.lines.push_back(HatchFileLine{0.25, {1, 2}, {0.5, 3}, {2, -1}});
+            REQUIRE(tx.add(make(Indirect<HatchData>(h))));
+            tx.commit();
+        }
+        setUnits(doc, unit);
+        RoundTrip rt = roundTrip(doc);
+        CHECK_MESSAGE(rt.diff.empty(), static_cast<int>(unit), rt.diff);
+        int hatches = 0;
+        rt.back->forEachEntity([&](const Entity& e) {
+            const auto* h = entityAs<HatchData>(e);
+            if (!h)
+                return;
+            ++hatches;
+            REQUIRE(h->filePattern.lines.size() == 1);
+            CHECK(h->filePattern.lines[0].delta.y == doctest::Approx(3));
+            CHECK(h->filePattern.lines[0].dashes[0] == doctest::Approx(2));
+        });
+        CHECK(hatches == 1);
+    }
+}
+
 TEST_CASE(
     "the test drawing in centimetres or inches is written in that unit and reads back the same") {
     for (const LengthUnit unit : {LengthUnit::Centimeter, LengthUnit::Inch, LengthUnit::Foot}) {

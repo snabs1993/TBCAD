@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "tbcad/geom/entity.h"
+#include "tbcad/hatch/pattern.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/mline/mline.h"
 
@@ -257,6 +258,31 @@ Result<void> scaleEntity(Entity& e, double s, double patternUnit) {
                     edge);
         h->patternOrigin = h->patternOrigin * s;
         h->patternScale *= s * patternUnit;  // see Importer::patternK_
+        // The pattern lines are written in drawing lengths: only `s` applies to them, so they
+        // are taken out of the inch pattern scale again (also the library pattern's lines).
+        if (patternUnit != 1 && patternUnit > 0 && !h->solid) {
+            auto lower = [](std::string v) {
+                for (char& c : v)
+                    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                return v;
+            };
+            if (h->filePattern.empty() || lower(h->filePattern.name) != lower(h->pattern)) {
+                h->filePattern = {};
+                if (const hatch::Pattern* lib = hatch::PatternRegistry::find(h->pattern);
+                    lib && !lib->solid) {
+                    h->filePattern.name = h->pattern;
+                    for (const hatch::PatternFamily& f : lib->families)
+                        h->filePattern.lines.push_back(
+                            HatchFileLine{f.angle, f.origin, f.delta, f.dashes});
+                }
+            }
+            for (HatchFileLine& l : h->filePattern.lines) {
+                l.origin = l.origin * (1 / patternUnit);
+                l.delta = l.delta * (1 / patternUnit);
+                for (double& v : l.dashes)
+                    v /= patternUnit;
+            }
+        }
         return {};
     }
     if (auto* mt = entityAs<MTextData>(e)) {

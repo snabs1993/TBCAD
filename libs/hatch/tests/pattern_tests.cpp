@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "tbcad/hatch/hatch.h"
 #include "tbcad/hatch/pattern.h"
 
 using namespace tbcad;
@@ -85,4 +86,21 @@ TEST_CASE("pattern names from other programs resolve: ANSI31, AR-CONC, AR-B816")
     CHECK(ansi->families[0].delta.y == doctest::Approx(3.175));
     CHECK(PatternRegistry::find("AR-CONC") == PatternRegistry::find("CONCRETE"));
     CHECK(PatternRegistry::find("AR-B816") == PatternRegistry::find("BRICK"));
+}
+
+TEST_CASE("hatchPattern: the file's lines win while the hatch keeps that pattern name") {
+    HatchData h;
+    h.solid = false;
+    h.pattern = "dash";
+    h.filePattern.name = "DASH";
+    h.filePattern.lines.push_back(HatchFileLine{0.25, {1, 2}, {0, 3}, {2, -1}});
+    Pattern scratch;
+    const Pattern* p = hatchPattern(h, scratch);
+    REQUIRE(p != nullptr);
+    REQUIRE(p->families.size() == 1);
+    CHECK(p->families[0].angle == doctest::Approx(0.25));
+    CHECK(p->families[0].delta.y == doctest::Approx(3));
+    CHECK(p->families[0].dashes == std::vector<double>{2, -1});
+    h.pattern = "ANSI31";  // another name picked: the library pattern again
+    CHECK(hatchPattern(h, scratch) == PatternRegistry::find("ANSI31"));
 }

@@ -294,7 +294,23 @@ void Writer::writeHatch(const Props& p, const HatchData& d, std::uint64_t owner)
         o.d(52, d.patternAngle * kDeg);
         o.d(41, d.patternScale);
         o.i(77, d.doubled ? 1 : 0);
-        std::optional<std::vector<HatchPatternLine>> lines = patternLines(d.pattern);
+        std::optional<std::vector<HatchPatternLine>> lines;
+        if (!d.filePattern.empty() && lowerAscii(d.filePattern.name) == lowerAscii(d.pattern)) {
+            // The lines the hatch was read with (see HatchFilePattern), written back as read.
+            lines.emplace();
+            for (const HatchFileLine& f : d.filePattern.lines) {
+                HatchPatternLine l;
+                l.angleDeg = f.angle * kDeg;
+                l.originX = f.origin.x;
+                l.originY = f.origin.y;
+                l.dx = f.delta.x;
+                l.dy = f.delta.y;
+                l.dashes = f.dashes;
+                lines->push_back(std::move(l));
+            }
+        } else {
+            lines = patternLines(d.pattern);
+        }
         if (!lines && warnedPatterns_.insert(lowerAscii(d.pattern)).second) {
             rep_.info(wcode::kUnknownPattern,
                       "hatch pattern \"" + d.pattern +

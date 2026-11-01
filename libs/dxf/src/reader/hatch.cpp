@@ -56,7 +56,96 @@ bool endsEdge(int code) {
     }
 }
 
+// The file's lines are the library pattern of that name (what TBCAD itself writes): nothing to
+// keep.
+bool sameAsLibrary(std::string_view name, const std::vector<HatchFileLine>& lines) {
+    const hatch::Pattern* lib = hatch::PatternRegistry::find(name);
+    if (!lib || lib->solid || lib->families.size() != lines.size())
+        return false;
+    auto close = [](double a, double b) {
+        return std::abs(a - b) <= 1e-6 * std::max({1.0, std::abs(a), std::abs(b)});
+    };
+    for (std::size_t i = 0; i < lines.size(); ++i) {
+        const hatch::PatternFamily& f = lib->families[i];
+        const HatchFileLine& l = lines[i];
+        const double turn = std::remainder(f.angle - l.angle, 2 * kPi);
+        if (!close(turn, 0) || !close(f.origin.x, l.origin.x) || !close(f.origin.y, l.origin.y) ||
+            !close(f.delta.x, l.delta.x) || !close(f.delta.y, l.delta.y) ||
+            f.dashes.size() != l.dashes.size())
+            return false;
+        for (std::size_t k = 0; k < l.dashes.size(); ++k)
+            if (!close(f.dashes[k], l.dashes[k]))
+                return false;
+    }
+    return true;
+}
+
 }  // namespace
+
+// The pattern definition lines (78, then 53 43 44 45 46 79 49... per line) are in drawing units
+// with the hatch's scale and angle already applied. They are kept in pattern units (mm at scale
+// 1, relative to the pattern angle) so that the hatch draws what the file drew, also for pattern
+// names TBCAD does not know and for inch patterns in a metric drawing, and still follows later
+// scale and angle edits.
+void Importer::readFileLines(const std::vector<Group>& g, std::size_t from, const Frame& f,
+                             HatchData& h) const {
+    const std::size_t n = g.size();
+    std::size_t j = from;
+    while (j < n && g[j].code != 78)
+        ++j;
+    if (j >= n)
+        return;
+    const std::int64_t count = g[j].integer();
+    ++j;
+    if (count <= 0 || count > 1000)
+        return;
+    const double scale = h.patternScale > 0 ? h.patternScale : 1;
+    const double ca = std::cos(-h.patternAngle), sa = std::sin(-h.patternAngle);
+    auto unrotate = [&](Vec2 v) { return Vec2{ca * v.x - sa * v.y, sa * v.x + ca * v.y}; };
+    auto num = [&](int code, double& v) {
+        if (j < n && g[j].code == code) {
+            v = g[j].number();
+            ++j;
+        }
+    };
+    std::vector<HatchFileLine> lines;
+    for (std::int64_t k = 0; k < count && j < n && g[j].code == 53; ++k) {
+        double a = 0, bx = 0, by = 0, ox = 0, oy = 0;
+        num(53, a);
+        num(43, bx);
+        num(44, by);
+        num(45, ox);
+        num(46, oy);
+        std::int64_t dashCount = 0;
+        if (j < n && g[j].code == 79) {
+            dashCount = g[j].integer();
+            ++j;
+        }
+        std::vector<double> dashes;
+        for (std::int64_t d = 0; d < dashCount && j < n && g[j].code == 49; ++d, ++j)
+            dashes.push_back(g[j].number() * k_ / scale);
+        const double world = f.angle(a * kDeg);
+        const Vec2 u{std::cos(world), std::sin(world)};
+        const Vec2 nrm = perp(u);
+        const Vec2 off = f.v({ox * k_, oy * k_});
+        HatchFileLine l;
+        l.angle = world - h.patternAngle;
+        l.origin = unrotate(f.p({bx * k_, by * k_})) * (1 / scale);
+        l.delta = Vec2{dot(off, u), dot(off, nrm)} * (1 / scale);
+        l.dashes = std::move(dashes);
+        bool ok = std::isfinite(l.angle) && std::isfinite(l.origin.x) &&
+                  std::isfinite(l.origin.y) && std::isfinite(l.delta.x) && std::isfinite(l.delta.y);
+        for (double d : l.dashes)
+            ok = ok && std::isfinite(d);
+        if (!ok)
+            return;
+        lines.push_back(std::move(l));
+    }
+    if (lines.empty() || sameAsLibrary(h.pattern, lines))
+        return;
+    h.filePattern.name = h.pattern;
+    h.filePattern.lines = std::move(lines);
+}
 
 bool Importer::convHatch(const Record& r, const Frame& f, std::vector<Entity>& out) {
     const std::vector<Group>& g = r.g;
@@ -311,6 +400,8 @@ bool Importer::convHatch(const Record& r, const Frame& f, std::vector<Entity>& o
                 h.patternScale = k_ == 1 ? s : s * patternK_;  // k_ is 1 on a layout sheet
         }
     }
+    if (!solid)
+        readFileLines(g, i, f, h);
     out.push_back([&] {
         Entity e;
         e.data = std::move(h);

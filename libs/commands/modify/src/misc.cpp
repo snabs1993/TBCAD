@@ -671,6 +671,7 @@ void matchProps(const Entity& src, Entity& dst, const MatchCats& cats) {
                 b->doubled = a->doubled;
                 b->fill = a->fill;
                 b->gradient = a->gradient;
+                b->filePattern = a->filePattern;
             }
         }
     }
