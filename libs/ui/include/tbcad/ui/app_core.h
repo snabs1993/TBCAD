@@ -731,6 +731,7 @@ private:
     void enterViewport(const std::string& layoutName, const layout::Viewport& vp);
     double pendingZoomXp_ = 0;  // ZOOM nXP: the viewport scale as a fraction of paper space
     void hideViewportFrozenLayers();
+    void syncBlockEditPicking();
     std::string vpHiddenKey_{};  // layout:viewport:revision the hidden layers were found for
     const void* vpHiddenSession_ = nullptr;
     std::string editingLayout_;  // the viewport being edited from model space, if any
@@ -743,6 +744,8 @@ private:
     void applyZoomXp();
     void followLockedViewport();
     std::uint64_t annoSyncRevision_ = 0;
+    std::string unpickBlock_{};             // the block whose references syncBlockEditPicking hid
+    std::uint64_t unpickRevision_ = ~std::uint64_t{0};
     underlay::ImageCache imageCache_{};
 };
 

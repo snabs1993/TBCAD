@@ -286,3 +286,59 @@ TEST_CASE("test.14: double click in a viewport of an unchanged drawing leaves it
     CHECK_FALSE(core.modified());
     CHECK(core.windowTitle().find('*') == std::string::npos);
 }
+
+TEST_CASE("test.15: in the block editor a click picks the block's circle, not the whole block") {
+    Harness h(1920, 1080);
+    h.frame(2);
+    ui::AppCore& core = h.core();
+    core.submitText("CIRCLE");
+    core.submitText("0,0");
+    core.submitText("10");
+    core.submitText("RECTANG");
+    core.submitText("-20,-20");
+    core.submitText("20,20");
+    h.frame(2);
+    core.selectAll();
+    core.submitText("-BLOCK");
+    core.submitText("T15B");
+    core.submitText("0,0");
+    core.submitText("C");  // the objects become a reference of the block
+    h.frame(2);
+    const auto inserts = [&] {
+        std::size_t n = 0;
+        core.document().forEachEntity([&](const Entity& e) {
+            if (kind(e) == EntityKind::Insert && !core.document().ownerBlock(e.common.id))
+                ++n;
+        });
+        return n;
+    };
+    const auto circles = [&] {
+        std::size_t n = 0;
+        for (EntityId id : core.document().modelSpace())
+            if (kind(*core.document().find(id)) == EntityKind::Circle)
+                ++n;
+        return n;
+    };
+    REQUIRE(inserts() >= 1);
+    const std::size_t insertsBefore = inserts();
+    core.zoomExtents();
+    h.frame(2);
+    // Into the editor the way a person does it: a double click on the block.
+    core.doubleClick({core.camera().worldToScreen({20, 0}), false, false});
+    h.frame(3);
+    REQUIRE(circles() == 1);  // the working copy
+    core.setSelection({});
+    // The circle's working copy: where the edit put it (on the reference picked, or the first).
+    Vec2 onCircle{};
+    for (EntityId id : core.document().modelSpace())
+        if (const auto* c = entityAs<CircleData>(*core.document().find(id)))
+            onCircle = {c->center.x + c->radius * 0.985, c->center.y + c->radius * 0.1};
+    core.click({core.camera().worldToScreen(onCircle), false, false});
+    h.frame(2);
+    REQUIRE(core.selection().size() == 1);
+    CHECK(kind(*core.document().find(core.selection()[0])) == EntityKind::Circle);
+    h.key(ImGuiKey_Delete);
+    h.frame(2);
+    CHECK(circles() == 0);
+    CHECK(inserts() == insertsBefore);  // the block's references stay
+}

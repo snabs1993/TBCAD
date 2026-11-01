@@ -228,3 +228,22 @@ TEST_CASE("test.14: BCLOSE with nothing changed leaves the editor without asking
     CHECK_FALSE(r2.finished);  // waits for Save or Discard
     f.host->feed({cmd::ScriptItem::esc()});
 }
+
+TEST_CASE("test.15: BCLOSE Discard also removes what was drawn during the edit") {
+    BEditFixture f;
+    f.host->run("BEDIT", {cmd::ScriptItem::pick(f.second)});
+    REQUIRE(f.lines() == 1);
+    f.addLine(0, 20, 5, 20);  // drawn while editing
+    REQUIRE(f.lines() == 2);
+    f.host->run("BCLOSE", {"Discard"});
+    CHECK(f.lines() == 0);
+    CHECK(f.def().entities.size() == 1);
+}
+
+TEST_CASE("test.15: BCLOSE with nothing changed says so, not 'updated'") {
+    BEditFixture f;
+    f.host->run("BEDIT", {cmd::ScriptItem::pick(f.second)});
+    f.host->run("BCLOSE", {});
+    CHECK(f.host->logContains("nothing was changed"));
+    CHECK_FALSE(f.host->logContains("updated from"));
+}

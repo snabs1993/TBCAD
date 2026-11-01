@@ -229,3 +229,34 @@ TEST_CASE("a crossing and a window both select every attribute definition inside
     CHECK(selectInBox(d.doc, d.idx, box, true) == std::vector<EntityId>{name, area});
     CHECK(selectInBox(d.doc, d.idx, box, false) == std::vector<EntityId>{name, area});
 }
+
+TEST_CASE("test.15: a click in the gap between words of a text picks the text") {
+    text::registerDisplay();
+    Indexed d;
+    TextData t;
+    t.position = {0, 0};
+    t.height = 10;
+    t.utf8 = "I       I";  // wide gap: the middle is far from any stroke
+    auto tx = d.doc.begin("text");
+    Entity e;
+    e.data = Indirect<TextData>(std::move(t));
+    const EntityId id = tx.add(std::move(e)).value();
+    tx.commit();
+    const BBox2 b = geom::bounds(*d.doc.find(id), d.doc);
+    REQUIRE_FALSE(b.empty());
+    const Vec2 mid{(b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2};
+    CHECK(pickEntity(d.doc, d.idx, mid, 0.5) == id);
+    // A line through the text still wins where it is under the pointer.
+    const EntityId line = addLine(d.doc, {mid.x, -50}, {mid.x, 50});
+    CHECK(pickEntity(d.doc, d.idx, mid, 0.5) == line);
+}
+
+TEST_CASE("test.15: objects the view marks unpickable are shown but cannot be picked") {
+    Indexed d;
+    const EntityId a = addLine(d.doc, {0, 0}, {100, 0});
+    d.doc.setViewUnpickable({a});
+    CHECK_FALSE(pickEntity(d.doc, d.idx, {50, 0}, 1).has_value());
+    CHECK(isVisible(d.doc, *d.doc.find(a)));
+    d.doc.setViewUnpickable({});
+    CHECK(pickEntity(d.doc, d.idx, {50, 0}, 1) == a);
+}

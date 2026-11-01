@@ -488,6 +488,11 @@ public:
         viewHidden_ = std::move(layers);
     }
     const std::unordered_set<LayerId>& viewHiddenLayers() const { return viewHidden_; }
+    // Objects shown but not pickable in the current view: the references of the block being
+    // edited in place (BEDIT), so a click in the editor finds the working copies drawn over them.
+    // Not part of the drawing: never saved nor undone.
+    void setViewUnpickable(std::unordered_set<EntityId> ids) { viewUnpickable_ = std::move(ids); }
+    const std::unordered_set<EntityId>& viewUnpickable() const { return viewUnpickable_; }
 
     // Starts the only mutation path. Throws std::logic_error if a transaction is already open.
     Transaction begin(std::string name);
@@ -565,6 +570,7 @@ private:
     mutable std::uint64_t effectiveVersion_ = 0;
     std::string filePath_{};
     std::unordered_set<LayerId> viewHidden_{};
+    std::unordered_set<EntityId> viewUnpickable_{};
 
     std::vector<DocumentObserver*> observers_{};
     Transaction* active_ = nullptr;

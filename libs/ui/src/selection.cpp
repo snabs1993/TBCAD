@@ -27,6 +27,8 @@ bool isSelectable(const Document& doc, const Entity& e) {
     }
     if (!doc.viewHiddenLayers().empty() && doc.viewHiddenLayers().contains(e.common.layer))
         return false;
+    if (!doc.viewUnpickable().empty() && doc.viewUnpickable().contains(e.common.id))
+        return false;
     EffectiveLayer layer = doc.effective(e.common);
     return layer.visible() && !layer.locked;
 }
@@ -68,6 +70,15 @@ bool pickHit(const Document& doc, const Entity& e, Vec2 p, double apertureMm, do
     if (isFillKind(e) && insideHatch(e, p)) {
         d = 0;
         return true;
+    }
+    // Text is hit anywhere in its box, also in the gaps between letters and words; a curve
+    // right under the pointer still wins (d is the aperture, the farthest a curve hit can be).
+    if (kind(e) == EntityKind::Text || kind(e) == EntityKind::MText) {
+        const BBox2 b = geom::bounds(e, doc);
+        if (!b.empty() && b.contains(p)) {
+            d = apertureMm;
+            return true;
+        }
     }
     return false;
 }
