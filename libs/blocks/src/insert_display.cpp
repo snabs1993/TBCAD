@@ -115,6 +115,39 @@ void transformList(const DisplayList& in, const Transform2& t, DisplayList& out)
     }
 }
 
+// Draws one attribute value of an insert once per placement. Under a mirroring placement the
+// value of a non-constant attribute still reads left to right, as AutoCAD shows it with
+// MIRRTEXT 0 and as the DXF export, the bounds and EXPLODE already place it; constant attributes
+// are part of the block's picture and mirror with it. `clip` is in block coordinates.
+void placeAttribute(const Document& doc, const Entity& text, bool constant,
+                    const geom::DisplayContext& ctx, const std::vector<Transform2>& items,
+                    const std::vector<Vec2>* clip, bool clipInvert, DisplayList& out) {
+    std::optional<DisplayList> own;
+    for (const Transform2& it : items) {
+        if (!constant && it.determinant() < 0)
+            if (auto moved = geom::transformed(text, it)) {
+                DisplayList one;
+                geom::buildDisplay(doc, moved.value(), ctx, one);
+                if (clip) {
+                    std::vector<Vec2> world;
+                    world.reserve(clip->size());
+                    for (const Vec2& p : *clip)
+                        world.push_back(it.apply(p));
+                    one = clipDisplay(one, world, clipInvert);
+                }
+                transformList(one, Transform2{}, out);
+                continue;
+            }
+        if (!own) {
+            own.emplace();
+            geom::buildDisplay(doc, text, ctx, *own);
+            if (clip)
+                *own = clipDisplay(*own, *clip, clipInvert);
+        }
+        transformList(*own, it, out);
+    }
+}
+
 // The block's content in block space for one combination of insert style and tolerance.
 std::shared_ptr<DisplayList> buildBlockSpace(const Document& doc, const BlockDef& def,
                                              const Entity& insert, const InsertData* effective,
@@ -356,12 +389,8 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
             continue;
         if (text->common.layer == kLayerZero)
             text->common.layer = insert.common.layer;
-        DisplayList own;
-        geom::buildDisplay(doc, *text, child, own);
-        if (clipped)
-            own = clipDisplay(own, ins->clip, ins->clipInvert);
-        for (const Transform2& it : items)
-            transformList(own, it, out);
+        placeAttribute(doc, *text, entityAs<TextData>(*e)->attdef->constant, child, items,
+                       clipped ? &ins->clip : nullptr, ins->clipInvert, out);
     }
 
     // Overlapping assemblies of one join class read as a single body.
@@ -431,10 +460,8 @@ bool buildInsertInstance(const Document& doc, const Entity& insert, const geom::
             continue;
         if (text->common.layer == kLayerZero)
             text->common.layer = insert.common.layer;
-        DisplayList own;
-        geom::buildDisplay(doc, *text, child, own);
-        for (const Transform2& it : items)
-            transformList(own, it, out.extra);
+        placeAttribute(doc, *text, entityAs<TextData>(*e)->attdef->constant, child, items,
+                       nullptr, false, out.extra);
     }
     out.blockSpace = std::move(blockSpace);
     out.placements = std::move(items);
