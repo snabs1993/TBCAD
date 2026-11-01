@@ -325,6 +325,10 @@ void App::captureFrames(int n) {
     for (int i = 0; i < n; ++i) {
         glfwPollEvents();
         mcp_->pump();
+        if (collabPump_)
+            collabPump_();  // a shared drawing keeps talking while a script runs
+        if (extensionPump_)
+            extensionPump_();
         if (recordItems_)
             imgui_items::clear();  // keep the newest frame's widgets only
         frame();
