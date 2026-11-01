@@ -324,6 +324,15 @@ struct Checker {
         p(d.patternOrigin);
         finite(d.patternScale);
         finite(d.patternAngle);
+        for (HatchFileLine& l : d.filePattern.lines) {
+            finite(l.angle);
+            finite(l.origin.x);
+            finite(l.origin.y);
+            finite(l.delta.x);
+            finite(l.delta.y);
+            for (double v : l.dashes)
+                finite(v);
+        }
         for (auto& loop : d.loops) {
             for (auto& e : loop.edges) {
                 std::visit(

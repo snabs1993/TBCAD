@@ -188,6 +188,17 @@ struct DataDumper {
         if (d.gradient)
             o << " grad" << static_cast<int>(d.gradient->kind) << " " << d.gradient->color1 << " "
               << d.gradient->color2 << " ang" << d.gradient->angle;
+        if (!d.filePattern.empty()) {
+            o << " filepat(";
+            o.quoted(d.filePattern.name);
+            for (const HatchFileLine& l : d.filePattern.lines) {
+                o << " [" << l.angle << " " << l.origin << " " << l.delta;
+                for (double v : l.dashes)
+                    o << " " << v;
+                o << "]";
+            }
+            o << ")";
+        }
         for (const auto& loop : d.loops) {
             o << " loop(outer" << loop.outer;
             for (const auto& e : loop.edges) {

@@ -284,6 +284,8 @@ private:
     DisplayStyle resolveProxyStyle(const EntityCommon& base, Color color);
 
     // ---- hatch.cpp --------------------------------------------------------------------------
+    void readFileLines(const std::vector<Group>& g, std::size_t from, const Frame& f,
+                       HatchData& h) const;
     bool convHatch(const Record& r, const Frame& f, std::vector<Entity>& out);
 
     // ---- dimension.cpp ----------------------------------------------------------------------

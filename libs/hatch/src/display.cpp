@@ -88,7 +88,8 @@ void hatchDisplay(const Document& doc, const Entity& e, const geom::DisplayConte
             std::clamp(px * py / 16.0, 2000.0, static_cast<double>(opt.maxSegments));
         opt.maxSegments = static_cast<std::size_t>(budget);
     }
-    const Pattern* pattern = PatternRegistry::find(h->pattern);
+    Pattern filePattern;
+    const Pattern* pattern = hatchPattern(*h, filePattern);
     Pattern solidTone;
     solidTone.solid = true;
     // Annotative: the pattern scale is the size on paper; the model shows it at the annotation
@@ -166,6 +167,40 @@ void registerHatchDisplay() {
     geom::DisplayRegistry::set(EntityKind::Hatch, hatchDisplay, boundsOf);
 }
 
+namespace {
+bool sameName(std::string_view a, std::string_view b) {
+    if (a.size() != b.size())
+        return false;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        auto lo = [](char c) {
+            return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
+        };
+        if (lo(a[i]) != lo(b[i]))
+            return false;
+    }
+    return true;
+}
+}  // namespace
+
+const Pattern* hatchPattern(const HatchData& hatch, Pattern& scratch) {
+    const HatchFilePattern& fp = hatch.filePattern;
+    if (!fp.empty() && sameName(fp.name, hatch.pattern)) {
+        scratch = Pattern{};
+        scratch.name = fp.name;
+        scratch.families.reserve(fp.lines.size());
+        for (const HatchFileLine& l : fp.lines) {
+            PatternFamily f;
+            f.angle = l.angle;
+            f.origin = l.origin;
+            f.delta = l.delta;
+            f.dashes = l.dashes;
+            scratch.families.push_back(std::move(f));
+        }
+        return &scratch;
+    }
+    return PatternRegistry::find(hatch.pattern);
+}
+
 BBox2 hatchBounds(const HatchData& hatch) {
     BBox2 box;
     for (const HatchLoop& l : hatch.loops)
@@ -196,7 +231,8 @@ Result<std::vector<Entity>> explodeHatch(const Document& doc, const Entity& hatc
     if (!h)
         return makeError(ErrorCode::InvalidArgument, "not a hatch");
     std::vector<Entity> out;
-    const Pattern* pattern = PatternRegistry::find(h->pattern);
+    Pattern filePattern;
+    const Pattern* pattern = hatchPattern(*h, filePattern);
     bool solid = h->solid || !pattern || pattern->solid;
     if (!solid) {
         FillOptions opt;

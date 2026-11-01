@@ -218,6 +218,22 @@ struct PayloadWriter {
                 w.f64(d.gradient->tint);
             }
         }
+        // 0x00 (no gradient, so older readers stop here) then 0xF2: the pattern lines the hatch
+        // was read with (HatchFilePattern). Never written together with a gradient.
+        if (!d.gradient && !d.filePattern.empty()) {
+            w.u8(0);
+            w.u8(0xF2);
+            str(d.filePattern.name);
+            w.varint(d.filePattern.lines.size());
+            for (const HatchFileLine& l : d.filePattern.lines) {
+                w.f64(l.angle);
+                w.vec2(l.origin);
+                w.vec2(l.delta);
+                w.varint(l.dashes.size());
+                for (double v : l.dashes)
+                    w.f64(v);
+            }
+        }
     }
     void hatchEdge(const HatchLineEdge& e) {
         w.u8(0);
@@ -1223,6 +1239,24 @@ struct PayloadReader {
             if (k == 0xF0) {  // a double pattern; a gradient may still follow
                 d.doubled = true;
                 k = r.remaining() > 0 ? r.u8() : std::uint8_t{0};
+            }
+            if (k == 0 && r.remaining() > 0 && r.u8() == 0xF2) {
+                HatchFilePattern fp;
+                fp.name = str();
+                const std::size_t lines = r.count(41);
+                fp.lines.reserve(lines);
+                for (std::size_t i = 0; i < lines; ++i) {
+                    HatchFileLine l;
+                    l.angle = r.f64();
+                    l.origin = r.vec2();
+                    l.delta = r.vec2();
+                    const std::size_t dashes = r.count(8);
+                    l.dashes.reserve(dashes);
+                    for (std::size_t j = 0; j < dashes; ++j)
+                        l.dashes.push_back(r.f64());
+                    fp.lines.push_back(std::move(l));
+                }
+                d.filePattern = std::move(fp);
             }
             if (k != 0) {
                 if (k > kGradientKindLast)
