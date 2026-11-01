@@ -230,9 +230,9 @@ TEST_CASE("a mirrored insert keeps its attribute values reading left to right") 
     registerInsertDisplay();
     registerFakeText();
     Document doc;
-    BlockId b = addBlock(doc, "B",
-                         {line(0, 0, 1, 0), attdef("A", "dd", {2, 5}),
-                          attdef("C", "const", {2, 7}, false, true)});
+    BlockId b = addBlock(
+        doc, "B",
+        {line(0, 0, 1, 0), attdef("A", "dd", {2, 5}), attdef("C", "const", {2, 7}, false, true)});
     Entity ins = insertWith(b, {10, 0}, {{"A", "abc"}});
     entityAs<InsertData>(ins)->scale = {-1, 1};  // MIRROR about a vertical line
     EntityId id = addEntity(doc, std::move(ins));

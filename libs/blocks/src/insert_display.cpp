@@ -460,8 +460,8 @@ bool buildInsertInstance(const Document& doc, const Entity& insert, const geom::
             continue;
         if (text->common.layer == kLayerZero)
             text->common.layer = insert.common.layer;
-        placeAttribute(doc, *text, entityAs<TextData>(*e)->attdef->constant, child, items,
-                       nullptr, false, out.extra);
+        placeAttribute(doc, *text, entityAs<TextData>(*e)->attdef->constant, child, items, nullptr,
+                       false, out.extra);
     }
     out.blockSpace = std::move(blockSpace);
     out.placements = std::move(items);
