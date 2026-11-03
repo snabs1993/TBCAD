@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
+#include <random>
 #include <utility>
 
 #include "tbcad/cmd/undo.h"
@@ -589,6 +591,26 @@ void CollabController::keepMine(std::size_t index) {
 void CollabController::keepTheirs(std::size_t index) {
     if (index < conflicts_.size())
         conflicts_.erase(conflicts_.begin() + static_cast<std::ptrdiff_t>(index));
+}
+
+std::string CollabController::defaultName() {
+    for (const char* var : {"USERNAME", "USER"})
+        if (const char* v = std::getenv(var); v && *v)
+            return v;
+    return "Me";
+}
+
+bool CollabController::shareSimple(std::string& error) {
+    std::random_device rd;
+    const std::string code = std::to_string(100000 + rd() % 900000);
+    if (share(47800, code, defaultName(), true, error))
+        return true;
+    error.clear();
+    return share(0, code, defaultName(), true, error);
+}
+
+std::string CollabController::localAddress() const {
+    return localLanAddress();
 }
 
 bool CollabController::handOver(collab::PeerId to, std::string& error) {

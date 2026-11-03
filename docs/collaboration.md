@@ -45,13 +45,16 @@ The host owns the authoritative document. Every edit is a `ChangeSet`; what trav
 
 ## In the program: local network (free)
 
-`libs/collabapp` puts the engine into TBCAD. Tools > Collaboration (command `COLLAB`) opens the panel:
+`libs/collabapp` puts the engine into TBCAD. File > Work Together (command `COLLAB`, or the LIVE button
+in the status bar) opens the panel:
 
-- **Share** the open drawing with a password (TLS 1.3, key from the password). Other computers on the
-  network find it by UDP announcement (port 47801) or by typing the address and port (default 47800).
-  The host can ask before anyone joins, admit people as editors or view-only, remove them, and hand the
-  host role to someone else.
-- **Join**: the shared drawing opens as a new tab. Other people's cursors show in their colour with their
+- **Share this drawing**: one click. The panel shows a 6-digit code (the session password: TLS 1.3 with a
+  key from it) and this computer's address. Port 47800, or any free port when it is taken. Other
+  computers on the network see the drawing in their list (UDP announcement, port 47801). The host can
+  turn on asking before anyone joins, admit people as view-only, remove them, and hand the host role to
+  someone else.
+- **Join**: pick the drawing in the list (or type the address), type the code, Join. The shared drawing
+  opens as a new tab. Other people's cursors show in their colour with their
   name.
 - **Team**: keep a layer for yourself (the host refuses others' edits on it), chat.
 - **Offline**: when a guest loses the host, the drawing stays editable; Reconnect sends what was done

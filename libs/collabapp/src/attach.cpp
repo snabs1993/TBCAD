@@ -36,16 +36,18 @@ std::function<void()> attach(ui::AppCore& core, cmd::Registry& commands, ui::UiR
                              std::function<void()> wake) {
     auto controller = std::make_shared<CollabController>(core, std::move(wake));
     (void)commands.add(std::make_unique<CollabCommand>(core));
-    ui.addMenuItem("Tools/Collaboration...", "COLLAB");
+    ui.addMenuItem("File/Work Together (Share or Join)...", "COLLAB");
 #ifdef TBCAD_COLLABAPP_IMGUI
     ui.addPanel(
-        "collab", "Collaboration",
+        "collab", "Work Together",
         [controller](ui::PanelContext& ctx) { drawCollabPanel(*controller, ctx); }, false);
 #endif
     ui.addStatusToggle(
         "collab", "LIVE", [controller] { return controller->mode() != CollabController::Mode::Off; },
-        [controller](bool on) {
-            if (!on)
+        [controller, &core](bool on) {
+            if (on)
+                core.openPanel("collab");  // starting needs the panel: share or join
+            else
                 controller->stop();
         });
     ui.addOverlayDrawer([controller](ui::PanelContext& ctx, render::Overlay& overlay) {

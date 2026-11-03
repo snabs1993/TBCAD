@@ -68,6 +68,14 @@ public:
     void answer(collab::ConnId conn, bool allow, collab::Role role);
     void setAskBeforeJoin(bool on) { askBeforeJoin_ = on; }
     bool askBeforeJoin() const { return askBeforeJoin_; }
+    // One click: shares with a fresh 6-digit code as the password, on port 47800 (any free port
+    // when that one is taken), under the computer's user name.
+    bool shareSimple(std::string& error);
+    // The code (password) of this session, to show to the others.
+    const std::string& code() const { return password_; }
+    // Address of this computer on the local network (for typing on the other computer).
+    std::string localAddress() const;
+    static std::string defaultName();
     // Hosts announcing themselves on the local network (while not in a session).
     std::vector<Announcement> nearbyHosts();
     // Chat and layer claims (team.h).
@@ -134,7 +142,7 @@ private:
     bool guestsMayEdit_ = true;
     std::vector<std::string> log_{};
     std::chrono::steady_clock::time_point t0_ = std::chrono::steady_clock::now();
-    bool askBeforeJoin_ = true;
+    bool askBeforeJoin_ = false;  // the code is the gate; the host can turn asking on
     collab::Role admitAs_ = collab::Role::Editor;
     std::vector<Request> requests_{};
     std::vector<Parked> parked_{};
