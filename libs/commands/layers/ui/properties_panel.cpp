@@ -737,8 +737,7 @@ bool viewportSection(tbcad::ui::PanelContext& ctx) {
     char buf[48];
     std::snprintf(buf, sizeof buf, "1:%g", vp->scaleN);
     std::string scale = buf;
-    if (ImGui::InputText("##vpscale", &scale, ImGuiInputTextFlags_EnterReturnsTrue) &&
-        scale != buf)
+    if (ImGui::InputText("##vpscale", &scale, ImGuiInputTextFlags_EnterReturnsTrue) && scale != buf)
         exec(ctx, {"VPSCALE", scale});
     row("Size (mm)");
     std::snprintf(buf, sizeof buf, "%g x %g", vp->paper.width(), vp->paper.height());

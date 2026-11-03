@@ -423,7 +423,8 @@ public:
         std::size_t start = 0;
         while (start <= text.size()) {
             const std::size_t nl = text.find('\n', start);
-            ctx.message(text.substr(start, nl == std::string::npos ? std::string::npos : nl - start));
+            ctx.message(
+                text.substr(start, nl == std::string::npos ? std::string::npos : nl - start));
             if (nl == std::string::npos)
                 break;
             start = nl + 1;

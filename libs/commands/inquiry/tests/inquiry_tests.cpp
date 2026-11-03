@@ -723,15 +723,15 @@ TEST_CASE("MEASUREGEOM stays open for the next measurement until eXit") {
 
 TEST_CASE("selection totals: count, length of curves, area of closed shapes only") {
     Fixture f;
-    const EntityId l = f.add(line({0, 0}, {3, 4}));                  // length 5
-    const EntityId c = f.add(Entity{{}, CircleData{{0, 0}, 1}});     // 2 pi, area pi
-    const EntityId r = f.add(Entity{{}, rect(10, 5)});               // 30, area 50
+    const EntityId l = f.add(line({0, 0}, {3, 4}));               // length 5
+    const EntityId c = f.add(Entity{{}, CircleData{{0, 0}, 1}});  // 2 pi, area pi
+    const EntityId r = f.add(Entity{{}, rect(10, 5)});            // 30, area 50
     PolylineData open = rect(10, 5);
     open.closed = false;
-    const EntityId o = f.add(Entity{{}, open});                      // 25, no area
+    const EntityId o = f.add(Entity{{}, open});  // 25, no area
     TextData td;
     td.utf8 = "A";
-    const EntityId t = f.add(Entity{{}, td});                        // counted only
+    const EntityId t = f.add(Entity{{}, td});  // counted only
     const std::vector<EntityId> all{l, c, r, o, t, EntityId{999999}};
 
     const auto s = inquiry::selectionTotals(f.doc, all);
