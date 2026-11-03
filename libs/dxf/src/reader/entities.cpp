@@ -241,6 +241,29 @@ void Importer::resolveExtDictionaries() {
                     continue;
                 if (e.common.annotative && e.common.annoScales.empty())
                     e.common.annoScales = annotativeScalesOf(dict->second);
+                // AutoCAD's XCLIP: ACAD_FILTER > SPATIAL > SPATIAL_FILTER. Our own XDATA wins.
+                auto* ip = std::get_if<Indirect<InsertData>>(&e.data);
+                if (InsertData* ins = ip ? &**ip : nullptr; ins && ins->clip.size() < 3) {
+                    for (const auto& [key, fh] : dict->second) {
+                        if (key != "ACAD_FILTER")
+                            continue;
+                        const auto filters = dicts_.find(fh);
+                        if (filters == dicts_.end())
+                            break;
+                        for (const auto& [k2, sh] : filters->second) {
+                            const auto sf =
+                                k2 == "SPATIAL" ? spatialFilters_.find(sh) : spatialFilters_.end();
+                            if (sf == spatialFilters_.end())
+                                continue;
+                            ins->clip.clear();
+                            for (const Vec2& p : sf->second.pts)
+                                ins->clip.push_back(p * k_);
+                            ins->clipOn = sf->second.on;
+                            ins->clipInvert = false;
+                        }
+                        break;
+                    }
+                }
                 for (const auto& [key, handle] : dict->second) {
                     const auto rec = xrecItems_.find(handle);
                     if (rec == xrecItems_.end() || resolved.size() >= 256)

@@ -236,11 +236,20 @@ void Writer::head(std::string_view type, const Props& p, std::uint64_t owner,
         L().entHandle = 0;
         L().lastHead = self;
         o.h(5, self);
-        if (p.dict) {
+        if (p.dict || p.clip) {
             PendingDict pd;
             pd.handle = newHandle();
             pd.owner = self;
-            pd.records = *p.dict;
+            if (p.dict)
+                pd.records = *p.dict;
+            if (p.clip) {
+                pd.clip = p.clip->clip;
+                pd.clipOn = p.clip->clipOn;
+                const BlockDef* def = doc_.block(p.clip->block);
+                if (auto inv =
+                        blocks::instanceTransform(*p.clip, def ? def->base : Vec2{}).inverse())
+                    pd.toBlock = inv.value();
+            }
             o.raw(102, "{ACAD_XDICTIONARY");
             o.h(360, pd.handle);
             o.raw(102, "}");
@@ -1969,7 +1978,10 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
             if (const Entity* e = doc_.find(id))
                 if (const auto* t = entityAs<TextData>(*e); t && t->attdef && !t->attdef->constant)
                     defs.push_back(t);
-    head("INSERT", p, owner, "AcDbBlockReference");
+    Props hp = p;
+    if (d.clip.size() >= 3 && !d.clipInvert)
+        hp.clip = &d;  // AutoCAD reads it from ACAD_FILTER; an inverted clip stays ours only
+    head("INSERT", hp, owner, "AcDbBlockReference");
     const std::uint64_t insertHandle = L().lastHead;  // owns its ATTRIBs and SEQEND
     Out& o = *L().o;
     if (!defs.empty())
@@ -1989,9 +2001,10 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
             o.str(1000, "clipinvert=1");
         for (const Vec2& v : d.clip)
             o.pt(1010, v);
-        downgrade("INSERT",
-                  "a clipping boundary is kept only in TBCAD XDATA; other programs "
-                  "show the whole block");
+        if (d.clipInvert)
+            downgrade("INSERT",
+                      "an inverted clipping boundary is kept only in TBCAD XDATA; other "
+                      "programs show the whole block");
     }
     if (L().cur)  // in the INSERT record itself, ahead of its ATTRIBs (see writeEntity)
         writeCommonFlags(*L().cur);

@@ -1145,6 +1145,71 @@ TEST_CASE("an xref block and an insert clipping boundary survive the DXF round t
     CHECK(ins->clip[2] == Vec2{4, 4});
 }
 
+TEST_CASE("an XCLIP boundary is written as an AutoCAD SPATIAL_FILTER and read back from it") {
+    Document doc;
+    BlockId b;
+    {
+        auto tx = doc.begin("xclip");
+        b = tx.addBlock(BlockDef{.name = "part", .base = {1, 2}}).value();
+        REQUIRE(tx.add(make(LineData{{0, 0}, {10, 0}}), b).ok());
+        InsertData ins{b, {50, 60}, {2, 2}, 0.5};
+        ins.clip = {{0, -1}, {3, -1}, {3, 1}, {0, 1}};
+        REQUIRE(tx.add(make(ins)).ok());
+        tx.commit();
+    }
+    Report rep;
+    Result<ExportResult> out = exportDxf(doc, ExportOptions{}, rep);
+    REQUIRE(out.ok());
+    const std::string& bytes = out.value().bytes;
+    CHECK(bytes.find("SPATIAL_FILTER") != std::string::npos);
+    CHECK(bytes.find("ACAD_FILTER") != std::string::npos);
+    // As AutoCAD saves it: no TBCAD clip XDATA, only the SPATIAL_FILTER.
+    std::string stripped;
+    {
+        std::vector<std::string> lines;
+        std::size_t at = 0;
+        while (at < bytes.size()) {
+            std::size_t nl = bytes.find('\n', at);
+            if (nl == std::string::npos)
+                nl = bytes.size();
+            lines.push_back(bytes.substr(at, nl - at));
+            at = nl + 1;
+        }
+        auto trim = [](std::string v) {
+            while (!v.empty() && (v.back() == '\r' || v.back() == ' '))
+                v.pop_back();
+            while (!v.empty() && v.front() == ' ')
+                v.erase(v.begin());
+            return v;
+        };
+        bool inClip = false;
+        for (std::size_t i = 0; i + 1 < lines.size(); i += 2) {
+            const std::string code = trim(lines[i]), value = trim(lines[i + 1]);
+            if (code == "1000" && value == "clip=1") {
+                inClip = true;
+                continue;
+            }
+            if (inClip && (code == "1010" || code == "1020" || code == "1030"))
+                continue;
+            inClip = false;
+            stripped += lines[i] + "\n" + lines[i + 1] + "\n";
+        }
+    }
+    REQUIRE(stripped.find("clip=1") == std::string::npos);
+    Report importReport;
+    Result<ImportResult> in = importDxf(testing::bytesOf(stripped), ImportOptions{}, importReport);
+    REQUIRE(in.ok());
+    const Document& back = *in.value().document;
+    REQUIRE(back.modelSpace().size() == 1);
+    const auto* ins = entityAs<InsertData>(*back.find(back.modelSpace()[0]));
+    REQUIRE(ins);
+    REQUIRE(ins->clip.size() == 4);
+    CHECK(ins->clipOn);
+    CHECK_FALSE(ins->clipInvert);
+    CHECK(ins->clip[2].x == doctest::Approx(3));
+    CHECK(ins->clip[2].y == doctest::Approx(1));
+}
+
 TEST_CASE("ordinate dimensions keep their kind and datum through the DXF round trip") {
     Document doc;
     {

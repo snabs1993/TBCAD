@@ -432,6 +432,25 @@ TEST_CASE("XCLIP clips an insert in block coordinates - OFF, ON and Delete - und
     f.host->run("XCLIP",
                 {cmd::ScriptItem::pick(ins), "New", "Polygonal", "100,0", "108,0", "100,8", ""});
     CHECK(entityAs<InsertData>(*f.doc.find(ins))->clip.size() == 3);
+
+    // Select polyline: a closed polyline already drawn becomes the boundary.
+    EntityId edge;
+    {
+        Transaction tx = f.doc.begin("edge");
+        PolylineData pl;
+        pl.v = {{{102, 1}}, {{106, 1}}, {{106, 5}}, {{102, 5}}};
+        pl.closed = true;
+        Entity pe;
+        pe.data = std::move(pl);
+        edge = tx.add(std::move(pe)).value();
+        tx.commit();
+    }
+    f.host->run("XCLIP",
+                {cmd::ScriptItem::pick(ins), "New", "Select", cmd::ScriptItem::pick(edge)});
+    const auto* sel = entityAs<InsertData>(*f.doc.find(ins));
+    REQUIRE(sel->clip.size() == 4);
+    CHECK(near(sel->clip[0], {2, 1}));
+    CHECK(near(sel->clip[2], {6, 5}));
 }
 
 TEST_CASE("XCLIP generate Polyline draws the clip boundary in world coordinates") {

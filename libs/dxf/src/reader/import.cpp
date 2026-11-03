@@ -513,6 +513,31 @@ void Importer::processObjects(RecordReader& rr) {
             }
             continue;
         }
+        if (r.type == "SPATIAL_FILTER" && !r.raw(5).empty()) {
+            // The boundary of an AutoCAD XCLIP: 70 count, 10/20 points, 71 boundary on.
+            SpatialFilter sf;
+            bool inFilter = false;
+            double x = 0;
+            for (const Group& sg : r.g) {
+                if (sg.code == 100)
+                    inFilter = sg.str() == "AcDbSpatialFilter";
+                else if (!inFilter)
+                    continue;
+                else if (sg.code == 10)
+                    x = sg.number();
+                else if (sg.code == 20 && sf.pts.size() < 100000)
+                    sf.pts.push_back({x, sg.number()});
+                else if (sg.code == 71)
+                    sf.on = sg.integer() != 0;
+            }
+            if (sf.pts.size() == 2) {  // two points: the corners of a rectangle
+                const Vec2 a = sf.pts[0], b = sf.pts[1];
+                sf.pts = {a, {b.x, a.y}, b, {a.x, b.y}};
+            }
+            if (sf.pts.size() >= 3)
+                spatialFilters_[std::string(r.raw(5))] = std::move(sf);
+            continue;
+        }
         if (r.type == "XRECORD" && !r.raw(5).empty()) {
             // Everything after the AcDbXrecord marker and its cloning flag, for entity
             // dictionaries.

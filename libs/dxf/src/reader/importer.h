@@ -331,6 +331,13 @@ private:
     std::unordered_map<std::string, std::string> contextScale_{};
     // Items of every XRECORD by handle, for extension dictionaries of entities.
     std::unordered_map<std::string, std::vector<DataItem>> xrecItems_{};
+    // AutoCAD XCLIP boundaries: SPATIAL_FILTER handle -> points (block coordinates, file units)
+    // and whether the boundary is on (group 71).
+    struct SpatialFilter {
+        std::vector<Vec2> pts{};
+        bool on = true;
+    };
+    std::unordered_map<std::string, SpatialFilter> spatialFilters_{};
     // Every OBJECTS record as read (groups as text), for the part that is kept as it is.
     struct ObjRec {
         std::string type{};
