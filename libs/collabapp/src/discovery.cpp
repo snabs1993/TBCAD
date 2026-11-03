@@ -45,6 +45,33 @@ std::string peerAddressOf(std::intptr_t socket) {
     return ip;
 }
 
+std::string localLanAddress() {
+    if (!net::initialize())
+        return {};
+    SockT s = ::socket(AF_INET, SOCK_DGRAM, 0);
+    if (badSock(s))
+        return {};
+    // Connecting a UDP socket sends nothing; it only picks the interface the route would use.
+    sockaddr_in to{};
+    to.sin_family = AF_INET;
+    to.sin_port = htons(9);
+    inet_pton(AF_INET, "192.0.2.1", &to.sin_addr);
+    std::string out;
+    if (::connect(s, reinterpret_cast<const sockaddr*>(&to), sizeof to) == 0) {
+        sockaddr_in me{};
+        socklen_t len = sizeof me;
+        if (::getsockname(s, reinterpret_cast<sockaddr*>(&me), &len) == 0) {
+            char ip[INET_ADDRSTRLEN] = {};
+            inet_ntop(AF_INET, &me.sin_addr, ip, sizeof ip);
+            out = ip;
+            if (out == "0.0.0.0")
+                out.clear();
+        }
+    }
+    closeSock(s);
+    return out;
+}
+
 std::string makeAnnouncement(const std::string& name, int port) {
     std::string clean = name.substr(0, 40);
     for (char& c : clean)

@@ -142,3 +142,13 @@ TEST_CASE("controller: a guest that lost the host keeps working and sends it on 
         return std::get<LineData>(a.doc().find(shared)->data).b.y == 9;
     }));
 }
+
+TEST_CASE("controller: one-click share gives a 6-digit code that lets another program in") {
+    Program a("sa"), b("sb");
+    std::string err;
+    REQUIRE_MESSAGE(a.collab->shareSimple(err), err);
+    CHECK(a.collab->code().size() == 6);
+    CHECK(a.collab->port() > 0);
+    REQUIRE(b.collab->join("127.0.0.1", a.collab->port(), a.collab->code(), "B", err));
+    REQUIRE(until({&a, &b}, [&] { return b.collab->mode() == CollabController::Mode::Joined; }));
+}

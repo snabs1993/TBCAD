@@ -23,6 +23,9 @@ struct Announcement {
 
 // Dotted IPv4 of the other end of a connected TCP socket; empty when unknown.
 std::string peerAddressOf(std::intptr_t socket);
+// This computer's address on the local network (the one used to reach other machines); empty when
+// there is no network.
+std::string localLanAddress();
 
 // "TBCAD-COLLAB 1\nname\nport" and back. parse returns false for anything else.
 std::string makeAnnouncement(const std::string& name, int port);
