@@ -71,6 +71,13 @@ using PropertyDrawFn = std::function<void(PanelContext&, EntityId)>;
 // selection from changing. `world` is the click in drawing units.
 using IdleClickFn =
     std::function<bool(PanelContext&, Vec2 world, double apertureMm, bool shift, bool ctrl)>;
+// Called for a window or crossing drag that no command is waiting for, before it selects
+// anything. `box` is in drawing units. Return true when the module took it (Ctrl + window picks
+// grips), which leaves the selection as it is.
+using IdleBoxFn = std::function<bool(PanelContext&, const BBox2& box, bool shift, bool ctrl)>;
+// Asked when Delete is pressed with no command running: a command line to run instead of ERASE
+// (VERTEXDELETE while polyline vertices are picked), or empty to let the next hook or ERASE act.
+using DeleteKeyFn = std::function<std::string(PanelContext&)>;
 using OverlayDrawFn = std::function<void(PanelContext&, render::Overlay&)>;
 
 // A small menu the application shows next to a point of the drawing while the cursor rests on it
@@ -172,6 +179,8 @@ public:
     void addHoverMenu(HoverMenuFn fn) { hoverMenus_.push_back(std::move(fn)); }
     // Hooks run in registration order until one returns true.
     void addIdleClickHook(IdleClickFn fn) { idleClicks_.push_back(std::move(fn)); }
+    void addIdleBoxHook(IdleBoxFn fn) { idleBoxes_.push_back(std::move(fn)); }
+    void addDeleteKeyHook(DeleteKeyFn fn) { deleteKeys_.push_back(std::move(fn)); }
     void addPropertySection(EntityKind kind, PropertyDrawFn draw);
     // False (and nothing added) when the id is taken or empty, or no kind or draw is given.
     bool addContextualTab(std::string id, std::string title, std::vector<EntityKind> kinds,
@@ -206,6 +215,8 @@ public:
     const std::vector<OverlayDrawFn>& overlayDrawers() const { return overlays_; }
     const std::vector<OverlayDrawFn>& underlayDrawers() const { return underlays_; }
     const std::vector<IdleClickFn>& idleClickHooks() const { return idleClicks_; }
+    const std::vector<IdleBoxFn>& idleBoxHooks() const { return idleBoxes_; }
+    const std::vector<DeleteKeyFn>& deleteKeyHooks() const { return deleteKeys_; }
     const std::vector<HoverMenuFn>& hoverMenus() const { return hoverMenus_; }
     const std::vector<PropertySection>& propertySections() const { return sections_; }
     const std::vector<ContextualTab>& contextualTabs() const { return contextTabs_; }
@@ -228,6 +239,8 @@ private:
     std::vector<OverlayDrawFn> underlays_{};
     std::vector<LabelProviderFn> labelProviders_{};
     std::vector<IdleClickFn> idleClicks_{};
+    std::vector<IdleBoxFn> idleBoxes_{};
+    std::vector<DeleteKeyFn> deleteKeys_{};
     std::vector<HoverMenuFn> hoverMenus_{};
     std::vector<PropertySection> sections_{};
     std::vector<ContextualTab> contextTabs_{};

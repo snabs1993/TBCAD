@@ -293,8 +293,53 @@ public:
     }
 };
 
+// VERTEXDELETE: removes the picked grips (Ctrl + window, or Shift + click) that are vertices of
+// the selected polylines, in one undo step. Delete runs it while such grips are picked.
+class VertexDeleteCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "VERTEXDELETE"; }
+    std::string_view description() const override {
+        return "Remove the picked vertices of the selected polylines";
+    }
+    Task run(CommandContext& ctx) override {
+        ctx.setUndoLabel("Remove vertices");
+        const std::vector<EntityId> ids = ctx.host().selection();
+        const auto picked = pickedPolylineVertices(ctx.doc(), ids);
+        if (picked.empty()) {
+            ctx.message(
+                "No vertices picked. Select a polyline, then Ctrl+drag a window over its grips "
+                "(or Shift+click them).");
+            co_return;
+        }
+        std::size_t removed = 0, kept = 0;
+        for (const auto& [id, idx] : picked) {
+            const Entity* e = ctx.doc().find(id);
+            const auto* pl = e ? entityAs<PolylineData>(*e) : nullptr;
+            if (!pl)
+                continue;
+            auto next = withoutVertices(*pl, idx);
+            if (!next) {
+                ++kept;
+                continue;
+            }
+            if (ctx.tx().modify(id, [&](Entity& ent) { ent.data = *next; }))
+                removed += idx.size();
+        }
+        clearWarmGrips();
+        if (removed > 0)
+            ctx.message("Removed " + std::to_string(removed) +
+                        (removed == 1 ? " vertex." : " vertices."));
+        if (kept > 0)
+            ctx.message(std::to_string(kept) +
+                        " polyline(s) left as they were: an open polyline keeps at least 2 "
+                        "points and a closed one 3.");
+        co_return;
+    }
+};
+
 void registerGripCommand(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<GripEditCommand>());
+    (void)registry.add(std::make_unique<VertexDeleteCommand>());
     (void)registry.add(std::make_unique<GripObjLimitCommand>());
 }
 

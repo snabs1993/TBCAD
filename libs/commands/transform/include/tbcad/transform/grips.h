@@ -91,6 +91,16 @@ std::optional<Vec2> hotGrip();
 void toggleWarmGrip(Vec2 pos);
 const std::vector<Vec2>& warmGrips();
 void clearWarmGrips();
+// Ctrl + window over grips: every grip of `grips` inside `box` becomes picked (grips already
+// picked stay picked). Returns how many grips the box held.
+std::size_t pickGripsInBox(const std::vector<Grip>& grips, const BBox2& box);
+// Picked grips that are vertices of the selected polylines: what Delete removes. Per polyline,
+// the vertex indices, ascending.
+std::vector<std::pair<EntityId, std::vector<int>>> pickedPolylineVertices(
+    const Document& doc, std::span<const EntityId> ids);
+// The polyline without the vertices at `remove` (ascending, unique); the segment that bridges a
+// gap is straight. Empty when fewer than 2 (open) or 3 (closed) vertices would be left.
+std::optional<PolylineData> withoutVertices(const PolylineData& pl, const std::vector<int>& remove);
 
 // The command line the UI runs when the user clicks at `world` with grips showing: `GRIPEDIT x,y`
 // (plus `Copy` when `copy`), or empty when no grip of `ids` lies within `apertureMm`.

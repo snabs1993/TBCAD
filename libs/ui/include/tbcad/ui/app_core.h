@@ -386,6 +386,9 @@ public:
     // (no dragging). True when the click was taken as a window corner; otherwise call `click`.
     bool windowClick(const PointerState& p);
     bool dragPicksWindow() const;  // PICKDRAG 1 (default): press-drag-release makes the window
+    // The command line the Delete key runs now: a module's (VERTEXDELETE while polyline
+    // vertices are picked), else ERASE with a selection; empty while a command runs.
+    std::string deleteKeyCommand();
     // Live selection rectangle shown in the overlay while dragging; nullopt = none.
     // How many objects the selection box being dragged would pick right now (none: no drag).
     std::optional<std::size_t> dragSelectCount();

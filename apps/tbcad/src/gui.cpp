@@ -418,8 +418,8 @@ void Gui::runAction(const std::string& action) {
     else if (action == "edit.selectAll")
         core_.selectAll();
     else if (action == "edit.delete") {
-        if (!core_.selection().empty() && !core_.runner().active())
-            core_.submitText("ERASE");
+        if (const std::string line = core_.deleteKeyCommand(); !line.empty())
+            core_.submitText(line);
         else if (!core_.runner().active() && core_.inPaperSpace() &&
                  !core_.setting("tmp.layout.viewport").value_or("").empty())
             core_.submitText("VPDELETE");  // a viewport picked by its border on the sheet

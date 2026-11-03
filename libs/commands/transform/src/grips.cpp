@@ -145,6 +145,84 @@ void clearWarmGrips() {
     g_warm.clear();
 }
 
+std::size_t pickGripsInBox(const std::vector<Grip>& grips, const BBox2& box) {
+    std::size_t n = 0;
+    for (const Grip& g : grips) {
+        if (!box.contains(g.pos))
+            continue;
+        ++n;
+        const bool have = std::any_of(g_warm.begin(), g_warm.end(),
+                                      [&](Vec2 w) { return distance(w, g.pos) <= 1e-9; });
+        if (!have)
+            g_warm.push_back(g.pos);
+    }
+    return n;
+}
+
+std::vector<std::pair<EntityId, std::vector<int>>> pickedPolylineVertices(
+    const Document& doc, std::span<const EntityId> ids) {
+    std::vector<std::pair<EntityId, std::vector<int>>> out;
+    if (g_warm.empty())
+        return out;
+    for (EntityId id : ids) {
+        const Entity* e = doc.find(id);
+        const auto* pl = e ? entityAs<PolylineData>(*e) : nullptr;
+        if (!pl)
+            continue;
+        std::vector<int> idx;
+        for (std::size_t i = 0; i < pl->v.size(); ++i)
+            if (std::any_of(g_warm.begin(), g_warm.end(),
+                            [&](Vec2 w) { return distance(w, pl->v[i].p) <= 1e-9; }))
+                idx.push_back(static_cast<int>(i));
+        if (!idx.empty())
+            out.emplace_back(id, std::move(idx));
+    }
+    return out;
+}
+
+std::optional<PolylineData> withoutVertices(const PolylineData& pl,
+                                            const std::vector<int>& remove) {
+    const std::size_t n = pl.v.size();
+    std::vector<bool> drop(n, false);
+    std::size_t dropped = 0;
+    for (int i : remove)
+        if (i >= 0 && static_cast<std::size_t>(i) < n && !drop[static_cast<std::size_t>(i)]) {
+            drop[static_cast<std::size_t>(i)] = true;
+            ++dropped;
+        }
+    if (n - dropped < (pl.closed ? 3u : 2u))
+        return std::nullopt;
+    PolylineData out = pl;
+    out.v.clear();
+    // The kept vertex before a removed one starts the bridging segment: make it straight. For a
+    // closed polyline the vertex before the first is the last kept one.
+    std::vector<bool> straighten(n, false);
+    for (std::size_t i = 0; i < n; ++i) {
+        if (!drop[i])
+            continue;
+        for (std::size_t k = 1; k <= n; ++k) {
+            if (!pl.closed && k > i)
+                break;
+            const std::size_t j = (i + n - k) % n;
+            if (!drop[j]) {
+                straighten[j] = true;
+                break;
+            }
+        }
+    }
+    for (std::size_t i = 0; i < n; ++i) {
+        if (drop[i])
+            continue;
+        PolyVertex v = pl.v[i];
+        if (straighten[i])
+            v.bulge = 0;
+        out.v.push_back(v);
+    }
+    if (!out.closed && !out.v.empty())
+        out.v.back().bulge = 0;  // an open polyline's last vertex starts no segment
+    return out;
+}
+
 std::string gripClickCommand(const Document& doc, std::span<const EntityId> ids, Vec2 world,
                              double apertureMm, std::size_t limit, bool copy) {
     const Grip* g = hitGrip(cachedGrips(doc, ids, limit), world, apertureMm);

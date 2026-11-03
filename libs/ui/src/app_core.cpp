@@ -3728,7 +3728,25 @@ void AppCore::dragSelect(Vec2 a, Vec2 b, const PointerState& p) {
         }
         return;
     }
+    if (ui_ && !ui_->idleBoxHooks().empty()) {
+        PanelContext pc = makePanelContext();
+        for (const auto& hook : ui_->idleBoxHooks())
+            if (hook(pc, box, p.shift, p.ctrl))
+                return;
+    }
     applyUserPick(ids, p.shift);
+}
+
+std::string AppCore::deleteKeyCommand() {
+    if (runner().active())
+        return {};
+    if (ui_ && !ui_->deleteKeyHooks().empty()) {
+        PanelContext pc = makePanelContext();
+        for (const auto& hook : ui_->deleteKeyHooks())
+            if (std::string line = hook(pc); !line.empty())
+                return line;
+    }
+    return selection().empty() ? std::string{} : std::string{"ERASE"};
 }
 
 bool AppCore::dragPicksWindow() const {
