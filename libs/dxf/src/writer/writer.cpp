@@ -1761,6 +1761,9 @@ std::string Writer::objectsSection() {
         std::vector<std::uint64_t> recHandles;
         for (std::size_t i = 0; i < pd.records.size(); ++i)
             recHandles.push_back(newHandle());
+        const bool clip = pd.clip.size() >= 3;
+        const std::uint64_t filterDict = clip ? newHandle() : 0;
+        const std::uint64_t spatial = clip ? newHandle() : 0;
         o.zero("DICTIONARY");
         o.h(5, pd.handle);
         o.raw(102, "{ACAD_REACTORS");
@@ -1772,6 +1775,10 @@ std::string Writer::objectsSection() {
         for (std::size_t i = 0; i < pd.records.size(); ++i) {
             o.str(3, pd.records[i].name);
             o.h(350, recHandles[i]);
+        }
+        if (clip) {
+            o.str(3, "ACAD_FILTER");
+            o.h(360, filterDict);
         }
         for (std::size_t i = 0; i < pd.records.size(); ++i) {
             o.zero("XRECORD");
@@ -1795,6 +1802,48 @@ std::string Writer::objectsSection() {
                         break;
                 }
             }
+        }
+        if (clip) {
+            // XCLIP as AutoCAD keeps it: ACAD_FILTER > SPATIAL > SPATIAL_FILTER, with the points
+            // in block coordinates, the inverse insert transform and an identity clip transform.
+            o.zero("DICTIONARY");
+            o.h(5, filterDict);
+            o.raw(102, "{ACAD_REACTORS");
+            o.h(330, pd.handle);
+            o.raw(102, "}");
+            o.h(330, pd.handle);
+            o.raw(100, "AcDbDictionary");
+            o.i(280, 1);
+            o.i(281, 1);
+            o.str(3, "SPATIAL");
+            o.h(360, spatial);
+            o.zero("SPATIAL_FILTER");
+            o.h(5, spatial);
+            o.raw(102, "{ACAD_REACTORS");
+            o.h(330, filterDict);
+            o.raw(102, "}");
+            o.h(330, filterDict);
+            o.raw(100, "AcDbFilter");
+            o.raw(100, "AcDbSpatialFilter");
+            o.i(70, static_cast<int>(pd.clip.size()));
+            for (const Vec2& v : pd.clip) {
+                o.d(10, v.x);
+                o.d(20, v.y);
+            }
+            o.d(210, 0);
+            o.d(220, 0);
+            o.d(230, 1);
+            o.d(11, 0);
+            o.d(21, 0);
+            o.d(31, 0);
+            o.i(71, pd.clipOn ? 1 : 0);
+            o.i(72, 0);
+            o.i(73, 0);
+            const Transform2& m = pd.toBlock;
+            for (double v : {m.m00, m.m01, 0.0, m.tx, m.m10, m.m11, 0.0, m.ty, 0.0, 0.0, 1.0, 0.0})
+                o.d(40, v);
+            for (double v : {1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0})
+                o.d(40, v);
         }
     }
 

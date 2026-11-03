@@ -118,7 +118,8 @@ readers keep it as an unknown chunk and still show the snapshot.
 
 ## Clipping (XCLIP)
 
-`XCLIP [XC]` picks an inserted block or xref and sets **New** (rectangular or polygonal), **ON**,
+`XCLIP [XC]` picks an inserted block or xref and sets **New** (rectangular, polygonal, or
+**Select** an existing closed polyline, circle, ellipse or spline as the boundary), **ON**,
 **OFF** or **Delete**. The boundary is stored on the insert in the block's own coordinates
 (`InsertData::clip`, file format 1.6), so it follows the insert when that is moved, turned or
 scaled. Display, bounds and plots show only the inside; lines are cut exactly at the boundary,
@@ -132,7 +133,11 @@ Snapping and picking still see the whole block. `EXPLODE` drops the boundary and
 DXF has no external reference with a snapshot, so the export writes the xref as an ordinary block
 (content included) with TBCAD XDATA on the `BLOCK` record (`xref=<path>`, `stamp=`, overlay flag);
 TBCAD restores the xref from it. A clipping boundary is written as XDATA on the `INSERT` (`clip=1|0`
-and one `1010` point per corner); other programs show the whole block and the export report says so.
+and one `1010` point per corner) and also the way AutoCAD keeps it: the insert's extension dictionary
+holds `ACAD_FILTER` > `SPATIAL` > a `SPATIAL_FILTER` object (points in block coordinates, the inverse
+insert transform, an identity clip transform), so other programs show the clip too. An inverted clip
+is written only as XDATA (other programs show the whole block; the export report says so). On import
+the TBCAD XDATA wins; without it, an AutoCAD `SPATIAL_FILTER` on the insert becomes its boundary.
 An `xref` block from another program (flag 4) is still imported as an empty block with a warning.
 
 ## Sending a drawing (ETRANSMIT)

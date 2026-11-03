@@ -1,5 +1,9 @@
+#include <algorithm>
+#include <cmath>
+
 #include "commands.h"
 #include "tbcad/blocks/tbcad_blocks.h"
+#include "tbcad/geom/entity.h"
 #include "tbcad/underlay/pdf.h"
 
 namespace tbcad::block_cmds {
@@ -112,14 +116,49 @@ public:
             co_return;
         }
 
-        auto shape =
-            co_await ctx.getKeyword("Boundary [Rectangular/Polygonal] <Rectangular>",
-                                    cmd::KeywordOptions{.keywords = {"Rectangular", "Polygonal"},
-                                                        .defaultKeyword = "Rectangular"});
+        auto shape = co_await ctx.getKeyword(
+            "Boundary [Select polyline/Rectangular/Polygonal] <Rectangular>",
+            cmd::KeywordOptions{.keywords = {"Select", "Rectangular", "Polygonal"},
+                                .defaultKeyword = "Rectangular"});
         if (!shape.ok())
             co_return;
         std::vector<Vec2> world;
-        if (shape.keyword == "Rectangular") {
+        if (shape.keyword == "Select") {
+            // A closed polyline, circle, ellipse or spline already drawn: its outline is the
+            // boundary (arcs become short chords).
+            cmd::EntityOptions bo;
+            bo.filter = [](const Entity& en) {
+                if (const auto* pl = entityAs<PolylineData>(en))
+                    return pl->closed && pl->v.size() >= 3;
+                if (const auto* el = entityAs<EllipseData>(en))
+                    return std::abs(el->endParam - el->startParam) >= kTwoPi - 1e-9;
+                if (const auto* sp = entityAs<SplineData>(en))
+                    return sp->closed || sp->periodic;
+                return entityAs<CircleData>(en) != nullptr;
+            };
+            auto edge = co_await ctx.getEntity("Select a closed polyline as the boundary", bo);
+            if (!edge.ok())
+                co_return;
+            const Entity* be = doc.find(edge.id);
+            std::vector<Vec2> rough;
+            if (!be || !geom::outlinePoints(*be, 1e300, rough) || rough.size() < 2) {
+                ctx.message("That object cannot be used as a clipping boundary");
+                co_return;
+            }
+            double x0 = rough[0].x, y0 = rough[0].y, x1 = x0, y1 = y0;
+            for (const Vec2& q : rough) {
+                x0 = std::min(x0, q.x), x1 = std::max(x1, q.x);
+                y0 = std::min(y0, q.y), y1 = std::max(y1, q.y);
+            }
+            const double diag = std::hypot(x1 - x0, y1 - y0);
+            if (!(diag > 1e-9) || !geom::outlinePoints(*be, diag * 1e-4, world) ||
+                world.size() < 3) {
+                ctx.message("That object cannot be used as a clipping boundary");
+                co_return;
+            }
+            if (world.size() > 4096)
+                world.resize(4096);
+        } else if (shape.keyword == "Rectangular") {
             auto a = co_await ctx.getPoint("Specify first corner");
             if (!a.ok())
                 co_return;

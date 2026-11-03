@@ -148,6 +148,7 @@ struct Props {
     bool visible = true;
     std::string plotStyle{};                        // named plot style of the object itself, if any
     const std::vector<DictRecord>* dict = nullptr;  // extension dictionary records, if any
+    const InsertData* clip = nullptr;  // an INSERT whose XCLIP goes out as a SPATIAL_FILTER
 };
 
 class Writer {
@@ -394,6 +395,10 @@ private:
     struct PendingDict {
         std::uint64_t handle = 0, owner = 0;
         std::vector<DictRecord> records{};
+        // XCLIP boundary (block coordinates) and the inverse insert transform, for ACAD_FILTER.
+        std::vector<Vec2> clip{};
+        bool clipOn = true;
+        Transform2 toBlock{};
     };
 
     // The state that changes while entities are written. The entities of a big plain run are
