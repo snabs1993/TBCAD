@@ -464,9 +464,9 @@ std::unique_ptr<AppCore::Session> AppCore::makeSession(std::unique_ptr<Document>
     watchFile(*s);
     openStep("  watch the file");
     if (s->lockedElsewhere)
-        print(
-            s->file.filename().string() +
-            " is also open in another TBCAD window. Changes saved there may be overwritten here.");
+        print(s->file.filename().string() +
+              " is already open on another computer or window, so it opened read-only here. "
+              "Use Save As to keep a copy, or File > Work Together to join the person editing it.");
     return s;
 }
 
@@ -759,7 +759,7 @@ std::string AppCore::documentTitle(std::size_t index) const {
     if (s.scratch())
         return s.scratchTitle;
     std::string name = s.file.empty() ? std::string("Untitled") : s.file.filename().string();
-    return s.readOnlyFormat.empty() ? name : name + " [Read-only]";
+    return s.readOnlyFormat.empty() && !s.lockedElsewhere ? name : name + " [Read-only]";
 }
 
 std::filesystem::path AppCore::documentFile(std::size_t index) const {
@@ -782,7 +782,7 @@ AppCore::SaveAllReport AppCore::saveAll() {
         if (!documentModified(i))
             continue;
         const Session& s = *slots_[i].session;
-        if (s.file.empty() || !s.readOnlyFormat.empty()) {
+        if (s.file.empty() || !s.readOnlyFormat.empty() || s.lockedElsewhere) {
             report.needSaveAs.push_back(i);
             continue;
         }
@@ -1642,12 +1642,19 @@ bool AppCore::canOpenExtension(std::string_view e) const {
 }
 
 bool AppCore::readOnlyOrigin() const {
-    return !session_->readOnlyFormat.empty();
+    return !session_->readOnlyFormat.empty() || session_->lockedElsewhere;
+}
+
+bool AppCore::openElsewhere() const {
+    return session_->lockedElsewhere;
 }
 
 std::string AppCore::readOnlyBanner() const {
     if (!readOnlyOrigin())
         return {};
+    if (session_->readOnlyFormat.empty())
+        return "Read-only: someone else has this file open. Save As keeps a copy; "
+               "File > Work Together lets you join them.";
     return session_->readOnlyFormat +
            " opened read-only. Use Save As to keep a copy as .tbcad or .dxf.";
 }
@@ -1831,6 +1838,11 @@ Result<void> AppCore::openFile(const fs::path& path) {
 }
 
 Result<void> AppCore::save() {
+    if (session_->lockedElsewhere && session_->readOnlyFormat.empty())
+        return makeError(ErrorCode::Conflict,
+                         session_->file.filename().string() +
+                             " is open somewhere else, so it is read-only here: use Save As, or "
+                             "File > Work Together to join them.");
     if (readOnlyOrigin())
         return makeError(ErrorCode::Conflict,
                          session_->readOnlyFormat + " files are read-only: use Save As.");
@@ -1934,6 +1946,17 @@ Result<void> AppCore::saveAs(const fs::path& requested) {
         return makeError(ErrorCode::Unsupported,
                          "TBCAD can save as .tbcad or .dxf; it never writes " + ext + " files.");
     }
+    {
+        // Never write over a drawing that someone else has open (on this or another computer).
+        const bool ownLock = session_->lock && session_->file == path;
+        if (!ownLock && fs::exists(path) && platform::FileLock(path).heldElsewhere()) {
+            const std::string msg = path.filename().string() +
+                                    " is open somewhere else; choose another name, or File > "
+                                    "Work Together to join them.";
+            print(msg);
+            return makeError(ErrorCode::Conflict, msg);
+        }
+    }
     storeCurrentUcs();
     storeSnapAids();
     // Relative xref paths must keep finding their files from the new folder.
@@ -1961,6 +1984,7 @@ Result<void> AppCore::saveAs(const fs::path& requested) {
     session_->file = path;
     session_->doc.setFilePath(platform::pathToUtf8(path));
     session_->readOnlyFormat.clear();
+    session_->lockedElsewhere = false;
     session_->savedRevision = session_->doc.revision();
     if (sameFile && session_->lock) {
         // Keep the lock; only the stamp moves to the file just written.

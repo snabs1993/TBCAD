@@ -1497,6 +1497,8 @@ TEST_CASE("a .dxf file opens and saves back as DXF in place") {
         CHECK(head.find("SECTION") != std::string::npos);  // "  0\nSECTION" starts a DXF
     }
     CHECK(f.core->file() == dxfFile);
+    f.core->newDocument();
+    f.core->closeDocument(0);  // let go of the file, or the next window opens it read-only
 
     // Reopen in a second application: the lines come back and Save writes DXF again.
     Fixture g("dxfmain2");
@@ -1957,7 +1959,7 @@ TEST_CASE("fileChangedOnDisk and saveOverwrite let the window offer Overwrite at
     CHECK_FALSE(f.core->fileChangedOnDisk());
 }
 
-TEST_CASE("opening a drawing that another window holds warns about it") {
+TEST_CASE("opening a drawing that another window holds opens it read-only") {
     Fixture a("lockwarn_a");
     const fs::path file = a.dir / "held.tbcad";
     a.core->submitText("TESTLINE");
@@ -1968,12 +1970,36 @@ TEST_CASE("opening a drawing that another window holds warns about it") {
     REQUIRE(b.core->openFile(file).ok());
     bool warned = false;
     for (const auto& line : b.core->history())
-        if (line.find("also open in another TBCAD window") != std::string::npos)
+        if (line.find("already open on another computer") != std::string::npos)
             warned = true;
     CHECK(warned);
-    // The window that holds the lock saw no warning.
+    // The window that holds the lock saw no warning and stays editable.
     for (const auto& line : a.core->history())
-        CHECK(line.find("also open in another") == std::string::npos);
+        CHECK(line.find("already open on another") == std::string::npos);
+    CHECK_FALSE(a.core->readOnlyOrigin());
+
+    // The second window cannot write over the file, not even with Save As to the same name.
+    CHECK(b.core->openElsewhere());
+    CHECK(b.core->readOnlyOrigin());
+    CHECK(b.core->displayName() == "held.tbcad [Read-only]");
+    CHECK(b.core->readOnlyBanner().find("Work Together") != std::string::npos);
+    b.core->submitText("TESTLINE");
+    b.core->submitText("0,5");
+    b.core->submitText("10,5");
+    CHECK_FALSE(b.core->save().ok());
+    CHECK_FALSE(b.core->saveAs(file).ok());
+    // Nor can the first window's file be taken over from an unrelated drawing.
+    Fixture c("lockwarn_c");
+    CHECK_FALSE(c.core->saveAs(file).ok());
+    // A copy under a new name works and is an ordinary editable drawing.
+    REQUIRE(b.core->saveAs(b.dir / "copy.tbcad").ok());
+    CHECK_FALSE(b.core->readOnlyOrigin());
+    CHECK(b.core->save().ok());
+    // The holder still saves normally.
+    a.core->submitText("TESTLINE");
+    a.core->submitText("0,9");
+    a.core->submitText("10,9");
+    CHECK(a.core->save().ok());
 }
 
 TEST_CASE("recovery survives leftovers of a process killed in the middle of an autosave") {
