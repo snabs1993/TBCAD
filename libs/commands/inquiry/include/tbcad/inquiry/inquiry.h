@@ -89,4 +89,20 @@ std::string formatLengthIn(const Document& doc, double mm, Precision precision);
 std::vector<std::pair<std::string, std::string>> customProperties(const Header& h);
 std::string formatAreaIn(const Document& doc, double mm2, Precision precision);
 
+// Totals of a selection (Properties panel, TOTALS): how many objects, the summed length of the
+// ones with a curve (lines, arcs, circles, polylines, ellipses, splines) and the summed area of
+// the closed shapes (circles, full ellipses, closed polylines/splines, hatches). With `only`,
+// just objects of that kind count. Ids that no longer exist are skipped.
+struct SelectionTotals {
+    std::size_t count = 0;
+    std::size_t withLength = 0;
+    double length = 0;  // mm
+    std::size_t closed = 0;
+    double area = 0;  // mm^2
+};
+SelectionTotals selectionTotals(const Document& doc, const std::vector<EntityId>& ids,
+                                std::optional<EntityKind> only = std::nullopt);
+// "Objects = 3\nTotal length = ...\nTotal area = ..." (lines without objects are left out).
+std::string formatTotals(const Document& doc, const SelectionTotals& t, Precision precision);
+
 }  // namespace tbcad::inquiry

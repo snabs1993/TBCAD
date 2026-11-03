@@ -19,8 +19,9 @@ tbcad_add_library(inquiry
     src/quick.cpp
     src/quickcmd.cpp
     src/calc.cpp
+    src/totals.cpp
     src/ui.cpp
-  DEPENDS tbcad::cmd tbcad::expr tbcad::geom tbcad::layout tbcad::plotstyle tbcad::ui tbcad::platform)
+  DEPENDS tbcad::cmd tbcad::expr tbcad::geom tbcad::hatch tbcad::layout tbcad::plotstyle tbcad::ui tbcad::platform)
 if(TBCAD_BUILD_APP)
   target_link_libraries(tbcad_inquiry PRIVATE tbcad::imgui)
   target_compile_definitions(tbcad_inquiry PRIVATE TBCAD_INQUIRY_WITH_IMGUI=1)
