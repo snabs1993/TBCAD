@@ -271,6 +271,10 @@ public:
     // ---- undo / redo -------------------------------------------------------------------------
     bool undo();
     bool redo();
+    // Undo History panel: goes back (`delta` < 0) or forward (> 0) that many steps at once, as
+    // the same number of single undos / redos would. Stops early when a step cannot be applied.
+    // Returns the number of steps taken; 0 while a command is running.
+    std::size_t stepHistory(long long delta);
     // True when the next undo (redo) is big enough to block the window for a noticeable time, so
     // the caller can show a hint first. The limit is the setting "undo.busyBytes" (default 16 MB).
     bool historyStepHeavy(bool redo) const;
@@ -748,7 +752,7 @@ private:
     void applyZoomXp();
     void followLockedViewport();
     std::uint64_t annoSyncRevision_ = 0;
-    std::string unpickBlock_{};             // the block whose references syncBlockEditPicking hid
+    std::string unpickBlock_{};  // the block whose references syncBlockEditPicking hid
     std::uint64_t unpickRevision_ = ~std::uint64_t{0};
     underlay::ImageCache imageCache_{};
 };

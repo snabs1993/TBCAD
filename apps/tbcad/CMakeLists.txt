@@ -17,7 +17,8 @@ set(_tbcad_gui_sources
   src/settings_dialog.cpp
   src/file_browser.cpp
   src/window_link.cpp
-  src/practice.cpp)
+  src/practice.cpp
+  src/undo_history.cpp)
 if(WIN32)
   # Version info and icon (packaging/windows/tbcad.rc.in).
   enable_language(RC)

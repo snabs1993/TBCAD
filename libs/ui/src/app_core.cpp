@@ -2037,6 +2037,18 @@ bool AppCore::redo() {
     return ok;
 }
 
+std::size_t AppCore::stepHistory(long long delta) {
+    if (session_->runner->active())
+        return 0;
+    std::size_t done = 0;
+    for (long long i = 0; i < (delta < 0 ? -delta : delta); ++i) {
+        if (!(delta < 0 ? undo() : redo()))
+            break;
+        ++done;
+    }
+    return done;
+}
+
 bool AppCore::historyStepHeavy(bool redo) const {
     std::size_t limit = std::size_t{16} << 20;
     if (auto v = setting("undo.busyBytes"))
