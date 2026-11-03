@@ -5,7 +5,7 @@ tbcad_add_library(clipboard
     src/clipboard.cpp
     src/commands.cpp
     src/picture.cpp
-  DEPENDS tbcad::cmd tbcad::ui tbcad::geom tbcad::core tbcad::io tbcad::xref tbcad::table tbcad::export tbcad::platform tbcad::text)
+  DEPENDS tbcad::cmd tbcad::ui tbcad::geom tbcad::core tbcad::io tbcad::dxf tbcad::xref tbcad::table tbcad::export tbcad::platform tbcad::text)
 tbcad_add_tests(clipboard
   SOURCES
     tests/main.cpp

@@ -1,7 +1,11 @@
 #include <algorithm>
+#include <cctype>
+#include <cstdlib>
+#include <span>
 #include <filesystem>
 
 #include "tbcad/clipboard/clipboard.h"
+#include "tbcad/dxf/writer.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/platform/clipboard_picture.h"
 #include "tbcad/table/table.h"
@@ -293,13 +297,35 @@ private:
 };
 
 // WBLOCK [W]: writes the selected objects, with the layers, styles and blocks they use, to a
-// drawing file whose origin is the chosen base point.
+// drawing file whose origin is the chosen base point. A bare name gets .dxf; a relative name is
+// placed next to the open drawing (or the working folder when it was never saved).
 class WBlockCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "WBLOCK"; }
     std::vector<std::string> defaultAliases() const override { return {"W"}; }
     std::string_view description() const override {
         return "Write the selected objects to a drawing file";
+    }
+
+    static std::filesystem::path pathOf(const std::string& utf8) {
+        return std::filesystem::path(std::u8string(utf8.begin(), utf8.end()));
+    }
+    static std::string utf8Of(const std::filesystem::path& p) {
+        const auto u = p.u8string();
+        return std::string(u.begin(), u.end());
+    }
+
+    static dxf::DxfVersion dxfVersionFor(cmd::CommandContext& ctx) {
+        const std::string chosen = ctx.host().setting("files.dxfVersion").value_or("auto");
+        if (chosen != "auto")
+            if (auto v = dxf::parseVersion(chosen))
+                return *v;
+        const auto& custom = ctx.doc().header().custom;
+        if (auto it = custom.find("dxf.acadver"); it != custom.end() && it->second.size() == 6 &&
+                                                  it->second.compare(0, 2, "AC") == 0 &&
+                                                  std::atoi(it->second.c_str() + 2) >= 1021)
+            return dxf::DxfVersion::R2007;
+        return dxf::DxfVersion::R2000;
     }
 
     cmd::Task run(cmd::CommandContext& ctx) override {
@@ -311,13 +337,43 @@ public:
         auto b = co_await ctx.getPoint("Specify base point");
         if (!b.ok())
             co_return;
-        auto f = co_await ctx.getString("Enter the file name <block.tbcad>",
-                                        cmd::StringOptions{.defaultValue = "block.tbcad"});
+        auto f = co_await ctx.getString("Enter the file name (.dxf or .tbcad) <block.dxf>",
+                                        cmd::StringOptions{.defaultValue = "block.dxf"});
         if (!f.ok())
             co_return;
-        std::string file = cmd::trim(f.text);
-        if (std::filesystem::path(file).extension().empty())
-            file += ".tbcad";
+        std::string text = cmd::trim(f.text);
+        if (text.size() >= 2 && text.front() == '"' && text.back() == '"')
+            text = text.substr(1, text.size() - 2);
+        if (text.empty())
+            text = "block.dxf";
+        std::filesystem::path path = pathOf(text);
+        if (path.extension().empty())
+            path += ".dxf";
+        if (path.is_relative()) {
+            const std::string doc = ctx.host().documentFile();
+            if (!doc.empty())
+                path = pathOf(doc).parent_path() / path;
+        }
+        std::string ext = utf8Of(path.extension());
+        std::transform(ext.begin(), ext.end(), ext.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        const bool asDxf = ext != ".tbcad";
+        if (ext != ".dxf" && ext != ".tbcad") {
+            ctx.message("Use a .dxf or .tbcad file name.");
+            co_return;
+        }
+        const std::string shown = utf8Of(path);
+        if (std::error_code ec; std::filesystem::exists(path, ec)) {
+            cmd::KeywordOptions yn;
+            yn.keywords = {"Yes", "No"};
+            yn.defaultKeyword = "No";
+            auto answer =
+                co_await ctx.getKeyword(shown + " already exists. Replace it?", std::move(yn));
+            if (answer.status != cmd::Status::Keyword || answer.keyword != "Yes") {
+                ctx.message("WBLOCK cancelled; the existing file was not changed.");
+                co_return;
+            }
+        }
 
         Clip clip = capture(ctx.doc(), sel.ids, b.point);
         if (clip.empty()) {
@@ -336,13 +392,32 @@ public:
             }
             tx.commit();
         }
-        auto r = io::writeTbcad(out, std::filesystem::path(std::u8string(file.begin(), file.end())),
-                                io::WriteOptions{.keepBackup = false});
-        if (!r) {
-            ctx.message("Cannot write " + file + ": " + r.error().message);
-            co_return;
+        if (asDxf) {
+            dxf::ExportOptions opt;
+            opt.version = dxfVersionFor(ctx);
+            dxf::Report report;
+            auto res = dxf::exportDxf(out, opt, report);
+            if (!res) {
+                ctx.message("Cannot write " + shown + ": " + res.error().message);
+                co_return;
+            }
+            const auto& bytes = res.value().bytes;
+            auto saved = io::saveTbcadBytes(
+                std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(bytes.data()),
+                                              bytes.size()),
+                path, io::WriteOptions{.keepBackup = false});
+            if (!saved) {
+                ctx.message("Cannot write " + shown + ": " + saved.error().message);
+                co_return;
+            }
+        } else {
+            auto r = io::writeTbcad(out, path, io::WriteOptions{.keepBackup = false});
+            if (!r) {
+                ctx.message("Cannot write " + shown + ": " + r.error().message);
+                co_return;
+            }
         }
-        ctx.message(plural(clip.entities.size()) + " written to " + file + ".");
+        ctx.message(plural(clip.entities.size()) + " written to " + shown + ".");
     }
 };
 
