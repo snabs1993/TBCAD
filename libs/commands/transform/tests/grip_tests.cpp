@@ -597,3 +597,83 @@ TEST_CASE("objects on a locked layer show no grips and GRIPEDIT leaves them alon
         f.host.run("GRIPEDIT", {from, "60,60"});
     CHECK(canonicalDump(f.doc) == before);
 }
+
+namespace {
+PolylineData plOf(std::vector<Vec2> pts, bool closed) {
+    PolylineData pl;
+    pl.closed = closed;
+    for (Vec2 p : pts)
+        pl.v.push_back({p, 0, 0, 0});
+    return pl;
+}
+}  // namespace
+
+TEST_CASE("withoutVertices bridges gaps with straight segments and keeps a minimum") {
+    PolylineData open = plOf({{0, 0}, {1, 0}, {2, 0}, {3, 0}, {4, 0}}, false);
+    open.v[0].bulge = 0.5;  // arc 0 -> 1
+    open.v[2].bulge = 0.3;  // arc 2 -> 3
+    auto r = tf::withoutVertices(open, {1, 3});
+    REQUIRE(r);
+    REQUIRE(r->v.size() == 3);
+    CHECK(near(r->v[1].p, {2, 0}));
+    CHECK(r->v[0].bulge == 0);                             // 0 -> 2 now straight
+    CHECK(r->v[1].bulge == 0);                             // 2 -> 4 now straight
+    CHECK_FALSE(tf::withoutVertices(open, {0, 1, 2, 3}));  // one point left: refused
+    auto last = tf::withoutVertices(open, {4});
+    REQUIRE(last);
+    CHECK(last->v.back().bulge == 0);
+
+    PolylineData closed = plOf({{0, 0}, {4, 0}, {4, 4}, {0, 4}}, true);
+    closed.v[3].bulge = 0.4;  // arc 3 -> 0
+    auto c = tf::withoutVertices(closed, {0});
+    REQUIRE(c);
+    REQUIRE(c->v.size() == 3);
+    CHECK(c->v[2].bulge == 0);  // 3 -> 1 bridges the removed first vertex
+    CHECK_FALSE(tf::withoutVertices(closed, {0, 1}));
+}
+
+TEST_CASE("Ctrl + window picks polyline grips, Delete runs VERTEXDELETE, one undo step") {
+    Fixture f;
+    auto pl = add(f.doc, plOf({{0, 0}, {10, 0}, {20, 0}, {30, 0}, {40, 0}}, false));
+    auto line = add(f.doc, LineData{{0, 50}, {10, 50}});
+    f.host.setSelection({pl, line});
+    ui::UiRegistry reg;
+    tf::registerUi(reg);
+    std::vector<EntityId> sel{pl, line};
+    ui::PanelContext ctx;
+    ctx.doc = &f.doc;
+    ctx.host = &f.host;
+    ctx.selection = &sel;
+    tf::clearWarmGrips();
+    REQUIRE(reg.deleteKeyHooks().size() == 1);
+    CHECK(reg.deleteKeyHooks().front()(ctx).empty());  // nothing picked: ERASE as usual
+
+    BBox2 box;
+    box.expand({8, -2});
+    box.expand({32, 2});
+    const auto& boxHook = reg.idleBoxHooks().front();
+    CHECK_FALSE(boxHook(ctx, box, false, false));  // without Ctrl it is a normal window
+    CHECK(tf::warmGrips().empty());
+    CHECK(boxHook(ctx, box, false, true));
+    // Vertices 10, 20, 30 and the midpoint grips 15, 25 inside the window.
+    CHECK(tf::warmGrips().size() == 5);
+    CHECK(reg.deleteKeyHooks().front()(ctx) == "VERTEXDELETE");
+
+    auto r = f.host.run("VERTEXDELETE", {});
+    CHECK(r.finished);
+    CHECK(f.host.logContains("Removed 3 vertices."));
+    const auto& after = get<PolylineData>(f.doc, pl);
+    REQUIRE(after.v.size() == 2);
+    CHECK(near(after.v[0].p, {0, 0}));
+    CHECK(near(after.v[1].p, {40, 0}));
+    CHECK(tf::warmGrips().empty());
+    CHECK(f.host.undo());
+    CHECK(get<PolylineData>(f.doc, pl).v.size() == 5);
+    CHECK_FALSE(f.host.undoStack().canUndo());
+
+    // A window with nothing in it falls through to normal selection.
+    BBox2 empty;
+    empty.expand({100, 100});
+    empty.expand({110, 110});
+    CHECK_FALSE(boxHook(ctx, empty, false, true));
+}

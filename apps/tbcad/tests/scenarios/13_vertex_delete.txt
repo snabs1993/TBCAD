@@ -1,0 +1,22 @@
+# Ctrl + window picks polyline grips, Delete removes those vertices (not the polyline), Undo.
+PLINE
+0,0
+100,0
+200,50
+300,0
+400,0
+
+ZOOM
+E
+SELECTALL
+@frames 3
+@dragw 80 -20 320 70 ctrl
+@expect log 5 grip(s) picked
+@key Delete
+@frames 3
+@expect log Removed 3 vertices.
+@expect polyline 1
+@shot 13_vertex_delete.png
+UNDO
+1
+@expect log Undo Remove vertices

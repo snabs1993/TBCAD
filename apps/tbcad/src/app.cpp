@@ -1009,7 +1009,13 @@ int App::runCapture() {
             doubleClickHere();
             captureFrames(2);
         } else if (op == "dragw" && (ss >> a >> b >> c >> d)) {
+            // @dragw X0 Y0 X1 Y1 [ctrl]: Ctrl held for the whole drag (Ctrl + window picks grips)
+            std::string mod;
+            ss >> mod;
+            const bool withCtrl = mod == "ctrl";
             const ImVec2 w0 = toWindow(a, b), w1 = toWindow(c, d);
+            if (withCtrl)
+                io.AddKeyEvent(ImGuiMod_Ctrl, true);
             moveTo(w0.x, w0.y);
             io.AddMouseButtonEvent(0, true);
             captureFrames(2);
@@ -1017,6 +1023,10 @@ int App::runCapture() {
             moveTo(w1.x, w1.y);
             io.AddMouseButtonEvent(0, false);
             captureFrames(2);
+            if (withCtrl) {
+                io.AddKeyEvent(ImGuiMod_Ctrl, false);
+                captureFrames(1);
+            }
         } else if (op == "clickitem" || op == "dblclickitem" || op == "rclickitem") {
             // @clickitem LABEL [| WINDOW [| NTH]]: a widget by its label, as the GUI tests do
             std::string rest;

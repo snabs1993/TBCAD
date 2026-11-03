@@ -50,6 +50,27 @@ void registerUi(ui::UiRegistry& ui) {
         return true;
     });
 
+    // Ctrl + window with a selection picks the grips inside it (red), as Shift + click does one
+    // by one: dragging one of them then moves them all, Delete removes polyline vertices.
+    ui.addIdleBoxHook([](ui::PanelContext& ctx, const BBox2& box, bool, bool ctrlKey) {
+        if (!ctrlKey || !ctx.doc || !ctx.host || !ctx.selection || ctx.selection->empty())
+            return false;
+        const auto& grips = cachedGrips(*ctx.doc, *ctx.selection, gripLimit(*ctx.host));
+        const std::size_t n = pickGripsInBox(grips, box);
+        if (n == 0)
+            return false;
+        ctx.host->print(std::to_string(warmGrips().size()) +
+                        " grip(s) picked. Drag one to move them together; Delete removes "
+                        "polyline vertices.");
+        return true;
+    });
+    ui.addDeleteKeyHook([](ui::PanelContext& ctx) -> std::string {
+        if (!ctx.doc || !ctx.selection || ctx.selection->empty())
+            return {};
+        return pickedPolylineVertices(*ctx.doc, *ctx.selection).empty() ? std::string{}
+                                                                        : "VERTEXDELETE";
+    });
+
     // Resting the cursor on a grip offers its other actions (add vertex, convert to arc ...).
     ui.addHoverMenu([](ui::PanelContext& ctx, ui::HoverMenu& menu) {
         if (!ctx.doc || !ctx.host || !ctx.selection || ctx.selection->empty() ||
@@ -80,6 +101,8 @@ void registerUi(ui::UiRegistry& ui) {
     // Grip squares for the selection, 2 x GRIPSIZE px: blue, pink under the cursor, red while
     // hot, or the colours GRIPCOLOR, GRIPHOVER and GRIPHOT set (colour numbers 1-255).
     ui.addOverlayDrawer([](ui::PanelContext& ctx, render::Overlay& overlay) {
+        if (ctx.selection && ctx.selection->empty() && !warmGrips().empty())
+            clearWarmGrips();  // Esc or a new empty selection lets picked grips go
         if (!ctx.doc || !ctx.host || !ctx.selection || ctx.selection->empty())
             return;
         auto aciSetting = [&](const char* key, Rgba fallback) {
