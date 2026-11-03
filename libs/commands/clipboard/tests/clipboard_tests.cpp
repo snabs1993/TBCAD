@@ -1,10 +1,13 @@
 #include <doctest/doctest.h>
 
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 
 #include "tbcad/clipboard/clipboard.h"
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/register_all.h"
+#include "tbcad/dxf/reader.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/platform/clipboard_picture.h"
 
@@ -258,6 +261,48 @@ TEST_CASE("WBLOCK writes the selection to a drawing file at the base point") {
         ++n;
     });
     CHECK(n == 1);
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("WBLOCK writes DXF by default and asks before replacing a file") {
+    Fixture f;
+    EntityId a = f.add(LineData{{100, 100}, {150, 100}});
+    f.add(LineData{{0, 0}, {5, 5}});
+    const auto base = std::filesystem::temp_directory_path() / "tbcad_wblock_dxf_test";
+    const auto path = std::filesystem::temp_directory_path() / "tbcad_wblock_dxf_test.dxf";
+    std::filesystem::remove(path);
+    auto r = f.host.run("WBLOCK",
+                        {ScriptItem::select({a}), ScriptItem::enter(), "100,100", base.string()});
+    CHECK(r.finished);
+    REQUIRE(std::filesystem::exists(path));
+    auto readBack = [&] {
+        std::ifstream in(path, std::ios::binary);
+        std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        dxf::Report report;
+        auto doc = dxf::importDxf(
+            std::span<const std::byte>(reinterpret_cast<const std::byte*>(bytes.data()),
+                                       bytes.size()),
+            dxf::ImportOptions{}, report);
+        REQUIRE(doc);
+        std::size_t n = 0;
+        doc.value().document->forEachEntity([&](const Entity& e) {
+            if (const auto* ln = entityAs<LineData>(e)) {
+                CHECK(near(ln->a, {0, 0}));
+                CHECK(near(ln->b, {50, 0}));
+                ++n;
+            }
+        });
+        return n;
+    };
+    CHECK(readBack() == 1);
+
+    // Saying No keeps the existing file.
+    const auto size = std::filesystem::file_size(path);
+    EntityId c = f.add(LineData{{0, 0}, {1, 1}});
+    r = f.host.run("WBLOCK", {ScriptItem::select({a, c}), ScriptItem::enter(), "100,100",
+                              path.string(), "No"});
+    CHECK(std::filesystem::file_size(path) == size);
+    CHECK(readBack() == 1);
     std::filesystem::remove(path);
 }
 
