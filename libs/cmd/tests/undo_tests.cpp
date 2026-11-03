@@ -140,3 +140,39 @@ TEST_CASE("undo stack: a guard can refuse a step, which is then dropped") {
     CHECK(st.blockedReason().empty());
     CHECK(st.redo(doc));
 }
+
+TEST_CASE("undo stack: history steps with object counts, redo steps in redo order") {
+    Document doc;
+    UndoStack st;
+    st.push("LINE", {addLine(doc, 0)});
+    {
+        Transaction tx = doc.begin("two");
+        (void)tx.add(Entity{{}, LineData{{0, 5}, {1, 5}}});
+        (void)tx.add(Entity{{}, LineData{{0, 6}, {1, 6}}});
+        st.push("COPY", {tx.commit()});
+    }
+    // Two checkpoints touching the same new line count it once.
+    {
+        Transaction tx = doc.begin("a");
+        const EntityId id = tx.add(Entity{{}, LineData{{0, 9}, {1, 9}}}).value();
+        ChangeSet a = tx.commit();
+        Transaction tx2 = doc.begin("b");
+        REQUIRE(tx2.modify(id, [](Entity& e) { std::get<LineData>(e.data).b = {2, 9}; }));
+        st.push("PLINE", {std::move(a), tx2.commit()});
+    }
+    auto u = st.undoSteps();
+    REQUIRE(u.size() == 3);
+    CHECK(u[0].label == "LINE");
+    CHECK(u[0].objects == 1);
+    CHECK(u[1].objects == 2);
+    CHECK(u[2].label == "PLINE");
+    CHECK(u[2].objects == 1);
+
+    CHECK(st.undo(doc));
+    CHECK(st.undo(doc));
+    auto r = st.redoSteps();
+    REQUIRE(r.size() == 2);
+    CHECK(r[0].label == "COPY");  // redone next
+    CHECK(r[1].label == "PLINE");
+    CHECK(st.undoSteps().size() == 1);
+}

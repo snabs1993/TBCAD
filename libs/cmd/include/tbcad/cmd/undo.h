@@ -50,6 +50,18 @@ public:
     // Labels, oldest first.
     std::vector<std::string> undoLabels() const;
 
+    // One step of the history for the Undo History panel: the command's label and how many
+    // drawing objects it added, changed or erased (0 for steps that only touched tables, the
+    // header or the view).
+    struct Step {
+        std::string label{};
+        std::size_t objects = 0;
+    };
+    // The steps that can be undone, oldest first (the last one is undone next), and the steps
+    // that can be redone, in the order redo would apply them (the first one is redone next).
+    std::vector<Step> undoSteps() const;
+    std::vector<Step> redoSteps() const;
+
     // Return false when there is nothing to do. undo() first closes an open group (all levels),
     // so the group is undone whole; redo() refuses while a group is open.
     bool undo(Document& doc);
@@ -94,6 +106,7 @@ private:
         std::string label{};
         std::vector<ChangeSet> sets{};
         std::size_t bytes = 0;
+        std::size_t objects = 0;
     };
     void record(Entry e);
     void trim();

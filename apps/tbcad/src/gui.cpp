@@ -41,6 +41,7 @@
 #include "tbcad/ui/status_items.h"
 #include "tbcad/ui/thai_words.h"
 #include "tbcad/ui/toolbox.h"
+#include "undo_history.h"
 
 #if defined(_WIN32)
 #define GLFW_EXPOSE_NATIVE_WIN32
@@ -120,6 +121,7 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
         if (lessons.empty())
             lessons = std::string(TBCAD_SOURCE_ASSETS_DIR) + "/training/lessons";
         practice_ = std::make_unique<Practice>(core_, registry_, platform::pathFromUtf8(lessons));
+        registerUndoHistoryPanel(core_, registry_);
     }
     {
         std::ifstream in(findBesideExecutable("assets/help/commands.md"), std::ios::binary);
@@ -1515,6 +1517,7 @@ void Gui::menuBar() {
         if (ImGui::MenuItem(redoLabel.empty() ? "Redo" : redoLabel.c_str(),
                             keys.label("edit.redo").c_str(), false, !redoLabel.empty()))
             history(true);
+        ImGui::MenuItem("Undo History", nullptr, &panelOpen_["history"]);
         ImGui::Separator();
         if (ImGui::MenuItem("Select All", keys.label("edit.selectAll").c_str()))
             core_.selectAll();

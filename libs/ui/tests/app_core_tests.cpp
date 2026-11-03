@@ -182,6 +182,25 @@ TEST_CASE("undo and redo with labels and a clean modified flag path") {
     f.core->pressEscape();
 }
 
+TEST_CASE("undo history: jump back and forward several steps at once") {
+    Fixture f("undohistory");
+    f.line("0,0", "100,0");
+    f.line("0,10", "100,10");
+    f.line("0,20", "100,20");
+    REQUIRE(f.core->undoStack().undoSteps().size() == 3);
+    CHECK(f.core->undoStack().undoSteps()[0].objects == 1);
+    CHECK(f.core->stepHistory(-2) == 2);  // back to just after the first line
+    CHECK(f.core->document().modelSpaceCount() == 1);
+    CHECK(f.core->undoStack().redoSteps().size() == 2);
+    CHECK(f.core->stepHistory(-5) == 1);  // only one more step exists
+    CHECK(f.core->document().modelSpaceCount() == 0);
+    CHECK(f.core->stepHistory(3) == 3);
+    CHECK(f.core->document().modelSpaceCount() == 3);
+    f.core->submitText("TESTLINE");
+    CHECK(f.core->stepHistory(-1) == 0);  // never in the middle of a command
+    f.core->pressEscape();
+}
+
 TEST_CASE("clicks in the viewport answer point prompts through the snap-free path") {
     Fixture f("clickpoint");
     f.core->submitText("TESTLINE");

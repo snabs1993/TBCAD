@@ -103,6 +103,42 @@ std::vector<std::string> UndoStack::undoLabels() const {
     return out;
 }
 
+namespace {
+
+// Distinct drawing objects the change sets touch. One set lists each object once; only a step
+// with several sets (checkpoints, groups) needs the ids compared.
+std::size_t objectsTouched(const std::vector<ChangeSet>& sets) {
+    if (sets.size() == 1)
+        return sets.front().entities.size();
+    std::unordered_set<std::uint64_t> ids;
+    for (const ChangeSet& cs : sets) {
+        for (const EntityChange& ch : cs.entities) {
+            const std::uint32_t snap = ch.after != kNoSnapshot ? ch.after : ch.before;
+            if (cs.snapshots && snap < cs.snapshots->size())
+                ids.insert(static_cast<std::uint64_t>((*cs.snapshots)[snap].common.id.value));
+        }
+    }
+    return ids.size();
+}
+
+}  // namespace
+
+std::vector<UndoStack::Step> UndoStack::undoSteps() const {
+    std::vector<Step> out;
+    out.reserve(undo_.size());
+    for (const Entry& e : undo_)
+        out.push_back({e.label, e.objects});
+    return out;
+}
+
+std::vector<UndoStack::Step> UndoStack::redoSteps() const {
+    std::vector<Step> out;
+    out.reserve(redo_.size());
+    for (auto it = redo_.rbegin(); it != redo_.rend(); ++it)
+        out.push_back({it->label, it->objects});
+    return out;
+}
+
 void UndoStack::push(std::string label, std::vector<ChangeSet> sets, std::size_t bytes) {
     std::erase_if(sets, [](const ChangeSet& cs) { return cs.empty(); });
     if (sets.empty())
@@ -127,6 +163,7 @@ void UndoStack::push(std::string label, std::vector<ChangeSet> sets, std::size_t
 }
 
 void UndoStack::record(Entry e) {
+    e.objects = objectsTouched(e.sets);
     {
         profile::EditTimer t("undo history: drop redo steps");
         redo_.clear();
