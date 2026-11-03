@@ -2285,6 +2285,11 @@ void Gui::readOnlyBanner() {
             ImGui::SameLine();
             if (ImGui::SmallButton("Save As..."))
                 runAction("file.saveAs");
+            if (core_.openElsewhere()) {
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Work Together..."))
+                    core_.startCommand("COLLAB");
+            }
         }
         if (showXref) {
             const size_t n = core_.missingXrefs().size();

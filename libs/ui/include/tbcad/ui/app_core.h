@@ -234,6 +234,9 @@ public:
     std::optional<OpeningInfo> opening() const;
     // True while the drawing came from a read-only format and has not been saved as .tbcad.
     bool readOnlyOrigin() const;
+    // The drawing file was already open in another TBCAD (this or another computer) when it was
+    // opened here, so this window keeps it read-only: Save refuses, Save As to a new name works.
+    bool openElsewhere() const;
     // True for the frame before a changed external reference is reloaded, so the window can show
     // a "Reloading external references" card before the command blocks.
     bool xrefReloading() const { return xrefReloadWait_ > 0; }
