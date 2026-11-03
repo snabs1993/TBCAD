@@ -405,6 +405,33 @@ public:
     }
 };
 
+// ---- TOTALS ------------------------------------------------------------------------------------
+// Count, total length and total area of the selected objects (the Totals rows of Properties).
+class Totals final : public cmd::Command {
+public:
+    std::string_view name() const override { return "TOTALS"; }
+    std::string_view description() const override {
+        return "Count the selected objects and add up their lengths and areas";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        auto sel = co_await ctx.getSelection("Select objects");
+        if (!sel.ok() || sel.ids.empty())
+            co_return;
+        const SelectionTotals t = selectionTotals(ctx.doc(), sel.ids);
+        const std::string text = formatTotals(ctx.doc(), t, precisionOf(ctx));
+        std::size_t start = 0;
+        while (start <= text.size()) {
+            const std::size_t nl = text.find('\n', start);
+            ctx.message(text.substr(start, nl == std::string::npos ? std::string::npos : nl - start));
+            if (nl == std::string::npos)
+                break;
+            start = nl + 1;
+        }
+        ctx.host().setSetting(kLastResultKey, text);  // COPYRESULT copies all three numbers
+    }
+};
+
 // ---- COPYRESULT -------------------------------------------------------------------------------
 class CopyResult final : public cmd::Command {
 public:
@@ -579,6 +606,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<Area>());
     (void)registry.add(std::make_unique<Angle>());
     (void)registry.add(std::make_unique<List>());
+    (void)registry.add(std::make_unique<Totals>());
     (void)registry.add(std::make_unique<CopyResult>());
     (void)registry.add(makeQuickMeasure());
     (void)registry.add(makeAreaTable());

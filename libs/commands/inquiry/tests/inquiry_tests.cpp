@@ -720,3 +720,41 @@ TEST_CASE("MEASUREGEOM stays open for the next measurement until eXit") {
     CHECK(r.finished);
     CHECK(host.logContains("Distance = 10.00"));
 }
+
+TEST_CASE("selection totals: count, length of curves, area of closed shapes only") {
+    Fixture f;
+    const EntityId l = f.add(line({0, 0}, {3, 4}));                  // length 5
+    const EntityId c = f.add(Entity{{}, CircleData{{0, 0}, 1}});     // 2 pi, area pi
+    const EntityId r = f.add(Entity{{}, rect(10, 5)});               // 30, area 50
+    PolylineData open = rect(10, 5);
+    open.closed = false;
+    const EntityId o = f.add(Entity{{}, open});                      // 25, no area
+    TextData td;
+    td.utf8 = "A";
+    const EntityId t = f.add(Entity{{}, td});                        // counted only
+    const std::vector<EntityId> all{l, c, r, o, t, EntityId{999999}};
+
+    const auto s = inquiry::selectionTotals(f.doc, all);
+    CHECK(s.count == 5);
+    CHECK(s.withLength == 4);
+    CHECK(s.length == doctest::Approx(5 + 2 * kPi + 30 + 25));
+    CHECK(s.closed == 2);
+    CHECK(s.area == doctest::Approx(kPi + 50));
+
+    const auto lines = inquiry::selectionTotals(f.doc, all, EntityKind::Polyline);
+    CHECK(lines.count == 2);
+    CHECK(lines.length == doctest::Approx(55));
+    CHECK(lines.closed == 1);
+    CHECK(lines.area == doctest::Approx(50));
+
+    cmd::ScriptHost host(f.doc, f.reg);
+    host.setSetting("inquiry.precision", "2");
+    auto run = host.run("TOTALS", {cmd::ScriptItem::pick(l), cmd::ScriptItem::pick(r), ""});
+    CHECK(run.finished);
+    CHECK(host.logContains("Objects = 2"));
+    CHECK(host.logContains("Total length = 35.00"));
+    CHECK(host.logContains("Total area = 50.00"));
+    CHECK(host.logContains("(1 closed shape)"));
+    CHECK(host.setting("inquiry.lastresult").value_or("").find("Total area") != std::string::npos);
+    CHECK_FALSE(host.undoStack().canUndo());
+}

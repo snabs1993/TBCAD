@@ -10,6 +10,7 @@
 #include "panel_util.h"
 #include "panels.h"
 #include "tbcad/blocks/assembly.h"
+#include "tbcad/inquiry/inquiry.h"
 #include "tbcad/layers/layer_ops.h"
 #include "tbcad/layers/properties.h"
 #include "tbcad/layout/layout.h"
@@ -61,6 +62,11 @@ struct Cache {
     std::size_t pickedIndex = 0;  // entities shown in the Geometry section
     std::vector<EntityId> shown{};
     int vertex = 0;  // the polyline's current vertex (0-based), as AutoCAD's "Current vertex"
+    // Totals section: count, summed length and area of the objects in play, and the same as text
+    // for the Copy button.
+    inquiry::SelectionTotals totals{};
+    std::string totalsLength{}, totalsArea{}, totalsText{};
+    double copiedAt = -1;  // ImGui time of the last Copy, for the short "Copied" note
 };
 
 Cache& cache() {
@@ -125,6 +131,28 @@ std::optional<std::string> editableText(const char* id, const std::string& shown
     return result;
 }
 
+// Same precision as the measuring commands: inquiry.precision when set, else UNITS.
+Precision totalsPrecision(tbcad::ui::PanelContext& ctx) {
+    if (ctx.host) {
+        if (auto v = ctx.host->setting("inquiry.precision")) {
+            char* end = nullptr;
+            const long n = std::strtol(v->c_str(), &end, 10);
+            if (end != v->c_str())
+                return static_cast<Precision>(std::clamp(n, 0L, 12L));
+        }
+    }
+    return linearPrecision(ctx.doc->header());
+}
+
+void refreshTotals(tbcad::ui::PanelContext& ctx, Cache& c) {
+    const Document& doc = *ctx.doc;
+    c.totals = inquiry::selectionTotals(doc, c.selection, c.only);
+    const Precision p = totalsPrecision(ctx);
+    c.totalsLength = c.totals.withLength ? inquiry::formatLengthIn(doc, c.totals.length, p) : "";
+    c.totalsArea = c.totals.closed ? inquiry::formatAreaIn(doc, c.totals.area, p) : "";
+    c.totalsText = inquiry::formatTotals(doc, c.totals, p);
+}
+
 void refresh(tbcad::ui::PanelContext& ctx) {
     Cache& c = cache();
     const Document& doc = *ctx.doc;
@@ -145,6 +173,7 @@ void refresh(tbcad::ui::PanelContext& ctx) {
                  ? std::nullopt
                  : std::optional<EntityKind>(c.kinds[static_cast<std::size_t>(c.filterIndex - 1)]);
     c.common = readCommon(doc, sel, c.only);
+    refreshTotals(ctx, c);
 
     // Geometry fields: shown when exactly one kind is in play.
     c.fields.clear();
@@ -428,6 +457,49 @@ void currentSection(tbcad::ui::PanelContext& ctx) {
         ImGui::EndCombo();
     }
     ImGui::EndTable();
+}
+
+// Totals: how many objects, their summed length and the area of the closed ones, live as the
+// selection changes; Copy puts all three on the clipboard (for a spreadsheet or a message).
+void totalsSection(Cache& c) {
+    if (c.totals.count == 0)
+        return;
+    if (!ImGui::CollapsingHeader("Totals", ImGuiTreeNodeFlags_DefaultOpen))
+        return;
+    if (ImGui::BeginTable("##totals", 2, propTableFlags())) {
+        ImGui::TableSetupColumn("##k", ImGuiTableColumnFlags_WidthFixed, 90);
+        ImGui::TableSetupColumn("##v", ImGuiTableColumnFlags_WidthStretch);
+        auto row = [](const char* label, const std::string& value, std::size_t n,
+                      const char* what) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted(label);
+            ImGui::TableSetColumnIndex(1);
+            if (value.empty()) {
+                ImGui::TextDisabled("-");
+                return;
+            }
+            ImGui::TextUnformatted(value.c_str());
+            if (n > 0) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("(%zu %s)", n, what);
+            }
+        };
+        row("Objects", std::to_string(c.totals.count), 0, "");
+        row("Length", c.totalsLength, c.totals.withLength, "with length");
+        row("Area", c.totalsArea, c.totals.closed, "closed");
+        ImGui::EndTable();
+    }
+    if (ImGui::SmallButton("Copy totals")) {
+        ImGui::SetClipboardText(c.totalsText.c_str());
+        c.copiedAt = ImGui::GetTime();
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Copy the count, total length and total area as text");
+    if (c.copiedAt >= 0 && ImGui::GetTime() - c.copiedAt < 1.5) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("Copied");
+    }
 }
 
 void geometrySection(tbcad::ui::PanelContext& ctx, Cache& c) {
@@ -731,8 +803,10 @@ void drawBody(tbcad::ui::PanelContext& ctx, bool compact) {
         return;
     }
     generalSection(ctx, c);
-    if (!compact)
+    if (!compact) {
+        totalsSection(c);
         assemblySection(ctx, c);
+    }
     geometrySection(ctx, c);
     if (compact)
         return;
