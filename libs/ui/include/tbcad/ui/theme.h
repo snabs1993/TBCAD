@@ -22,14 +22,15 @@ struct Theme {
     Rgba gridMinor, gridMajor;
 };
 
-enum class ThemeMode { Dark, Light, System };
+enum class ThemeMode { Dark, Light, System, Navy };
 
 Theme darkTheme();
 Theme lightTheme();
+Theme navyTheme();
 // `systemDark` is only consulted for ThemeMode::System.
 Theme themeFor(ThemeMode mode, bool systemDark);
 
-// "dark" | "light" | "system"; anything else gives Dark.
+// "dark" | "light" | "system" | "navy"; anything else gives Dark.
 ThemeMode parseThemeMode(std::string_view text);
 std::string_view themeModeName(ThemeMode mode);
 

@@ -46,6 +46,23 @@ Theme darkTheme() {
                  .gridMajor = hex(0x2E3238)};
 }
 
+Theme navyTheme() {
+    // Deep blue-black: panels a step lighter than the drawing area, lit with a blue edge glow.
+    return Theme{.bgApp = hex(0x0D1322),
+                 .bgPanel = hex(0x131B2E),
+                 .bgViewport = hex(0x0A0F1B),
+                 .border = hex(0x24304D),
+                 .text = hex(0xE3E8F4),
+                 .textMuted = hex(0x8C97B2),
+                 .accent = hex(0x4C8DFF),
+                 .select = hex(0x5AA9FF),
+                 .crossing = hex(0x3FB950),
+                 .snap = hex(0xF2A93B),
+                 .danger = hex(0xF85149),
+                 .gridMinor = hex(0x131A2B),
+                 .gridMajor = hex(0x1C2640)};
+}
+
 Theme lightTheme() {
     return Theme{.bgApp = hex(0xF3F4F6),
                  .bgPanel = hex(0xFFFFFF),
@@ -66,6 +83,8 @@ Theme themeFor(ThemeMode mode, bool systemDark) {
     switch (mode) {
         case ThemeMode::Light:
             return lightTheme();
+        case ThemeMode::Navy:
+            return navyTheme();
         case ThemeMode::System:
             return systemDark ? darkTheme() : lightTheme();
         case ThemeMode::Dark:
@@ -79,6 +98,8 @@ ThemeMode parseThemeMode(std::string_view text) {
         return ThemeMode::Light;
     if (text == "system")
         return ThemeMode::System;
+    if (text == "navy")
+        return ThemeMode::Navy;
     return ThemeMode::Dark;
 }
 
@@ -88,6 +109,8 @@ std::string_view themeModeName(ThemeMode mode) {
             return "light";
         case ThemeMode::System:
             return "system";
+        case ThemeMode::Navy:
+            return "navy";
         case ThemeMode::Dark:
             break;
     }

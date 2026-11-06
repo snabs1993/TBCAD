@@ -377,11 +377,11 @@ void SettingsDialog::wheel(ui::AppCore& core) {
 
 void SettingsDialog::display(ui::AppCore& core) {
     auto& s = core.settings();
-    static const char* const kThemes[] = {"Dark", "Light", "Follow Windows"};
+    static const char* const kThemes[] = {"Dark", "Light", "Follow Windows", "Midnight Blue"};
     const int mode = hooks_.themeMode ? hooks_.themeMode() : 0;
     ImGui::SetNextItemWidth(260);
-    if (ImGui::BeginCombo("Theme", kThemes[std::clamp(mode, 0, 2)])) {
-        for (int i = 0; i < 3; ++i)
+    if (ImGui::BeginCombo("Theme", kThemes[std::clamp(mode, 0, 3)])) {
+        for (int i = 0; i < 4; ++i)
             if (ImGui::Selectable(kThemes[i], i == mode) && hooks_.setThemeMode)
                 hooks_.setThemeMode(i);
         ImGui::EndCombo();

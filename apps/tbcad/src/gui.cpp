@@ -1617,6 +1617,8 @@ void Gui::menuBar() {
                 setThemeMode(ui::ThemeMode::Dark);
             if (ImGui::MenuItem("Light", nullptr, themeMode_ == ui::ThemeMode::Light))
                 setThemeMode(ui::ThemeMode::Light);
+            if (ImGui::MenuItem("Midnight Blue", nullptr, themeMode_ == ui::ThemeMode::Navy))
+                setThemeMode(ui::ThemeMode::Navy);
             if (ImGui::MenuItem("Follow Windows", nullptr, themeMode_ == ui::ThemeMode::System))
                 setThemeMode(ui::ThemeMode::System);
             ImGui::EndMenu();

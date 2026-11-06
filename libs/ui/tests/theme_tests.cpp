@@ -11,10 +11,11 @@ TEST_CASE("theme tokens match the UX plan") {
     CHECK(themeFor(ThemeMode::System, true).bgApp == darkTheme().bgApp);
     CHECK(themeFor(ThemeMode::System, false).bgApp == lightTheme().bgApp);
     CHECK(themeFor(ThemeMode::Dark, false).bgApp == darkTheme().bgApp);
+    CHECK(themeFor(ThemeMode::Navy, false).bgApp == navyTheme().bgApp);
 }
 
 TEST_CASE("theme mode names round trip, unknown means dark") {
-    for (ThemeMode m : {ThemeMode::Dark, ThemeMode::Light, ThemeMode::System})
+    for (ThemeMode m : {ThemeMode::Dark, ThemeMode::Light, ThemeMode::System, ThemeMode::Navy})
         CHECK(parseThemeMode(themeModeName(m)) == m);
     CHECK(parseThemeMode("nonsense") == ThemeMode::Dark);
 }
