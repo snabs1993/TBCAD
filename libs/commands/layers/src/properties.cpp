@@ -870,8 +870,8 @@ std::vector<StringField> stringFields(const Document& doc, const Entity& e) {
     } else if (const auto* h = entityAs<HatchData>(e)) {
         // SOLID is a choice too, so a filled hatch can become a pattern and back.
         if (!h->gradient)
-            out.push_back({"pattern", "Pattern", h->solid ? std::string("SOLID") : h->pattern,
-                           true, hatch::PatternRegistry::names()});
+            out.push_back({"pattern", "Pattern", h->solid ? std::string("SOLID") : h->pattern, true,
+                           hatch::PatternRegistry::names()});
     }
     return out;
 }

@@ -63,8 +63,7 @@ TEST_CASE("DIMCONTINUE and DIMBASELINE dimensions take the current layer and col
         REQUIRE(tx.modifyHeader([&](Header& h) {
                       h.currentLayer = dims;
                       h.currentColor = Color::index(3);
-                  })
-                    .ok());
+                  }).ok());
         tx.commit();
     }
     REQUIRE(f.host->run("DIMLINEAR", {"0,0", "100,0", "50,-30"}).finished);

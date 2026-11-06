@@ -1,8 +1,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
-#include <span>
 #include <filesystem>
+#include <span>
 
 #include "tbcad/clipboard/clipboard.h"
 #include "tbcad/dxf/writer.h"

@@ -15,7 +15,7 @@ namespace tbcad::collabapp {
 
 namespace {
 constexpr std::uint8_t kPresence = 0xF0;  // not an engine message: cursor of one person
-constexpr std::uint8_t kHello = 1;  // the engine's first message (name follows the version)
+constexpr std::uint8_t kHello = 1;        // the engine's first message (name follows the version)
 constexpr std::size_t kPresenceSize = 1 + 4 + 8 + 8;
 
 Frame presenceFrame(collab::PeerId id, Vec2 at) {
@@ -30,7 +30,7 @@ Frame presenceFrame(collab::PeerId id, Vec2 at) {
 }  // namespace
 
 Rgba CollabController::colorOf(collab::PeerId peer) {
-    static const Rgba palette[] = {{230, 80, 80, 255},  {70, 160, 235, 255}, {90, 200, 110, 255},
+    static const Rgba palette[] = {{230, 80, 80, 255},  {70, 160, 235, 255},  {90, 200, 110, 255},
                                    {235, 170, 50, 255}, {180, 100, 220, 255}, {60, 200, 200, 255}};
     return palette[peer % 6];
 }
@@ -193,9 +193,8 @@ bool CollabController::join(const std::string& host, int port, const std::string
     lastPort_ = port;
     guestLink_ = Link::dial(host, port, password, wake_);
     std::shared_ptr<Link> link = guestLink_;
-    guest_ = std::make_unique<collab::GuestSession>([link](const collab::Frame& f) {
-        link->send(f);
-    });
+    guest_ =
+        std::make_unique<collab::GuestSession>([link](const collab::Frame& f) { link->send(f); });
     guest_->onJoined = [this] {
         std::unique_ptr<Document> doc = guest_->releaseDocument();
         doc_ = doc.get();

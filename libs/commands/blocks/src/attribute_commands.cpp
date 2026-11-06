@@ -123,14 +123,19 @@ public:
             HAlign h;
             VAlign v;
         };
-        static constexpr Just kJust[] = {
-            {"Left", HAlign::Left, VAlign::Baseline},  {"Center", HAlign::Center, VAlign::Baseline},
-            {"Right", HAlign::Right, VAlign::Baseline}, {"Middle", HAlign::Middle, VAlign::Baseline},
-            {"TL", HAlign::Left, VAlign::Top},         {"TC", HAlign::Center, VAlign::Top},
-            {"TR", HAlign::Right, VAlign::Top},        {"ML", HAlign::Left, VAlign::Middle},
-            {"MC", HAlign::Middle, VAlign::Middle},    {"MR", HAlign::Right, VAlign::Middle},
-            {"BL", HAlign::Left, VAlign::Bottom},      {"BC", HAlign::Center, VAlign::Bottom},
-            {"BR", HAlign::Right, VAlign::Bottom}};
+        static constexpr Just kJust[] = {{"Left", HAlign::Left, VAlign::Baseline},
+                                         {"Center", HAlign::Center, VAlign::Baseline},
+                                         {"Right", HAlign::Right, VAlign::Baseline},
+                                         {"Middle", HAlign::Middle, VAlign::Baseline},
+                                         {"TL", HAlign::Left, VAlign::Top},
+                                         {"TC", HAlign::Center, VAlign::Top},
+                                         {"TR", HAlign::Right, VAlign::Top},
+                                         {"ML", HAlign::Left, VAlign::Middle},
+                                         {"MC", HAlign::Middle, VAlign::Middle},
+                                         {"MR", HAlign::Right, VAlign::Middle},
+                                         {"BL", HAlign::Left, VAlign::Bottom},
+                                         {"BC", HAlign::Center, VAlign::Bottom},
+                                         {"BR", HAlign::Right, VAlign::Bottom}};
         HAlign justH = HAlign::Left;
         VAlign justV = VAlign::Baseline;
         Vec2 start{};

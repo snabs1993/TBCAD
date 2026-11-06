@@ -1,11 +1,10 @@
-#include "tbcad/collabapp/collabapp.h"
-
 #include <memory>
 
 #include "collab_controller.h"
 #include "collab_panel.h"
 #include "tbcad/cmd/command.h"
 #include "tbcad/cmd/registry.h"
+#include "tbcad/collabapp/collabapp.h"
 #include "tbcad/ui/app_core.h"
 #include "tbcad/ui/ui_registry.h"
 
@@ -43,7 +42,8 @@ std::function<void()> attach(ui::AppCore& core, cmd::Registry& commands, ui::UiR
         [controller](ui::PanelContext& ctx) { drawCollabPanel(*controller, ctx); }, false);
 #endif
     ui.addStatusToggle(
-        "collab", "LIVE", [controller] { return controller->mode() != CollabController::Mode::Off; },
+        "collab", "LIVE",
+        [controller] { return controller->mode() != CollabController::Mode::Off; },
         [controller, &core](bool on) {
             if (on)
                 core.openPanel("collab");  // starting needs the panel: share or join

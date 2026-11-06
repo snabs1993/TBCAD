@@ -668,7 +668,8 @@ TEST_CASE("HATCH: a pattern picked in the panel shows in the prompt as the curso
     f.host->feed({ScriptItem::esc()});
 }
 
-TEST_CASE("HATCH: a pattern picked in the panel shows in the prompt without moving into the drawing") {
+TEST_CASE(
+    "HATCH: a pattern picked in the panel shows in the prompt without moving into the drawing") {
     Fixture f;
     f.rect({0, 0}, {100, 60});
     f.host->setSetting("hatch.pattern", "SOLID");

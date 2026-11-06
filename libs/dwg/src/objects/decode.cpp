@@ -3431,7 +3431,8 @@ void decodeObjects(Bytes file, const std::vector<MapEntry>& map,
 }
 
 const char* readerRevision() {
-    return "r90: WIPEOUT read (masks what is drawn before it), block trace in --dwg-info; r89: MULTILEADER read from its embedded annotation context (leader lines and note); "
+    return "r90: WIPEOUT read (masks what is drawn before it), block trace in --dwg-info; r89: "
+           "MULTILEADER read from its embedded annotation context (leader lines and note); "
            "r88: layers with transparency listed by name and value; r88: the stream walk is used "
            "when it finds 70% of the map entries, stray damaged "
            "layouts left out, up to 200 lost places listed; r87: entity and layer transparency "

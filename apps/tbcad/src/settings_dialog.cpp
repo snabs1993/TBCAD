@@ -388,8 +388,9 @@ void SettingsDialog::display(ui::AppCore& core) {
     }
     // Saved only on release, so the value being dragged is kept here between frames.
     static int dragged = -1;
-    int percent = dragged >= 0 ? dragged
-                               : static_cast<int>(std::lround(s.getNumber("ui.scale", 1.0) * 100.0));
+    int percent = dragged >= 0
+                      ? dragged
+                      : static_cast<int>(std::lround(s.getNumber("ui.scale", 1.0) * 100.0));
     ImGui::SetNextItemWidth(260);
     ImGui::SliderInt("Interface scale (%)", &percent, 75, 200);
     dragged = ImGui::IsItemActive() ? percent : -1;

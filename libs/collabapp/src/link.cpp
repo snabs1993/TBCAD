@@ -1,9 +1,9 @@
 #include "link.h"
 
-#include "discovery.h"
-
 #include <chrono>
 #include <utility>
+
+#include "discovery.h"
 
 namespace tbcad::collabapp {
 
@@ -42,9 +42,7 @@ std::shared_ptr<Link> Link::accepted(net::Handle socket, nettls::Psk psk,
     std::shared_ptr<Link> link(new Link());
     link->wake_ = std::move(wake);
     link->thread_ = std::thread([l = link.get(), socket, psk = std::move(psk)] {
-        l->run([&](std::string& err) {
-            return nettls::acceptTls(socket, psk, kHandshakeMs, err);
-        });
+        l->run([&](std::string& err) { return nettls::acceptTls(socket, psk, kHandshakeMs, err); });
     });
     return link;
 }

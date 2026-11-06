@@ -28,8 +28,8 @@ class Link {
 public:
     // Connects to host:port and runs the TLS handshake in the background. error() says why when
     // it failed.
-    static std::shared_ptr<Link> dial(const std::string& host, int port, const std::string& password,
-                                      std::function<void()> wake);
+    static std::shared_ptr<Link> dial(const std::string& host, int port,
+                                      const std::string& password, std::function<void()> wake);
     // Takes over a socket accepted by a Listener and runs the server side of the handshake.
     static std::shared_ptr<Link> accepted(net::Handle socket, nettls::Psk psk,
                                           std::function<void()> wake);
@@ -37,9 +37,9 @@ public:
     Link(const Link&) = delete;
     Link& operator=(const Link&) = delete;
 
-    void send(Frame frame);        // any thread
-    bool poll(Frame& out);         // next frame that arrived, oldest first
-    void close();                  // stop soon; frames already queued for sending are flushed
+    void send(Frame frame);  // any thread
+    bool poll(Frame& out);   // next frame that arrived, oldest first
+    void close();            // stop soon; frames already queued for sending are flushed
     bool open() const { return open_; }
     // The thread has ended (connection lost, closed, or never made). Frames that arrived before
     // it ended can still be polled.

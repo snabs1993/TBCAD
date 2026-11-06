@@ -14,10 +14,9 @@ using namespace tbcad::collabapp;
 namespace {
 
 std::uint64_t nowMs() {
-    return static_cast<std::uint64_t>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch())
-            .count());
+    return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                          std::chrono::steady_clock::now().time_since_epoch())
+                                          .count());
 }
 
 EntityId drawLine(Document& d, Vec2 a, Vec2 b) {

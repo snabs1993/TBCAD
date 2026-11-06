@@ -17,9 +17,9 @@ namespace tbcad::collabapp {
 
 using Bytes = std::vector<std::uint8_t>;
 
-inline constexpr std::uint8_t kChat = 0xF1;         // [type][u32 peer][text]
-inline constexpr std::uint8_t kClaim = 0xF2;        // [type][u8 claim][u32 layer]  guest -> host
-inline constexpr std::uint8_t kClaimTable = 0xF3;   // [type][u32 n][(u32 layer, u32 peer) * n]
+inline constexpr std::uint8_t kChat = 0xF1;        // [type][u32 peer][text]
+inline constexpr std::uint8_t kClaim = 0xF2;       // [type][u8 claim][u32 layer]  guest -> host
+inline constexpr std::uint8_t kClaimTable = 0xF3;  // [type][u32 n][(u32 layer, u32 peer) * n]
 // Host hand-over: the host asks a guest to take over (kBecomeHost), the guest answers with the
 // port it now listens on (kHostReady, port 0 = cannot), and the old host tells everybody else
 // where to go (kMoveTo: [type][u16 port][address]) before joining the new host itself.
