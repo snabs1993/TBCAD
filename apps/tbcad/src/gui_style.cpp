@@ -251,10 +251,10 @@ void drawPanelGlow(const ui::Theme& t, float scale) {
     ImGuiContext& g = *ImGui::GetCurrentContext();
     const bool dark = ui::luminance(t.bgPanel) < 0.5;
     const Rgba glow = dark ? t.accent : Rgba{0, 0, 0, 255};
-    const float peak = dark ? 0.55f : 0.14f;
+    const float peak = dark ? 0.32f : 0.14f;
     const int rings = 12;
     const float step = 1.8f * scale;
-    const ImU32 edge = ImGui::ColorConvertFloat4ToU32(toVec(ui::mix(t.accent, t.text, 0.25)));
+    const ImU32 edge = ImGui::ColorConvertFloat4ToU32(toVec(ui::mix(t.border, t.accent, 0.45)));
     for (ImGuiWindow* w : g.Windows) {
         if (!w->Active || w->Hidden)
             continue;
@@ -286,10 +286,10 @@ void drawPanelGlow(const ui::Theme& t, float scale) {
             for (int i = 1; i <= 4; ++i) {
                 const float in = step * i;
                 dl->AddRect(lo + ImVec2(in, in), hi - ImVec2(in, in),
-                            ImGui::ColorConvertFloat4ToU32(toVec(glow, 0.10f * (1.0f - i / 5.0f))),
+                            ImGui::ColorConvertFloat4ToU32(toVec(glow, 0.06f * (1.0f - i / 5.0f))),
                             std::max(0.0f, rounding - in), 0, step + 0.5f);
             }
-            dl->AddRect(lo, hi, edge, rounding, 0, border * 1.5f);
+            dl->AddRect(lo, hi, edge, rounding, 0, border);
         }
         dl->PopClipRect();
     }
