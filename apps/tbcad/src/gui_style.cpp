@@ -2,6 +2,8 @@
 #include <backends/imgui_impl_opengl3.h>
 #include <imgui.h>
 #include <imgui_internal.h>
+
+#include <algorithm>
 #include <tbcad/text/text.h>
 #include <tbcad_imgui_items.h>
 
@@ -249,10 +251,10 @@ void drawPanelGlow(const ui::Theme& t, float scale) {
     ImGuiContext& g = *ImGui::GetCurrentContext();
     const bool dark = ui::luminance(t.bgPanel) < 0.5;
     const Rgba glow = dark ? t.accent : Rgba{0, 0, 0, 255};
-    const float peak = dark ? 0.30f : 0.12f;
-    const int rings = 7;
-    const float step = 1.6f * scale;
-    const ImU32 edge = ImGui::ColorConvertFloat4ToU32(toVec(ui::mix(t.border, t.accent, 0.55)));
+    const float peak = dark ? 0.55f : 0.14f;
+    const int rings = 12;
+    const float step = 1.8f * scale;
+    const ImU32 edge = ImGui::ColorConvertFloat4ToU32(toVec(ui::mix(t.accent, t.text, 0.25)));
     for (ImGuiWindow* w : g.Windows) {
         if (!w->Active || w->Hidden)
             continue;
@@ -279,8 +281,16 @@ void drawPanelGlow(const ui::Theme& t, float scale) {
             dl->AddRect(lo - ImVec2(grow, grow), hi + ImVec2(grow, grow),
                         ImGui::ColorConvertFloat4ToU32(c), rounding + grow, 0, step + 0.5f);
         }
-        if (dark && border > 0.0f)
-            dl->AddRect(lo, hi, edge, rounding, 0, border);
+        if (dark && border > 0.0f) {
+            // Light also spills a little inside the edge, then the lit edge itself.
+            for (int i = 1; i <= 4; ++i) {
+                const float in = step * i;
+                dl->AddRect(lo + ImVec2(in, in), hi - ImVec2(in, in),
+                            ImGui::ColorConvertFloat4ToU32(toVec(glow, 0.10f * (1.0f - i / 5.0f))),
+                            std::max(0.0f, rounding - in), 0, step + 0.5f);
+            }
+            dl->AddRect(lo, hi, edge, rounding, 0, border * 1.5f);
+        }
         dl->PopClipRect();
     }
 }
