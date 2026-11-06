@@ -1,5 +1,7 @@
+#define IMGUI_DEFINE_MATH_OPERATORS
 #include <backends/imgui_impl_opengl3.h>
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <tbcad/text/text.h>
 #include <tbcad_imgui_items.h>
 
@@ -237,6 +239,50 @@ void applyTheme(const ui::Theme& t, float scale) {
     c[ImGuiCol_ModalWindowDimBg] = ImVec4(0, 0, 0, 0.45f);
     style.ScaleAllSizes(scale);
     ImGui::GetStyle() = style;
+}
+
+void drawPanelGlow(const ui::Theme& t, float scale) {
+    // Dark theme: a soft accent-coloured light around each floating panel, popup and dialog,
+    // like a lit edge. Light theme: a faint shadow instead (a glow on white reads as a smudge).
+    // Docked panels, child regions and see-through host windows (the drawing area) get none,
+    // so the canvas edges stay clean.
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    const bool dark = ui::luminance(t.bgPanel) < 0.5;
+    const Rgba glow = dark ? t.accent : Rgba{0, 0, 0, 255};
+    const float peak = dark ? 0.30f : 0.12f;
+    const int rings = 7;
+    const float step = 1.6f * scale;
+    const ImU32 edge = ImGui::ColorConvertFloat4ToU32(toVec(ui::mix(t.border, t.accent, 0.55)));
+    for (ImGuiWindow* w : g.Windows) {
+        if (!w->Active || w->Hidden)
+            continue;
+        if ((w->Flags & (ImGuiWindowFlags_ChildWindow | ImGuiWindowFlags_NoBackground)) != 0)
+            continue;
+        if (w->DockIsActive || w->DockNodeAsHost != nullptr)
+            continue;
+        if (w->Size.x < 4 || w->Size.y < 4)
+            continue;
+        // Bars that run along a whole side of the window (menu, status, tool strips) are part
+        // of the frame, not floating panels.
+        if (w->Size.x >= w->Viewport->Size.x - 1 || w->Size.y >= w->Viewport->Size.y - 1)
+            continue;
+        const bool popup = (w->Flags & (ImGuiWindowFlags_Popup | ImGuiWindowFlags_Tooltip)) != 0;
+        const float rounding = popup ? g.Style.PopupRounding : g.Style.WindowRounding;
+        const float border = popup ? g.Style.PopupBorderSize : g.Style.WindowBorderSize;
+        ImDrawList* dl = w->DrawList;
+        const ImVec2 lo = w->Pos, hi = w->Pos + w->Size;
+        dl->PushClipRect(w->Viewport->Pos, w->Viewport->Pos + w->Viewport->Size, false);
+        for (int i = rings; i >= 1; --i) {
+            const float k = 1.0f - (i - 0.5f) / rings;  // 1 next to the edge, 0 far out
+            const float grow = step * (i - 0.5f);
+            const ImVec4 c = toVec(glow, peak * k * k);
+            dl->AddRect(lo - ImVec2(grow, grow), hi + ImVec2(grow, grow),
+                        ImGui::ColorConvertFloat4ToU32(c), rounding + grow, 0, step + 0.5f);
+        }
+        if (dark && border > 0.0f)
+            dl->AddRect(lo, hi, edge, rounding, 0, border);
+        dl->PopClipRect();
+    }
 }
 
 }  // namespace tbcad::app

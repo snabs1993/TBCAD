@@ -47,6 +47,9 @@ void buildFonts(float scale);
 ImFont* monoFont();
 // Dear ImGui colours and metrics from the theme tokens; `scale` is the DPI scale for sizes.
 void applyTheme(const ui::Theme& theme, float scale);
+// Soft lit edge around floating panels, popups and dialogs (setting ui.glow). Call once per
+// frame after every window is drawn, before ImGui::Render.
+void drawPanelGlow(const ui::Theme& theme, float scale);
 // True when Windows is set to dark app mode (always true elsewhere).
 bool systemPrefersDark();
 // Whether releasing the left button after a press that already took a point answers the next point
@@ -127,6 +130,8 @@ public:
     // Call between frames, before ImGui::NewFrame.
     void applyPendingScale();
     float dpiScale() const { return dpiScale_; }
+    // Lit edges on floating panels (ui.glow, on by default); call right before ImGui::Render.
+    void drawGlow();
     // Shows a registered panel (Tools > MCP Settings...).
     void openPanel(const std::string& id) { panelOpen_[id] = true; }
     // Turns the picture of a recent drawing (a PNG file) into a texture for the start page, or 0

@@ -1723,6 +1723,7 @@ void App::frame() {
             tileTargets_[i] = std::make_unique<ViewportTarget>();
         gui_->showTile(tileTargets_[i]->texture(), r);
     }
+    gui_->drawGlow();
     ImGui::Render();
     if (PhaseTimer::enabled())
         gPhase[1] += pt.lap();

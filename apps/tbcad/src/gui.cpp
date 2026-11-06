@@ -293,6 +293,12 @@ void Gui::setDpiScale(float scale) {
     anyActivity_ = true;
 }
 
+void Gui::drawGlow() {
+    if (flag("ui.glow", true))
+        drawPanelGlow(theme_,
+                      dpiScale_ * static_cast<float>(core_.settings().getNumber("ui.scale", 1.0)));
+}
+
 void Gui::applyPendingScale() {
     if (!scalePending_)
         return;
@@ -1553,6 +1559,7 @@ void Gui::menuBar() {
             toggle("Expert Toolbox (icons only)", "ui.toolbox.expert", false);
             toggle("Recent group in Toolbox", "ui.toolbox.showRecent", false);
             toggle("Table-style Layers and Properties", "ui.flatTables", true);
+            toggle("Glowing Panel Edges", "ui.glow", true);
             if (ImGui::MenuItem("Classic Menus", nullptr, !flag("ui.compactMenus", true)))
                 core_.setSetting("ui.compactMenus", flag("ui.compactMenus", true) ? "0" : "1");
             toggle("Status Bar", "ui.statusbar", true);
