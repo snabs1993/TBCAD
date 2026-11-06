@@ -143,9 +143,9 @@ private:
     double ltScale_ = 1;       // LTSCALE, MSLTSCALE, PSLTSCALE, from the drawing header
     bool msLtScale_ = true;
     bool psLtScale_ = true;
-    bool fillMode_ = true;     // FILL, from the drawing header
-    int attDisplay_ = 0;       // ATTDISP, from the drawing header
-    bool quickText_ = false;   // QTEXT, from the drawing header
+    bool fillMode_ = true;    // FILL, from the drawing header
+    int attDisplay_ = 0;      // ATTDISP, from the drawing header
+    bool quickText_ = false;  // QTEXT, from the drawing header
     // Reads FILL and ATTDISP from the header; true when either changed.
     bool readDisplayModes();
     // Texts holding fields (%<...>%): they show other objects' values, so they are redrawn after

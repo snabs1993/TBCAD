@@ -550,7 +550,8 @@ TEST_CASE("tab previews: the drawing and its layouts give a line picture") {
     CHECK(sheet.height > 0);
 }
 
-TEST_CASE("test.13: double click in a DWG viewport at 1:100.000000808 leaves the drawing unchanged") {
+TEST_CASE(
+    "test.13: double click in a DWG viewport at 1:100.000000808 leaves the drawing unchanged") {
     // A DWG stores the viewport scale as a float; the drawing's annotation scale is already 1:100.
     auto registry = makeRegistry();
     AppCore core(*registry,
@@ -559,9 +560,9 @@ TEST_CASE("test.13: double click in a DWG viewport at 1:100.000000808 leaves the
     {
         auto tx = core.document().begin("layout");
         REQUIRE(layout::createLayout(tx, "A", "A3").ok());
-        REQUIRE(layout::addViewport(tx, "A", BBox2{{20, 20}, {220, 170}}, {5000, 3000},
-                                    100.000000808)
-                    .ok());
+        REQUIRE(
+            layout::addViewport(tx, "A", BBox2{{20, 20}, {220, 170}}, {5000, 3000}, 100.000000808)
+                .ok());
         tx.commit();
     }
     {

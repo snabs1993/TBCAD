@@ -1,7 +1,7 @@
 #include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <cmath>
-#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 
@@ -1221,9 +1221,9 @@ public:
         const std::string now = buf;
         cmd::StringOptions so;
         so.defaultValue = now;
-        auto val = co_await ctx.getString("Enter new value for DIMTSZ (style " + style.name +
-                                              ", 0 = arrowheads) <" + now + ">",
-                                          so);
+        auto val = co_await ctx.getString(
+            "Enter new value for DIMTSZ (style " + style.name + ", 0 = arrowheads) <" + now + ">",
+            so);
         if (!val.ok())
             co_return;
         const std::string text(cmd::trim(val.text));

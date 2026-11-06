@@ -102,8 +102,7 @@ TEST_CASE("test.16: a viewport picked by its border shows in Properties and Esc 
     const ImVec2 edge = screenOf(h, {20, 80});
     h.click(edge.x, edge.y);
     h.frame(3);
-    CHECK(h.core().setting("tmp.layout.viewport").value_or("") ==
-          "Layout1:" + std::to_string(id));
+    CHECK(h.core().setting("tmp.layout.viewport").value_or("") == "Layout1:" + std::to_string(id));
     h.captureText(true);
     h.frame(3);
     CHECK(h.shownText().find("Viewport " + std::to_string(id)) != std::string::npos);

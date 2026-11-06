@@ -13,9 +13,9 @@
 
 #include "discovery.h"
 #include "link.h"
-#include "team.h"
 #include "tbcad/collab/session.h"
 #include "tbcad/ui/app_core.h"
+#include "team.h"
 
 namespace tbcad::collabapp {
 
@@ -160,7 +160,8 @@ private:
     std::uint64_t autoAdmitUntil_ = 0;
     std::string lastAddress_{};
     int lastPort_ = 0;
-    std::vector<collab::Replica::PendingEdit> offlineOps_{};  // carried from the old connection to the new one
+    std::vector<collab::Replica::PendingEdit>
+        offlineOps_{};  // carried from the old connection to the new one
     std::vector<OfflineConflict> conflicts_{};
     bool stopRequested_ = false;
     std::string stopWhy_{};

@@ -279,10 +279,10 @@ TEST_CASE("WBLOCK writes DXF by default and asks before replacing a file") {
         std::ifstream in(path, std::ios::binary);
         std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
         dxf::Report report;
-        auto doc = dxf::importDxf(
-            std::span<const std::byte>(reinterpret_cast<const std::byte*>(bytes.data()),
-                                       bytes.size()),
-            dxf::ImportOptions{}, report);
+        auto doc =
+            dxf::importDxf(std::span<const std::byte>(
+                               reinterpret_cast<const std::byte*>(bytes.data()), bytes.size()),
+                           dxf::ImportOptions{}, report);
         REQUIRE(doc);
         std::size_t n = 0;
         doc.value().document->forEachEntity([&](const Entity& e) {

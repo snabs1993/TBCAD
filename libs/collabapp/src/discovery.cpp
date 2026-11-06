@@ -7,8 +7,12 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 using SockT = SOCKET;
-static void closeSock(SockT s) { closesocket(s); }
-static bool badSock(SockT s) { return s == INVALID_SOCKET; }
+static void closeSock(SockT s) {
+    closesocket(s);
+}
+static bool badSock(SockT s) {
+    return s == INVALID_SOCKET;
+}
 #else
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -16,8 +20,12 @@ static bool badSock(SockT s) { return s == INVALID_SOCKET; }
 #include <sys/time.h>
 #include <unistd.h>
 using SockT = int;
-static void closeSock(SockT s) { ::close(s); }
-static bool badSock(SockT s) { return s < 0; }
+static void closeSock(SockT s) {
+    ::close(s);
+}
+static bool badSock(SockT s) {
+    return s < 0;
+}
 #endif
 
 #include "tbcad/net/socket.h"
@@ -96,7 +104,8 @@ bool parseAnnouncement(const std::string& text, std::string& name, int& port) {
 }
 
 Announcer::Announcer(std::string name, int port, int udpPort, std::string target) {
-    thread_ = std::thread([this, name = std::move(name), port, udpPort, target = std::move(target)] {
+    thread_ = std::thread([this, name = std::move(name), port, udpPort,
+                           target = std::move(target)] {
         if (!net::initialize())
             return;
         SockT s = ::socket(AF_INET, SOCK_DGRAM, 0);
@@ -159,8 +168,8 @@ Finder::Finder(int udpPort) {
         while (!stop_) {
             sockaddr_in from{};
             socklen_t fl = sizeof from;
-            const int n = static_cast<int>(::recvfrom(s, buf, sizeof buf, 0,
-                                                      reinterpret_cast<sockaddr*>(&from), &fl));
+            const int n = static_cast<int>(
+                ::recvfrom(s, buf, sizeof buf, 0, reinterpret_cast<sockaddr*>(&from), &fl));
             if (n <= 0)
                 continue;
             Announcement a;

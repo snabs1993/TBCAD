@@ -97,9 +97,8 @@ TEST_CASE("controller: share, join, edit, chat and hand the host role over") {
     }));
     // Edits keep flowing through the new host.
     drawLine(c.doc(), {0, 2}, {5, 2});
-    REQUIRE(until({&a, &b, &c}, [&] {
-        return b.doc().entityCount() == 3 && a.doc().entityCount() == 3;
-    }));
+    REQUIRE(until({&a, &b, &c},
+                  [&] { return b.doc().entityCount() == 3 && a.doc().entityCount() == 3; }));
 }
 
 TEST_CASE("controller: a guest that lost the host keeps working and sends it on reconnect") {
@@ -138,9 +137,8 @@ TEST_CASE("controller: a guest that lost the host keeps working and sends it on 
     // A's change stands until B chooses.
     CHECK(std::get<LineData>(a.doc().find(shared)->data).b.y == -9);
     b.collab->keepMine(0);
-    REQUIRE(until({&a, &b}, [&] {
-        return std::get<LineData>(a.doc().find(shared)->data).b.y == 9;
-    }));
+    REQUIRE(
+        until({&a, &b}, [&] { return std::get<LineData>(a.doc().find(shared)->data).b.y == 9; }));
 }
 
 TEST_CASE("controller: one-click share gives a 6-digit code that lets another program in") {

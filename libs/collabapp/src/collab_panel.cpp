@@ -72,7 +72,8 @@ void drawCollabPanel(CollabController& c, ui::PanelContext&) {
             ImGui::InputText("Your name", &f.name);
             ImGui::TextDisabled("Empty: the computer's user name.");
             ImGui::TextDisabled("Both computers must be on the same network (or the same VPN,");
-            ImGui::TextDisabled("such as Tailscale). Allow TBCAD when Windows asks about the firewall.");
+            ImGui::TextDisabled(
+                "such as Tailscale). Allow TBCAD when Windows asks about the firewall.");
             ImGui::TreePop();
         }
     } else {
@@ -145,7 +146,8 @@ void drawCollabPanel(CollabController& c, ui::PanelContext&) {
             ImGui::ColorButton("##c", ImVec4(col.r / 255.f, col.g / 255.f, col.b / 255.f, 1),
                                ImGuiColorEditFlags_NoTooltip, ImVec2(10, 10));
             ImGui::SameLine();
-            ImGui::Text("%s%s", p.name.c_str(), p.role == collab::Role::Viewer ? " (view only)" : "");
+            ImGui::Text("%s%s", p.name.c_str(),
+                        p.role == collab::Role::Viewer ? " (view only)" : "");
             if (c.mode() == CollabController::Mode::Hosting) {
                 ImGui::SameLine();
                 if (ImGui::SmallButton("Remove"))

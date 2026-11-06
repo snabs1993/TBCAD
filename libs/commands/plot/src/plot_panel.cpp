@@ -4,9 +4,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <vector>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 #include "panel.h"
 #include "tbcad/layout/layout.h"
@@ -281,11 +281,10 @@ void draw(ui::PanelContext& pc) {
         std::snprintf(h, sizeof h, "%g", std::max(s.customWidthMm, s.customHeightMm));
         if (pc.cancelCommand)
             pc.cancelCommand();
-        for (const std::string& l : s.paperName == "Custom"
-                                        ? std::vector<std::string>{"LAYOUT", "Paper", sheet,
-                                                                   "Custom", w, h}
-                                        : std::vector<std::string>{"LAYOUT", "Paper", sheet,
-                                                                   s.paperName})
+        for (const std::string& l :
+             s.paperName == "Custom"
+                 ? std::vector<std::string>{"LAYOUT", "Paper", sheet, "Custom", w, h}
+                 : std::vector<std::string>{"LAYOUT", "Paper", sheet, s.paperName})
             pc.runCommand(l);
         pc.runCommand(s.landscape ? "Landscape" : "Portrait");
     }
