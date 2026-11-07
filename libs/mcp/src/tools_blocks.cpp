@@ -83,7 +83,10 @@ ToolResult createBlock(ToolContext& ctx, const Json& a) {
     inputs.emplace_back("");  // finish the selection
     inputs.emplace_back(pointInput(base));
     inputs.emplace_back(keyword);
-    ToolResult r = runChecked(s, "BLOCK", inputs, {{"name", name}});
+    // -BLOCK asks everything on the command line; in the window BLOCK opens the Make Block panel
+    // instead and would leave the answers unread.
+    const char* command = s.registry().find("-BLOCK") ? "-BLOCK" : "BLOCK";
+    ToolResult r = runChecked(s, command, inputs, {{"name", name}});
     if (!r.isError && !doc.blockByName(name))
         return ToolResult::fail("the BLOCK command did not create \"" + name + "\"");
     return r;

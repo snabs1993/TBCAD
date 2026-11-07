@@ -2792,16 +2792,42 @@ TEST_CASE("Clean Screen from the command line and Ctrl+0, workspaces with WSSAVE
     CHECK(h.core().setting("workspace.current").value_or("") == "Drafting");
 }
 
+// The panel is in view: open and the front tab of its group (Begin drew it this frame).
+static bool propertiesInView() {
+    ImGuiWindow* w = ImGui::FindWindowByName("Object Properties");
+    return w && w->WasActive && !w->Hidden && !w->SkipItems;
+}
+
 TEST_CASE("Ctrl+1 toggles Object Properties and Ctrl+9 the command line, as in AutoCAD") {
+    // test.18: Layers is put in front after start-up, so Properties sat behind its tab and
+    // Ctrl+1 closed a panel nobody could see; the key seemed to do nothing. Now a hidden panel is
+    // brought to the front and only a panel in view is closed.
     Harness h(1920, 1080);
-    h.frame(3);
-    REQUIRE(h.windowOpen("Object Properties"));
+    h.frame(40);
+    if (propertiesInView()) {  // not tabbed behind Layers in this layout: plain toggle
+        h.key(ImGuiKey_1, true);
+        h.frame(3);
+        CHECK_FALSE(propertiesInView());
+    }
     h.key(ImGuiKey_1, true);
     h.frame(3);
-    CHECK_FALSE(h.windowOpen("Object Properties"));
+    CHECK(propertiesInView());
     h.key(ImGuiKey_1, true);
     h.frame(3);
-    CHECK(h.windowOpen("Object Properties"));
+    CHECK_FALSE(propertiesInView());
+    h.key(ImGuiKey_1, true);
+    h.frame(3);
+    CHECK(propertiesInView());
+    // Ctrl+1 while the command line has the keyboard and holds typed text still works.
+    h.type("LI");
+    h.frame(2);
+    h.key(ImGuiKey_1, true);
+    h.frame(3);
+    CHECK_FALSE(propertiesInView());
+    h.key(ImGuiKey_1, true);
+    h.frame(3);
+    CHECK(propertiesInView());
+    h.key(ImGuiKey_Escape);
     h.key(ImGuiKey_9, true);
     h.frame(3);
     CHECK_FALSE(h.windowOpen("Command"));

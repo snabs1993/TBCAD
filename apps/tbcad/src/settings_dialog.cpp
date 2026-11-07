@@ -15,6 +15,7 @@
 #include "tbcad/cmd/input.h"
 #include "tbcad/core/color.h"
 #include "tbcad/drafting/settings.h"
+#include "tbcad/ui/command_keys.h"
 #include "tbcad/platform/keybindings.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/tmpl/tmpl.h"
@@ -179,6 +180,32 @@ void SettingsDialog::general(ui::AppCore& core) {
         s.setBool("view.lineweights", lw);
     rightClick(core);
     wheel(core);
+    commandKeyboard(core);
+}
+
+// Keyboard layout for commands: with Windows typing Thai, the letters typed for a command, an
+// option or a number go to the English key in the same place, so the language need not be switched
+// back and forth. Text answers (TEXT, layer and block names) stay as typed.
+void SettingsDialog::commandKeyboard(ui::AppCore& core) {
+    auto& s = core.settings();
+    ImGui::SeparatorText("Keyboard");
+    const auto boards = ui::commandKeyboards();
+    const std::string cur = s.getString(ui::kCommandKeyboardSetting, "off");
+    std::size_t idx = 0;
+    for (std::size_t i = 0; i < boards.size(); ++i)
+        if (cur == boards[i].id)
+            idx = i;
+    ImGui::SetNextItemWidth(260);
+    if (ImGui::BeginCombo("Keyboard layout for commands", boards[idx].label)) {
+        for (std::size_t i = 0; i < boards.size(); ++i)
+            if (ImGui::Selectable(boards[i].label, i == idx))
+                s.setString(ui::kCommandKeyboardSetting, boards[i].id);
+        ImGui::EndCombo();
+    }
+    ImGui::TextDisabled(
+        "Commands, options and numbers typed with this keyboard are read as the English key in\n"
+        "the same place (Thai: \xE0\xB8\xAA = L). Text such as TEXT content or layer names stays as\n"
+        "typed. Thai command words do not work while this is on.");
 }
 
 // Right-click customization (AutoCAD's User Preferences page, SHORTCUTMENU): what a short

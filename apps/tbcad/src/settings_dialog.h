@@ -42,6 +42,7 @@ private:
     void display(ui::AppCore& core);
     void wheel(ui::AppCore& core);
     void rightClick(ui::AppCore& core);
+    void commandKeyboard(ui::AppCore& core);
     void drafting(ui::AppCore& core);
     void files(ui::AppCore& core);
     void aliases(ui::AppCore& core);

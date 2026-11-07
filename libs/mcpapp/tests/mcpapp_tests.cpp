@@ -192,6 +192,40 @@ TEST_CASE("edit permission: ask can be denied, readOnly refuses edits but allows
     }
 }
 
+TEST_CASE("edit permission: Always allow is remembered for the client name until forgotten") {
+    Fixture f("always", "ask");
+    f.core->settings().setBool(kSettingEnabled, true);
+    f.mcp->pump();
+    REQUIRE(f.mcp->running());
+    int asked = 0;
+    auto answerAlways = [&] {
+        if (auto r = f.mcp->pendingRequest()) {
+            ++asked;
+            f.mcp->answerRequest(r->id, mcp::EditDecision::Allow, true);
+        }
+    };
+    auto addLine = [&] {
+        Rpc rpc(f.mcp->server()->port(), f.mcp->token());
+        rpc.init();
+        CHECK(
+            rpc.call("add_entities", R"({"entities":[{"kind":"line","start":[0,0],"end":[1,1]}]})")
+                .find("\"isError\":true") == std::string::npos);
+    };
+    f.withClient(addLine, answerAlways);
+    CHECK(asked == 1);
+    CHECK(f.mcp->isTrusted("Test AI"));
+    // A new MCP session of the same program edits without a question.
+    f.withClient(addLine, answerAlways);
+    CHECK(asked == 1);
+    CHECK(f.core->document().modelSpaceCount() == 2);
+
+    f.mcp->forgetClient("Test AI");
+    CHECK_FALSE(f.mcp->isTrusted("Test AI"));
+    CHECK(f.mcp->trustedClients().empty());
+    f.withClient(addLine, answerAlways);
+    CHECK(asked == 2);
+}
+
 TEST_CASE("stopping the server answers a waiting permission request") {
     Fixture f("stopask", "ask");
     f.core->settings().setBool(kSettingEnabled, true);

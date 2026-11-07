@@ -39,6 +39,7 @@
 #include "tbcad/ui/radial_wheel.h"
 #include "tbcad/ui/selection.h"
 #include "tbcad/ui/status_items.h"
+#include "tbcad/ui/command_keys.h"
 #include "tbcad/ui/thai_words.h"
 #include "tbcad/ui/toolbox.h"
 #include "undo_history.h"
@@ -429,8 +430,19 @@ void Gui::runAction(const std::string& action) {
         core_.zoomExtents();
     else if (action == "view.toggleCommandLine")
         showCommandLine_ = !showCommandLine_;
-    else if (action == "view.toggleProperties")
-        panelOpen_["properties"] = !panelOpen_["properties"];
+    else if (action == "view.toggleProperties") {
+        // Properties shares a tab group with Layers, which is in front after start-up. Ctrl+1 on
+        // a panel hidden behind another tab brings it to the front; only a panel already in view
+        // is closed (closing an unseen panel looked like the key did nothing).
+        if (panelOpen_["properties"] && panelShown_["properties"])
+            panelOpen_["properties"] = false;
+        else {
+            panelOpen_["properties"] = true;
+            for (const auto& panel : registry_.panels())
+                if (panel.id == "properties")
+                    focusPanel_ = panel.title;
+        }
+    }
     else if (action == "view.search")
         searchFocus_ = true;
     else if (action == "view.commandPalette") {
@@ -3376,6 +3388,16 @@ int Gui::inputCallback(ImGuiInputTextCallbackData* d) {
         case ImGuiInputTextFlags_CallbackCharFilter: {
             const auto* prompt = core_.runner().prompt();
             const bool text = prompt && prompt->kind == cmd::PromptInfo::Kind::String;
+            // Keyboard layout for commands: a Thai letter typed for a command, an option or a
+            // number is read as the English key in the same place ("ส" is L). A text answer
+            // (a layer name, a block name) keeps what was typed.
+            if (!text) {
+                const std::string kb =
+                    core_.setting(ui::kCommandKeyboardSetting).value_or(std::string("off"));
+                if (kb != "off")
+                    d->EventChar = static_cast<ImWchar>(
+                        ui::commandKey(kb, d->EventChar, commandKeyboardTyping(kb)));
+            }
             if (d->EventChar == ' ' && !text) {
                 // Space ends a typed command name or answer like Enter; a text prompt keeps it.
                 // BufTextLen is not set for a char filter, so ask the edit state how much is typed.
@@ -4818,13 +4840,16 @@ void Gui::panels() {
     dockEdgeDrop();
     for (const auto& p : registry_.panels()) {
         bool& open = panelOpen_[p.id];
-        if (!open)
+        if (!open) {
+            panelShown_[p.id] = false;
             continue;
+        }
         if (sideDock != 0) {
             ImGui::SetNextWindowDockID(sideDock, ImGuiCond_FirstUseEver);
             ImGui::SetNextWindowSize(ImVec2(320, 420), ImGuiCond_FirstUseEver);
         }
         const bool shown = ImGui::Begin(p.title.c_str(), &open);
+        panelShown_[p.id] = shown;
         keepOnScreen();
         if (shown)
             p.draw(pc);
@@ -5628,6 +5653,13 @@ ViewportRect Gui::frame() {
         layoutTabs(rect);
     }
     rect = tiledViewports(rect);
+    // On whole pixels, so the drawing's picture lands pixel for pixel on the screen (sharp lines).
+    if (s > 0) {
+        rect.x = std::round(rect.x * s) / s;
+        rect.y = std::round(rect.y * s) / s;
+        rect.w = std::round(rect.w * s) / s;
+        rect.h = std::round(rect.h * s) / s;
+    }
     core_.setViewportOrigin(std::lround(rect.x * s), std::lround(rect.y * s));
     core_.setViewportSize(static_cast<int>(std::lround(rect.w * s)),
                           static_cast<int>(std::lround(rect.h * s)));

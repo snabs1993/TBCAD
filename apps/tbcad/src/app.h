@@ -103,6 +103,7 @@ private:
     std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();
     std::vector<std::pair<std::string, double>> startupPhases_;
     bool startupReported_ = false;
+    int viewSamples() const;
     bool hidden() const { return options_.selfTest || !options_.captureScript.empty(); }
 
     Options options_;

@@ -604,9 +604,19 @@ bool fontAvailable(const std::string& family, const std::string& file) {
         return !locateFontFile(file).empty();
     if (!file.empty() && isNetworkPath(file))
         return !locateFontFile(file).empty();
-    if (!file.empty())
-        return isStrokeFile(file) ? lib.loadStroke(std::filesystem::path(file)).ok()
-                                  : lib.load(std::filesystem::path(file)).ok();
+    if (!file.empty()) {
+        // As fontForStyle draws it: a bare name ("tahoma.ttf", as drawings from other programs
+        // store it) is looked up in the font folders, then as the installed family of its stem.
+        std::filesystem::path path(file);
+        if (!fileThere(path))
+            if (auto located = locateFontFile(file); !located.empty())
+                path = located;
+        if (isStrokeFile(file) ? lib.loadStroke(path).ok() : lib.load(path).ok())
+            return true;
+        return family.empty() && isOutlineFontFile(file) &&
+               lib.findSystem(std::filesystem::path(file).stem().string(), false, false)
+                   .has_value();
+    }
     if (isStrokeFamily(family))
         return lib.loadBundledStroke().ok();
     return lib.findSystem(family, false, false).has_value();

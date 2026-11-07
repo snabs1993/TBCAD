@@ -492,6 +492,14 @@ public:
         const auto it = std::find_if(variables().begin(), variables().end(),
                                      [&](const Var& v) { return name == v.name; });
         if (it == variables().end()) {
+            // Dimension variables (DIMTXT, DIMTXSTY, ...) are commands of their own that change
+            // the current dimension style: SETVAR answers them the same way.
+            if (name.rfind("DIM", 0) == 0)
+                if (cmd::Command* dimVar = ctx.registry().find(name);
+                    dimVar && upper(std::string(dimVar->name())) == name) {
+                    co_await dimVar->run(ctx);
+                    co_return;
+                }
             ctx.message("Unknown variable " + name + ". Type SETVAR ? to list them.");
             co_return;
         }

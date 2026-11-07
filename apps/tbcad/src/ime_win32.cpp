@@ -1,5 +1,6 @@
 // Moves the input method's composition and candidate windows to the text cursor of the
 // command line, so Thai (and any other IME) input appears where the user is typing.
+#include <cstdint>
 #include <imgui.h>
 #include <windows.h>
 
@@ -35,6 +36,18 @@ void setImeData(ImGuiContext*, ImGuiViewport* viewport, ImGuiPlatformImeData* da
 
 void installImeHook(GLFWwindow*) {
     ImGui::GetPlatformIO().Platform_SetImeDataFn = setImeData;
+}
+
+}  // namespace tbcad::app
+
+namespace tbcad::app {
+
+bool commandKeyboardTyping(std::string_view id) {
+    const auto lang = static_cast<LANGID>(reinterpret_cast<std::uintptr_t>(GetKeyboardLayout(0)) &
+                                          0xFFFF);
+    if (id == "thai-kedmanee")
+        return PRIMARYLANGID(lang) == LANG_THAI;
+    return false;
 }
 
 }  // namespace tbcad::app

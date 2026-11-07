@@ -1,7 +1,7 @@
 # UiRegistry: the small API command modules use to add panels, menu items, status toggles, overlay
 # drawers and property sections. No Dear ImGui dependency: panels are plain callbacks.
 tbcad_add_library(ui
-  SOURCES src/command_match.cpp src/input_history.cpp src/radial_wheel.cpp src/thai_words.cpp src/theme.cpp src/toolbox.cpp src/ui_registry.cpp
+  SOURCES src/command_match.cpp src/input_history.cpp src/radial_wheel.cpp src/thai_words.cpp src/command_keys.cpp src/theme.cpp src/toolbox.cpp src/ui_registry.cpp
   DEPENDS tbcad::core tbcad::cmd tbcad::render)
 
 # AppCore: the application model without the window (document, selection, viewport, files,
@@ -25,6 +25,7 @@ tbcad_add_tests(ui
   SOURCES
     tests/main.cpp
     tests/command_match_tests.cpp
+    tests/command_keys_tests.cpp
     tests/input_history_tests.cpp
     tests/theme_tests.cpp
     tests/radial_wheel_tests.cpp

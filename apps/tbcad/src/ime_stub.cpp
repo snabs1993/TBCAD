@@ -6,3 +6,9 @@ namespace tbcad::app {
 void installImeHook(GLFWwindow*) {}
 
 }  // namespace tbcad::app
+
+namespace tbcad::app {
+
+bool commandKeyboardTyping(std::string_view) { return false; }
+
+}  // namespace tbcad::app

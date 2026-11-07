@@ -1954,6 +1954,14 @@ Result<void> AppCore::saveAs(const fs::path& requested) {
     fs::path path = requested;
     if (!path.has_extension())
         path += ".dxf";  // DXF is the only format TBCAD saves drawings in
+    // Two tabs on one file would fight over it (the second only gets it read-only).
+    if (auto other = slotOfFile(path); other && *other != active_) {
+        const std::string text = platform::pathToUtf8(path.filename()) +
+                                 " is open in another tab (" + documentTitle(*other) +
+                                 "). Close that tab first, or save under another name.";
+        print(text);
+        return makeError(ErrorCode::Conflict, text);
+    }
     if (runner().active()) {
         // Saving is an explicit request: end the waiting command (as Esc would) rather than
         // refuse and leave the work unsaved.

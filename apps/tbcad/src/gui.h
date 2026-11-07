@@ -39,6 +39,10 @@ namespace tbcad::app {
 // Installs the platform hook that places the input method's candidate window at the text cursor.
 void installImeHook(GLFWwindow* window);
 
+// True when the system keyboard typing now is the layout `id` of "Keyboard layout for commands"
+// (Windows asks the input language; elsewhere only that layout's own letters are mapped).
+bool commandKeyboardTyping(std::string_view id);
+
 // (Re)builds the UI font atlas: Latin (Lato) merged with Thai (Sarabun) at `scale`. Needs the
 // OpenGL backend to be initialised; recreates the font texture.
 void buildFonts(float scale);
@@ -303,6 +307,7 @@ private:
     ui::WorkspaceStore workspaces_;
     std::string workspaceName_{};  // the one last switched to or saved
     bool dockFallbackTried_ = false;
+    std::map<std::string, bool> panelShown_;  // Begin() returned true last frame (front tab)
     std::string focusPanel_{};  // window title to bring to the front of its tab group
     int frontLayersIn_ = 0;     // frames until the Layers tab is brought to the front
     bool rebuildDock_ = false;  // rebuild the default docking layout next frame
