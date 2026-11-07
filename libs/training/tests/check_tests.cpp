@@ -307,7 +307,7 @@ TEST_CASE("saved, layout tab, viewport and PDF checks") {
     p.core->newScratchDocument("Practice t");
     p.core->submitScript("RECTANGLE;0,0;@5000,4000");
     CHECK_FALSE(passesOn(p, R"({"type": "saved"})"));  // a practice drawing has no file
-    REQUIRE(p.core->saveAs(p.folder() / "room.tbcad").ok());
+    REQUIRE(p.core->saveAs(p.folder() / "room.dxf").ok());
     CHECK(passesOn(p, R"({"type": "saved", "contains": "room"})"));
     p.core->submitScript("LINE;0,0;100,0;");
     CHECK_FALSE(passesOn(p, R"({"type": "saved"})"));  // changed since

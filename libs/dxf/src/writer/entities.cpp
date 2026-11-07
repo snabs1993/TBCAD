@@ -8,9 +8,12 @@
 #include <numbers>
 #include <thread>
 
+#include "dynblock.h"
 #include "keep.h"
 #include "tbcad/blocks/array.h"
+#include "tbcad/blocks/assembly.h"
 #include "tbcad/blocks/blocks.h"
+#include "tbcad/blocks/dynamic.h"
 #include "tbcad/blocks/explode.h"
 #include "tbcad/dim/dim.h"
 #include "tbcad/gdt/gdt.h"
@@ -329,6 +332,11 @@ void Writer::reserveNamedHandles() {
         srcHandleReserved_.insert(h);
         srcHandle_[id.value] = h;
     };
+    // The objects of dynamic blocks and assemblies: their parameters name them by handle.
+    for (const auto& [bid, def] : doc_.blocks())
+        if (def.dynamic || def.assembly)
+            for (EntityId id : def.entities)
+                reserve(id);
     doc_.forEachEntity([&](const Entity& e) {
         if (const auto* d = entityAs<DimensionData>(e)) {
             for (const DimAssoc& a : d->assoc)
@@ -684,8 +692,13 @@ void Writer::writeEntity(const Entity& e, std::uint64_t owner) {
         case EntityKind::Insert: {
             const auto* ins = entityAs<InsertData>(e);
             const BlockDef* bd = doc_.block(ins->block);
+            if (bd && (bd->dynamic || bd->assembly) && !r12_ && !ins->array) {
+                writeDynamicInsert(p, e, owner);
+                break;
+            }
             if (bd && (bd->dynamic || bd->assembly)) {
-                // DXF has no dynamic blocks: the current state is written as plain objects.
+                // R12 (no handles, no XDATA of ours) and arrays: the current state is written as
+                // plain objects.
                 downgrade("INSERT",
                           "a dynamic block or assembly is written as its current geometry");
                 if (auto parts = blocks::explode(doc_, e)) {
@@ -1894,10 +1907,62 @@ bool Writer::writeTolerance(const Props& p, const InsertData& d, std::uint64_t o
     return true;
 }
 
+void Writer::writeDynamicInsert(const Props& p, const Entity& e, std::uint64_t owner) {
+    const InsertData& d = *entityAs<InsertData>(e);
+    const BlockDef& def = *doc_.block(d.block);
+    // What the insert shows, in block coordinates: the parameters applied, the assembly's
+    // bindings resolved (attribute texts, nested settings).
+    InsertData shown = d;
+    std::vector<blocks::NestedSet> nested;
+    if (def.assembly) {
+        blocks::AsmResolved res = blocks::resolveAssembly(doc_, def, d);
+        shown = std::move(res.insert);
+        nested = std::move(res.nested);
+    }
+    std::vector<Entity> storage;
+    const std::vector<const Entity*> items =
+        blocks::blockItems(doc_, def, &shown, storage, def.assembly ? &nested : nullptr);
+    DimBlock block;
+    do {
+        block.name = "*TB" + std::to_string(++dimCounter_);  // ours: skipped when read back
+    } while (blockSet_.has(block.name));
+    blockSet_.add(block.name);
+    block.rec = newHandle();
+    {
+        Out bo(utf8_, r12_);
+        Out* saved = L().o;
+        const EntityCommon* savedCur = L().cur;
+        const std::uint64_t savedHandle = L().entHandle;  // the INSERT's own handle
+        L().entHandle = 0;
+        L().o = &bo;
+        for (const Entity* item : items) {
+            if (const auto* t = entityAs<TextData>(*item); t && t->attdef)
+                continue;  // the INSERT's ATTRIBs show the values
+            Entity copy = *item;
+            copy.common.id = {};  // a copy: the definition keeps the handles of its objects
+            writeEntity(copy, block.rec);
+        }
+        L().o = saved;
+        L().cur = savedCur;
+        L().entHandle = savedHandle;
+        block.body = std::move(bo.buf);
+    }
+    // The anonymous block's base point is the definition's, so the INSERT keeps its placement.
+    block.base = def.base;
+    dynShownBlock_ = block.name;
+    dimBlocks_.push_back(std::move(block));
+    dynOfTag_ = detail::insertValuesText(d);
+    if (dynOfTag_.empty())
+        dynOfTag_ = "-\n";  // no values of its own: the defaults
+    writeInsert(p, shown, owner);
+    dynShownBlock_.clear();
+    dynOfTag_.clear();
+}
+
 void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owner) {
     if (writeImage(p, d, owner) || writePdfUnderlay(p, d, owner) || writeTolerance(p, d, owner))
         return;
-    std::string name = blockNameOf(d.block);
+    std::string name = dynShownBlock_.empty() ? blockNameOf(d.block) : dynShownBlock_;
     if (name.empty()) {
         skipEntity("INSERT", "its block definition does not exist");
         return;
@@ -2005,6 +2070,13 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
             downgrade("INSERT",
                       "an inverted clipping boundary is kept only in TBCAD XDATA; other "
                       "programs show the whole block");
+    }
+    if (!dynOfTag_.empty()) {
+        // The real block and the insert's values (keep/dynblock.h).
+        openTbcadXdata();
+        o.str(1000, "dynof=" + blockNameOf(d.block));
+        for (const std::string& line : detail::dynXdataLines(dynOfTag_, "dynv"))
+            o.str(1000, line);
     }
     if (L().cur)  // in the INSERT record itself, ahead of its ATTRIBs (see writeEntity)
         writeCommonFlags(*L().cur);

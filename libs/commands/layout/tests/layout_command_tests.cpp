@@ -1,8 +1,12 @@
 #include <doctest/doctest.h>
 
+#include <cstring>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 
 #include "tbcad/cmd/cmd.h"
+#include "tbcad/dxf/reader.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/layout/layout.h"
 #include "tbcad/layoutcmd/layoutcmd.h"
@@ -27,6 +31,23 @@ struct SheetHost : cmd::ScriptHost {
     BlockId drawingOwner() const override { return BlockId{1}; }
 };
 
+}  // namespace
+
+namespace {
+// Reads a DXF file the way Open does.
+inline Result<std::unique_ptr<Document>> readDxfFile(const std::filesystem::path& p) {
+    std::ifstream in(p, std::ios::binary);
+    if (!in)
+        return makeError(ErrorCode::Io, "cannot read");
+    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::vector<std::byte> bytes(text.size());
+    std::memcpy(bytes.data(), text.data(), text.size());
+    dxf::Report report;
+    auto r = dxf::importDxf(bytes, dxf::ImportOptions{}, report);
+    if (!r)
+        return r.error();
+    return std::move(r.value().document);
+}
 }  // namespace
 
 TEST_CASE("LAYOUT New creates a layout, makes it current, and undo removes it") {
@@ -714,13 +735,12 @@ TEST_CASE("EXPORTLAYOUT writes the viewport geometry at paper scale plus the she
                      layout::findLayout(f.doc, "Plan")->content);
         tx.commit();
     }
-    const auto file = std::filesystem::temp_directory_path() / "tbcad_exportlayout_test.tbcad";
+    const auto file = std::filesystem::temp_directory_path() / "tbcad_exportlayout_test.dxf";
     std::filesystem::remove(file);
     auto r = f.host->run("EXPORTLAYOUT", {file.string()});
     CHECK(r.finished);
     REQUIRE(std::filesystem::exists(file));
-    io::IoReport rep;
-    auto back = io::readTbcad(file, rep);
+    auto back = readDxfFile(file);
     REQUIRE(back.ok());
     const Document& out = *back.value();
     REQUIRE(out.modelSpaceCount() == 2);  // the far line is left out
@@ -780,12 +800,11 @@ TEST_CASE("LAYOUT SAveas writes a template with only that layout, and Template r
     f.host->run("MVIEW", {"10,10", "200,200", "1:50", "0,0"});
     f.host->run("LAYOUT", {"New", "Other", "A4", ""});
     const std::string file =
-        (std::filesystem::temp_directory_path() / "tbcad_layout_saveas_test.tbcad").string();
+        (std::filesystem::temp_directory_path() / "tbcad_layout_saveas_test.dxf").string();
     std::filesystem::remove(file);
     CHECK(f.host->run("LAYOUT", {"SAveas", "Plan", file}).finished);
     REQUIRE(std::filesystem::exists(file));
-    io::IoReport rep;
-    auto r = io::readTbcad(std::filesystem::path(file), rep);
+    auto r = readDxfFile(std::filesystem::path(file));
     REQUIRE(r.ok());
     auto all = layout::layouts(*r.value());
     REQUIRE(all.size() == 1);

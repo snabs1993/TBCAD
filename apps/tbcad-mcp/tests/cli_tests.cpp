@@ -1,11 +1,13 @@
 #include <doctest/doctest.h>
 
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <sstream>
 
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/core/dump.h"
+#include "tbcad/dxf/reader.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/mcp/headless.h"
 #include "tbcad/mcp/http_server.h"
@@ -68,10 +70,14 @@ std::filesystem::path tempDir(const char* name) {
 }
 
 std::string dumpOfFile(const std::filesystem::path& p) {
-    io::IoReport report;
-    auto doc = io::readTbcad(p, report);
+    std::ifstream in(p, std::ios::binary);
+    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::vector<std::byte> bytes(text.size());
+    std::memcpy(bytes.data(), text.data(), text.size());
+    dxf::Report report;
+    auto doc = dxf::importDxf(bytes, dxf::ImportOptions{}, report);
     REQUIRE(doc.ok());
-    return canonicalDump(*doc.value());
+    return canonicalDump(*doc.value().document);
 }
 
 // Runs tbcad-mcp in process and returns everything it wrote to stdout.
@@ -89,7 +95,7 @@ std::string runCli(const std::vector<std::string>& args, const std::string& inpu
 
 TEST_CASE("headless: draw, save, reopen in a new run, dumps match") {
     auto dir = tempDir("tbcad_mcp_cli1");
-    auto file = dir / "wall.tbcad";
+    auto file = dir / "wall.dxf";
     Environment env = testEnv(dir);
 
     std::string input = kInit;
@@ -117,7 +123,7 @@ TEST_CASE("headless: draw, save, reopen in a new run, dumps match") {
     CHECK(r2[1].find("result")->find("structuredContent")->find("entityCount")->asNumber() == 4);
 
     // Saving again from the second run gives an identical drawing.
-    auto file2 = dir / "copy.tbcad";
+    auto file2 = dir / "copy.dxf";
     std::string copy = kInit;
     copy +=
         callLine(1, "save_drawing", mcp::dump(Json(Json::Object{{"path", Json(file2.string())}})));

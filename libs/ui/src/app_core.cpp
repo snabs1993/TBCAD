@@ -1101,16 +1101,36 @@ Result<void> AppCore::openRecovered(const Recovery& r, bool removeAfter) {
     std::string ext = platform::pathFromUtf8(r.originalPath).extension().string();
     for (char& c : ext)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    if (!r.originalPath.empty() && ext != ".tbcad" && ext != ".tbt" &&
-        r.autosaveFile.extension() == ".bak")
+    const bool backup = r.autosaveFile.extension() == ".bak";
+    if (!r.originalPath.empty() && ext != ".tbcad" && ext != ".tbt" && ext != ".dxf" && backup)
         return makeError(ErrorCode::Unsupported,
-                         "Only backups of .tbcad drawings open here: rename " +
+                         "Only backups of .dxf and .tbcad drawings open here: rename " +
                              platform::pathToUtf8(r.autosaveFile) + " and open it.");
-    io::IoReport report;
-    auto doc = io::readTbcad(r.autosaveFile, report);
-    if (!doc)
-        return doc.error();
-    addSession(std::move(doc.value()), {});
+    std::unique_ptr<Document> opened;
+    if (backup && ext == ".dxf") {  // the previous version of a DXF drawing (ISAVEBAK)
+        std::ifstream in(platform::longPath(r.autosaveFile), std::ios::binary);
+        if (!in)
+            return makeError(ErrorCode::Io, "Cannot read " + platform::pathToUtf8(r.autosaveFile));
+        in.seekg(0, std::ios::end);
+        std::vector<std::byte> bytes(
+            static_cast<std::size_t>(std::max<std::streamoff>(in.tellg(), 0)));
+        in.seekg(0, std::ios::beg);
+        if (!bytes.empty())
+            in.read(reinterpret_cast<char*>(bytes.data()),
+                    static_cast<std::streamsize>(bytes.size()));
+        dxf::Report dxfReport;
+        auto imported = dxf::importDxf(bytes, {}, dxfReport);
+        if (!imported)
+            return imported.error();
+        opened = std::move(imported.value().document);
+    } else {
+        io::IoReport report;
+        auto doc = io::readTbcad(r.autosaveFile, report);
+        if (!doc)
+            return doc.error();
+        opened = std::move(doc.value());
+    }
+    addSession(std::move(opened), {});
     session_->savedRevision = ~std::uint64_t{0};
     const std::string what =
         r.originalPath.empty()
@@ -1655,8 +1675,7 @@ std::string AppCore::readOnlyBanner() const {
     if (session_->readOnlyFormat.empty())
         return "Read-only: someone else has this file open. Save As keeps a copy; "
                "File > Work Together lets you join them.";
-    return session_->readOnlyFormat +
-           " opened read-only. Use Save As to keep a copy as .tbcad or .dxf.";
+    return session_->readOnlyFormat + " opened read-only. Use Save As to keep a copy as .dxf.";
 }
 
 Result<void> AppCore::finishForeignOpen(const fs::path& path, const std::string& ext, bool readOnly,
@@ -1848,6 +1867,21 @@ Result<void> AppCore::save() {
                          session_->readOnlyFormat + " files are read-only: use Save As.");
     if (session_->file.empty())
         return makeError(ErrorCode::InvalidArgument, "This drawing has no file name yet.");
+    if (lowerExtension(session_->file) == ".tbcad") {
+        // Old .tbcad drawings are saved as DXF next to the original, which is left as it was.
+        fs::path dxfPath = session_->file;
+        dxfPath.replace_extension(".dxf");
+        std::error_code ec;
+        if (fs::exists(dxfPath, ec))
+            return makeError(ErrorCode::Conflict,
+                             "TBCAD saves drawings as .dxf, and " + dxfPath.filename().string() +
+                                 " already exists: use Save As to choose a name.");
+        auto r = saveAs(dxfPath);
+        if (r)
+            print("Saved as " + dxfPath.filename().string() +
+                  " (TBCAD saves DXF; the old .tbcad file is kept as it was).");
+        return r;
+    }
     if (changedOnDisk(*session_) && !session_->overwriteConfirmed) {
         session_->overwriteConfirmed = true;
         const std::string msg = session_->file.filename().string() +
@@ -1919,7 +1953,7 @@ void AppCore::storeSnapAids() {
 Result<void> AppCore::saveAs(const fs::path& requested) {
     fs::path path = requested;
     if (!path.has_extension())
-        path += settings_.getString("files.defaultFormat", "dxf") == "dxf" ? ".dxf" : ".tbcad";
+        path += ".dxf";  // DXF is the only format TBCAD saves drawings in
     // Two tabs on one file would fight over it (the second only gets it read-only).
     if (auto other = slotOfFile(path); other && *other != active_) {
         const std::string text = platform::pathToUtf8(path.filename()) +
@@ -1950,9 +1984,16 @@ Result<void> AppCore::saveAs(const fs::path& requested) {
         print("Template saved: " + platform::pathToUtf8(r.value()));
         return {};
     }
-    if (ext != ".tbcad" && ext != ".dxf") {
+    if (ext == ".tbcad") {
+        const std::string msg =
+            "TBCAD saves drawings as .dxf; old .tbcad files can still be opened. Save as " +
+            path.stem().string() + ".dxf instead.";
+        print(msg);
+        return makeError(ErrorCode::Unsupported, msg);
+    }
+    if (ext != ".dxf") {
         return makeError(ErrorCode::Unsupported,
-                         "TBCAD can save as .tbcad or .dxf; it never writes " + ext + " files.");
+                         "TBCAD saves drawings as .dxf; it never writes " + ext + " files.");
     }
     {
         // Never write over a drawing that someone else has open (on this or another computer).
@@ -1976,10 +2017,8 @@ Result<void> AppCore::saveAs(const fs::path& requested) {
         if (rebased)
             tx.commit();
     }
-    io::WriteOptions writeOpt;
-    writeOpt.keepBackup = settings_.getBool("files.backup", true);  // ISAVEBAK
-    auto r = isDxfPath(path) ? saveDxf(path) : io::writeTbcad(session_->doc, path, writeOpt);
-    if (!r && rebased) {  // the file did not move: put the paths back
+    auto r = saveDxf(path);  // ISAVEBAK (files.backup) is applied by saveDxf
+    if (!r && rebased) {     // the file did not move: put the paths back
         Transaction tx = session_->doc.begin("SAVEAS");
         (void)xref::rebaseAll(tx, session_->doc, path, oldFile);
         tx.commit();

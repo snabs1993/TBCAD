@@ -4,6 +4,7 @@
 #include <cmath>
 #include <set>
 
+#include "dynblock.h"
 #include "importer.h"
 #include "keep.h"
 #include "tbcad/dim/dim.h"
@@ -1719,7 +1720,28 @@ bool Importer::convInsert(const Record& r, RecordReader& rr, const Frame& f,
         }
     }
     std::string_view rawName = r.raw(2);
-    BlockId block = blockFor(rawName);
+    // TBCAD XDATA: an insert of a dynamic block or assembly names the real block and carries its
+    // values; the block the INSERT names only shows them to other programs (keep/dynblock.h).
+    std::string dynOf, dynValues;
+    {
+        bool ours = false;
+        for (const Group& g : r.g) {
+            if (g.code == 1001)
+                ours = g.str() == "TBCAD";
+            else if (ours && g.code == 1000 && g.str().substr(0, 6) == "dynof=")
+                dynOf = std::string(g.str().substr(6));
+            else if (ours && g.code == 1000)
+                (void)detail::dynXdataAppend(dynValues, dec(g.str()), "dynv");
+        }
+    }
+    BlockId block{};
+    if (!dynOf.empty()) {
+        block = blockFor(dynOf);
+        if (!block)
+            dynValues.clear();
+    }
+    if (!block)
+        block = blockFor(rawName);
     if (!block) {
         bad(r, "INSERT", "block \"" + dec(rawName) + "\" cannot be referenced; skipped");
         return false;
@@ -1857,6 +1879,8 @@ bool Importer::convInsert(const Record& r, RecordReader& rr, const Frame& f,
             d.clip = clip;
             d.clipOn = clipOn;
             d.clipInvert = clipInvert;
+            if (!dynValues.empty())
+                detail::parseInsertValues(dynValues, d);
             out.push_back(makeEntity(std::move(d)));
         }
     }

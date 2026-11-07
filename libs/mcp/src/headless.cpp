@@ -92,7 +92,10 @@ Result<void> HeadlessSession::save(std::optional<std::filesystem::path> as) {
     std::filesystem::path target = as ? *as : file_;
     if (target.empty())
         return makeError(ErrorCode::InvalidArgument, "no file name");
-    if (isDxf(target)) {
+    if (!isDxf(target))  // an old .tbcad drawing: saved as DXF (save_drawing with a .dxf path)
+        return makeError(ErrorCode::Unsupported,
+                         "TBCAD saves drawings as .dxf; save to a path ending in .dxf");
+    {
         dxf::ExportOptions opt;
         const auto& custom = doc_->header().custom;
         if (auto it = custom.find("dxf.acadver"); it != custom.end() && it->second.size() == 6 &&
@@ -110,8 +113,6 @@ Result<void> HeadlessSession::save(std::optional<std::filesystem::path> as) {
             target, io::WriteOptions{});
         if (!saved)
             return saved.error();
-    } else if (auto r = io::writeTbcad(*doc_, target); !r) {
-        return r;
     }
     file_ = target;
     hasFile_ = true;

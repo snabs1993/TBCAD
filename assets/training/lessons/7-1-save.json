@@ -118,13 +118,13 @@
     }
   ],
   "solution": [
-    "<SaveAs my-room.tbcad>",
+    "<SaveAs my-room.dxf>",
     "RECTANGLE;1900,1600;@1200,800",
     "<Save>"
   ],
   "wrong": [
     [
-      "<SaveAs my-room.tbcad>",
+      "<SaveAs my-room.dxf>",
       "RECTANGLE;1900,1600;@1200,800"
     ],
     [

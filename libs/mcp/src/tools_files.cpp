@@ -17,9 +17,13 @@ bool endsWithExt(const std::string& p, const std::string& ext) {
     return true;
 }
 
-Result<std::filesystem::path> checkPath(const std::string& text) {
+// Drawings are saved as .dxf only; old .tbcad files can still be opened.
+Result<std::filesystem::path> checkPath(const std::string& text, bool forSave) {
     if (text.empty())
         return makeError(ErrorCode::InvalidArgument, "path is empty");
+    if (forSave && !endsWithExt(text, ".dxf"))
+        return makeError(ErrorCode::InvalidArgument,
+                         "path must end with .dxf (TBCAD saves drawings as DXF)");
     if (!endsWithExt(text, ".tbcad") && !endsWithExt(text, ".dxf"))
         return makeError(ErrorCode::InvalidArgument, "path must end with .dxf or .tbcad");
     auto p = platform::pathFromUtf8(text);
@@ -74,7 +78,7 @@ ToolResult saveDrawing(ToolContext& ctx, const Json& a) {
     std::string text = argString(a, "path");
     std::optional<std::filesystem::path> as;
     if (!text.empty()) {
-        auto p = checkPath(text);
+        auto p = checkPath(text, true);
         if (!p)
             return ToolResult::fail(p.error().message);
         std::error_code ec;
@@ -84,8 +88,7 @@ ToolResult saveDrawing(ToolContext& ctx, const Json& a) {
         }
         as = p.value();
     } else if (!s.file().hasFile) {
-        return ToolResult::fail(
-            "this drawing has no file yet; pass a path ending in .dxf or .tbcad");
+        return ToolResult::fail("this drawing has no file yet; pass a path ending in .dxf");
     }
     auto r = s.save(as);
     if (!r)
@@ -97,7 +100,7 @@ ToolResult saveDrawing(ToolContext& ctx, const Json& a) {
 
 ToolResult openDrawing(ToolContext& ctx, const Json& a) {
     DrawingSession& s = ctx.session;
-    auto p = checkPath(argString(a, "path"));
+    auto p = checkPath(argString(a, "path"), false);
     if (!p)
         return ToolResult::fail(p.error().message);
     if (s.file().modified && !argBool(a, "discard_changes"))
@@ -175,19 +178,19 @@ void registerFileTools(ToolSet& tools) {
 
     tools.add({"save_drawing", "Save drawing",
                "Saves the drawing. Without a path it saves to the current file; with a path "
-               "(absolute, ending in .dxf or .tbcad) it saves a copy there and makes it the "
-               "current file.",
-               tObject({{"path", tString("absolute path ending in .dxf or .tbcad")},
+               "(absolute, ending in .dxf) it saves a copy there and makes it the current "
+               "file. Drawings are always saved as DXF.",
+               tObject({{"path", tString("absolute path ending in .dxf")},
                         {"overwrite", tBool("replace an existing file at path")}}),
                outSchema({"saved", "path"}), Edit::Session, false, false, true, saveDrawing});
-    tools.add(
-        {"open_drawing", "Open drawing",
-         "Opens a .dxf or .tbcad file, replacing the open drawing (refused when it has unsaved "
-         "changes unless discard_changes is true).",
-         tObject({{"path", tString("absolute path ending in .dxf or .tbcad")},
-                  {"discard_changes", tBool()}},
-                 {"path"}),
-         outSchema({"name", "entityCount"}), Edit::Session, true, false, true, openDrawing});
+    tools.add({"open_drawing", "Open drawing",
+               "Opens a .dxf (or an old .tbcad) file, replacing the open drawing (refused when it "
+               "has unsaved "
+               "changes unless discard_changes is true).",
+               tObject({{"path", tString("absolute path ending in .dxf or .tbcad")},
+                        {"discard_changes", tBool()}},
+                       {"path"}),
+               outSchema({"name", "entityCount"}), Edit::Session, true, false, true, openDrawing});
     tools.add({"new_drawing", "New drawing",
                "Starts an empty drawing (refused when the open one has unsaved changes unless "
                "discard_changes is true).",

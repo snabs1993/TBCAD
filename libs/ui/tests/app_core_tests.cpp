@@ -518,9 +518,9 @@ TEST_CASE("save, reopen: same canonical dump, title and modified flag follow") {
     f.line("0,0", "100,0");
     f.core->submitText("DEVGEN LINES 200");
     CHECK(f.core->windowTitle() == "Untitled* - TBCAD");
-    fs::path file = f.dir / "drawing.tbcad";
+    fs::path file = f.dir / "drawing.dxf";
     REQUIRE(f.core->saveAs(file).ok());
-    CHECK(f.core->windowTitle() == "drawing.tbcad - TBCAD");
+    CHECK(f.core->windowTitle() == "drawing.dxf - TBCAD");
     CHECK_FALSE(f.core->modified());
     std::string before = canonicalDump(f.core->document());
 
@@ -537,14 +537,14 @@ TEST_CASE("save, reopen: same canonical dump, title and modified flag follow") {
     CHECK(f.core->modified());
     REQUIRE(f.core->save().ok());
     CHECK_FALSE(f.core->modified());
-    CHECK(fs::exists(f.dir / "drawing.tbcad.bak"));
+    CHECK(fs::exists(f.dir / "drawing.dxf.bak"));
 
     // ISAVEBAK 0: no backup is kept.
-    fs::remove(f.dir / "drawing.tbcad.bak");
+    fs::remove(f.dir / "drawing.dxf.bak");
     f.core->setSetting("files.backup", "0");
     f.line("7,7", "8,8");
     REQUIRE(f.core->save().ok());
-    CHECK_FALSE(fs::exists(f.dir / "drawing.tbcad.bak"));
+    CHECK_FALSE(fs::exists(f.dir / "drawing.dxf.bak"));
     CHECK(fs::exists(file));
     f.core->setSetting("files.backup", "1");
 }
@@ -571,7 +571,7 @@ TEST_CASE("a damaged .tbcad opens with what could be read, as an unsaved drawing
     Fixture f("salvage");
     for (int i = 0; i < 3; ++i)
         f.line(("0," + std::to_string(i)).c_str(), ("100," + std::to_string(i)).c_str());
-    REQUIRE(f.core->saveAs(f.dir / "good.tbcad").ok());
+    REQUIRE(io::writeTbcad(f.core->document(), f.dir / "good.tbcad").ok());  // an old file
     std::ifstream in(f.dir / "good.tbcad", std::ios::binary);
     std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     in.close();
@@ -589,6 +589,34 @@ TEST_CASE("a damaged .tbcad opens with what could be read, as an unsaved drawing
         said = said || h.find("Recovered 3 objects") != std::string::npos;
     CHECK(said);
     CHECK(fs::file_size(f.dir / "damaged.tbcad") == before);
+}
+
+TEST_CASE("an old .tbcad drawing opens, and Save writes it as DXF beside the original") {
+    Fixture f("oldtbcad");
+    f.line("0,0", "100,0");
+    f.line("0,10", "100,10");
+    const fs::path old = f.dir / "house.tbcad";
+    REQUIRE(io::writeTbcad(f.core->document(), old).ok());
+    const auto oldSize = fs::file_size(old);
+    Fixture g("oldtbcad2");
+    REQUIRE(g.core->openFile(old).ok());
+    const std::string before = canonicalDump(g.core->document());
+    g.line("0,20", "100,20");
+    REQUIRE(g.core->save().ok());
+    CHECK(g.core->file() == f.dir / "house.dxf");
+    CHECK_FALSE(g.core->modified());
+    CHECK(fs::file_size(old) == oldSize);  // the .tbcad file is left as it was
+    REQUIRE(fs::exists(f.dir / "house.dxf"));
+    CHECK(g.core->document().modelSpaceCount() == 3);
+    CHECK(before != canonicalDump(g.core->document()));
+
+    // Another old drawing whose .dxf name is taken: Save asks for a name instead of overwriting.
+    Fixture h("oldtbcad3");
+    REQUIRE(h.core->openFile(old).ok());
+    h.line("0,30", "100,30");
+    CHECK_FALSE(h.core->save().ok());
+    CHECK(h.core->modified());
+    CHECK(h.core->file() == old);
 }
 
 TEST_CASE("saveAs adds the extension") {
@@ -656,14 +684,14 @@ TEST_CASE("a damaged autosave is reported, can be discarded, and does not stop t
 TEST_CASE("a save that fails keeps the autosave and the unsaved state") {
     Fixture f("save_fails_keeps_autosave");
     f.line("0,0", "100,0");
-    REQUIRE(f.core->saveAs(f.dir / "keep.tbcad").ok());
-    const auto goodSize = fs::file_size(f.dir / "keep.tbcad");
+    REQUIRE(f.core->saveAs(f.dir / "keep.dxf").ok());
+    const auto goodSize = fs::file_size(f.dir / "keep.dxf");
     f.line("0,10", "100,10");
     REQUIRE(f.core->autosaveNow());
     // The target folder does not exist: the write stops before anything is replaced.
-    CHECK_FALSE(f.core->saveAs(f.dir / "no-such-folder" / "x.tbcad").ok());
+    CHECK_FALSE(f.core->saveAs(f.dir / "no-such-folder" / "x.dxf").ok());
     CHECK(f.core->modified());
-    CHECK(fs::file_size(f.dir / "keep.tbcad") == goodSize);
+    CHECK(fs::file_size(f.dir / "keep.dxf") == goodSize);
     f.core.reset();  // the first session ends without a clean exit, as in a crash
     auto registry2 = makeRegistry();
     AppCore second(*registry2, platform::AppPaths{f.dir / "cfg", f.dir / "data"});
@@ -740,9 +768,9 @@ TEST_CASE("autosave covers every open drawing and recovery reopens them all") {
 TEST_CASE("the Drawing Recovery Manager lists leftover autosaves and backups and opens them") {
     Fixture f("recovery_manager");
     f.line("0,0", "100,0");
-    REQUIRE(f.core->saveAs(f.dir / "kept.tbcad").ok());
+    REQUIRE(f.core->saveAs(f.dir / "kept.dxf").ok());
     f.line("0,0", "0,50");
-    REQUIRE(f.core->save().ok());  // the first save becomes kept.tbcad.bak
+    REQUIRE(f.core->save().ok());  // the first save becomes kept.dxf.bak
     f.core->newDocument();
     f.line("5,5", "6,6");
     CHECK(f.core->autosaveNow());
@@ -750,7 +778,7 @@ TEST_CASE("the Drawing Recovery Manager lists leftover autosaves and backups and
     CHECK(f.core->leftoverRecoveries().empty());
     const auto backups = f.core->backupFiles();
     REQUIRE(backups.size() == 1);
-    CHECK(backups[0].autosaveFile.filename() == "kept.tbcad.bak");
+    CHECK(backups[0].autosaveFile.filename() == "kept.dxf.bak");
 
     // A new session (the first did not close normally) sees the autosaves as left over.
     f.core.reset();  // the first session ends without a clean exit, as in a crash
@@ -775,7 +803,7 @@ TEST_CASE("a clean save or shutdown removes the autosave") {
     f.line("0,0", "100,0");
     REQUIRE(f.core->autosaveNow());
     REQUIRE(f.core->pendingRecovery().has_value());
-    REQUIRE(f.core->saveAs(f.dir / "a.tbcad").ok());
+    REQUIRE(f.core->saveAs(f.dir / "a.dxf").ok());
     CHECK_FALSE(f.core->pendingRecovery().has_value());
     f.line("1,1", "2,2");
     REQUIRE(f.core->autosaveNow());
@@ -824,7 +852,7 @@ TEST_CASE(
     second.submitText("0,0");
     second.submitText("0,50");
     REQUIRE(second.autosaveNow());
-    REQUIRE(second.saveAs(f.dir / "mine.tbcad").ok());
+    REQUIRE(second.saveAs(f.dir / "mine.dxf").ok());
     CHECK(second.pendingRecoveries().size() == 1);
     second.shutdown();
     CHECK(second.pendingRecoveries().size() == 1);
@@ -1034,7 +1062,7 @@ TEST_CASE("an untouched Untitled drawing is reused by New and Open") {
     Fixture f("reuse");
     f.core->newDocument();
     CHECK(f.core->documentCount() == 1);
-    fs::path file = f.dir / "a.tbcad";
+    fs::path file = f.dir / "a.dxf";
     REQUIRE(f.core->saveAs(file).ok());  // empty drawing on disk
     f.core->newDocument();               // the saved drawing is not "Untitled", so a tab is added
     REQUIRE(f.core->documentCount() == 2);
@@ -1366,7 +1394,7 @@ TEST_CASE("SETTINGS asks the window to open the dialog") {
     CHECK(f.core->keybindings().label("view.cleanScreen") == "F11");
 }
 
-TEST_CASE("read-only foreign format: banner, Save refuses, Save As .tbcad, never .dwg") {
+TEST_CASE("read-only foreign format: banner, Save refuses, Save As .dxf, never .dwg") {
     Fixture f("foreign");
     fs::path src = f.dir / "plan.dwg";
     { std::ofstream(src, std::ios::binary) << "original bytes"; }
@@ -1398,11 +1426,11 @@ TEST_CASE("read-only foreign format: banner, Save refuses, Save As .tbcad, never
     CHECK_FALSE(f.core->saveAs(f.dir / "x.dwg").ok());  // nor any .dwg
     CHECK_FALSE(fs::exists(f.dir / "x.dwg"));
 
-    REQUIRE(f.core->saveAs(f.dir / "plan.tbcad").ok());
+    REQUIRE(f.core->saveAs(f.dir / "plan.dxf").ok());
     CHECK_FALSE(f.core->readOnlyOrigin());
     CHECK_FALSE(f.core->modified());
     CHECK(f.core->readOnlyBanner().empty());
-    CHECK(f.core->displayName() == "plan.tbcad");
+    CHECK(f.core->displayName() == "plan.dxf");
     REQUIRE(f.core->save().ok());
 
     std::ifstream in(src, std::ios::binary);
@@ -1563,9 +1591,13 @@ TEST_CASE("files.defaultFormat decides the extension of a name without one") {
     REQUIRE(f.core->saveAs(f.dir / "noext").ok());
     CHECK(f.core->file().extension() == ".dxf");
     CHECK(fs::exists(f.dir / "noext.dxf"));
-    f.core->settings().setString("files.defaultFormat", "tbcad");
+    f.core->settings().setString("files.defaultFormat", "tbcad");  // an old setting is ignored
     REQUIRE(f.core->saveAs(f.dir / "other").ok());
-    CHECK(f.core->file().extension() == ".tbcad");
+    CHECK(f.core->file().extension() == ".dxf");
+    // .tbcad is no longer written: Save As refuses it and the drawing keeps its file.
+    CHECK_FALSE(f.core->saveAs(f.dir / "old.tbcad").ok());
+    CHECK_FALSE(fs::exists(f.dir / "old.tbcad"));
+    CHECK(f.core->file().filename() == "other.dxf");
 }
 
 TEST_CASE("files.dxfVersion picks the version a DXF is saved in") {
@@ -1802,7 +1834,7 @@ TEST_CASE("Save As writes the file even while a command waits for input") {
     f.line("0,0", "1000,0");
     f.core->submitText("TESTLINE");  // waiting for its first point
     REQUIRE(f.core->runner().active());
-    const auto path = f.dir / "busy.tbcad";
+    const auto path = f.dir / "busy.dxf";
     auto r = f.core->saveAs(path);
     CHECK(r.ok());
     CHECK(std::filesystem::exists(path));
@@ -1938,7 +1970,7 @@ TEST_CASE("ZOOM O is Object and ZOOM Double zooms in") {
 
 TEST_CASE("a file that changed on disk is not overwritten by the first Save") {
     Fixture f("savechanged");
-    const fs::path file = f.dir / "shared.tbcad";
+    const fs::path file = f.dir / "shared.dxf";
     f.core->submitText("TESTLINE");
     f.core->submitText("0,0");
     f.core->submitText("10,0");
@@ -1962,7 +1994,7 @@ TEST_CASE("a file that changed on disk is not overwritten by the first Save") {
 
 TEST_CASE("fileChangedOnDisk and saveOverwrite let the window offer Overwrite at once") {
     Fixture f("savechanged2");
-    const fs::path file = f.dir / "shared2.tbcad";
+    const fs::path file = f.dir / "shared2.dxf";
     f.core->submitText("TESTLINE");
     f.core->submitText("0,0");
     f.core->submitText("10,0");
@@ -1980,7 +2012,7 @@ TEST_CASE("fileChangedOnDisk and saveOverwrite let the window offer Overwrite at
 
 TEST_CASE("opening a drawing that another window holds opens it read-only") {
     Fixture a("lockwarn_a");
-    const fs::path file = a.dir / "held.tbcad";
+    const fs::path file = a.dir / "held.dxf";
     a.core->submitText("TESTLINE");
     a.core->submitText("0,0");
     a.core->submitText("10,0");
@@ -2000,7 +2032,7 @@ TEST_CASE("opening a drawing that another window holds opens it read-only") {
     // The second window cannot write over the file, not even with Save As to the same name.
     CHECK(b.core->openElsewhere());
     CHECK(b.core->readOnlyOrigin());
-    CHECK(b.core->displayName() == "held.tbcad [Read-only]");
+    CHECK(b.core->displayName() == "held.dxf [Read-only]");
     CHECK(b.core->readOnlyBanner().find("Work Together") != std::string::npos);
     b.core->submitText("TESTLINE");
     b.core->submitText("0,5");
@@ -2011,7 +2043,7 @@ TEST_CASE("opening a drawing that another window holds opens it read-only") {
     Fixture c("lockwarn_c");
     CHECK_FALSE(c.core->saveAs(file).ok());
     // A copy under a new name works and is an ordinary editable drawing.
-    REQUIRE(b.core->saveAs(b.dir / "copy.tbcad").ok());
+    REQUIRE(b.core->saveAs(b.dir / "copy.dxf").ok());
     CHECK_FALSE(b.core->readOnlyOrigin());
     CHECK(b.core->save().ok());
     // The holder still saves normally.
@@ -2058,7 +2090,7 @@ TEST_CASE("saveAs into another folder keeps relative xref paths pointing at the 
     fs::create_directories(f.dir / "proj");
     fs::create_directories(f.dir / "lib");
     fs::create_directories(f.dir / "other" / "deep");
-    REQUIRE(f.core->saveAs(f.dir / "proj" / "a.tbcad").ok());
+    REQUIRE(f.core->saveAs(f.dir / "proj" / "a.dxf").ok());
     {
         Transaction tx = f.core->document().begin("xref");
         BlockDef def;
@@ -2067,18 +2099,17 @@ TEST_CASE("saveAs into another folder keeps relative xref paths pointing at the 
         REQUIRE(tx.addBlock(std::move(def)).ok());
         tx.commit();
     }
-    REQUIRE(f.core->saveAs(f.dir / "other" / "deep" / "b.tbcad").ok());
+    REQUIRE(f.core->saveAs(f.dir / "other" / "deep" / "b.dxf").ok());
     const BlockDef* b = f.core->document().blockByName("SITE");
     REQUIRE(b != nullptr);
     CHECK(b->xrefPath == "../../lib/site.tbcad");
     // The saved file says the same.
-    io::IoReport report;
-    auto back = io::readTbcad(f.dir / "other" / "deep" / "b.tbcad", report);
-    REQUIRE(back.ok());
-    REQUIRE(back.value()->blockByName("SITE") != nullptr);
-    CHECK(back.value()->blockByName("SITE")->xrefPath == "../../lib/site.tbcad");
+    Fixture g("xrefrebase2");
+    REQUIRE(g.core->openFile(f.dir / "other" / "deep" / "b.dxf").ok());
+    REQUIRE(g.core->document().blockByName("SITE") != nullptr);
+    CHECK(g.core->document().blockByName("SITE")->xrefPath == "../../lib/site.tbcad");
     // Saving again in the same folder changes nothing.
-    REQUIRE(f.core->saveAs(f.dir / "other" / "deep" / "c.tbcad").ok());
+    REQUIRE(f.core->saveAs(f.dir / "other" / "deep" / "c.dxf").ok());
     CHECK(f.core->document().blockByName("SITE")->xrefPath == "../../lib/site.tbcad");
 }
 
@@ -2092,7 +2123,7 @@ TEST_CASE("undo and redo across Save, Save As and opening the file again") {
     const std::string three = dump();
 
     // Saving keeps the history: undo still works and the drawing is modified again.
-    const fs::path file = f.dir / "undosave.tbcad";
+    const fs::path file = f.dir / "undosave.dxf";
     REQUIRE(f.core->saveAs(file).ok());
     CHECK_FALSE(f.core->modified());
     REQUIRE(f.core->undo());
@@ -2112,7 +2143,7 @@ TEST_CASE("undo and redo across Save, Save As and opening the file again") {
 
     // Save As to another folder keeps the history too.
     fs::create_directories(f.dir / "other");
-    REQUIRE(f.core->saveAs(f.dir / "other" / "copy.tbcad").ok());
+    REQUIRE(f.core->saveAs(f.dir / "other" / "copy.dxf").ok());
     while (f.core->undo()) {
     }
     CHECK(f.core->document().entityCount() == 0);
@@ -2134,15 +2165,15 @@ TEST_CASE("undo and redo across Save, Save As and opening the file again") {
 TEST_CASE("saveAll saves the changed drawings with a file and lists the untitled ones") {
     Fixture f("saveall");
     f.line("0,0", "10,0");
-    REQUIRE(f.core->saveAs(f.dir / "a.tbcad").ok());
+    REQUIRE(f.core->saveAs(f.dir / "a.dxf").ok());
     f.line("0,10", "10,10");  // changed after saving
     f.core->newDocument();
     f.line("0,0", "5,5");
-    REQUIRE(f.core->saveAs(f.dir / "b.tbcad").ok());  // saved, unchanged
+    REQUIRE(f.core->saveAs(f.dir / "b.dxf").ok());  // saved, unchanged
     f.core->newDocument();
     f.line("0,0", "7,7");  // untitled and changed
     REQUIRE(f.core->documentCount() == 3);
-    CHECK(f.core->documentFile(0).filename() == "a.tbcad");
+    CHECK(f.core->documentFile(0).filename() == "a.dxf");
     CHECK(f.core->documentFile(2).empty());
     CHECK(f.core->documentLayouts(0) == f.core->layoutNames());
 
@@ -2156,7 +2187,7 @@ TEST_CASE("saveAll saves the changed drawings with a file and lists the untitled
 }
 
 TEST_CASE("snap angle and snap base are saved with the drawing and come back on reopen") {
-    for (const char* ext : {".tbcad", ".dxf"}) {
+    for (const char* ext : {".dxf"}) {
         Fixture f(std::string("snap_persist") + ext);
         f.line("0,0", "100,0");
         f.core->setSetting("drafting.snap.angle", "30");

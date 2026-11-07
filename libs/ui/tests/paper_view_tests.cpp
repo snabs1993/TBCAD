@@ -93,9 +93,9 @@ TEST_CASE("an xref whose file is gone is listed as missing when the drawing open
         REQUIRE(tx.addBlock(std::move(def)).ok());
         tx.commit();
     }
-    REQUIRE(core.saveAs(dir / "host.tbcad").ok());
+    REQUIRE(core.saveAs(dir / "host.dxf").ok());
     core.newDocument();
-    REQUIRE(core.openFile(dir / "host.tbcad").ok());
+    REQUIRE(core.openFile(dir / "host.dxf").ok());
     REQUIRE(core.missingXrefs().size() == 1);
     CHECK(core.missingXrefs()[0].name == "site");
     CHECK(core.missingXrefs()[0].path == "gone/site.dxf");

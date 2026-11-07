@@ -337,7 +337,7 @@ public:
         auto b = co_await ctx.getPoint("Specify base point");
         if (!b.ok())
             co_return;
-        auto f = co_await ctx.getString("Enter the file name (.dxf or .tbcad) <block.dxf>",
+        auto f = co_await ctx.getString("Enter the file name (.dxf) <block.dxf>",
                                         cmd::StringOptions{.defaultValue = "block.dxf"});
         if (!f.ok())
             co_return;
@@ -357,9 +357,8 @@ public:
         std::string ext = utf8Of(path.extension());
         std::transform(ext.begin(), ext.end(), ext.begin(),
                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        const bool asDxf = ext != ".tbcad";
-        if (ext != ".dxf" && ext != ".tbcad") {
-            ctx.message("Use a .dxf or .tbcad file name.");
+        if (ext != ".dxf") {
+            ctx.message("Use a .dxf file name (TBCAD saves drawings as DXF).");
             co_return;
         }
         const std::string shown = utf8Of(path);
@@ -392,7 +391,7 @@ public:
             }
             tx.commit();
         }
-        if (asDxf) {
+        {
             dxf::ExportOptions opt;
             opt.version = dxfVersionFor(ctx);
             dxf::Report report;
@@ -408,12 +407,6 @@ public:
                 path, io::WriteOptions{.keepBackup = false});
             if (!saved) {
                 ctx.message("Cannot write " + shown + ": " + saved.error().message);
-                co_return;
-            }
-        } else {
-            auto r = io::writeTbcad(out, path, io::WriteOptions{.keepBackup = false});
-            if (!r) {
-                ctx.message("Cannot write " + shown + ": " + r.error().message);
                 co_return;
             }
         }

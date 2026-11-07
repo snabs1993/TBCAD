@@ -12,6 +12,7 @@
 #include <tuple>
 #include <unordered_set>
 
+#include "dynblock.h"
 #include "importer.h"
 #include "keep.h"
 #include "tbcad/blocks/array.h"
@@ -653,7 +654,7 @@ void Importer::processObjects(RecordReader& rr) {
             finish();
             (void)tx_->modifyHeader([&](Header& h) {
                 for (auto& [k, v] : found)
-                    if (k.rfind("tbcad.", 0) == 0)
+                    if (detail::keptAsSetting(k))
                         h.custom.emplace(k, std::move(v));  // a setting read elsewhere wins
             });
             continue;
@@ -2310,11 +2311,14 @@ void Importer::processBlocks(RecordReader& rr) {
                     std::int64_t xrefStamp = 0;
                     bool xrefOverlay = false;
                     bool inOurs = false;
+                    std::string extras;  // "dyn:" chunks (keep/dynblock.h)
                     for (const Group& g : r.g) {
                         if (g.code == 1001) {
                             inOurs = g.str() == "TBCAD";
                         } else if (inOurs && g.code == 1000) {
                             std::string v = dec(g.str());
+                            if (detail::dynXdataAppend(extras, v, "dyn"))
+                                continue;
                             if (v.rfind("xref=", 0) == 0)
                                 xrefPath = v.substr(5);
                             else if (v.rfind("stamp=", 0) == 0)
@@ -2332,6 +2336,8 @@ void Importer::processBlocks(RecordReader& rr) {
                             b.xrefOverlay = xrefOverlay;
                         }
                     });
+                    if (!extras.empty())
+                        blockExtras_.emplace_back(id, std::move(extras));
                     ++sum_.blocks;
                     if ((r.integer(70) & 4) && xrefPath.empty()) {
                         // An external reference to another drawing: keep the path so the XREF
@@ -2505,6 +2511,15 @@ void Importer::readLayoutObject(const Record& r) {
     row.height = r.num(45);
     row.rotation = static_cast<int>(r.integer(73, 0));
     row.styleSheet = dec(r.raw(7));
+    {
+        bool ours = false;
+        for (const Group& g : r.g) {
+            if (g.code == 1001)
+                ours = g.str() == "TBCAD";
+            else if (ours && g.code == 1000 && g.str().substr(0, 6) == "paper=")
+                row.paper = dec(g.str()).substr(6);  // "name;WxH", checked against the size
+        }
+    }
     if (r.has(14) && r.has(24) && r.has(15) && r.has(25)) {
         row.hasExtents = true;
         row.extMin = {r.num(14), r.num(24)};
@@ -2684,9 +2699,22 @@ void Importer::finishLayouts() {
                 setups += "S\t" + setupName + "\tstyle=" + sheet + "\n";
             }
         }
-        text += "L\t" + std::to_string(uid) + "\t" + name + "\tCustom\t" + (w > h ? "1" : "0") +
-                "\t" + num(w) + "\t" + num(h) + "\t" + std::to_string(sh.content.value) + "\t" +
-                setupName + "\n";
+        // Our paper name, while the layout still has the size it was saved with.
+        std::string paper = "Custom";
+        if (n < rows.size() && !rows[n].paper.empty()) {
+            const std::string& tag = rows[n].paper;
+            const std::size_t semi = tag.find(';');
+            const std::size_t x = tag.find('x', semi == std::string::npos ? 0 : semi);
+            if (semi != std::string::npos && x != std::string::npos && semi > 0) {
+                const double pw = std::strtod(tag.c_str() + semi + 1, nullptr);
+                const double ph = std::strtod(tag.c_str() + x + 1, nullptr);
+                if (std::abs(pw - w) < 0.5 && std::abs(ph - h) < 0.5)
+                    paper = tag.substr(0, semi);
+            }
+        }
+        text += "L\t" + std::to_string(uid) + "\t" + name + "\t" + paper + "\t" +
+                (w > h ? "1" : "0") + "\t" + num(w) + "\t" + num(h) + "\t" +
+                std::to_string(sh.content.value) + "\t" + setupName + "\n";
         for (const SheetViewport& v : sh.viewports) {
             // The sheet's own overall viewport covers the whole paper: not a window on the model.
             if (v.max.x - v.min.x >= 0.95 * w && v.max.y - v.min.y >= 0.95 * h)
@@ -3229,6 +3257,40 @@ Result<ImportResult> Importer::run() {
             }
             tx.commit();
         }
+    }
+    // Dynamic parameters and assemblies of blocks, their objects named by handle.
+    if (!blockExtras_.empty()) {
+        std::unordered_map<std::uint64_t, EntityId> byHandle;
+        for (const auto& [id, handle] : srcHandles_)
+            byHandle.emplace(handle, EntityId{id});
+        Transaction tx = doc_->begin("dynamic blocks");
+        for (auto& [block, text] : blockExtras_) {
+            const BlockDef* def = doc_->block(block);
+            if (!def)
+                continue;
+            const std::unordered_set<std::uint64_t> members = [&] {
+                std::unordered_set<std::uint64_t> m;
+                for (EntityId e : def->entities)
+                    m.insert(e.value);
+                return m;
+            }();
+            const auto target = [&](std::string_view hex) {
+                const std::string h(hex);
+                char* end = nullptr;
+                const std::uint64_t v = std::strtoull(h.c_str(), &end, 16);
+                if (h.empty() || *end != '\0')
+                    return EntityId{};
+                const auto it = byHandle.find(v);
+                // Only objects of this block: a handle another program gave to something else
+                // names nothing here.
+                return it == byHandle.end() || !members.count(it->second.value) ? EntityId{}
+                                                                                : it->second;
+            };
+            (void)tx.modifyBlock(block,
+                                 [&](BlockDef& b) { detail::parseBlockExtras(text, b, target); });
+        }
+        tx.commit();
+        blockExtras_.clear();
     }
     // A dimension's or leader's TBCAD_DIM note (see Writer::writeDimExtras): DIMBREAK gaps and
     // the objects that make them, jogs, flipped arrows and associative points, the objects named

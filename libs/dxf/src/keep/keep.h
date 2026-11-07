@@ -34,6 +34,31 @@ inline constexpr std::string_view kKeptPlotSetPrefix = "dxf.plotset.";
 // Descriptions of groups: lines "name TAB description".
 inline constexpr const char* kKeptGroupDescKey = "dxf.groupdesc";
 
+// Whether a Header::custom key goes into the "tbcad.settings" XRECORD (written for every key the
+// rest of the file does not carry, so a drawing saved as DXF and opened again keeps everything).
+// Left out: the DXF bookkeeping above ("dxf."), the working state of a running command ("tmp."),
+// opaque data of other TBCAD files ("\x01"), and the keys written elsewhere: as header variables,
+// layouts and page setups, UCS rows, groups, constraints and parameters, annotation scales,
+// wipeout frame, tolerance frames (TOLERANCE), multiline styles (MLINESTYLE) and the plot
+// styles of layers and objects.
+inline bool keptAsSetting(std::string_view key) {
+    if (key.empty() || key.starts_with("dxf.") || key.starts_with("tmp.") || key[0] == '\x01')
+        return false;
+    // Object ids hidden by ISOLATE: the ids are new when the file is opened again.
+    if (key == "isolate.hidden")
+        return false;
+    static constexpr std::string_view kElsewhere[] = {
+        "tbcad.layouts",     "tbcad.pagesetups", "tbcad.ucs",          "tbcad.ucs.current",
+        "tbcad.vpnewfrozen", "tbcad.groups",     "tbcad.constraints",  "tbcad.parameters",
+        "tbcad.annoscale",   "tbcad.scalelist",  "tbcad.wipeoutframe", "tbcad.celtscale",
+        "tbcad.psltscale",   "tbcad.msltscale",  "tbcad.qtext",        "tbcad.fillmode",
+        "tbcad.attdisp",     "tbcad.mirrtext",   "tbcad.plinegen",     "tbcad.tolerances"};
+    for (std::string_view k : kElsewhere)
+        if (key == k)
+            return false;
+    return !key.starts_with("tbcad.pstyle.") && !key.starts_with("mlstyle.");  // MLINESTYLE
+}
+
 inline void packGroup(std::string& out, int code, std::string_view value) {
     out += std::to_string(code);
     out += '\t';

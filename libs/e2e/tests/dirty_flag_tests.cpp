@@ -37,7 +37,7 @@ struct Session {
         registerAllUi(uiRegistry);
         core->registerBuiltinUi(uiRegistry);
         core->setViewportSize(1000, 800);
-        file = dir / "work.tbcad";
+        file = dir / "work.dxf";
         core->submitText("LINE 0,0 100,50 ");
         REQUIRE(core->saveAs(file).ok());
         REQUIRE_FALSE(core->modified());
@@ -55,7 +55,7 @@ struct Session {
         edit();
         CHECK(core->modified());
         CHECK(core->anyDocumentModified());
-        CHECK(core->windowTitle().find("work.tbcad*") != std::string::npos);
+        CHECK(core->windowTitle().find("work.dxf*") != std::string::npos);
         REQUIRE(core->save().ok());
         CHECK_FALSE(core->modified());
         CHECK_FALSE(core->anyDocumentModified());

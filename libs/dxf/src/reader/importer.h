@@ -414,12 +414,16 @@ private:
         double width = 0, height = 0;  // mm as stored (0 = unknown)
         int rotation = 0;
         std::string styleSheet{};  // plot style table (group 7)
+        std::string paper{};       // our paper name (TBCAD XDATA "paper="), empty = Custom
         bool hasExtents = false;   // the paper rectangle in paper space coordinates
         Vec2 extMin{}, extMax{};
     };
     std::vector<Sheet> sheets_{};
     std::vector<LayoutRow> layoutRows_{};
     int curSheet_ = -1;  // the sheet whose block is being read (BLOCKS section)
+    // Dynamic parameters and assemblies of blocks (TBCAD XDATA "dyn:" on the BLOCK), read once
+    // every object has its id (keep/dynblock.h).
+    std::vector<std::pair<BlockId, std::string>> blockExtras_{};
 
     // diagnostics accumulated for one summary line each
     std::map<std::string, std::pair<std::size_t, int>> skippedTypes_{};  // type -> (count, line)

@@ -691,11 +691,7 @@ void SettingsDialog::files(ui::AppCore& core) {
     if (ImGui::Checkbox("Keep the previous file as .bak when saving (ISAVEBAK)", &bak))
         s.setBool("files.backup", bak);
     ImGui::Spacing();
-    int fmt = s.getString("files.defaultFormat", "dxf") == "dxf" ? 0 : 1;
-    ImGui::SetNextItemWidth(260);
-    if (ImGui::Combo("Default save format", &fmt, "DXF (.dxf)\0TBCAD (.tbcad, experimental)\0"))
-        s.setString("files.defaultFormat", fmt == 0 ? "dxf" : "tbcad");
-    ImGui::TextDisabled("A drawing opened from a .dxf file is saved back as DXF.");
+    ImGui::TextDisabled("Drawings are saved as DXF (.dxf). Old .tbcad files still open.");
     {
         static constexpr const char* kVer[] = {"auto", "r12", "r2000", "r2007"};
         const std::string cur = s.getString("files.dxfVersion", "auto");

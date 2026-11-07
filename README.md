@@ -2,8 +2,9 @@
 
 TBCAD is a free, open-source 2D drafting program for Windows, written in C++20.
 It aims to be a practical replacement for commercial 2D CAD software. It has
-its own engine, its own `.tbcad` file format, and a separate converter
-(`tbcad-convert`) for exchanging DXF files.
+its own engine and saves drawings as DXF (`.dxf`), so other CAD programs open
+them too; TBCAD's own extra data rides along inside the DXF. Old `.tbcad` files
+still open.
 
 Anyone may use, modify and redistribute TBCAD, including in closed-source
 products, under the [MIT License](LICENSE). You do not have to publish your own
