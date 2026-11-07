@@ -296,6 +296,11 @@ private:
                          std::string_view type, const std::string& shown);
     void writeMText(const Props& p, const MTextData& d, std::uint64_t owner);
     void writeInsert(const Props& p, const InsertData& d, std::uint64_t owner);
+    // An insert of a dynamic block or assembly: an INSERT of an anonymous block holding what the
+    // insert shows, with our XDATA naming the real block and its values (keep/dynblock.h).
+    void writeDynamicInsert(const Props& p, const Entity& e, std::uint64_t owner);
+    std::string dynShownBlock_{};  // set while writeInsert writes such an INSERT: the block named
+    std::string dynOfTag_{};       // the real block's name and the values text
     // A picture block (IMAGEATTACH, or an IMAGE read from DXF) is written as IMAGE + IMAGEDEF.
     bool writeImage(const Props& p, const InsertData& d, std::uint64_t owner);
     // A PDF page block (PDFATTACH, or a PDFUNDERLAY read from DXF) is written as PDFUNDERLAY +
@@ -461,6 +466,7 @@ private:
         std::string name{};
         std::uint64_t rec = 0;
         std::string body{};
+        Vec2 base{};
     };
     std::vector<DimBlock> dimBlocks_{};
     int dimCounter_ = 0;

@@ -678,37 +678,102 @@ TEST_CASE("attribute definitions and values survive an export and re-import") {
           rt.bytes.find("330\r\n", seqend));
 }
 
-TEST_CASE("a dynamic block is exported as its current geometry") {
+TEST_CASE("a dynamic block keeps its parameters through DXF and shows its state elsewhere") {
     Document doc;
     {
         auto tx = doc.begin("dynamic");
         BlockId b = tx.addBlock(BlockDef{.name = "BAR"}).value();
         EntityId line = tx.add(make(LineData{{0, 0}, {10, 0}}), b).value();
+        EntityId circle = tx.add(make(CircleData{{5, 5}, 1}), b).value();
         DynamicDef def;
         DynParam w;
         w.name = "Length";
         w.base = {0, 0};
         w.end = {10, 0};
+        w.min = 5;
+        w.max = 30;
         def.params.push_back(w);
+        DynParam v;
+        v.kind = DynParam::Kind::Visibility;
+        v.name = "Style\twith tab";
+        v.states = {"Open", "ปิด"};
+        v.stateObjects = {{line}, {circle}};
+        def.params.push_back(v);
+        DynParam lk;
+        lk.kind = DynParam::Kind::Lookup;
+        lk.name = "Size";
+        lk.states = {"เล็ก", "Large"};
+        lk.stateObjects = {{}, {}};
+        lk.lookupParams = {0};
+        lk.lookupValues = {{8}, {20}};
+        def.params.push_back(lk);
         DynAction move;
         move.kind = DynAction::Kind::Move;
         move.objects = {line};
         def.actions.push_back(move);
+        DynAction stretch;
+        stretch.kind = DynAction::Kind::Stretch;
+        stretch.frameMin = {9, -1};
+        stretch.frameMax = {11, 1};
+        stretch.objects = {line, circle};
+        def.actions.push_back(stretch);
         REQUIRE(tx.modifyBlock(b, [&](BlockDef& d) { d.dynamic = std::move(def); }).ok());
         InsertData ins{b, {100, 0}, {1, 1}, 0};
-        ins.dynValues = {13};
+        ins.dynValues = {13, 0, 1};
         REQUIRE(tx.add(make(ins)).ok());
         tx.commit();
     }
     RoundTrip rt = roundTrip(doc);
     std::string text = rt.bytes;
     text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
-    // no INSERT of the dynamic block; the line of the current state is in the model space
-    CHECK(text.find("\nINSERT\n") == std::string::npos);
-    CHECK(text.find("\n10\n103.0") != std::string::npos);
+    // Other programs see an INSERT of a block drawn in the current state.
+    CHECK(text.find("\nINSERT\n") != std::string::npos);
+    CHECK(text.find("dynof=BAR") != std::string::npos);
+    CHECK(text.find("\n2\n*TB") != std::string::npos);
+
+    const Document& back = *rt.back;
+    const BlockDef* def = back.blockByName("BAR");
+    REQUIRE((def && def->dynamic));
+    REQUIRE(def->entities.size() == 2);
+    const DynamicDef& d = *def->dynamic;
+    REQUIRE(d.params.size() == 3);
+    CHECK(d.params[0].name == "Length");
+    CHECK(d.params[0].end.x == 10);
+    CHECK(d.params[0].max == 30);
+    CHECK(d.params[1].kind == DynParam::Kind::Visibility);
+    CHECK(d.params[1].name == "Style\twith tab");
+    CHECK(d.params[1].states == std::vector<std::string>{"Open", "ปิด"});
+    REQUIRE(d.params[1].stateObjects.size() == 2);
+    CHECK(d.params[1].stateObjects[0] == std::vector<EntityId>{def->entities[0]});
+    CHECK(d.params[1].stateObjects[1] == std::vector<EntityId>{def->entities[1]});
+    CHECK(d.params[2].lookupParams == std::vector<int>{0});
+    CHECK(d.params[2].lookupValues == std::vector<std::vector<double>>{{8}, {20}});
+    REQUIRE(d.actions.size() == 2);
+    CHECK(d.actions[0].kind == DynAction::Kind::Move);
+    CHECK(d.actions[1].frameMax.x == 11);
+    CHECK(d.actions[1].objects == def->entities);
+    int inserts = 0;
+    back.forEachEntity([&](const Entity& e) {
+        if (const auto* i = entityAs<InsertData>(e)) {
+            ++inserts;
+            CHECK(i->block == def->id);
+            CHECK(i->position.x == 100);
+            CHECK(i->dynValues == std::vector<double>{13, 0, 1});
+        }
+    });
+    CHECK(inserts == 1);
+    // The stand-in block is not brought back.
+    for (const auto& [id, b] : back.blocks())
+        CHECK(b.name.rfind("*TB", 0) != 0);
+    CHECK(rt.diff.empty());
+
+    // Opened and saved again, the file stays the same.
+    RoundTrip again = roundTrip(back);
+    RoundTrip third = roundTrip(*again.back);
+    CHECK(third.bytes == again.bytes);
 }
 
-TEST_CASE("an assembly is exported as its current geometry") {
+TEST_CASE("an assembly keeps its parameters, bindings and presets through DXF") {
     Document doc;
     {
         auto tx = doc.begin("assembly");
@@ -717,19 +782,61 @@ TEST_CASE("an assembly is exported as its current geometry") {
         AssemblyDef def;
         AsmParam n;
         n.kind = AsmParam::Kind::Integer;
-        n.name = "N";
+        n.name = "ความยาว";
         n.defaultNumber = 2;
+        n.min = 1;
+        n.max = 99;
         def.params.push_back(n);
-        (void)c;
+        AsmParam m;
+        m.kind = AsmParam::Kind::Choice;
+        m.name = "Material";
+        m.choices = {"Oak", "Pine"};
+        m.defaultText = "Oak";
+        def.params.push_back(m);
+        def.bindings.push_back(
+            AsmBinding{AsmBinding::Kind::Nested, c, "radius", "ceil(ความยาว / 5)"});
+        def.joinClass = "ชั้น";
+        def.presets.push_back(AsmPreset{
+            "long", {AsmValue{"ความยาว", false, 80, ""}, AsmValue{"Material", true, 0, "Pine"}}});
         REQUIRE(tx.modifyBlock(b, [&](BlockDef& d) { d.assembly = std::move(def); }).ok());
-        REQUIRE(tx.add(make(InsertData{b, {100, 0}, {1, 1}, 0})).ok());
+        InsertData ins{b, {100, 0}, {1, 1}, 0};
+        ins.asmValues = {AsmValue{"ความยาว", false, 42, ""}, AsmValue{"Material", true, 0, "Pine"}};
+        ins.joinOff = true;
+        REQUIRE(tx.add(make(ins)).ok());
         tx.commit();
     }
     RoundTrip rt = roundTrip(doc);
     std::string text = rt.bytes;
     text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
-    CHECK(text.find("\nINSERT\n") == std::string::npos);
+    CHECK(text.find("\nINSERT\n") != std::string::npos);
     CHECK(text.find("\nCIRCLE\n") != std::string::npos);
+    const BlockDef* def = rt.back->blockByName("SHELF");
+    REQUIRE((def && def->assembly));
+    const AssemblyDef& a = *def->assembly;
+    REQUIRE(a.params.size() == 2);
+    CHECK(a.params[0].kind == AsmParam::Kind::Integer);
+    CHECK(a.params[0].name == "ความยาว");
+    CHECK(a.params[0].max == 99);
+    CHECK(a.params[1].choices == std::vector<std::string>{"Oak", "Pine"});
+    CHECK(a.params[1].defaultText == "Oak");
+    REQUIRE(a.bindings.size() == 1);
+    CHECK(a.bindings[0].entity == def->entities.at(0));
+    CHECK(a.bindings[0].formula == "ceil(ความยาว / 5)");
+    REQUIRE(a.presets.size() == 1);
+    CHECK(a.presets[0].values[1].text == "Pine");
+    CHECK(a.joinClass == "ชั้น");
+    int inserts = 0;
+    rt.back->forEachEntity([&](const Entity& e) {
+        if (const auto* i = entityAs<InsertData>(e)) {
+            ++inserts;
+            CHECK(i->block == def->id);
+            REQUIRE(i->asmValues.size() == 2);
+            CHECK(i->asmValues[0].number == 42);
+            CHECK(i->asmValues[1].text == "Pine");
+            CHECK(i->joinOff);
+        }
+    });
+    CHECK(inserts == 1);
 }
 
 TEST_CASE("an associative array is exported as one INSERT per item") {

@@ -12,6 +12,7 @@
 #include <tuple>
 #include <unordered_set>
 
+#include "dynblock.h"
 #include "importer.h"
 #include "keep.h"
 #include "tbcad/blocks/array.h"
@@ -2310,11 +2311,14 @@ void Importer::processBlocks(RecordReader& rr) {
                     std::int64_t xrefStamp = 0;
                     bool xrefOverlay = false;
                     bool inOurs = false;
+                    std::string extras;  // "dyn:" chunks (keep/dynblock.h)
                     for (const Group& g : r.g) {
                         if (g.code == 1001) {
                             inOurs = g.str() == "TBCAD";
                         } else if (inOurs && g.code == 1000) {
                             std::string v = dec(g.str());
+                            if (detail::dynXdataAppend(extras, v, "dyn"))
+                                continue;
                             if (v.rfind("xref=", 0) == 0)
                                 xrefPath = v.substr(5);
                             else if (v.rfind("stamp=", 0) == 0)
@@ -2332,6 +2336,8 @@ void Importer::processBlocks(RecordReader& rr) {
                             b.xrefOverlay = xrefOverlay;
                         }
                     });
+                    if (!extras.empty())
+                        blockExtras_.emplace_back(id, std::move(extras));
                     ++sum_.blocks;
                     if ((r.integer(70) & 4) && xrefPath.empty()) {
                         // An external reference to another drawing: keep the path so the XREF
@@ -3251,6 +3257,40 @@ Result<ImportResult> Importer::run() {
             }
             tx.commit();
         }
+    }
+    // Dynamic parameters and assemblies of blocks, their objects named by handle.
+    if (!blockExtras_.empty()) {
+        std::unordered_map<std::uint64_t, EntityId> byHandle;
+        for (const auto& [id, handle] : srcHandles_)
+            byHandle.emplace(handle, EntityId{id});
+        Transaction tx = doc_->begin("dynamic blocks");
+        for (auto& [block, text] : blockExtras_) {
+            const BlockDef* def = doc_->block(block);
+            if (!def)
+                continue;
+            const std::unordered_set<std::uint64_t> members = [&] {
+                std::unordered_set<std::uint64_t> m;
+                for (EntityId e : def->entities)
+                    m.insert(e.value);
+                return m;
+            }();
+            const auto target = [&](std::string_view hex) {
+                const std::string h(hex);
+                char* end = nullptr;
+                const std::uint64_t v = std::strtoull(h.c_str(), &end, 16);
+                if (h.empty() || *end != '\0')
+                    return EntityId{};
+                const auto it = byHandle.find(v);
+                // Only objects of this block: a handle another program gave to something else
+                // names nothing here.
+                return it == byHandle.end() || !members.count(it->second.value) ? EntityId{}
+                                                                                : it->second;
+            };
+            (void)tx.modifyBlock(block,
+                                 [&](BlockDef& b) { detail::parseBlockExtras(text, b, target); });
+        }
+        tx.commit();
+        blockExtras_.clear();
     }
     // A dimension's or leader's TBCAD_DIM note (see Writer::writeDimExtras): DIMBREAK gaps and
     // the objects that make them, jogs, flipped arrows and associative points, the objects named

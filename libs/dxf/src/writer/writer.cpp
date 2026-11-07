@@ -8,6 +8,7 @@
 #include <sstream>
 #include <thread>
 
+#include "dynblock.h"
 #include "keep.h"
 #include "tbcad/gdt/gdt.h"
 #include "tbcad/geom/entity.h"
@@ -921,6 +922,15 @@ void Writer::blockBegin(Out& o, const std::string& name, std::uint64_t rec, Vec2
         o.str(1000, "xref=" + xref->xrefPath);
         o.str(1000, "stamp=" + std::to_string(xref->xrefStamp));
         o.i(1070, xref->xrefOverlay ? 1 : 0);
+    }
+    if (xref && !r12_ && (xref->dynamic || xref->assembly)) {
+        // Dynamic parameters and assembly (keep/dynblock.h); the objects by their handles.
+        const std::string text =
+            detail::blockExtrasText(*xref, [&](EntityId id) { return handleRef(id); });
+        if (xref->xrefPath.empty())
+            o.raw(1001, "TBCAD");
+        for (const std::string& line : detail::dynXdataLines(text, "dyn"))
+            o.str(1000, line);
     }
 }
 
@@ -2211,7 +2221,7 @@ Result<ExportResult> Writer::run() {
         // Dimension blocks may be added while the blocks above are written, so index.
         for (std::size_t i = 0; i < dimBlocks_.size(); ++i) {
             const DimBlock& b = dimBlocks_[i];
-            blockBegin(o, b.name, b.rec, {0, 0}, 1, false);
+            blockBegin(o, b.name, b.rec, b.base, 1, false);
             o.buf += b.body;
             blockEnd(o, b.rec, false);
         }
