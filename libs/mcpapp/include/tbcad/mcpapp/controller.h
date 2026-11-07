@@ -27,6 +27,8 @@ namespace tbcad::mcpapp {
 inline constexpr const char* kSettingEnabled = "mcp.enabled";                // bool, default off
 inline constexpr const char* kSettingPort = "mcp.port";                      // default 41730
 inline constexpr const char* kSettingEditPermission = "mcp.editPermission";  // ask|allow|readOnly
+// Client names the user answered "Always allow" for: they may edit without asking (policy Ask).
+inline constexpr const char* kSettingTrustedClients = "mcp.trustedClients";  // list of names
 
 enum class EditPolicy { Ask, Allow, ReadOnly };
 
@@ -68,6 +70,11 @@ public:
     void toggle() { setEnabled(!running()); }
     EditPolicy policy() const;
     void setPolicy(EditPolicy p);
+    // "Always allow" list (UI thread): remembered across sessions until forgotten.
+    std::vector<std::string> trustedClients() const;
+    bool isTrusted(const std::string& clientName) const;
+    void trustClient(const std::string& clientName);
+    void forgetClient(const std::string& clientName);
     int configuredPort() const;
     void setConfiguredPort(int port);
     // "Tools > MCP Settings..." asks the window to show the panel.
@@ -91,8 +98,9 @@ public:
     bool closeSession(const std::string& sessionId);
     std::vector<ActivityEntry> activity() const;
     std::optional<EditRequest> pendingRequest() const;
-    // Answers the dialog. `forThisSession` is implied: the decision lasts for the MCP session.
-    void answerRequest(std::uint64_t id, mcp::EditDecision decision);
+    // Answers the dialog; the decision lasts for the MCP session. `always` (with Allow) also
+    // remembers the client name so later sessions do not ask; call it on the UI thread then.
+    void answerRequest(std::uint64_t id, mcp::EditDecision decision, bool always = false);
 
     // For tests and the panel: the server and its core.
     mcp::HttpServer* server() { return server_.get(); }

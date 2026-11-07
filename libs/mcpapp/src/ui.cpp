@@ -28,7 +28,7 @@ const char* policyLabel(EditPolicy p) {
         case EditPolicy::ReadOnly:
             return "Read only";
         default:
-            return "Ask me each session";
+            return "Ask once per AI program";
     }
 }
 
@@ -57,6 +57,18 @@ void McpController::drawPanel(ui::PanelContext&) {
             if (ImGui::Selectable(policyLabel(c), c == p))
                 setPolicy(c);
         ImGui::EndCombo();
+    }
+    const auto trusted = trustedClients();
+    if (!trusted.empty()) {
+        ImGui::TextDisabled("Always allowed (no question):");
+        for (const std::string& n : trusted) {
+            ImGui::PushID(n.c_str());
+            ImGui::BulletText("%s", n.c_str());
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Forget"))
+                forgetClient(n);
+            ImGui::PopID();
+        }
     }
     if (portText_.empty())
         portText_ = std::to_string(configuredPort());
@@ -128,9 +140,16 @@ void McpController::drawDialogs() {
             "MCP edit request", nullptr,
             ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
         ImGui::Text("%s wants to change your drawing.", clientLine(req->client).c_str());
-        ImGui::TextDisabled("Every change is one step you can undo. It asks again next session.");
+        ImGui::TextDisabled("Every change is one step you can undo.");
+        ImGui::TextDisabled("\"Always allow\" remembers it; Tools > MCP Settings can forget it.");
         ImGui::Spacing();
-        if (ImGui::Button("Allow")) {
+        if (ImGui::Button("Always allow")) {
+            answerRequest(req->id, mcp::EditDecision::Allow, true);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SetItemDefaultFocus();
+        ImGui::SameLine();
+        if (ImGui::Button("Allow this time")) {
             answerRequest(req->id, mcp::EditDecision::Allow);
             ImGui::CloseCurrentPopup();
         }
