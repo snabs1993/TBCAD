@@ -7,6 +7,7 @@
 // clang-format on
 
 #include <algorithm>
+#include <climits>
 #include <cmath>
 #include <cstdint>
 #include <memory>
@@ -209,15 +210,78 @@ void applySheetToDevMode(DEVMODEW& dm, const exportlib::PlotLayout& layout) {
     dm.dmFields &= ~static_cast<DWORD>(DM_PAPERSIZE);
 }
 
-DeviceMetrics metricsOf(HDC dc) {
+// Logical units per device pixel. Coordinates go to the driver as whole logical units, so
+// drawing in 1/16 pixel keeps text and curves smooth on drivers that record the page (PDF / XPS
+// printers, spooled EMF) or report a low resolution, instead of snapping every point to a pixel.
+constexpr int kSubPixel = 16;
+
+// Device metrics in logical units (see kSubPixel).
+DeviceMetrics metricsOf(HDC dc, int sub) {
     DeviceMetrics m;
-    m.dpiX = GetDeviceCaps(dc, LOGPIXELSX);
-    m.dpiY = GetDeviceCaps(dc, LOGPIXELSY);
-    m.pageWidthPx = GetDeviceCaps(dc, PHYSICALWIDTH);
-    m.pageHeightPx = GetDeviceCaps(dc, PHYSICALHEIGHT);
-    m.offsetXPx = GetDeviceCaps(dc, PHYSICALOFFSETX);
-    m.offsetYPx = GetDeviceCaps(dc, PHYSICALOFFSETY);
+    m.dpiX = GetDeviceCaps(dc, LOGPIXELSX) * double(sub);
+    m.dpiY = GetDeviceCaps(dc, LOGPIXELSY) * double(sub);
+    m.pageWidthPx = GetDeviceCaps(dc, PHYSICALWIDTH) * double(sub);
+    m.pageHeightPx = GetDeviceCaps(dc, PHYSICALHEIGHT) * double(sub);
+    m.offsetXPx = GetDeviceCaps(dc, PHYSICALOFFSETX) * double(sub);
+    m.offsetYPx = GetDeviceCaps(dc, PHYSICALOFFSETY) * double(sub);
     return m;
+}
+
+// Maps `sub` logical units onto one device pixel; returns 1 when the driver refuses.
+int useSubPixelUnits(HDC dc) {
+    if (SetMapMode(dc, MM_ANISOTROPIC) == 0 || !SetWindowExtEx(dc, kSubPixel, kSubPixel, nullptr) ||
+        !SetViewportExtEx(dc, 1, 1, nullptr)) {
+        SetMapMode(dc, MM_TEXT);
+        return 1;
+    }
+    SetWindowOrgEx(dc, 0, 0, nullptr);
+    SetViewportOrgEx(dc, 0, 0, nullptr);
+    return kSubPixel;
+}
+
+// The printer's own settings (with its private part), set to its finest resolution: a bare
+// DEVMODE handed to ResetDC drops the driver's settings and some drivers then print in draft.
+std::vector<BYTE> printerDevMode(const std::wstring& name) {
+    std::vector<BYTE> buf;
+    HANDLE h = nullptr;
+    if (!OpenPrinterW(const_cast<LPWSTR>(name.c_str()), &h, nullptr))
+        return buf;
+    const LONG size =
+        DocumentPropertiesW(nullptr, h, const_cast<LPWSTR>(name.c_str()), nullptr, nullptr, 0);
+    if (size >= static_cast<LONG>(sizeof(DEVMODEW))) {
+        buf.resize(static_cast<std::size_t>(size));
+        auto* dm = reinterpret_cast<DEVMODEW*>(buf.data());
+        if (DocumentPropertiesW(nullptr, h, const_cast<LPWSTR>(name.c_str()), dm, nullptr,
+                                DM_OUT_BUFFER) != IDOK)
+            buf.clear();
+    }
+    ClosePrinter(h);
+    if (buf.empty())
+        return buf;
+    auto* dm = reinterpret_cast<DEVMODEW*>(buf.data());
+    const int n = DeviceCapabilitiesW(name.c_str(), nullptr, DC_ENUMRESOLUTIONS, nullptr, dm);
+    if (n > 0) {
+        std::vector<LONG> res(static_cast<std::size_t>(n) * 2);
+        if (DeviceCapabilitiesW(name.c_str(), nullptr, DC_ENUMRESOLUTIONS,
+                                reinterpret_cast<LPWSTR>(res.data()), dm) == n) {
+            LONG bx = 0, by = 0;
+            for (int i = 0; i < n; ++i) {
+                const LONG x = res[2 * i], y = res[2 * i + 1];
+                if (x * static_cast<long long>(y) > bx * static_cast<long long>(by)) {
+                    bx = x;
+                    by = y;
+                }
+            }
+            if (bx > 0 && by > 0) {
+                dm->dmPrintQuality = static_cast<short>(std::min<LONG>(bx, SHRT_MAX));
+                dm->dmYResolution = static_cast<short>(std::min<LONG>(by, SHRT_MAX));
+                dm->dmFields |= DM_PRINTQUALITY | DM_YRESOLUTION;
+            }
+        }
+    } else if (dm->dmFields & DM_PRINTQUALITY) {
+        dm->dmPrintQuality = DMRES_HIGH;
+    }
+    return buf;
 }
 
 }  // namespace
@@ -279,6 +343,7 @@ Result<void> printSheets(const std::vector<exportlib::PlotSheet>& sheets, const 
 
     HDC dc = nullptr;
     DEVMODEW* dialogMode = nullptr;
+    std::vector<BYTE> directMode;  // printer defaults for a print without the dialog
     PRINTDLGW pd{};
     std::wstring printerName = toWide(job.printer);
     if (job.showDialog) {
@@ -332,7 +397,10 @@ Result<void> printSheets(const std::vector<exportlib::PlotSheet>& sheets, const 
             printerName = defaultPrinterName();
         if (printerName.empty())
             return Error{ErrorCode::NotFound, "No printer is installed."};
-        dc = CreateDCW(L"WINSPOOL", printerName.c_str(), nullptr, nullptr);
+        directMode = printerDevMode(printerName);
+        dc = CreateDCW(
+            L"WINSPOOL", printerName.c_str(), nullptr,
+            directMode.empty() ? nullptr : reinterpret_cast<const DEVMODEW*>(directMode.data()));
     }
     if (!dc)
         return Error{ErrorCode::Io, "Cannot open the printer."};
@@ -361,6 +429,8 @@ Result<void> printSheets(const std::vector<exportlib::PlotSheet>& sheets, const 
             // Each page gets its own paper size and orientation.
             DEVMODEW local{};
             DEVMODEW* dm = dialogMode;
+            if (!dm && !directMode.empty())
+                dm = reinterpret_cast<DEVMODEW*>(directMode.data());
             if (!dm) {
                 local.dmSize = sizeof local;
                 dm = &local;
@@ -371,8 +441,9 @@ Result<void> printSheets(const std::vector<exportlib::PlotSheet>& sheets, const 
                 result = Error{ErrorCode::Io, "The printer stopped while starting a page."};
                 break;
             }
+            const int sub = useSubPixelUnits(dc);
             GdiCanvas canvas(dc);
-            drawSheet(sheet, metricsOf(dc), canvas);
+            drawSheet(sheet, metricsOf(dc, sub), canvas);
             if (EndPage(dc) <= 0) {
                 result = Error{ErrorCode::Io, "The printer stopped while printing a page."};
                 break;
