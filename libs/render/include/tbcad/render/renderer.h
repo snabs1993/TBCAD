@@ -53,6 +53,9 @@ public:
     void setBackground(Rgba color);
     // When off every line is drawn one pixel wide. On by default.
     void setLineweightDisplay(bool on);
+    // Thin lines end on pixel centres: for an anti-aliased target, so that horizontal and
+    // vertical lines stay one sharp pixel wide. Off by default.
+    void setPixelSnap(bool on);
     void setHighlightStyle(const HighlightStyle& style);
     void setSelectionStyle(const HighlightStyle& style);
 

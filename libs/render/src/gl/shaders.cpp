@@ -7,10 +7,20 @@ layout(location = 0) in vec4 aPos;  // hi.xy, lo.xy (mm, relative to the tile or
 layout(location = 1) in float aD;   // distance along the polyline modulo the dash period
 uniform vec4 uOff;                  // tile origin - camera centre: hi.xy, lo.xy
 uniform vec2 uNdc;                  // 2 * pixelsPerMm / viewport
+uniform vec2 uViewport;             // pixels
+uniform int uSnap;                  // 1 = ends on pixel centres (sharp lines with anti-aliasing)
 out float vD;
 void main() {
     vec2 p = (aPos.xy + uOff.xy) + (aPos.zw + uOff.zw);
-    gl_Position = vec4(p * uNdc, 0.0, 1.0);
+    vec2 ndc = p * uNdc;
+    if (uSnap == 1) {
+        // A horizontal or vertical line then covers exactly one row or column of pixels
+        // instead of being smeared over two by the anti-aliasing.
+        vec2 px = (ndc * 0.5 + 0.5) * uViewport;
+        px = floor(px) + 0.5;
+        ndc = px / uViewport * 2.0 - 1.0;
+    }
+    gl_Position = vec4(ndc, 0.0, 1.0);
     vD = aD;
 }
 )GLSL";

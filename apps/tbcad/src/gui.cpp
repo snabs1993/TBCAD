@@ -5641,6 +5641,13 @@ ViewportRect Gui::frame() {
         layoutTabs(rect);
     }
     rect = tiledViewports(rect);
+    // On whole pixels, so the drawing's picture lands pixel for pixel on the screen (sharp lines).
+    if (s > 0) {
+        rect.x = std::round(rect.x * s) / s;
+        rect.y = std::round(rect.y * s) / s;
+        rect.w = std::round(rect.w * s) / s;
+        rect.h = std::round(rect.h * s) / s;
+    }
     core_.setViewportOrigin(std::lround(rect.x * s), std::lround(rect.y * s));
     core_.setViewportSize(static_cast<int>(std::lround(rect.w * s)),
                           static_cast<int>(std::lround(rect.h * s)));
