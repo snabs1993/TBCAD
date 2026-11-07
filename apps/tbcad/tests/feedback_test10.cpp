@@ -233,3 +233,33 @@ TEST_CASE("test.10: in a small window the Modify buttons past the scroll arrow s
         endAll(h);
     }
 }
+
+TEST_CASE("Keyboard layout for commands: Thai keys typed for a command and its numbers") {
+    Harness h(1920, 1080);
+    h.frame(2);
+    ImGuiIO& io = ImGui::GetIO();
+    auto enter = [&] {
+        io.AddKeyEvent(ImGuiKey_Enter, true);
+        io.AddKeyEvent(ImGuiKey_Enter, false);
+        h.frame(4);
+    };
+    // Off: a Thai letter is not a command ("ส" alone is no Thai command word either).
+    io.AddInputCharactersUTF8("ส");
+    h.frame(3);
+    enter();
+    CHECK(running(h).empty());
+    endAll(h);
+
+    h.core().setSetting("input.commandKeyboard", "thai-kedmanee");
+    h.frame(2);
+    io.AddInputCharactersUTF8("ส");  // the L key
+    h.frame(3);
+    enter();
+    REQUIRE(running(h) == "LINE");
+    io.AddInputCharactersUTF8("จมจ");  // 0,0 typed on the same keys
+    h.frame(3);
+    enter();
+    CHECK(promptText(h).find("next point") != std::string::npos);
+    endAll(h);
+    h.core().setSetting("input.commandKeyboard", "off");
+}

@@ -39,6 +39,7 @@
 #include "tbcad/ui/radial_wheel.h"
 #include "tbcad/ui/selection.h"
 #include "tbcad/ui/status_items.h"
+#include "tbcad/ui/command_keys.h"
 #include "tbcad/ui/thai_words.h"
 #include "tbcad/ui/toolbox.h"
 #include "undo_history.h"
@@ -3389,6 +3390,16 @@ int Gui::inputCallback(ImGuiInputTextCallbackData* d) {
         case ImGuiInputTextFlags_CallbackCharFilter: {
             const auto* prompt = core_.runner().prompt();
             const bool text = prompt && prompt->kind == cmd::PromptInfo::Kind::String;
+            // Keyboard layout for commands: a Thai letter typed for a command, an option or a
+            // number is read as the English key in the same place ("ส" is L). A text answer
+            // (a layer name, a block name) keeps what was typed.
+            if (!text) {
+                const std::string kb =
+                    core_.setting(ui::kCommandKeyboardSetting).value_or(std::string("off"));
+                if (kb != "off")
+                    d->EventChar = static_cast<ImWchar>(
+                        ui::commandKey(kb, d->EventChar, commandKeyboardTyping(kb)));
+            }
             if (d->EventChar == ' ' && !text) {
                 // Space ends a typed command name or answer like Enter; a text prompt keeps it.
                 // BufTextLen is not set for a char filter, so ask the edit state how much is typed.
