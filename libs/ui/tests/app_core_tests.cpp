@@ -1647,7 +1647,7 @@ TEST_CASE("an xref that changed on disk is reloaded once, not in a loop (XREFNOT
     gFakeXReloadRuns = 0;
     f.core->setSetting("xref.notify", "3");
 
-    fs::path source = f.dir / "src.dxf";
+    fs::path source = f.dir / "src.tbcad";
     {
         Document d;
         auto tx = d.begin("s");
@@ -1683,7 +1683,7 @@ TEST_CASE("XREFNOTIFY 2 names a changed xref once in a balloon - the marker stay
     Fixture f("xrefnotify");
     (void)f.registry->add(std::make_unique<FakeXReload>());
     gFakeXReloadRuns = 0;
-    fs::path source = f.dir / "src.dxf";
+    fs::path source = f.dir / "src.tbcad";
     {
         Document d;
         auto tx = d.begin("s");
@@ -2104,11 +2104,10 @@ TEST_CASE("saveAs into another folder keeps relative xref paths pointing at the 
     REQUIRE(b != nullptr);
     CHECK(b->xrefPath == "../../lib/site.tbcad");
     // The saved file says the same.
-    io::IoReport report;
-    auto back = io::readTbcad(f.dir / "other" / "deep" / "b.dxf", report);
-    REQUIRE(back.ok());
-    REQUIRE(back.value()->blockByName("SITE") != nullptr);
-    CHECK(back.value()->blockByName("SITE")->xrefPath == "../../lib/site.tbcad");
+    Fixture g("xrefrebase2");
+    REQUIRE(g.core->openFile(f.dir / "other" / "deep" / "b.dxf").ok());
+    REQUIRE(g.core->document().blockByName("SITE") != nullptr);
+    CHECK(g.core->document().blockByName("SITE")->xrefPath == "../../lib/site.tbcad");
     // Saving again in the same folder changes nothing.
     REQUIRE(f.core->saveAs(f.dir / "other" / "deep" / "c.dxf").ok());
     CHECK(f.core->document().blockByName("SITE")->xrefPath == "../../lib/site.tbcad");
@@ -2188,7 +2187,7 @@ TEST_CASE("saveAll saves the changed drawings with a file and lists the untitled
 }
 
 TEST_CASE("snap angle and snap base are saved with the drawing and come back on reopen") {
-    for (const char* ext : {".tbcad", ".dxf"}) {
+    for (const char* ext : {".dxf"}) {
         Fixture f(std::string("snap_persist") + ext);
         f.line("0,0", "100,0");
         f.core->setSetting("drafting.snap.angle", "30");

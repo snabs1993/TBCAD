@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -49,6 +50,23 @@ bool near(Vec2 a, Vec2 b, double tol = 1e-6) {
     return distance(a, b) <= tol;
 }
 
+}  // namespace
+
+namespace {
+// Reads a DXF file the way Open does.
+inline Result<std::unique_ptr<Document>> readDxfFile(const std::filesystem::path& p) {
+    std::ifstream in(p, std::ios::binary);
+    if (!in)
+        return makeError(ErrorCode::Io, "cannot read");
+    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::vector<std::byte> bytes(text.size());
+    std::memcpy(bytes.data(), text.data(), text.size());
+    dxf::Report report;
+    auto r = dxf::importDxf(bytes, dxf::ImportOptions{}, report);
+    if (!r)
+        return r.error();
+    return std::move(r.value().document);
+}
 }  // namespace
 
 TEST_CASE("clipboard commands are registered") {
@@ -244,13 +262,12 @@ TEST_CASE("WBLOCK writes the selection to a drawing file at the base point") {
     l.a = {100, 100};
     l.b = {150, 100};
     EntityId a = f.add(l);
-    const auto path = std::filesystem::temp_directory_path() / "tbcad_wblock_test.tbcad";
+    const auto path = std::filesystem::temp_directory_path() / "tbcad_wblock_test.dxf";
     std::filesystem::remove(path);
     auto r = f.host.run("WBLOCK",
                         {ScriptItem::select({a}), ScriptItem::enter(), "100,100", path.string()});
     CHECK(r.finished);
-    io::IoReport report;
-    auto doc = io::readTbcad(path, report);
+    auto doc = readDxfFile(path);
     REQUIRE(doc);
     std::size_t n = 0;
     doc.value()->forEachEntity([&](const Entity& e) {

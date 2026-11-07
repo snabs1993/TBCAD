@@ -1101,16 +1101,36 @@ Result<void> AppCore::openRecovered(const Recovery& r, bool removeAfter) {
     std::string ext = platform::pathFromUtf8(r.originalPath).extension().string();
     for (char& c : ext)
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    if (!r.originalPath.empty() && ext != ".tbcad" && ext != ".tbt" &&
-        r.autosaveFile.extension() == ".bak")
+    const bool backup = r.autosaveFile.extension() == ".bak";
+    if (!r.originalPath.empty() && ext != ".tbcad" && ext != ".tbt" && ext != ".dxf" && backup)
         return makeError(ErrorCode::Unsupported,
-                         "Only backups of .tbcad drawings open here: rename " +
+                         "Only backups of .dxf and .tbcad drawings open here: rename " +
                              platform::pathToUtf8(r.autosaveFile) + " and open it.");
-    io::IoReport report;
-    auto doc = io::readTbcad(r.autosaveFile, report);
-    if (!doc)
-        return doc.error();
-    addSession(std::move(doc.value()), {});
+    std::unique_ptr<Document> opened;
+    if (backup && ext == ".dxf") {  // the previous version of a DXF drawing (ISAVEBAK)
+        std::ifstream in(platform::longPath(r.autosaveFile), std::ios::binary);
+        if (!in)
+            return makeError(ErrorCode::Io, "Cannot read " + platform::pathToUtf8(r.autosaveFile));
+        in.seekg(0, std::ios::end);
+        std::vector<std::byte> bytes(
+            static_cast<std::size_t>(std::max<std::streamoff>(in.tellg(), 0)));
+        in.seekg(0, std::ios::beg);
+        if (!bytes.empty())
+            in.read(reinterpret_cast<char*>(bytes.data()),
+                    static_cast<std::streamsize>(bytes.size()));
+        dxf::Report dxfReport;
+        auto imported = dxf::importDxf(bytes, {}, dxfReport);
+        if (!imported)
+            return imported.error();
+        opened = std::move(imported.value().document);
+    } else {
+        io::IoReport report;
+        auto doc = io::readTbcad(r.autosaveFile, report);
+        if (!doc)
+            return doc.error();
+        opened = std::move(doc.value());
+    }
+    addSession(std::move(opened), {});
     session_->savedRevision = ~std::uint64_t{0};
     const std::string what =
         r.originalPath.empty()

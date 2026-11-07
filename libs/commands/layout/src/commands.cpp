@@ -265,10 +265,10 @@ public:
             if (!res) {
                 w = res.error();
             } else {
-                const auto& bytes = res.value().bytes;
+                const auto& dxfBytes = res.value().bytes;
                 w = io::saveTbcadBytes(
                     std::span<const std::uint8_t>(
-                        reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size()),
+                        reinterpret_cast<const std::uint8_t*>(dxfBytes.data()), dxfBytes.size()),
                     file, io::WriteOptions{.keepBackup = false});
             }
             ctx.message(w ? "Layout \"" + named.text + "\" saved to " + file.string() + "."
