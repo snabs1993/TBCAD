@@ -18,9 +18,10 @@ const Rgba kFrameColor{0, 170, 170, 255};
 
 void registerUi(ui::UiRegistry& registry) {
     registry.addMenuItem("File/Plot...", "PLOTPANEL", "file.plot");  // PLOT is the typed form
-    // Ctrl+P opens the system print window at once, as in other Windows programs (test.18: it
-    // only brought the Plot tab forward, which looked like nothing happened).
-    registry.addMenuItem("File/Print...", "PRINTER Dialog", "file.print", "Ctrl+P");
+    // Ctrl+P opens the Print window: area, scale, paper, printer and a large preview (test.18: it
+    // only brought the Plot tab forward; test.19: the system print window has no preview for this
+    // program, and the area and scale could not be picked).
+    registry.addMenuItem("File/Print...", "PRINTDIALOG", "file.print", "Ctrl+P");
     registry.addMenuItem("File/Publish...", "PUBLISH", "file.publish");
     registry.addMenuItem("File/Plot Frames...", "PLOTFRAMEPANEL", "file.plot_frames");
     registry.addMenuItem("File/Plot Style Tables...", "PLOTSTYLE", "file.plot_styles");

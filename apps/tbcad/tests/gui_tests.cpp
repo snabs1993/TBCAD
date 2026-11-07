@@ -1537,28 +1537,36 @@ TEST_CASE("layout tabs: Ctrl+PageDown and Ctrl+PageUp step Model and the layouts
     CHECK_FALSE(h.core().inPaperSpace());
 }
 
-#ifndef _WIN32  // on Windows the real print window would wait for a click
-TEST_CASE("Ctrl+P starts printing through the print window") {
+TEST_CASE("Ctrl+P opens the Print window: pick the area, then print") {
     Harness h(1920, 1080);
     h.frame(3);
     run(h, "LINE 0,0 100,0");
+    run(h, "LINE 0,0 0,80");
     h.core().pressEscape();
     h.frame(2);
-    const auto before = h.core().history().size();
+    CHECK_FALSE(h.windowOpen("Print"));
     h.key(ImGuiKey_P, true);
+    h.frame(5);
+    REQUIRE(h.windowOpen("Print"));
+    CHECK(h.has("Print", "Print"));
+    CHECK(h.has("Pick window on the drawing", "Print"));
+    // Picking the area: the window steps aside, two corners on the drawing, and it is back.
+    REQUIRE(h.click("Pick window on the drawing", "Print"));
     h.frame(3);
-    bool printed = false;
-    for (std::size_t i = before; i < h.core().history().size(); ++i) {
-        const std::string& line = h.core().history()[i];
-        // Windows sends the sheet (or reports the dialog closed); elsewhere printing is missing.
-        if (line.find("printer") != std::string::npos ||
-            line.find("Printing") != std::string::npos ||
-            line.find("cancelled") != std::string::npos)
-            printed = true;
-    }
-    CHECK(printed);
-}
+    CHECK_FALSE(h.windowOpen("Print"));
+    h.core().submitText("-10,-10");
+    h.core().submitText("60,50");
+    h.frame(5);
+    CHECK(h.windowOpen("Print"));
+    CHECK(h.core().setting("plot.area").value_or("") == "window");
+#ifndef _WIN32  // on Windows a click would really print (a PDF printer asks for a file name)
+    REQUIRE(h.click("Print", "Print/##printopts"));  // the button, not the window title
+    h.frame(2);
+    h.captureText(true);
+    h.frame(2);
+    CHECK(h.shownText().find("Printing is only available") != std::string::npos);
 #endif
+}
 
 TEST_CASE("drawing tabs: Ctrl+Tab and Ctrl+Shift+Tab switch") {
     Harness h(1920, 1080);

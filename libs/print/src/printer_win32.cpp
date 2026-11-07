@@ -10,6 +10,7 @@
 #include <climits>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 
 #include "tbcad/print/print.h"
@@ -196,16 +197,47 @@ private:
     HDC dc_;
 };
 
-// Orientation and paper of one sheet, applied to a device mode (0.1 mm units).
+// The printer's own paper of this size (portrait, 0.1 mm), within 2 mm; 0 = none. Many drivers
+// (PDF printers among them) ignore a custom size and keep their default paper.
+short matchingPaper(const wchar_t* device, LONG widthTenths, LONG lengthTenths) {
+    if (!device || !*device)
+        return 0;
+    const int n = DeviceCapabilitiesW(device, nullptr, DC_PAPERS, nullptr, nullptr);
+    if (n <= 0 || DeviceCapabilitiesW(device, nullptr, DC_PAPERSIZE, nullptr, nullptr) != n)
+        return 0;
+    std::vector<WORD> ids(static_cast<std::size_t>(n));
+    std::vector<POINT> sizes(static_cast<std::size_t>(n));
+    if (DeviceCapabilitiesW(device, nullptr, DC_PAPERS, reinterpret_cast<LPWSTR>(ids.data()),
+                            nullptr) != n ||
+        DeviceCapabilitiesW(device, nullptr, DC_PAPERSIZE, reinterpret_cast<LPWSTR>(sizes.data()),
+                            nullptr) != n)
+        return 0;
+    for (std::size_t i = 0; i < ids.size(); ++i) {
+        const LONG a = std::min(sizes[i].x, sizes[i].y), b = std::max(sizes[i].x, sizes[i].y);
+        if (std::labs(a - widthTenths) <= 20 && std::labs(b - lengthTenths) <= 20)
+            return static_cast<short>(ids[i]);
+    }
+    return 0;
+}
+
+// Orientation and paper of one sheet, applied to a device mode: the printer's own paper of that
+// size when it has one, else a custom size (0.1 mm units).
 void applySheetToDevMode(DEVMODEW& dm, const exportlib::PlotLayout& layout) {
     const bool landscape = layout.pageWidthMm > layout.pageHeightMm;
-    dm.dmFields |= DM_ORIENTATION | DM_PAPERWIDTH | DM_PAPERLENGTH;
+    dm.dmFields |= DM_ORIENTATION;
     dm.dmOrientation = landscape ? DMORIENT_LANDSCAPE : DMORIENT_PORTRAIT;
     // Paper sizes are given in portrait terms; the driver rotates for landscape.
-    dm.dmPaperWidth =
-        static_cast<short>(std::lround(std::min(layout.pageWidthMm, layout.pageHeightMm) * 10));
-    dm.dmPaperLength =
-        static_cast<short>(std::lround(std::max(layout.pageWidthMm, layout.pageHeightMm) * 10));
+    const LONG w = std::lround(std::min(layout.pageWidthMm, layout.pageHeightMm) * 10);
+    const LONG l = std::lround(std::max(layout.pageWidthMm, layout.pageHeightMm) * 10);
+    if (const short id = matchingPaper(dm.dmDeviceName, w, l); id != 0) {
+        dm.dmPaperSize = id;
+        dm.dmFields |= DM_PAPERSIZE;
+        dm.dmFields &= ~static_cast<DWORD>(DM_PAPERWIDTH | DM_PAPERLENGTH);
+        return;
+    }
+    dm.dmFields |= DM_PAPERWIDTH | DM_PAPERLENGTH;
+    dm.dmPaperWidth = static_cast<short>(w);
+    dm.dmPaperLength = static_cast<short>(l);
     dm.dmPaperSize = 0;  // custom: width and length above
     dm.dmFields &= ~static_cast<DWORD>(DM_PAPERSIZE);
 }
@@ -351,7 +383,23 @@ Result<void> printSheets(const std::vector<exportlib::PlotSheet>& sheets, const 
         pd.hwndOwner = GetActiveWindow();
         pd.Flags = PD_RETURNDC | PD_NOSELECTION | PD_NOPAGENUMS | PD_USEDEVMODECOPIESANDCOLLATE;
         pd.nCopies = static_cast<WORD>(std::clamp(job.copies, 1, 999));
-        // Open the dialog on the printer chosen in the plot settings, not the system default.
+        // Open the dialog on the printer chosen in the plot settings, not the system default,
+        // already set to the sheet's orientation and paper (test.19: it opened in portrait for a
+        // landscape sheet).
+        if (printerName.empty())
+            printerName = defaultPrinterName();
+        if (!printerName.empty()) {
+            std::vector<BYTE> initial = printerDevMode(printerName);
+            if (!initial.empty()) {
+                auto* dm = reinterpret_cast<DEVMODEW*>(initial.data());
+                applySheetToDevMode(*dm, sheets.front().layout);
+                if (HGLOBAL mem = GlobalAlloc(GHND, initial.size())) {
+                    std::copy(initial.begin(), initial.end(), static_cast<BYTE*>(GlobalLock(mem)));
+                    GlobalUnlock(mem);
+                    pd.hDevMode = mem;
+                }
+            }
+        }
         if (!printerName.empty()) {
             const std::wstring driver = L"winspool";
             const std::size_t head = sizeof(DEVNAMES) / sizeof(wchar_t);
@@ -443,7 +491,9 @@ Result<void> printSheets(const std::vector<exportlib::PlotSheet>& sheets, const 
             }
             const int sub = useSubPixelUnits(dc);
             GdiCanvas canvas(dc);
-            drawSheet(sheet, metricsOf(dc, sub), canvas);
+            DeviceMetrics metrics = metricsOf(dc, sub);
+            fitSheetToDevice(metrics, sheet.layout.pageWidthMm, sheet.layout.pageHeightMm);
+            drawSheet(sheet, metrics, canvas);
             if (EndPage(dc) <= 0) {
                 result = Error{ErrorCode::Io, "The printer stopped while printing a page."};
                 break;

@@ -168,3 +168,34 @@ TEST_CASE("the stub backend is honest about not printing") {
     CHECK(r.error().message.find("Windows") != std::string::npos);
 #endif
 }
+
+TEST_CASE("an A3 sheet on A4 paper is shrunk to fit and centred, not cut off") {
+    DeviceMetrics m;
+    m.dpiX = m.dpiY = 254;  // 10 px per mm
+    m.pageWidthPx = 2970;   // A4 landscape
+    m.pageHeightPx = 2100;
+    m.offsetXPx = 50;
+    m.offsetYPx = 50;
+    const double k = fitSheetToDevice(m, 420, 297);
+    CHECK(k == doctest::Approx(210.0 / 297.0));
+    // Corners of the sheet land inside the page (printable origin at 50,50).
+    const Vec2 lo = toDevice({0, 0}, m), hi = toDevice({420, 297}, m);
+    CHECK(lo.x + 50 >= -0.5);
+    CHECK(hi.x + 50 <= 2970.5);
+    CHECK(hi.y + 50 >= -0.5);
+    CHECK(lo.y + 50 <= 2100.5);
+    // Centred: equal room left and right, top and bottom.
+    CHECK((lo.x + 50) == doctest::Approx(2970 - (hi.x + 50)).epsilon(0.001));
+    CHECK((hi.y + 50) == doctest::Approx(2100 - (lo.y + 50)).epsilon(0.001));
+}
+
+TEST_CASE("a sheet that fits the paper is printed as it is") {
+    DeviceMetrics m;
+    m.dpiX = m.dpiY = 254;
+    m.pageWidthPx = 4200;
+    m.pageHeightPx = 2970;
+    const DeviceMetrics before = m;
+    CHECK(fitSheetToDevice(m, 420, 297) == 1);
+    CHECK(m.dpiX == before.dpiX);
+    CHECK(m.offsetXPx == before.offsetXPx);
+}

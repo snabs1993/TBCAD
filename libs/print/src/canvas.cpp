@@ -49,6 +49,23 @@ Vec2 toDevice(Vec2 p, const DeviceMetrics& m) {
     return {mmToPx(p.x, m.dpiX) - m.offsetXPx, m.pageHeightPx - mmToPx(p.y, m.dpiY) - m.offsetYPx};
 }
 
+double fitSheetToDevice(DeviceMetrics& m, double sheetWidthMm, double sheetHeightMm) {
+    if (!(m.dpiX > 0) || !(m.dpiY > 0) || !(sheetWidthMm > 0) || !(sheetHeightMm > 0) ||
+        !(m.pageWidthPx > 0) || !(m.pageHeightPx > 0))
+        return 1;
+    const double pageW = m.pageWidthPx / m.dpiX * kMmPerInch;
+    const double pageH = m.pageHeightPx / m.dpiY * kMmPerInch;
+    // 1 % slack: drivers round their paper sizes.
+    if (sheetWidthMm <= pageW * 1.01 && sheetHeightMm <= pageH * 1.01)
+        return 1;
+    const double k = std::min(pageW / sheetWidthMm, pageH / sheetHeightMm);
+    m.dpiX *= k;
+    m.dpiY *= k;
+    m.offsetXPx -= (m.pageWidthPx - mmToPx(sheetWidthMm, m.dpiX)) / 2;
+    m.offsetYPx += (m.pageHeightPx - mmToPx(sheetHeightMm, m.dpiY)) / 2;
+    return k;
+}
+
 void drawSheet(const exportlib::PlotSheet& sheet, const DeviceMetrics& m, Canvas& canvas) {
     using namespace exportlib;
     auto conv = [&](const std::vector<Vec2>& mm) {
