@@ -1190,8 +1190,12 @@ void Gui::saveAsPath(const std::filesystem::path& path) {
         const std::string cur = core_.settings().getString("files.dxfVersion", "auto");
         dxfVersionChoice_ = cur == "r12" ? 0 : (cur == "r2007" ? 2 : 1);
         dxfVersionWarnings_ = core_.dxfLossWarnings(dxfChoice(dxfVersionChoice_));
-        openDxfVersionPrompt_ = true;
-        return;
+        // DXF is the only format drawings are saved in: ask for the version only when the one
+        // set would lose something in this drawing.
+        if (!dxfVersionWarnings_.empty()) {
+            openDxfVersionPrompt_ = true;
+            return;
+        }
     }
     auto r = core_.saveAs(path);
     if (!r)
