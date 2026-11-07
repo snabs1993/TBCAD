@@ -435,8 +435,19 @@ void Gui::runAction(const std::string& action) {
         core_.zoomExtents();
     else if (action == "view.toggleCommandLine")
         showCommandLine_ = !showCommandLine_;
-    else if (action == "view.toggleProperties")
-        panelOpen_["properties"] = !panelOpen_["properties"];
+    else if (action == "view.toggleProperties") {
+        // Properties shares a tab group with Layers, which is in front after start-up. Ctrl+1 on
+        // a panel hidden behind another tab brings it to the front; only a panel already in view
+        // is closed (closing an unseen panel looked like the key did nothing).
+        if (panelOpen_["properties"] && panelShown_["properties"])
+            panelOpen_["properties"] = false;
+        else {
+            panelOpen_["properties"] = true;
+            for (const auto& panel : registry_.panels())
+                if (panel.id == "properties")
+                    focusPanel_ = panel.title;
+        }
+    }
     else if (action == "view.search")
         searchFocus_ = true;
     else if (action == "view.commandPalette") {
@@ -4831,13 +4842,16 @@ void Gui::panels() {
     dockEdgeDrop();
     for (const auto& p : registry_.panels()) {
         bool& open = panelOpen_[p.id];
-        if (!open)
+        if (!open) {
+            panelShown_[p.id] = false;
             continue;
+        }
         if (sideDock != 0) {
             ImGui::SetNextWindowDockID(sideDock, ImGuiCond_FirstUseEver);
             ImGui::SetNextWindowSize(ImVec2(320, 420), ImGuiCond_FirstUseEver);
         }
         const bool shown = ImGui::Begin(p.title.c_str(), &open);
+        panelShown_[p.id] = shown;
         keepOnScreen();
         if (shown)
             p.draw(pc);
