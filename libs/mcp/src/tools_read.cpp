@@ -217,7 +217,23 @@ ToolResult queryEntities(ToolContext& ctx, const Json& a) {
         bb.expand(p2.value());
         box = bb;
     }
-    if (const Json* ids = a.find("ids")) {
+    std::string space = argString(a, "layout");
+    if (!space.empty()) {
+        auto content = layoutContent(doc, space);
+        if (!content)
+            return ToolResult::fail(content.error().message);
+        if (const Json* ids = a.find("ids")) {
+            auto parsed = parseIds(doc, ids);
+            if (!parsed)
+                return ToolResult::fail(parsed.error().message);
+            for (EntityId id : parsed.value())
+                if (doc.ownerBlock(id) == content.value())
+                    candidates.push_back(id);
+        } else {
+            candidates = doc.block(content.value())->entities;
+        }
+        std::sort(candidates.begin(), candidates.end());
+    } else if (const Json* ids = a.find("ids")) {
         auto parsed = parseIds(doc, ids);
         if (!parsed)
             return ToolResult::fail(parsed.error().message);
@@ -568,7 +584,8 @@ void registerReadTools(ToolSet& tools) {
 
     add({"query_entities", "Find entities",
          "Entities as JSON, ordered by id. Filter by ids, kinds, layers (paths), or a bounding "
-         "box. Paginate with limit and cursor (use next_cursor from the previous page).",
+         "box; `layout` reads a layout's sheet instead of model space. Paginate with limit and "
+         "cursor (use next_cursor from the previous page).",
          tObject({{"ids", idArray()},
                   {"kinds", tArray(tEnum({"line", "circle", "arc", "polyline", "point", "ellipse",
                                           "spline", "text", "mtext", "hatch", "insert", "dimension",
@@ -579,7 +596,9 @@ void registerReadTools(ToolSet& tools) {
                   {"bbox", tArray(tPoint(), "[[x1,y1],[x2,y2]] in mm", 2)},
                   {"mode", tEnum({"inside", "crossing"}, "bbox mode, default crossing")},
                   {"limit", tInt("default 200, max 2000", 1, 2000)},
-                  {"cursor", tString("next_cursor of the previous page")}}),
+                  {"cursor", tString("next_cursor of the previous page")},
+                  {"layout", tString("search the sheet (paper space) of this layout; default: "
+                                     "model space")}}),
          outSchema({"entities", "total", "next_cursor"}), Edit::None, false, true, true,
          queryEntities});
 

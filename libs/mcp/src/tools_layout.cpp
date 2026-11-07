@@ -53,6 +53,19 @@ Result<layout::Layout> needLayout(const Document& doc, const std::string& name) 
     return *l;
 }
 
+}  // namespace
+
+Result<BlockId> layoutContent(const Document& doc, const std::string& name) {
+    auto l = needLayout(doc, name);
+    if (!l)
+        return l.error();
+    if (!doc.block(l.value().content))
+        return makeError(ErrorCode::NotFound, "layout \"" + name + "\" has no sheet block");
+    return l.value().content;
+}
+
+namespace {
+
 // "1:50", "50" or a number -> N.
 Result<double> scaleFromJson(const Json& j) {
     double n = 0;

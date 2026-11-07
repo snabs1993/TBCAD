@@ -46,6 +46,13 @@ ToolResult addEntities(ToolContext& ctx, const Json& a) {
     const auto& list = a.find("entities")->asArray();
     std::string defLayer = argString(a, "layer");
     bool create = argBool(a, "create_layers");
+    BlockId owner{};  // model space
+    if (std::string space = argString(a, "layout"); !space.empty()) {
+        auto content = layoutContent(doc, space);
+        if (!content)
+            return ToolResult::fail(content.error().message);
+        owner = content.value();
+    }
 
     auto tx = doc.begin(kAddLabel);
     std::set<std::string> wanted;
@@ -78,7 +85,7 @@ ToolResult addEntities(ToolContext& ctx, const Json& a) {
             return ToolResult::fail("entities[" + std::to_string(i) +
                                     "]: that layer is not the active layer (Active Only mode is "
                                     "on); make it current or turn Active Only off");
-        auto id = tx.add(std::move(e.value()));
+        auto id = tx.add(std::move(e.value()), owner);
         if (!id)
             return ToolResult::fail("entities[" + std::to_string(i) + "]: " + id.error().message);
         ids.push_back(id.value());
@@ -384,7 +391,9 @@ void registerEditTools(ToolSet& tools) {
                "leaders. Read the tbcad://docs/entity-json resource for the fields.",
                tObject({{"entities", tArray(entitySchema, "", 10000)},
                         {"layer", tString("default layer path for entities without one")},
-                        {"create_layers", tBool("create layers (and parents) that do not exist")}},
+                        {"create_layers", tBool("create layers (and parents) that do not exist")},
+                        {"layout", tString("draw on the sheet (paper space) of this layout, in "
+                                           "sheet mm; default: model space")}},
                        {"entities"}),
                outSchema({"ids", "count", "createdLayers"}), Edit::Document, false, false, true,
                addEntities});

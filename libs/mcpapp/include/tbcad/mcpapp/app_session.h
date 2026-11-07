@@ -33,8 +33,9 @@ public:
     void setSelection(std::vector<EntityId> ids) override { core_.setSelection(std::move(ids)); }
     mcp::FileInfo file() override;
     Result<void> save(std::optional<std::filesystem::path> as) override;
-    Result<void> open(const std::filesystem::path& path) override { return core_.openFile(path); }
-    void newDocument() override { core_.newDocument(); }
+    // Both replace the drawing of the current tab (the program itself would add a tab).
+    Result<void> open(const std::filesystem::path& path) override;
+    void newDocument() override;
     bool undo() override { return core_.undo(); }
     bool redo() override { return core_.redo(); }
     std::size_t messageCount() override { return core_.history().size(); }
@@ -47,6 +48,9 @@ public:
     void logToolCall(const mcp::ToolCallLog& log) override;
 
 private:
+    // Closes the tab of drawing `id` when another tab became the current one.
+    void closeLeftBehind(std::uint64_t id);
+
     ui::AppCore& core_;
     mcp::OwnerQueue& queue_;
     Hooks hooks_;

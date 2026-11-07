@@ -20,5 +20,6 @@ tbcad_add_tests(mcpapp
   SOURCES
     tests/main.cpp
     tests/mcpapp_tests.cpp
+    tests/mcp_tabs_tests.cpp
     tests/mcp_bulk_perf_tests.cpp
   DEPENDS tbcad_command_registry)

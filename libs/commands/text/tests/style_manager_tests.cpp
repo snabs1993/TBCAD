@@ -1,6 +1,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <filesystem>
 
 #include "tbcad/cmd/cmd.h"
 #include "tbcad/cmd/register_all.h"
@@ -109,4 +110,22 @@ TEST_CASE("fontHasThai - Sarabun has Thai letters, shape fonts have none") {
     CHECK_FALSE(text::fontHasThai("", "romans.shx"));
     const std::vector<std::string> fams = text::installedFontFamilies();
     CHECK(std::is_sorted(fams.begin(), fams.end()));
+}
+
+TEST_CASE("-STYLE Edit Font takes a bare font file name found in the font folders") {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "tbcad_style_font_dir";
+    fs::create_directories(dir);
+    const fs::path sarabun =
+        fs::path(__FILE__).parent_path() / "../../../../assets/fonts/Sarabun-Regular.ttf";
+    REQUIRE(fs::exists(sarabun));
+    fs::copy_file(sarabun, dir / "tahoma.ttf", fs::copy_options::overwrite_existing);
+    text::setFontSearchPaths({dir});
+    Fixture f;
+    f.host.run("-ST", {"New", "TH", "Edit", "TH", "Font", "tahoma.ttf", "Done", "Done"});
+    CHECK_FALSE(f.host.logContains("Font not found"));
+    CHECK(f.doc.textStyleByName("TH")->fontFile == "tahoma.ttf");
+    CHECK(text::fontAvailable("", "TAHOMA.TTF"));  // file names differ in case between systems
+    CHECK_FALSE(text::fontAvailable("", "no_such_font_123.ttf"));
+    text::setFontSearchPaths({});
 }

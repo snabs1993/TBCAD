@@ -1299,6 +1299,7 @@ void registerDimVarCommands(cmd::Registry& registry) {
         {"DIMEXO", "ExtOffset", "Extension line offset of the current dimension style"},
         {"DIMEXE", "ExtExtension", "Extension line extension of the current dimension style"},
         {"DIMRND", "RoundOff", "Round-off of the current dimension style"},
+        {"DIMTXSTY", "TextStyle", "Text style of the current dimension style"},
     };
     for (const Spec& v : kVars)
         (void)registry.add(std::make_unique<DimVarCommand>(v.name, v.key, v.help));

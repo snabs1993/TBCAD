@@ -1250,7 +1250,9 @@ Result<Entity> entityFromJson(const Document& doc, const Json& j, const EntityPa
             e.data = Indirect<SplineData>(splineFromJson(j));
         } else if (k == "text") {
             TextData t;
-            t.position = pt(j, "position");
+            // Aligned text hangs on its alignPoint: the position may be left out then.
+            t.position = !j.find("position") && j.find("alignPoint") ? pt(j, "alignPoint")
+                                                                     : pt(j, "position");
             t.height = lenOr(j, "height", 2.5);
             if (!(t.height > 0))
                 fail("height must be positive");
