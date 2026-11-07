@@ -543,6 +543,47 @@ public:
     }
 };
 
+// PRINTDIALOG: the Print window (Ctrl+P): area, scale, paper, printer and a large preview.
+class PrintDialogCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "PRINTDIALOG"; }
+    std::string_view description() const override {
+        return "Show the Print window: area, scale, paper, printer and preview";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().openPanel("print");
+        co_return;
+    }
+};
+
+// PRINTAREA: picks the window to print on the drawing (the Print window steps aside meanwhile).
+class PrintAreaCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "PRINTAREA"; }
+    std::string_view description() const override {
+        return "Pick the window to print, then show the Print window again";
+    }
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        ctx.host().closePanel("print");
+        auto a = co_await ctx.getPoint("Specify first corner of the area to print");
+        if (a.ok()) {
+            cmd::PointOptions po;
+            po.base = a.point;
+            auto b = co_await ctx.getPoint("Specify opposite corner", po);
+            if (b.ok()) {
+                PlotSettings s = loadSettings(ctx.host());
+                s.window = {};
+                s.window.expand(a.point);
+                s.window.expand(b.point);
+                s.area = PlotArea::Window;
+                saveSettings(ctx.host(), s);
+            }
+        }
+        ctx.host().openPanel("print");
+        co_return;
+    }
+};
+
 // PREVIEW: the current sheet (or the model) as it will plot, in a panel of its own.
 class PreviewCommand final : public cmd::Command {
 public:
@@ -1195,6 +1236,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<PageSetupCommand>());
     (void)registry.add(std::make_unique<PageSetupPanelCommand>());
     (void)registry.add(std::make_unique<PreviewCommand>());
+    (void)registry.add(std::make_unique<PrintDialogCommand>());
+    (void)registry.add(std::make_unique<PrintAreaCommand>());
     (void)registry.add(makePaperCheckCommand());
     (void)registry.add(makePaperFitCommand());
 }

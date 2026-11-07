@@ -86,4 +86,10 @@ Vec2 toDevice(Vec2 paperMm, const DeviceMetrics& m);
 // Draws every primitive of the sheet. Arcs are flattened to polylines.
 void drawSheet(const exportlib::PlotSheet& sheet, const DeviceMetrics& metrics, Canvas& canvas);
 
+// When the paper in the printer is smaller than the sheet (the driver kept its own paper, e.g. A4
+// for an A3 sheet), shrinks the sheet to fit the page and centres it, instead of printing it
+// anchored bottom-left with the top and right cut off. A sheet that fits is left as it is.
+// Returns the scale applied (1 = unchanged).
+double fitSheetToDevice(DeviceMetrics& metrics, double sheetWidthMm, double sheetHeightMm);
+
 }  // namespace tbcad::print

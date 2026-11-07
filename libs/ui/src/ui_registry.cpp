@@ -12,8 +12,24 @@ bool UiRegistry::addPanel(std::string id, std::string title, PanelDrawFn draw,
         return false;
     if (std::any_of(panels_.begin(), panels_.end(), [&](const PanelInfo& p) { return p.id == id; }))
         return false;
-    panels_.push_back({std::move(id), std::move(title), std::move(draw), visibleByDefault});
+    PanelInfo info;
+    info.id = std::move(id);
+    info.title = std::move(title);
+    info.draw = std::move(draw);
+    info.visibleByDefault = visibleByDefault;
+    panels_.push_back(std::move(info));
     return true;
+}
+
+bool UiRegistry::setPanelFloating(const std::string& id, float width, float height) {
+    for (PanelInfo& p : panels_)
+        if (p.id == id) {
+            p.floating = true;
+            p.floatWidth = width;
+            p.floatHeight = height;
+            return true;
+        }
+    return false;
 }
 
 bool UiRegistry::addMenuItem(std::string path, std::string commandName, std::string actionId,

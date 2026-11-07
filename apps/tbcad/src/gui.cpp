@@ -34,12 +34,12 @@
 #include "tbcad/platform/file_dialog.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/text/text.h"
+#include "tbcad/ui/command_keys.h"
 #include "tbcad/ui/customize.h"
 #include "tbcad/ui/drag_payload.h"
 #include "tbcad/ui/radial_wheel.h"
 #include "tbcad/ui/selection.h"
 #include "tbcad/ui/status_items.h"
-#include "tbcad/ui/command_keys.h"
 #include "tbcad/ui/thai_words.h"
 #include "tbcad/ui/toolbox.h"
 #include "undo_history.h"
@@ -442,8 +442,7 @@ void Gui::runAction(const std::string& action) {
                 if (panel.id == "properties")
                     focusPanel_ = panel.title;
         }
-    }
-    else if (action == "view.search")
+    } else if (action == "view.search")
         searchFocus_ = true;
     else if (action == "view.commandPalette") {
         showCommandLine_ = true;
@@ -4848,11 +4847,23 @@ void Gui::panels() {
             panelShown_[p.id] = false;
             continue;
         }
-        if (sideDock != 0) {
+        ImGuiWindowFlags flags = 0;
+        if (p.floating) {
+            // A window of its own in the middle of the screen (the Print window), never a tab.
+            const ImGuiViewport* vp = ImGui::GetMainViewport();
+            const ImVec2 size(std::min(p.floatWidth, vp->WorkSize.x * 0.95f),
+                              std::min(p.floatHeight, vp->WorkSize.y * 0.95f));
+            ImGui::SetNextWindowSize(size, ImGuiCond_Appearing);
+            ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f,
+                                           vp->WorkPos.y + vp->WorkSize.y * 0.5f),
+                                    ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+            ImGui::SetNextWindowDockID(0, ImGuiCond_Always);
+            flags |= ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoCollapse;
+        } else if (sideDock != 0) {
             ImGui::SetNextWindowDockID(sideDock, ImGuiCond_FirstUseEver);
             ImGui::SetNextWindowSize(ImVec2(320, 420), ImGuiCond_FirstUseEver);
         }
-        const bool shown = ImGui::Begin(p.title.c_str(), &open);
+        const bool shown = ImGui::Begin(p.title.c_str(), &open, flags);
         panelShown_[p.id] = shown;
         keepOnScreen();
         if (shown)

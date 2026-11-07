@@ -10,6 +10,8 @@
 
 #include "panel.h"
 #include "tbcad/layout/layout.h"
+#include "tbcad/layout/plotframes.h"
+#include "tbcad/platform/file_dialog.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/plot/plot.h"
 
@@ -677,6 +679,24 @@ void drawPageSetups(ui::PanelContext& pc) {
 }
 
 // PREVIEW: the sheet as it will plot, as large as the panel allows.
+// Sends one built sheet to the printer of the plot settings; returns the line for the user.
+std::string sendToPrinter(cmd::IHost& host, const exportlib::PlotSheet& sheet, bool dialog) {
+    if (!print::available())
+        return "Printing is only available in the Windows version. Use PLOT to make a PDF.";
+    if (dialog && !platform::nativeDialogsAvailable())
+        return "Printing cancelled.";
+    print::PrintJob job = printJob(host, dialog);
+    std::string picked;
+    job.chosenPrinter = &picked;
+    auto r = print::printSheet(sheet, job);
+    if (!picked.empty())
+        host.setSetting("plot.printer", picked);
+    std::string msg = r ? "Sent " + std::to_string(sheet.entityCount) + " objects to the printer."
+                        : r.error().message;
+    host.print(msg);
+    return msg;
+}
+
 void drawPlotPreview(ui::PanelContext& pc) {
     static exportlib::PlotSheet sheet;
     static std::string error;
@@ -718,6 +738,19 @@ void drawPlotPreview(ui::PanelContext& pc) {
     ImGui::SameLine();
     if (ImGui::Button("Plot..."))
         pc.host->openPanel("plot");
+    // Ctrl+P lands here: look at the sheet, then print it (test.19: the system print window shows
+    // no preview of its own for this program).
+    static std::string printed;
+    if (error.empty() && !sheet.prims.empty()) {
+        ImGui::SameLine();
+        if (ImGui::Button("Print"))
+            printed = sendToPrinter(*pc.host, sheet, false);
+        ImGui::SameLine();
+        if (ImGui::Button("Print dialog..."))
+            printed = sendToPrinter(*pc.host, sheet, true);
+    }
+    if (!printed.empty())
+        ImGui::TextWrapped("%s", printed.c_str());
     if (!error.empty()) {
         ImGui::TextDisabled("%s", error.c_str());
         return;
@@ -728,12 +761,211 @@ void drawPlotPreview(ui::PanelContext& pc) {
     drawPreview(sheet, {avail.x, std::max(120.0f, avail.y)});
 }
 
+// ---- Print window (Ctrl+P) ----------------------------------------------------------------------
+// One window with what a print needs: what to print, the area (picked on the drawing too), scale,
+// paper, orientation, printer and a large preview. Floats over the drawing instead of being one
+// more narrow side tab (test.19: "no preview", "cannot pick the area or the scale").
+
+void drawPrintWindow(ui::PanelContext& pc) {
+    static exportlib::PlotSheet sheet;
+    static std::string error, builtKey, frameName, result;
+    static std::uint64_t builtRevision = ~0ull;
+    if (!pc.doc || !pc.host)
+        return;
+    cmd::IHost& host = *pc.host;
+    PlotSettings s = loadSettings(host);
+    bool changed = false;
+
+    const float leftW = std::min(340.0f, ImGui::GetContentRegionAvail().x * 0.42f);
+    ImGui::BeginChild("##printopts", ImVec2(leftW, 0), ImGuiChildFlags_None);
+    ImGui::PushItemWidth(-1);
+
+    ImGui::TextDisabled("What to print");
+    const std::string layoutName = plotLayout(host);
+    if (ImGui::BeginCombo("##what", layoutName.empty() ? "Model" : layoutName.c_str())) {
+        if (ImGui::Selectable("Model", layoutName.empty()))
+            setPlotLayout(host, "");
+        for (const auto& l : layout::layouts(*pc.doc))
+            if (ImGui::Selectable(l.name.c_str(), l.name == layoutName)) {
+                setPlotLayout(host, l.name);
+                (void)followPlottedLayoutSetup(*pc.doc, host);
+                state().loaded = false;
+            }
+        ImGui::EndCombo();
+    }
+
+    if (layoutName.empty()) {
+        ImGui::Spacing();
+        ImGui::TextDisabled("Area");
+        const auto frames = layout::plotFrames(*pc.doc);
+        if (s.area != PlotArea::Window)
+            frameName.clear();
+        std::string label = s.area == PlotArea::Extents   ? "Whole drawing"
+                            : s.area == PlotArea::Display ? "What is on screen"
+                            : !frameName.empty()          ? "Frame: " + frameName
+                                                          : "Window";
+        if (ImGui::BeginCombo("##area", label.c_str())) {
+            if (ImGui::Selectable("Whole drawing", s.area == PlotArea::Extents)) {
+                s.area = PlotArea::Extents;
+                changed = true;
+            }
+            if (ImGui::Selectable("What is on screen", s.area == PlotArea::Display)) {
+                s.area = PlotArea::Display;
+                changed = true;
+            }
+            if (!s.window.empty() &&
+                ImGui::Selectable("Window (last picked)",
+                                  s.area == PlotArea::Window && frameName.empty())) {
+                s.area = PlotArea::Window;
+                frameName.clear();
+                changed = true;
+            }
+            for (const auto& f : frames)
+                if (ImGui::Selectable(("Frame: " + f.name).c_str(), frameName == f.name)) {
+                    s = layout::frameSettings(*pc.doc, s, f, styleResolver(host));
+                    frameName = f.name;
+                    changed = true;
+                }
+            ImGui::EndCombo();
+        }
+        if (ImGui::Button("Pick window on the drawing", ImVec2(-1, 0)) && pc.runCommand) {
+            if (pc.cancelCommand)
+                pc.cancelCommand();
+            pc.runCommand("PRINTAREA");
+        }
+    }
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("Scale");
+    {
+        std::string scaleLabel = s.fitToPaper ? "Fit to paper" : scaleText(s);
+        if (ImGui::BeginCombo("##scale", scaleLabel.c_str())) {
+            if (ImGui::Selectable("Fit to paper", s.fitToPaper)) {
+                s.fitToPaper = true;
+                changed = true;
+            }
+            for (double n : exportlib::scalePresets()) {
+                std::string l = "1:" + std::to_string(static_cast<long long>(n));
+                if (ImGui::Selectable(l.c_str(), !s.fitToPaper && s.scaleN == n)) {
+                    s.fitToPaper = false;
+                    s.scaleN = n;
+                    changed = true;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        if (!s.fitToPaper) {
+            ImGui::TextUnformatted("1 :");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(-1);
+            if (ImGui::InputDouble("##scaleN", &s.scaleN, 0, 0, "%.6g",
+                                   ImGuiInputTextFlags_AutoSelectAll)) {
+                s.scaleN = std::max(1e-6, s.scaleN);
+                changed = true;
+            }
+        }
+    }
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("Paper");
+    if (ImGui::BeginCombo("##paper", s.paperName.c_str())) {
+        for (const auto& p : exportlib::paperSizes())
+            if (ImGui::Selectable(p.name.c_str(), p.name == s.paperName)) {
+                s.paperName = p.name;
+                changed = true;
+            }
+        ImGui::EndCombo();
+    }
+    int orient = s.landscape ? 0 : 1;
+    bool orientChanged = ImGui::RadioButton("Landscape", &orient, 0);
+    ImGui::SameLine();
+    orientChanged |= ImGui::RadioButton("Portrait", &orient, 1);
+    if (orientChanged) {
+        s.landscape = orient == 0;
+        changed = true;
+    }
+    changed |= ImGui::Checkbox("Centre on paper", &s.centerOnPaper);
+    {
+        static const char* colorNames[] = {"As displayed", "Black", "Greyscale"};
+        int color = int(s.color);
+        if (ImGui::Combo("##colour", &color, colorNames, 3)) {
+            s.color = exportlib::ColorMode(color);
+            changed = true;
+        }
+    }
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("Printer");
+    {
+        const std::string chosen = host.setting("plot.printer").value_or("");
+        if (ImGui::BeginCombo("##printer", chosen.empty() ? "Default printer" : chosen.c_str())) {
+            if (ImGui::Selectable("Default printer", chosen.empty()))
+                host.setSetting("plot.printer", "");
+            for (const auto& p : print::listPrinters())
+                if (ImGui::Selectable(p.name.c_str(), p.name == chosen))
+                    host.setSetting("plot.printer", p.name);
+            ImGui::EndCombo();
+        }
+    }
+    if (changed) {
+        saveSettings(host, s);
+        state().loaded = false;  // the Plot panel shows the same settings
+    }
+
+    ImGui::Spacing();
+    const bool ready = error.empty() && !sheet.prims.empty();
+    if (!ready)
+        ImGui::BeginDisabled();
+    if (ImGui::Button("Print", ImVec2(-1, 34)))
+        result = sendToPrinter(host, sheet, false);
+    if (ImGui::Button("Printer settings and print...", ImVec2(-1, 0)))
+        result = sendToPrinter(host, sheet, true);
+    if (!ready)
+        ImGui::EndDisabled();
+    if (ImGui::Button("More options (Plot panel)", ImVec2(-1, 0)))
+        host.openPanel("plot");
+    if (!result.empty())
+        ImGui::TextWrapped("%s", result.c_str());
+    ImGui::PopItemWidth();
+    ImGui::EndChild();
+
+    ImGui::SameLine();
+    ImGui::BeginChild("##printpreview", ImVec2(0, 0), ImGuiChildFlags_None);
+    const BBox2 view = s.area == PlotArea::Display ? viewWindow(host) : BBox2{};
+    if (s.area == PlotArea::Display)
+        s.window = view;
+    const std::string key = keyOf(s, view) + "|" + plotLayout(host) + "|" + plotStyleName(host);
+    if (key != builtKey || pc.doc->revision() != builtRevision) {
+        auto built = buildPlotSheet(*pc.doc, host, s);
+        error = built ? std::string() : built.error().message;
+        sheet = built ? std::move(built.value()) : exportlib::PlotSheet{};
+        builtKey = key;
+        builtRevision = pc.doc->revision();
+    }
+    const std::string where = layoutName.empty() ? "Model" : layoutName;
+    ImGui::Text("%s  |  %s %s  |  %s", where.c_str(), s.paperName.c_str(),
+                s.landscape ? "landscape" : "portrait",
+                s.fitToPaper ? "fit to paper" : scaleText(s).c_str());
+    if (!error.empty()) {
+        ImGui::TextDisabled("%s", error.c_str());
+    } else {
+        if (sheet.layout.overflows)
+            ImGui::TextColored({1.0f, 0.7f, 0.2f, 1.0f},
+                               "The drawing is larger than the paper at this scale.");
+        const ImVec2 avail = ImGui::GetContentRegionAvail();
+        drawPreview(sheet, {avail.x, std::max(160.0f, avail.y)});
+    }
+    ImGui::EndChild();
+}
+
 }  // namespace
 
 void registerPlotPanel(ui::UiRegistry& registry) {
     registry.addPanel("plot", "Plot", draw, false);
     registry.addPanel("pagesetup", "Page Setup Manager", drawPageSetups, false);
     registry.addPanel("plotpreview", "Plot Preview", drawPlotPreview, false);
+    registry.addPanel("print", "Print", drawPrintWindow, false);
+    registry.setPanelFloating("print", 1000, 680);
     registerStylePanel(registry);
     registerPublishPanel(registry);
     registerFramesPanel(registry);

@@ -109,6 +109,9 @@ struct PanelInfo {
     std::string title{};
     PanelDrawFn draw{};
     bool visibleByDefault = false;
+    // A window of its own over the drawing (centred, this size), never docked at the side.
+    bool floating = false;
+    float floatWidth = 0, floatHeight = 0;
 };
 
 struct MenuItemInfo {
@@ -159,6 +162,8 @@ public:
     // False (and nothing added) when the id is already taken or empty.
     bool addPanel(std::string id, std::string title, PanelDrawFn draw,
                   bool visibleByDefault = false);
+    // Shows the panel as a centred window of its own instead of a side tab.
+    bool setPanelFloating(const std::string& id, float width, float height);
     // `path` has at least a menu and a label ("Draw/Line"); nested menus use more slashes.
     bool addMenuItem(std::string path, std::string commandName, std::string actionId = {},
                      std::string defaultChord = {});
