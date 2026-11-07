@@ -1,3 +1,4 @@
+#include "tbcad/platform/file_dialog.h"
 #include "tbcad/plot/plot.h"
 #include "tbcad/print/print.h"
 
@@ -78,6 +79,13 @@ public:
                 if (r.ok())
                     ctx.host().setSetting(kCopiesKey, std::to_string(static_cast<int>(r.value)));
             } else {  // Dialog or Direct
+                // Hidden runs (tests) turn the system windows off: a print window there would
+                // wait for a click that never comes.
+                if (kw == "Dialog" && !platform::nativeDialogsAvailable()) {
+                    ctx.message(
+                        "Printing cancelled: the print window is not available here (use Direct).");
+                    continue;
+                }
                 auto sheet = buildPlotSheet(ctx.doc(), ctx.host(), loadSettings(ctx.host()));
                 if (!sheet) {
                     ctx.message(sheet.error().message);

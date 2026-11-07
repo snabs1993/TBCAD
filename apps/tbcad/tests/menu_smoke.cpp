@@ -12,6 +12,7 @@
 
 #include "tbcad/cmd/register_all.h"
 #include "tbcad/cmd/registry.h"
+#include "tbcad/platform/file_dialog.h"
 #include "tbcad/ui/app_core.h"
 #include "tbcad/ui/ui_registry.h"
 
@@ -27,6 +28,7 @@ struct Rig {
     std::unique_ptr<ui::AppCore> core;
 
     explicit Rig(const std::string& name) {
+        platform::setNativeDialogsEnabled(false);  // a system window would wait for a click
         dir = fs::temp_directory_path() / ("tbcad_menu_smoke_" + name);
         fs::remove_all(dir);
         registerAllCommands(registry);
