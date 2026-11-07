@@ -100,7 +100,7 @@ TEST_CASE("SAVE, QSAVE, SAVEAS, OPEN, NEW and CLOSE ask the window - SAVE is not
 TEST_CASE("saving a drawing asks the window for its picture for the start page") {
     Fixture f("tmpl-thumb");
     CHECK(f.core->pendingThumbnail().empty());
-    const fs::path file = f.dir / "plan.tbcad";
+    const fs::path file = f.dir / "plan.dxf";
     REQUIRE(f.core->saveAs(file).ok());
     for (int i = 0; i < 5 && f.core->sceneBuilding(); ++i)
         f.core->updateFrame();
@@ -110,7 +110,7 @@ TEST_CASE("saving a drawing asks the window for its picture for the start page")
     CHECK(png.parent_path() == f.dir / "data" / "thumbnails");
     CHECK(png.extension() == ".png");
     CHECK(png == f.core->thumbnailFile(platform::pathToUtf8(file)));
-    CHECK(png != f.core->thumbnailFile(platform::pathToUtf8(f.dir / "other.tbcad")));
+    CHECK(png != f.core->thumbnailFile(platform::pathToUtf8(f.dir / "other.dxf")));
     f.core->thumbnailTaken();
     CHECK(f.core->pendingThumbnail().empty());
     // Another drawing in front: the picture waits for its own drawing.

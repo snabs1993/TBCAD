@@ -211,7 +211,7 @@ static double heapMb() {
 TEST_CASE("perf: save and open of a big drawing keep every object") {
     Big big;
     const std::size_t count = big.core->document().modelSpaceCount();
-    const auto path = big.dir / "big.tbcad";
+    const auto path = big.dir / "big.dxf";
     auto t = std::chrono::steady_clock::now();
     auto saved = big.core->saveAs(path);
     const double saveMs = ms(t);
@@ -533,7 +533,7 @@ TEST_CASE("a drawing that is still filling in can be edited, undone and closed")
     // second document may arrive before it is done. The scene must end up equal to the drawing.
     Big big;
     const std::size_t count = big.core->document().modelSpaceCount();
-    const auto path = big.dir / "fill.tbcad";
+    const auto path = big.dir / "fill.dxf";
     REQUIRE(big.core->saveAs(path).ok());
     ui::AppCore fresh(big.registry, platform::AppPaths{big.dir / "cfg3", big.dir / "data3"});
     fresh.setViewportSize(1400, 900);

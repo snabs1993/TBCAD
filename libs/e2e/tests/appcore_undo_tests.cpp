@@ -72,7 +72,7 @@ TEST_CASE("random commands mixed with undo, redo and save keep the drawing and i
         std::vector<std::string> states{s.dump()};  // the history model: states[pos] is current
         std::size_t pos = 0;
         bool dirty = false;  // like AutoCAD: undoing back to the saved state stays modified
-        const fs::path file = s.dir / "work.tbcad";
+        const fs::path file = s.dir / "work.dxf";
 
         auto checkDerived = [&] {
             const Document& d = s.core->document();

@@ -229,6 +229,7 @@ void Writer::prepareSheets() {
         if (f.size() >= 8 && f[0] == "L") {
             Sheet s;
             s.name = f[2];
+            s.paper = f[3];
             s.w = std::strtod(f[5].c_str(), nullptr);
             s.h = std::strtod(f[6].c_str(), nullptr);
             if (!(s.w > 0) || !(s.h > 0)) {
@@ -1210,27 +1211,17 @@ std::string Writer::objectsSection() {
         if (it != custom.end() && !it->second.empty())
             sketchRec[k] = newHandle();
     }
-    // Every other TBCAD setting kept in the header (multileader and table styles, layer states and
-    // filters, view names, ...): one XRECORD of "K<key>" / "V<escaped value chunk>" lines.
-    // (Only families no other part of the file carries: header variables, groups, layouts,
-    // constraints, UCS and the like have their own places.)
-    static const char* const kSettingFamilies[] = {
-        "tbcad.mleaderstyle.",  "tbcad.mleadercurrent", "tbcad.layerstate.", "tbcad.tablestyle.",
-        "tbcad.layiso",         "tbcad.layerfilter.",   "tbcad.layergroup.", "tbcad.layerp.",
-        "tbcad.view.",          "tbcad.prop.",          "tbcad.textlayer",   "tbcad.hatchlayer",
-        "tbcad.dimlayer",       "tbcad.insbase",        "tbcad.link.",       "tbcad.lintypes",
-        "tbcad.selannodisplay", "tbcad.spell.words",    "tbcad.annonew",     "tbcad.pdfosnap",
-        "tbcad.cmdlayers.auto", "tbcad.annozones"};
+    // Every other setting kept in the header (plot frames, multileader and table styles, layer
+    // states and filters, view names, ...): one XRECORD of "K<key>" / "V<escaped value chunk>"
+    // lines. DXF is TBCAD's own save format, so nothing may be left behind: every key goes in
+    // except those other parts of the file carry (header variables, groups, layouts, constraints,
+    // UCS and the like), the DXF bookkeeping ("dxf.") and the working state of a command ("tmp.").
     std::vector<std::pair<std::string, std::string>> settings;
     if (!r12_)
         for (const auto& [key, value] : custom) {
-            if (value.empty() || value.size() >= (8u << 20))
+            if (value.empty() || value.size() >= (8u << 20) || !keptAsSetting(key))
                 continue;
-            for (const char* family : kSettingFamilies)
-                if (key.rfind(family, 0) == 0) {
-                    settings.emplace_back(key, value);
-                    break;
-                }
+            settings.emplace_back(key, value);
         }
     const std::uint64_t settingsRec = settings.empty() ? 0 : newHandle();
     std::vector<double> scaleList = annotationScaleList(doc_.header());
@@ -1848,7 +1839,8 @@ std::string Writer::objectsSection() {
     }
 
     auto layout = [&](std::uint64_t handle, const std::string& name, int tab, std::uint64_t rec,
-                      int flags, double paperW = 0, double paperH = 0) {
+                      int flags, double paperW = 0, double paperH = 0,
+                      const std::string& paperName = {}) {
         o.zero("LAYOUT");
         o.h(5, handle);
         o.raw(102, "{ACAD_REACTORS");
@@ -1912,6 +1904,15 @@ std::string Writer::objectsSection() {
         o.pt(17, {0, 1});
         o.i(76, 0);
         o.h(330, rec);
+        // The paper's name with the size it stands for ("paper=A3;420x297"): other programs keep
+        // only the size, and a name whose size was changed there is not used.
+        if (!r12_ && !paperName.empty() && paperName != "Custom" && paperW > 0 && paperH > 0 &&
+            paperName.find_first_of("\t\n;") == std::string::npos) {
+            char size[64];
+            std::snprintf(size, sizeof size, ";%.17gx%.17g", paperW, paperH);
+            o.raw(1001, "TBCAD");
+            o.str(1000, "paper=" + paperName + size);
+        }
     };
     layout(layoutModel_, "Model", 0, modelRec_, 1712);
     if (sheets_.empty()) {
@@ -1919,7 +1920,7 @@ std::string Writer::objectsSection() {
     } else {
         for (std::size_t i = 0; i < sheets_.size(); ++i)
             layout(sheets_[i].layout, sheets_[i].name, static_cast<int>(i) + 1, sheets_[i].rec, 688,
-                   sheets_[i].w, sheets_[i].h);
+                   sheets_[i].w, sheets_[i].h, sheets_[i].paper);
     }
 
     // The records kept from the source file.

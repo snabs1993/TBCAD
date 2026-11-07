@@ -414,6 +414,7 @@ private:
         double width = 0, height = 0;  // mm as stored (0 = unknown)
         int rotation = 0;
         std::string styleSheet{};  // plot style table (group 7)
+        std::string paper{};       // our paper name (TBCAD XDATA "paper="), empty = Custom
         bool hasExtents = false;   // the paper rectangle in paper space coordinates
         Vec2 extMin{}, extMax{};
     };

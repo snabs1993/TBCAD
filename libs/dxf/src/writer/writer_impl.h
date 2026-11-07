@@ -449,6 +449,7 @@ private:
         BlockId content{};
         std::vector<std::vector<std::string>> overrides{};  // the sheet's (O lines)
         double w = 420, h = 297;
+        std::string paper{};  // the paper name ("A3", "Custom", ...), kept in our XDATA
         std::uint64_t rec = 0, layout = 0;
         std::vector<SheetViewport> viewports{};
     };

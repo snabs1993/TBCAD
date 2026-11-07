@@ -30,7 +30,7 @@ F3 object snap, F7 grid, F8 ortho, F9 grid snap, F10 polar tracking. Use `OSNAP`
 - **Tool Palettes** (`PALETTES`): keep your favourite blocks and hatches as one-click tools; drag blocks from the Content Browser onto a palette.
 
 ### 6. Files
-- `Ctrl+S` saves a `.tbcad` file. `OPEN` opens one. `IMPORTDXF` / `EXPORTDXF` exchange DXF files.
+- `Ctrl+S` saves the drawing as a `.dxf` file (the only format TBCAD saves). `OPEN` opens `.dxf`, `.dwg` and old `.tbcad` files.
 - `PLOT` prints; `EXPORTPDF` writes a PDF.
 - Templates: `SAVEASTEMPLATE`, `NEWFROMTEMPLATE`. New drawings start from the default template (standard layers and styles).
 
@@ -83,7 +83,7 @@ F3 จับจุด F7 ตาราง F8 วาดตั้งฉาก (Orth
 - **Tool Palettes** (`PALETTES`): เก็บบล็อกและลายแรเงาที่ใช้บ่อยเป็นปุ่มคลิกเดียว ลากบล็อกจาก Content Browser ไปวางบนพาเลตต์ได้
 
 ### 6. ไฟล์
-- `Ctrl+S` บันทึกเป็นไฟล์ `.tbcad` `OPEN` เปิดไฟล์ `IMPORTDXF` / `EXPORTDXF` แลกเปลี่ยนไฟล์ DXF
+- `Ctrl+S` บันทึกแบบเป็นไฟล์ `.dxf` (TBCAD บันทึกเป็น DXF อย่างเดียว) `OPEN` เปิดไฟล์ `.dxf` `.dwg` และไฟล์ `.tbcad` เก่าได้
 - `PLOT` พิมพ์ `EXPORTPDF` สร้างไฟล์ PDF
 - เทมเพลต: `SAVEASTEMPLATE`, `NEWFROMTEMPLATE` แบบใหม่เริ่มจากเทมเพลตเริ่มต้น (มีเลเยอร์และสไตล์มาตรฐาน)
 

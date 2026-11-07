@@ -653,7 +653,7 @@ void Importer::processObjects(RecordReader& rr) {
             finish();
             (void)tx_->modifyHeader([&](Header& h) {
                 for (auto& [k, v] : found)
-                    if (k.rfind("tbcad.", 0) == 0)
+                    if (detail::keptAsSetting(k))
                         h.custom.emplace(k, std::move(v));  // a setting read elsewhere wins
             });
             continue;
@@ -2505,6 +2505,15 @@ void Importer::readLayoutObject(const Record& r) {
     row.height = r.num(45);
     row.rotation = static_cast<int>(r.integer(73, 0));
     row.styleSheet = dec(r.raw(7));
+    {
+        bool ours = false;
+        for (const Group& g : r.g) {
+            if (g.code == 1001)
+                ours = g.str() == "TBCAD";
+            else if (ours && g.code == 1000 && g.str().substr(0, 6) == "paper=")
+                row.paper = dec(g.str()).substr(6);  // "name;WxH", checked against the size
+        }
+    }
     if (r.has(14) && r.has(24) && r.has(15) && r.has(25)) {
         row.hasExtents = true;
         row.extMin = {r.num(14), r.num(24)};
@@ -2684,9 +2693,22 @@ void Importer::finishLayouts() {
                 setups += "S\t" + setupName + "\tstyle=" + sheet + "\n";
             }
         }
-        text += "L\t" + std::to_string(uid) + "\t" + name + "\tCustom\t" + (w > h ? "1" : "0") +
-                "\t" + num(w) + "\t" + num(h) + "\t" + std::to_string(sh.content.value) + "\t" +
-                setupName + "\n";
+        // Our paper name, while the layout still has the size it was saved with.
+        std::string paper = "Custom";
+        if (n < rows.size() && !rows[n].paper.empty()) {
+            const std::string& tag = rows[n].paper;
+            const std::size_t semi = tag.find(';');
+            const std::size_t x = tag.find('x', semi == std::string::npos ? 0 : semi);
+            if (semi != std::string::npos && x != std::string::npos && semi > 0) {
+                const double pw = std::strtod(tag.c_str() + semi + 1, nullptr);
+                const double ph = std::strtod(tag.c_str() + x + 1, nullptr);
+                if (std::abs(pw - w) < 0.5 && std::abs(ph - h) < 0.5)
+                    paper = tag.substr(0, semi);
+            }
+        }
+        text += "L\t" + std::to_string(uid) + "\t" + name + "\t" + paper + "\t" +
+                (w > h ? "1" : "0") + "\t" + num(w) + "\t" + num(h) + "\t" +
+                std::to_string(sh.content.value) + "\t" + setupName + "\n";
         for (const SheetViewport& v : sh.viewports) {
             // The sheet's own overall viewport covers the whole paper: not a window on the model.
             if (v.max.x - v.min.x >= 0.95 * w && v.max.y - v.min.y >= 0.95 * h)

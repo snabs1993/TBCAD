@@ -37,7 +37,7 @@ struct Session {
         registerAllUi(uiRegistry);
         core->registerBuiltinUi(uiRegistry);
         core->setViewportSize(1000, 800);
-        file = dir / "work.tbcad";
+        file = dir / "work.dxf";
         core->submitText("LINE 0,0 100,50 ");
         REQUIRE(core->saveAs(file).ok());
         REQUIRE_FALSE(core->modified());

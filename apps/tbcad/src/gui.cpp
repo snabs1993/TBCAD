@@ -59,23 +59,17 @@ const std::vector<platform::FileFilter>& openFilters() {
     static const std::vector<platform::FileFilter> f = {
         {"All drawings", "*.dxf;*.dwg;*.tbcad;*.tbt"},
         {"DXF drawings", "*.dxf"},
-        {"TBCAD drawings", "*.tbcad"},
+        {"Old TBCAD drawings (open only)", "*.tbcad"},
         {"DWG drawings (read-only)", "*.dwg"},
         {"Drawing Template", "*.tbt;*.dwt"}};
     return f;
 }
 
-const std::vector<platform::FileFilter>& drawingFilters(bool dxfFirst = false) {
-    static const std::vector<platform::FileFilter> tbcadFirst = {{"TBCAD drawings", "*.tbcad"},
-                                                                 {"DXF drawings", "*.dxf"},
-                                                                 {"All drawings", "*.tbcad;*.dxf"},
-                                                                 {"Drawing Template", "*.tbt"}};
-    static const std::vector<platform::FileFilter> dxfFirstList = {
-        {"DXF drawings", "*.dxf"},
-        {"TBCAD drawings", "*.tbcad"},
-        {"All drawings", "*.tbcad;*.dxf"},
-        {"Drawing Template", "*.tbt"}};
-    return dxfFirst ? dxfFirstList : tbcadFirst;
+// Save As: DXF is the only drawing format TBCAD writes (old .tbcad files still open).
+const std::vector<platform::FileFilter>& drawingFilters() {
+    static const std::vector<platform::FileFilter> f = {{"DXF drawings", "*.dxf"},
+                                                        {"Drawing Template", "*.tbt"}};
+    return f;
 }
 
 // A tree of registered menu items ("Draw/Circle/Center, Radius").
@@ -1146,7 +1140,11 @@ void Gui::drawToasts(const ViewportRect& rect) {
 }
 
 void Gui::doSave() {
-    if (!core_.hasFile() || core_.readOnlyOrigin()) {
+    std::string fileExt = core_.hasFile() ? core_.file().extension().string() : std::string();
+    std::transform(fileExt.begin(), fileExt.end(), fileExt.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    // An old .tbcad drawing is saved as DXF: Save As, with the .dxf name suggested.
+    if (!core_.hasFile() || core_.readOnlyOrigin() || fileExt == ".tbcad") {
         doSaveAs();
         return;
     }
@@ -1195,19 +1193,9 @@ void Gui::saveAsPath(const std::filesystem::path& path) {
 }
 
 void Gui::doSaveAs() {
-    std::string ext = core_.settings().getString("files.defaultFormat", "dxf");
-    if (ext != "dxf")
-        ext = "tbcad";
-    if (core_.hasFile()) {
-        std::string e = core_.file().extension().string();
-        std::transform(e.begin(), e.end(), e.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        if (e == ".dxf")
-            ext = "dxf";
-        else if (e == ".tbcad")
-            ext = "tbcad";
-    }
-    std::string suggested = core_.hasFile() ? core_.file().filename().string() : "Drawing1." + ext;
+    std::string ext = "dxf";
+    std::string suggested =
+        core_.hasFile() ? core_.file().stem().string() + "." + ext : "Drawing1." + ext;
     if (core_.readOnlyOrigin()) {  // never suggest the original (read-only) name
         ext = "dxf";
         suggested = core_.file().stem().string() + ".dxf";
@@ -1224,8 +1212,7 @@ void Gui::doSaveAs() {
     if (platform::pathToUtf8(folder).size() > 200)
         folder.clear();
     if (nativeDialogs()) {
-        if (auto p = saveDialog(drawingFilters(ext == "dxf"), "Save drawing as", ext, suggested,
-                                folder)) {
+        if (auto p = saveDialog(drawingFilters(), "Save drawing as", ext, suggested, folder)) {
             rememberFolder(*p);
             saveAsPath(*p);
             if (openDxfVersionPrompt_)
@@ -4322,7 +4309,7 @@ void Gui::startPage(const ViewportRect& rect) {
         if (ImGui::Button("Import DXF", ImVec2(110, 0)))
             doImportDxf();
         // One click to something worth looking at, for a first run with nothing to open.
-        const std::string sample = findSample("thai-house.tbcad");
+        const std::string sample = findSample("thai-house.dxf");
         if (!sample.empty() &&
             ImGui::Button("Open sample drawing", ImVec2(150 + 110 + 110 + 16, 0)))
             doOpenPath(sample);

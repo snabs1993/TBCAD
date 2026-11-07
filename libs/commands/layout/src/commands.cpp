@@ -222,8 +222,8 @@ public:
             // A drawing that holds only this layout (its sheet objects and viewports, with the
             // layers and styles of the drawing) and no model-space objects; Template reads it back.
             cmd::StringOptions fo;
-            fo.defaultValue = named.text + ".tbcad";
-            auto f = co_await ctx.getString("File to save the layout template to (.tbcad)", fo);
+            fo.defaultValue = named.text + ".dxf";
+            auto f = co_await ctx.getString("File to save the layout template to (.dxf)", fo);
             if (!f.ok())
                 co_return;
             std::string path = cmd::trim(f.text);
@@ -254,8 +254,23 @@ public:
             }
             std::filesystem::path file(std::u8string(path.begin(), path.end()));
             if (file.extension().empty())
-                file += ".tbcad";
-            auto w = io::writeTbcad(tpl, file);
+                file += ".dxf";
+            if (lower(file.extension().string()) != ".dxf") {
+                ctx.message("Use a .dxf file name (TBCAD saves drawings as DXF).");
+                co_return;
+            }
+            dxf::Report report;
+            auto res = dxf::exportDxf(tpl, dxf::ExportOptions{}, report);
+            Result<void> w{};
+            if (!res) {
+                w = res.error();
+            } else {
+                const auto& bytes = res.value().bytes;
+                w = io::saveTbcadBytes(
+                    std::span<const std::uint8_t>(
+                        reinterpret_cast<const std::uint8_t*>(bytes.data()), bytes.size()),
+                    file, io::WriteOptions{.keepBackup = false});
+            }
             ctx.message(w ? "Layout \"" + named.text + "\" saved to " + file.string() + "."
                           : "Cannot save: " + w.error().message);
         } else if (kw == "Paper") {
@@ -1503,7 +1518,7 @@ Result<std::unique_ptr<Document>> layoutDrawing(const Document& doc, const std::
 // EXPORTLAYOUT: the active layout as a new model-space drawing at paper size (millimetres). Each
 // viewport's visible model objects are copied through the viewport's scale and position; objects
 // that only partly reach a viewport are kept whole. The sheet's own objects come last, on top.
-// Written to .tbcad, or DXF when the name ends in .dxf.
+// Written as DXF.
 class ExportLayoutCommand final : public cmd::Command {
 public:
     std::string_view name() const override { return "EXPORTLAYOUT"; }
@@ -1515,7 +1530,7 @@ public:
         std::string layoutName;
         if (!requireLayout(ctx, layoutName))
             co_return;
-        const std::string def = layoutName + ".tbcad";
+        const std::string def = layoutName + ".dxf";
         auto f = co_await ctx.getString("Enter the file name <" + def + ">",
                                         cmd::StringOptions{.defaultValue = def});
         if (!f.ok())
@@ -1523,10 +1538,13 @@ public:
         std::string file = cmd::trim(f.text);
         std::filesystem::path path(std::u8string(file.begin(), file.end()));
         if (path.extension().empty()) {
-            file += ".tbcad";
+            file += ".dxf";
             path = std::filesystem::path(std::u8string(file.begin(), file.end()));
         }
-        const bool asDxf = lower(path.extension().string()) == ".dxf";
+        if (lower(path.extension().string()) != ".dxf") {
+            ctx.message("Use a .dxf file name (TBCAD saves drawings as DXF).");
+            co_return;
+        }
 
         auto out = layoutDrawing(ctx.doc(), layoutName);
         if (!out) {
@@ -1537,7 +1555,7 @@ public:
             ctx.message("Layout \"" + layoutName + "\" has nothing to write.");
             co_return;
         }
-        if (asDxf) {
+        {
             dxf::Report report;
             auto res = dxf::exportDxf(*out.value(), dxf::ExportOptions{}, report);
             if (!res) {
@@ -1553,11 +1571,6 @@ public:
                 ctx.message("Cannot write " + file + ": " + saved.error().message);
                 co_return;
             }
-        } else if (auto r =
-                       io::writeTbcad(*out.value(), path, io::WriteOptions{.keepBackup = false});
-                   !r) {
-            ctx.message("Cannot write " + file + ": " + r.error().message);
-            co_return;
         }
         ctx.message("Layout \"" + layoutName + "\" written to " + file + " (" +
                     std::to_string(out.value()->modelSpaceCount()) + " objects).");

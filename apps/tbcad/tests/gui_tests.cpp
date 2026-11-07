@@ -391,7 +391,7 @@ TEST_CASE("external references panel: attach, unload, reload, detach") {
     h.core().submitText("100,0");
     h.core().pressEscape();
     const fs::path dir = scratchDir("xref");
-    const fs::path source = dir / "source.tbcad";
+    const fs::path source = dir / "source.dxf";
     REQUIRE(h.core().saveAs(source).ok());
     h.core().newDocument();
     h.frame(3);
@@ -443,7 +443,7 @@ TEST_CASE("external references panel: tree, details, type switch, row menu and c
     h.core().submitText("100,0");
     h.core().pressEscape();
     const fs::path dir = scratchDir("xref2");
-    const fs::path source = dir / "source.tbcad";
+    const fs::path source = dir / "source.dxf";
     REQUIRE(h.core().saveAs(source).ok());
     h.core().newDocument();
     h.frame(3);
@@ -1321,13 +1321,13 @@ TEST_CASE("file dialogs: Save As and Open round trip a drawing from the keyboard
     REQUIRE(h.windowOpen("File"));
     CHECK(h.enterText("Folder", dir.string(), "File"));
     h.frame(2);
-    CHECK(h.enterText("File name", "round.tbcad", "File"));
+    CHECK(h.enterText("File name", "round.dxf", "File"));
     h.frame(2);
     if (h.windowOpen("File"))
         h.click("Save", "File");
     h.frame(5);
     CHECK_FALSE(h.windowOpen("File"));
-    CHECK(fs::exists(dir / "round.tbcad"));
+    CHECK(fs::exists(dir / "round.dxf"));
     CHECK(h.core().hasFile());
 
     // A fresh drawing is empty; Ctrl+O brings the saved one back.
@@ -1339,7 +1339,7 @@ TEST_CASE("file dialogs: Save As and Open round trip a drawing from the keyboard
     REQUIRE(h.windowOpen("File"));
     CHECK(h.enterText("Folder", dir.string(), "File"));
     h.frame(2);
-    CHECK(h.enterText("File name", "round.tbcad", "File"));
+    CHECK(h.enterText("File name", "round.dxf", "File"));
     h.frame(2);
     if (h.windowOpen("File"))
         h.click("Open", "File");
@@ -2362,7 +2362,7 @@ FullDrawing fullDrawing(Harness& h) {
     h.core().submitText("0,0");
     h.core().submitText("5");
     h.core().pressEscape();
-    const fs::path refFile = dir / "ref.tbcad";
+    const fs::path refFile = dir / "ref.dxf";
     REQUIRE(h.core().saveAs(refFile).ok());
     h.core().newDocument();
     h.frame(2);
@@ -2458,7 +2458,7 @@ FullDrawing fullDrawing(Harness& h) {
     h.core().submitText("ref");
     h.core().submitText("200,0");
     h.core().pressEscape();
-    const fs::path file = dir / "full.tbcad";
+    const fs::path file = dir / "full.dxf";
     REQUIRE(h.core().saveAs(file).ok());
     h.core().newDocument();
     h.frame(2);
@@ -2831,13 +2831,13 @@ TEST_CASE("Publish dialog: the drawing's sheets, save the list, publish one PDF"
     h.core().submitText("0,0");
     h.core().submitText("100,50");
     h.core().submitText("");
-    REQUIRE(h.core().saveAs(dir / "pub.tbcad").ok());
+    REQUIRE(h.core().saveAs(dir / "pub.dxf").ok());
     h.core().submitText("PUBLISH");
     h.frame(3);
     REQUIRE(h.windowOpen("Publish"));
     REQUIRE(h.click("Save list", "Publish"));
     h.frame(2);
-    CHECK(slurp(dir / "pub.tbdsd").find("pub.tbcad") != std::string::npos);
+    CHECK(slurp(dir / "pub.tbdsd").find("pub.dxf") != std::string::npos);
     REQUIRE(h.click("Publish to PDF", "Publish"));
     h.frame(3);
     CHECK(fs::exists(dir / "pub.pdf"));
@@ -2848,7 +2848,7 @@ TEST_CASE("Plot Frames panel: check sheets and plot them into one PDF") {
     Harness h(1920, 1080);
     for (const char* t : {"LINE", "0,0", "90000,20000", ""})
         h.core().submitText(t);
-    REQUIRE(h.core().saveAs(dir / "frames.tbcad").ok());
+    REQUIRE(h.core().saveAs(dir / "frames.dxf").ok());
     // Plots go to the folder used last (never the drawing's own).
     fs::create_directories(dir / "out");
     h.core().setSetting("plot.file.pdf", (dir / "out" / "last.pdf").string());
@@ -3035,7 +3035,7 @@ TEST_CASE(
     h.core().submitText("0,0");
     h.core().submitText("100,0");
     h.core().pressEscape();
-    REQUIRE(h.core().saveAs(dir / "one.tbcad").ok());
+    REQUIRE(h.core().saveAs(dir / "one.dxf").ok());
     h.core().submitText("CIRCLE");
     h.core().submitText("0,0");
     h.core().submitText("5");
@@ -3045,7 +3045,7 @@ TEST_CASE(
     h.core().submitText("0,0");
     h.core().submitText("0,100");
     h.core().pressEscape();
-    REQUIRE(h.core().saveAs(dir / "two.tbcad").ok());
+    REQUIRE(h.core().saveAs(dir / "two.dxf").ok());
     h.core().newDocument();
     h.frame(2);
     REQUIRE(h.core().documentCount() == 3);
@@ -3087,7 +3087,7 @@ TEST_CASE(
     h.frame(2);
     REQUIRE(h.core().activateDocument(0));
     h.frame(2);
-    REQUIRE(h.rightClick("one.tbcad", "##doctabs"));
+    REQUIRE(h.rightClick("one.dxf", "##doctabs"));
     h.frame(2);
     REQUIRE(h.click("Close Other Drawings"));
     h.frame(3);
@@ -3095,7 +3095,7 @@ TEST_CASE(
     REQUIRE(h.click("Don't Save"));
     h.frame(3);
     CHECK(h.core().documentCount() == 1);
-    CHECK(h.core().file().filename() == "one.tbcad");
+    CHECK(h.core().file().filename() == "one.dxf");
     CHECK(h.core().modified());
 
     h.core().submitText("CLOSEALL");
@@ -3250,7 +3250,7 @@ TEST_CASE("drawing tab dragged onto another window moves the drawing there") {
     app::WindowLink me(dir / "link", 5001), other(dir / "link", 5002);
     other.publish({4000, 0, 800, 600}, true);  // far off the harness window
     h.gui().setWindowLink(&me);
-    const fs::path file = dir / "move me.tbcad";
+    const fs::path file = dir / "move me.dxf";
     REQUIRE(h.core().saveAs(file));
     h.frame(3);
     const std::string title = h.core().documentTitle(0);

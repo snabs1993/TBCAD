@@ -421,7 +421,7 @@ TEST_CASE("save and open round trip") {
     auto dir = std::filesystem::temp_directory_path() / "tbcad_mcp_save";
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
-    auto file = dir / "a.tbcad";
+    auto file = dir / "a.dxf";
     std::string dumpA;
     {
         Rig r;
@@ -429,24 +429,34 @@ TEST_CASE("save and open round trip") {
         r.ok("add_entities", fourWalls());
         std::string e = r.fails("save_drawing");
         CHECK(e.find("no file") != std::string::npos);
-        e = r.fails("save_drawing", J(R"({"path":"rel.tbcad"})"));
+        e = r.fails("save_drawing", J(R"({"path":"rel.dxf"})"));
         CHECK(e.find("absolute") != std::string::npos);
         e = r.fails("save_drawing", Json(Json::Object{{"path", file.string() + ".txt"}}));
-        CHECK(e.find(".tbcad") != std::string::npos);
+        CHECK(e.find(".dxf") != std::string::npos);
+        // Drawings are saved as DXF only.
+        e = r.fails("save_drawing", Json(Json::Object{{"path", (dir / "old.tbcad").string()}}));
+        CHECK(e.find(".dxf") != std::string::npos);
+        CHECK_FALSE(std::filesystem::exists(dir / "old.tbcad"));
         r.ok("save_drawing", Json(Json::Object{{"path", file.string()}}));
         CHECK(std::filesystem::exists(file));
         CHECK_FALSE(r.session.file().modified);
-        r.ok("save_drawing", Json(Json::Object{{"path", (dir / "b.tbcad").string()}}));
+        r.ok("save_drawing", Json(Json::Object{{"path", (dir / "b.dxf").string()}}));
         e = r.fails("save_drawing", Json(Json::Object{{"path", file.string()}}));
         CHECK(e.find("overwrite") != std::string::npos);
         r.ok("save_drawing", Json(Json::Object{{"path", file.string()}, {"overwrite", true}}));
-        dumpA = r.dumpDoc();
     }
     Rig r2;
     r2.initialize();
     r2.ok("open_drawing", Json(Json::Object{{"path", file.string()}}));
-    CHECK(r2.dumpDoc() == dumpA);
-    CHECK(r2.ok("get_drawing_info").find("name")->asString() == "a.tbcad");
+    CHECK(r2.session.document().modelSpaceCount() == 4);
+    CHECK(r2.ok("get_drawing_info").find("name")->asString() == "a.dxf");
+    // Saved again and opened again, the drawing is the same.
+    dumpA = r2.dumpDoc();
+    r2.ok("save_drawing", Json(Json::Object{{"path", (dir / "c.dxf").string()}}));
+    Rig r3;
+    r3.initialize();
+    r3.ok("open_drawing", Json(Json::Object{{"path", (dir / "c.dxf").string()}}));
+    CHECK(r3.dumpDoc() == dumpA);
 
     // Unsaved changes block open/new unless discarded.
     r2.ok("add_entities", J(R"({"entities":[{"kind":"point","position":[0,0]}]})"));
