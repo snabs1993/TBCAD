@@ -598,3 +598,20 @@ TEST_CASE("DIMSCALE, DIMDEC and DIMLFAC typed as commands change the current sty
     f.host->run("DIMDEC", {"-3"});
     CHECK(f.doc.dimStyle(kDimStyleStandard)->precision == 0);
 }
+
+TEST_CASE("DIMTXSTY typed as a command sets the text style of the current dimension style") {
+    Fixture f;
+    TextStyle ts;
+    ts.name = "TH";
+    auto tx = f.doc.begin("style");
+    auto id = tx.addTextStyle(ts);
+    REQUIRE(id);
+    tx.commit();
+    CHECK(f.host->run("DIMTXSTY", {"TH"}).finished);
+    CHECK(f.doc.dimStyle(kDimStyleStandard)->textStyle == id.value());
+    // An unknown name leaves the style as it was.
+    f.host->run("DIMTXSTY", {"Nope"});
+    CHECK(f.doc.dimStyle(kDimStyleStandard)->textStyle == id.value());
+    CHECK(f.host->run("DIMTXSTY", {"Current"}).finished);
+    CHECK(f.doc.dimStyle(kDimStyleStandard)->textStyle == TextStyleId{});
+}

@@ -12,6 +12,7 @@
 #include "tbcad/mcp/headless.h"
 #include "tbcad/mcp/protocol.h"
 #include "tbcad/mcp/tools.h"
+#include "tbcad/text/text.h"
 
 using namespace tbcad;
 using namespace tbcad::mcp;
@@ -496,4 +497,118 @@ TEST_CASE("plot tools: a bad paper, scale or style table is an error, not a fall
     CHECK(std::filesystem::exists(dir / "s.pdf"));
     std::error_code ec;
     std::filesystem::remove_all(dir, ec);
+}
+
+TEST_CASE("add_entities and query_entities draw on and read a layout's sheet") {
+    Full f;
+    f.ok("create_layout", R"({"name":"A1 Sheet","paper":"A3"})");
+    Json made = f.ok("add_entities", R"({"layout":"A1 Sheet","entities":[
+        {"kind":"line","start":[10,10],"end":[410,10]},
+        {"kind":"text","position":[300,20],"height":5,"value":"TITLE"}]})");
+    REQUIRE(made.find("count")->asNumber() == doctest::Approx(2));
+    const std::string lineId = made.find("ids")->asArray()[0].asString();
+    // Not in model space.
+    CHECK(f.ok("query_entities").find("total")->asNumber() == doctest::Approx(0));
+    Json sheet = f.ok("query_entities", R"({"layout":"A1 Sheet"})");
+    CHECK(sheet.find("total")->asNumber() == doctest::Approx(2));
+    CHECK(sheet.find("entities")->asArray()[0].find("id")->asString() == lineId);
+    Json boxed = f.ok("query_entities", R"({"layout":"A1 Sheet","kinds":["line"],
+        "bbox":[[0,0],[500,15]]})");
+    CHECK(boxed.find("total")->asNumber() == doctest::Approx(1));
+    CHECK(f.fails("add_entities", R"({"layout":"Nope","entities":[
+        {"kind":"line","start":[0,0],"end":[1,1]}]})")
+              .find("no layout") != std::string::npos);
+    CHECK(f.fails("query_entities", R"({"layout":"Nope"})").find("no layout") != std::string::npos);
+}
+
+TEST_CASE("create_block: retain, convert and delete all make the block") {
+    for (const char* mode : {"retain", "convert", "delete"}) {
+        CAPTURE(mode);
+        Full f;
+        const std::string a = f.add(R"({"kind":"line","start":[0,0],"end":[100,0]})");
+        const std::string b = f.add(R"({"kind":"line","start":[100,0],"end":[100,100]})");
+        Json made =
+            f.ok("create_block", std::string("{\"name\":\"TESTB\",\"ids\":[\"") + a + "\",\"" + b +
+                                     "\"],\"base\":[0,0],\"originals\":\"" + mode + "\"}");
+        CHECK(made.find("name")->asString() == "TESTB");
+        Json left = f.ok("query_entities");
+        const auto& ents = left.find("entities")->asArray();
+        if (std::string(mode) == "retain") {
+            CHECK(ents.size() == 2);
+        } else if (std::string(mode) == "convert") {
+            REQUIRE(ents.size() == 1);
+            CHECK(ents[0].find("kind")->asString() == "insert");
+        } else {
+            CHECK(ents.empty());
+        }
+    }
+}
+
+TEST_CASE("SETVAR DIMTXSTY and DIMTXT change the current dimension style") {
+    Full f;
+    f.ok("run_command", R"({"command":"-STYLE","inputs":["New","TH","Done"]})");
+    f.ok("run_command", R"({"command":"SETVAR","inputs":["DIMTXSTY","TH"]})");
+    f.ok("run_command", R"({"command":"SETVAR","inputs":["DIMTXT","3.5"]})");
+    f.ok("run_command", R"({"command":"DIMTXSTY","inputs":["TH"]})");
+    const Document& doc = f.session.document();
+    const DimStyle* st = doc.dimStyle(doc.header().currentDimStyle);
+    REQUIRE(st);
+    REQUIRE(doc.textStyleByName("TH"));
+    CHECK(st->textStyle == doc.textStyleByName("TH")->id);
+    CHECK(st->textHeight == doctest::Approx(3.5));
+}
+
+TEST_CASE("rotated aligned text turns about its alignPoint") {
+    // The text laid out unrotated, then turned about alignPoint: that is where it must be.
+    const char* hs[] = {"left", "center", "right", "middle"};
+    const char* vs[] = {"baseline", "bottom", "middle", "top"};
+    for (const char* h : hs)
+        for (const char* v : vs) {
+            if (std::string(h) == "middle" && std::string(v) != "baseline")
+                continue;  // middle is its own vertical alignment
+            Full f;
+            auto make = [&](int deg) {
+                const std::string id =
+                    f.add(std::string(
+                              R"({"kind":"text","position":[1000,500],"alignPoint":[1000,500],)") +
+                          R"("height":380,"value":"ROOM 1","hAlign":")" + h + R"(","vAlign":")" +
+                          v + R"(","rotation":{"deg":)" + std::to_string(deg) + "}}");
+                const Entity* e = f.session.document().find(EntityId{std::stoull(id)});
+                REQUIRE(e);
+                return text::layoutEntity(f.session.document(), *e).frameCorners();
+            };
+            const auto flat = make(0);
+            for (int deg : {90, 180, 270}) {
+                const std::string hv = std::string(h) + "/" + v;
+                CAPTURE(hv);
+                CAPTURE(deg);
+                const auto turned = make(deg);
+                const double a = deg * kPi / 180;
+                for (std::size_t i = 0; i < 4; ++i) {
+                    const Vec2 d = flat[i] - Vec2{1000, 500};
+                    const Vec2 want{1000 + d.x * std::cos(a) - d.y * std::sin(a),
+                                    500 + d.x * std::sin(a) + d.y * std::cos(a)};
+                    CHECK(turned[i].x == doctest::Approx(want.x).epsilon(1e-6));
+                    CHECK(turned[i].y == doctest::Approx(want.y).epsilon(1e-6));
+                }
+            }
+        }
+}
+
+TEST_CASE("two rotated centred text lines 650 apart do not overlap") {
+    Full f;
+    Json made = f.ok("add_entities", R"({"entities":[
+        {"kind":"text","alignPoint":[0,0],"height":380,"value":"BEDROOM","hAlign":"center",
+         "vAlign":"middle","rotation":{"deg":90}},
+        {"kind":"text","alignPoint":[650,0],"height":320,"value":"3.00 x 4.00","hAlign":"center",
+         "vAlign":"middle","rotation":{"deg":90}}]})");
+    const auto& ids = made.find("ids")->asArray();
+    const Document& doc = f.session.document();
+    auto box = [&](const Json& id) {
+        return text::layoutEntity(doc, *doc.find(EntityId{std::stoull(id.asString())}))
+            .worldBounds();
+    };
+    const BBox2 a = box(ids[0]), b = box(ids[1]);
+    CHECK(a.max.x < b.min.x);
+    CHECK((a.min.y + a.max.y) / 2 == doctest::Approx(0).scale(380));
 }

@@ -140,6 +140,8 @@ inline std::string pointText(Vec2 p) {
 
 // Model-space entity ids in ascending order.
 std::vector<EntityId> modelSpaceIds(const Document& doc);
+// The block that holds the sheet objects of layout `name` (paper space), or why there is none.
+Result<BlockId> layoutContent(const Document& doc, const std::string& name);
 
 // Bounding box of everything in model space (empty box when the drawing is empty).
 BBox2 drawingExtents(DrawingSession& s);

@@ -22,6 +22,30 @@ Result<void> AppSession::save(std::optional<std::filesystem::path> as) {
     return core_.save();
 }
 
+Result<void> AppSession::open(const std::filesystem::path& path) {
+    const std::uint64_t before = core_.documentId(core_.activeDocument());
+    auto r = core_.openFile(path);
+    if (r)
+        closeLeftBehind(before);
+    return r;
+}
+
+void AppSession::newDocument() {
+    const std::uint64_t before = core_.documentId(core_.activeDocument());
+    core_.newDocument();
+    closeLeftBehind(before);
+}
+
+void AppSession::closeLeftBehind(std::uint64_t id) {
+    if (core_.documentId(core_.activeDocument()) == id)
+        return;
+    for (std::size_t i = 0; i < core_.documentCount(); ++i)
+        if (core_.documentId(i) == id) {
+            core_.closeDocument(i);
+            return;
+        }
+}
+
 std::vector<std::string> AppSession::messagesSince(std::size_t mark) {
     const auto& h = core_.history();
     if (mark >= h.size())
