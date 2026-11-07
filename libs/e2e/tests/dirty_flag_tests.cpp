@@ -55,7 +55,7 @@ struct Session {
         edit();
         CHECK(core->modified());
         CHECK(core->anyDocumentModified());
-        CHECK(core->windowTitle().find("work.tbcad*") != std::string::npos);
+        CHECK(core->windowTitle().find("work.dxf*") != std::string::npos);
         REQUIRE(core->save().ok());
         CHECK_FALSE(core->modified());
         CHECK_FALSE(core->anyDocumentModified());

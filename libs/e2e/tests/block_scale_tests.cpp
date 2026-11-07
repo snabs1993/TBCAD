@@ -246,7 +246,7 @@ TEST_CASE("perf: WBLOCK of nested blocks and INSERT of the file") {
         }
         tx.commit();
     }
-    const auto file = big.dir / "part.tbcad";
+    const auto file = big.dir / "part.dxf";
     auto t = std::chrono::steady_clock::now();
     big.core->submitText("WBLOCK");
     big.core->submitText("ALL");
