@@ -17,8 +17,10 @@ const Rgba kFrameColor{0, 170, 170, 255};
 }  // namespace
 
 void registerUi(ui::UiRegistry& registry) {
-    registry.addMenuItem("File/Plot...", "PLOTPANEL", "file.plot",
-                         "Ctrl+P");  // the dialog; PLOT is the typed form
+    registry.addMenuItem("File/Plot...", "PLOTPANEL", "file.plot");  // PLOT is the typed form
+    // Ctrl+P opens the system print window at once, as in other Windows programs (test.18: it
+    // only brought the Plot tab forward, which looked like nothing happened).
+    registry.addMenuItem("File/Print...", "PRINTER Dialog", "file.print", "Ctrl+P");
     registry.addMenuItem("File/Publish...", "PUBLISH", "file.publish");
     registry.addMenuItem("File/Plot Frames...", "PLOTFRAMEPANEL", "file.plot_frames");
     registry.addMenuItem("File/Plot Style Tables...", "PLOTSTYLE", "file.plot_styles");

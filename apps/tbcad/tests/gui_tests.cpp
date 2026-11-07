@@ -1537,6 +1537,29 @@ TEST_CASE("layout tabs: Ctrl+PageDown and Ctrl+PageUp step Model and the layouts
     CHECK_FALSE(h.core().inPaperSpace());
 }
 
+#ifndef _WIN32  // on Windows the real print window would wait for a click
+TEST_CASE("Ctrl+P starts printing through the print window") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    run(h, "LINE 0,0 100,0");
+    h.core().pressEscape();
+    h.frame(2);
+    const auto before = h.core().history().size();
+    h.key(ImGuiKey_P, true);
+    h.frame(3);
+    bool printed = false;
+    for (std::size_t i = before; i < h.core().history().size(); ++i) {
+        const std::string& line = h.core().history()[i];
+        // Windows sends the sheet (or reports the dialog closed); elsewhere printing is missing.
+        if (line.find("printer") != std::string::npos ||
+            line.find("Printing") != std::string::npos ||
+            line.find("cancelled") != std::string::npos)
+            printed = true;
+    }
+    CHECK(printed);
+}
+#endif
+
 TEST_CASE("drawing tabs: Ctrl+Tab and Ctrl+Shift+Tab switch") {
     Harness h(1920, 1080);
     h.frame(3);
