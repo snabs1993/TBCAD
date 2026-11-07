@@ -1,9 +1,9 @@
-set(_plot_sources src/commands.cpp src/compare.cpp src/export_file.cpp src/frames.cpp src/print_cmd.cpp src/settings.cpp src/stamp.cpp src/transmit.cpp src/ui.cpp)
+set(_plot_sources src/commands.cpp src/compare.cpp src/export_file.cpp src/frames.cpp src/paper_check.cpp src/print_cmd.cpp src/settings.cpp src/stamp.cpp src/transmit.cpp src/ui.cpp)
 
 # The dialog panel draws with Dear ImGui, which only exists when the application is built.
 if(TBCAD_BUILD_APP)
   include(deps/imgui)
-  list(APPEND _plot_sources src/plot_panel.cpp src/publish_panel.cpp src/style_panel.cpp src/frames_panel.cpp)
+  list(APPEND _plot_sources src/plot_panel.cpp src/publish_panel.cpp src/style_panel.cpp src/frames_panel.cpp src/paper_check_panel.cpp)
 endif()
 
 tbcad_add_library(plot
@@ -22,5 +22,6 @@ tbcad_add_tests(plot
     tests/plot_command_tests.cpp
     tests/plot_content_tests.cpp
     tests/plot_frame_tests.cpp
+    tests/paper_check_tests.cpp
     tests/print_command_tests.cpp
   DEPENDS tbcad_plot tbcad::text tbcad::hatch)
