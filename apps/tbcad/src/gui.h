@@ -39,6 +39,10 @@ namespace tbcad::app {
 // Installs the platform hook that places the input method's candidate window at the text cursor.
 void installImeHook(GLFWwindow* window);
 
+// True when the system keyboard typing now is the layout `id` of "Keyboard layout for commands"
+// (Windows asks the input language; elsewhere only that layout's own letters are mapped).
+bool commandKeyboardTyping(std::string_view id);
+
 // (Re)builds the UI font atlas: Latin (Lato) merged with Thai (Sarabun) at `scale`. Needs the
 // OpenGL backend to be initialised; recreates the font texture.
 void buildFonts(float scale);
