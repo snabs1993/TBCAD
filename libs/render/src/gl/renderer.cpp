@@ -24,7 +24,7 @@ constexpr GLsizei kOverlayStride = static_cast<GLsizei>(sizeof(OverlayVertex));
 struct Program {
     GLuint id = 0;
     GLint off = -1, ndc = -1, viewport = -1, ppmm = -1, widthPx = -1, color = -1;
-    GLint patN = -1, pat = -1, patP = -1, pixelMm = -1, soft = -1;
+    GLint patN = -1, pat = -1, patP = -1, pixelMm = -1, soft = -1, snap = -1;
 };
 
 struct Texture {
@@ -103,6 +103,7 @@ bool link(Program& p, const char* vs, const char* fs, std::string& error) {
     p.patP = u("uPatP");
     p.pixelMm = u("uPixelMm");
     p.soft = u("uSoft");
+    p.snap = u("uSnap");
     return true;
 }
 
@@ -154,6 +155,7 @@ struct Renderer::Impl {
     Camera2D camera{};
     Rgba background{33, 40, 48, 255};
     bool lineweightDisplay = true;
+    bool pixelSnap = false;
     HighlightStyle highlight{{51, 153, 255, 110}, 5.0};
     HighlightStyle selection{{255, 170, 40, 120}, 5.0};
 
@@ -208,6 +210,8 @@ struct Renderer::Impl {
                         static_cast<float>(camera.viewportH));
         if (p.ppmm >= 0)
             glUniform1f(p.ppmm, static_cast<float>(camera.pixelsPerMm));
+        if (p.snap >= 0)
+            glUniform1i(p.snap, pixelSnap ? 1 : 0);
     }
 
     void setColor(const Program& p, Rgba c, bool adapt) {
@@ -439,6 +443,9 @@ const Camera2D& Renderer::camera() const {
 }
 void Renderer::setBackground(Rgba c) {
     impl_->background = c;
+}
+void Renderer::setPixelSnap(bool on) {
+    impl_->pixelSnap = on;
 }
 void Renderer::setLineweightDisplay(bool on) {
     impl_->lineweightDisplay = on;

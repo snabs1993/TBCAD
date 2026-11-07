@@ -1529,11 +1529,28 @@ void profileReport(const char* label, double gpuWaitMs, int frames) {
     gPhaseFrames = 0;
 }
 
+// Anti-aliasing samples for the drawing view: setting view.antialias (default 4, 0 or 1 = off).
+// Off in hidden test runs, so their captured pictures stay the same on every machine.
+// TBCAD_VIEW_AA=<samples> forces it, also in test runs (to look at the anti-aliased picture).
+int App::viewSamples() const {
+    const auto forced = platform::processEnvironment("TBCAD_VIEW_AA");
+    if (hidden() && !forced)
+        return 1;
+    int n = 4;
+    try {
+        n = std::stoi(forced ? *forced : core_->setting("view.antialias").value_or("4"));
+    } catch (...) {
+    }
+    return std::clamp(n, 1, 16);
+}
+
 void App::drawScene() {
     PhaseTimer pt;
     const render::Camera2D& cam = core_->camera();
+    target_.setSamples(viewSamples());
     target_.resize(cam.viewportW, cam.viewportH);
     target_.bind();
+    renderer_.setPixelSnap(target_.samples() > 1);
     renderer_.setBackground(gui_->viewportBackground());
     renderer_.setLineweightDisplay(gui_->lineweights());
     renderer_.setCamera(cam);
@@ -1564,14 +1581,17 @@ void App::drawTiles() {
             continue;
         const int w = std::max(1, static_cast<int>(std::lround(r.w * sc)));
         const int h = std::max(1, static_cast<int>(std::lround(r.h * sc)));
+        tileTargets_[i]->setSamples(viewSamples());
         tileTargets_[i]->resize(w, h);
         tileTargets_[i]->bind();
+        renderer_.setPixelSnap(tileTargets_[i]->samples() > 1);
         renderer_.setCamera(core_->tileCamera(i, w, h));
         renderer_.beginFrame();
         renderer_.draw(core_->underlayImages());
         renderer_.draw(core_->renderScene());
         renderer_.endFrame();
     }
+    renderer_.setPixelSnap(false);  // the thumbnail and capture targets are not anti-aliased
     if (gui_->inactiveTiles().empty() && !tileTargets_.empty())
         tileTargets_.clear();
 }
@@ -1580,6 +1600,7 @@ void App::renderDrawingOnce(bool finish) {
     const render::Camera2D& cam = core_->camera();
     target_.resize(cam.viewportW, cam.viewportH);
     target_.bind();
+    renderer_.setPixelSnap(target_.samples() > 1);
     renderer_.setBackground(ui::darkTheme().bgViewport);
     renderer_.setCamera(cam);
     renderer_.beginFrame();
@@ -1714,6 +1735,7 @@ void App::frame() {
     if (mcp_->consumeSettingsRequest())
         gui_->openPanel("mcp");
     const ui::AppCore& c = *core_;
+    target_.setSamples(viewSamples());
     target_.resize(c.camera().viewportW, c.camera().viewportH);
     gui_->showViewport(target_.texture(), rect);
     for (const auto& [i, r] : gui_->inactiveTiles()) {
