@@ -1,8 +1,8 @@
 # Paper-space layouts (Q30): layouts with viewports on top of core blocks and Header::custom,
 # plotted through libs/export. See docs/layout.md.
 tbcad_add_library(layout
-  SOURCES src/layout.cpp src/layout_plot.cpp src/pagesetup.cpp src/plotframes.cpp
-  DEPENDS tbcad::core tbcad::geom tbcad::export tbcad::blocks tbcad::text)
+  SOURCES src/layout.cpp src/layout_plot.cpp src/pagesetup.cpp src/plotframes.cpp src/paper_size.cpp
+  DEPENDS tbcad::core tbcad::geom tbcad::export tbcad::blocks tbcad::text tbcad::dim)
 
 tbcad_add_tests(layout
   SOURCES
@@ -11,4 +11,5 @@ tbcad_add_tests(layout
     tests/pagesetup_tests.cpp
     tests/sheet_layer_tests.cpp
     tests/plotframes_tests.cpp
+    tests/paper_size_tests.cpp
   DEPENDS tbcad::pdf tbcad::io tbcad::blocks tbcad::dxf)

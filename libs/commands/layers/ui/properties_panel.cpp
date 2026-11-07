@@ -14,6 +14,7 @@
 #include "tbcad/layers/layer_ops.h"
 #include "tbcad/layers/properties.h"
 #include "tbcad/layout/layout.h"
+#include "tbcad/layout/paper_size.h"
 
 namespace tbcad::layers {
 
@@ -67,6 +68,8 @@ struct Cache {
     inquiry::SelectionTotals totals{};
     std::string totalsLength{}, totalsArea{}, totalsText{};
     double copiedAt = -1;  // ImGui time of the last Copy, for the short "Copied" note
+    // On paper section: how tall the selected text and dimension text print, and where.
+    layout::PaperSizeSummary paper{};
 };
 
 Cache& cache() {
@@ -174,6 +177,13 @@ void refresh(tbcad::ui::PanelContext& ctx) {
                  : std::optional<EntityKind>(c.kinds[static_cast<std::size_t>(c.filterIndex - 1)]);
     c.common = readCommon(doc, sel, c.only);
     refreshTotals(ctx, c);
+    {
+        std::vector<EntityId> ids;
+        for (EntityId id : sel)
+            if (const Entity* e = doc.find(id); e && (!c.only || kind(*e) == *c.only))
+                ids.push_back(id);
+        c.paper = layout::paperSizeSummary(doc, ids);
+    }
 
     // Geometry fields: shown when exactly one kind is in play.
     c.fields.clear();
@@ -502,6 +512,38 @@ void totalsSection(Cache& c) {
     }
 }
 
+// On paper: the printed height of the selected text and dimension text, and the frame, viewport,
+// zone or annotation scale that decides it, so a 1.2 mm note on an A1 sheet is easy to spot.
+void paperSection(Cache& c) {
+    if (c.paper.count == 0)
+        return;
+    if (!ImGui::CollapsingHeader("On paper", ImGuiTreeNodeFlags_DefaultOpen))
+        return;
+    if (ImGui::BeginTable("##onpaper", 2, propTableFlags())) {
+        ImGui::TableSetupColumn("##k", ImGuiTableColumnFlags_WidthFixed, 90);
+        ImGui::TableSetupColumn("##v", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::TextUnformatted("Text height");
+        ImGui::TableSetColumnIndex(1);
+        const std::string mm = layout::formatPaperMm(c.paper.minMm, c.paper.maxMm);
+        // Below 1.8 mm printed text is hard to read.
+        if (c.paper.minMm < 1.8 - 1e-9)
+            ImGui::TextColored(ImVec4(0.85f, 0.2f, 0.2f, 1), "%s  (small)", mm.c_str());
+        else
+            ImGui::TextUnformatted(mm.c_str());
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::TextUnformatted("Printed at");
+        ImGui::TableSetColumnIndex(1);
+        if (c.paper.place)
+            ImGui::TextWrapped("%s", layout::describePaperPlace(*c.paper.place).c_str());
+        else
+            ImGui::TextDisabled("Several places");
+        ImGui::EndTable();
+    }
+}
+
 void geometrySection(tbcad::ui::PanelContext& ctx, Cache& c) {
     if (c.fields.empty() && c.words.empty())
         return;
@@ -807,6 +849,7 @@ void drawBody(tbcad::ui::PanelContext& ctx, bool compact) {
         assemblySection(ctx, c);
     }
     geometrySection(ctx, c);
+    paperSection(c);
     if (compact)
         return;
 

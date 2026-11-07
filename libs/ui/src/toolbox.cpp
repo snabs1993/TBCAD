@@ -92,8 +92,8 @@ std::vector<ToolTab> build() {
           G{"Styles",
             {T{"Text style", "STYLE", "text", {}}, T{"Dim styles", "DIMSTYLES", "dimension", {}},
              T{"Leader style", "MLEADERSTYLE", "leader", {}},
-             T{"Table style", "TABLESTYLE", "table", {}},
-             T{"Scale", "CANNOSCALE", "scale", {}}}}}});
+             T{"Table style", "TABLESTYLE", "table", {}}, T{"Scale", "CANNOSCALE", "scale", {}},
+             T{"Paper check", "PAPERCHECK", "scale", {}}}}}});
 
     tabs.push_back(
         {"blocks",

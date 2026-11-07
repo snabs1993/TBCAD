@@ -13,5 +13,7 @@ void registerStylePanel(ui::UiRegistry& registry);
 void registerPublishPanel(ui::UiRegistry& registry);
 // The Plot Frames panel ("plotframes"): model space sheets and plot sets.
 void registerFramesPanel(ui::UiRegistry& registry);
+// The Paper Check panel ("papercheck"): text and dimension heights on paper, Show / Fix.
+void registerPaperCheckPanel(ui::UiRegistry& registry);
 
 }  // namespace tbcad::plot

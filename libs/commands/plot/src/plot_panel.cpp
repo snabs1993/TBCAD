@@ -737,6 +737,7 @@ void registerPlotPanel(ui::UiRegistry& registry) {
     registerStylePanel(registry);
     registerPublishPanel(registry);
     registerFramesPanel(registry);
+    registerPaperCheckPanel(registry);
 }
 
 }  // namespace tbcad::plot

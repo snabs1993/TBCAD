@@ -19,6 +19,8 @@ std::unique_ptr<cmd::Command> makePrinterCommand();
 std::unique_ptr<cmd::Command> makeETransmitCommand();
 std::unique_ptr<cmd::Command> makeCompareCommand();
 std::unique_ptr<cmd::Command> makePlotFrameCommand();
+std::unique_ptr<cmd::Command> makePaperCheckCommand();
+std::unique_ptr<cmd::Command> makePaperFitCommand();
 std::unique_ptr<cmd::Command> makeFrameSetCommand();
 
 Result<std::unique_ptr<Document>> readDrawingFile(const std::filesystem::path& file) {
@@ -1193,6 +1195,8 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<PageSetupCommand>());
     (void)registry.add(std::make_unique<PageSetupPanelCommand>());
     (void)registry.add(std::make_unique<PreviewCommand>());
+    (void)registry.add(makePaperCheckCommand());
+    (void)registry.add(makePaperFitCommand());
 }
 
 }  // namespace tbcad::plot
