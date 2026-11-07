@@ -59,6 +59,33 @@ void McpController::setPolicy(EditPolicy p) {
                                                                                    : "ask");
 }
 
+std::vector<std::string> McpController::trustedClients() const {
+    return core_.settings().getStrings(kSettingTrustedClients);
+}
+
+bool McpController::isTrusted(const std::string& clientName) const {
+    if (clientName.empty())
+        return false;
+    for (const std::string& n : trustedClients())
+        if (n == clientName)
+            return true;
+    return false;
+}
+
+void McpController::trustClient(const std::string& clientName) {
+    if (clientName.empty() || isTrusted(clientName))
+        return;
+    auto list = trustedClients();
+    list.push_back(clientName);
+    core_.settings().setStrings(kSettingTrustedClients, list);
+}
+
+void McpController::forgetClient(const std::string& clientName) {
+    auto list = trustedClients();
+    std::erase(list, clientName);
+    core_.settings().setStrings(kSettingTrustedClients, list);
+}
+
 int McpController::configuredPort() const {
     const double p = core_.settings().getNumber(kSettingPort, 41730);
     return p >= 1 && p <= 65535 ? static_cast<int>(p) : 41730;
@@ -166,12 +193,16 @@ void McpController::pump() {
 
 mcp::EditDecision McpController::askUser(const mcp::ClientInfo& client) {
     EditPolicy p = EditPolicy::Ask;
+    bool trusted = false;
     try {
-        queue_.run([&] { p = policy(); });
+        queue_.run([&] {
+            p = policy();
+            trusted = isTrusted(client.name);
+        });
     } catch (const std::exception&) {
         return mcp::EditDecision::Deny;
     }
-    if (p == EditPolicy::Allow)
+    if (p == EditPolicy::Allow || (p == EditPolicy::Ask && trusted))
         return mcp::EditDecision::Allow;
     if (p == EditPolicy::ReadOnly)
         return mcp::EditDecision::ReadOnly;
@@ -204,14 +235,18 @@ std::optional<EditRequest> McpController::pendingRequest() const {
     return std::nullopt;
 }
 
-void McpController::answerRequest(std::uint64_t id, mcp::EditDecision decision) {
+void McpController::answerRequest(std::uint64_t id, mcp::EditDecision decision, bool always) {
+    std::string name;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!request_ || request_->id != id || answer_)
             return;
         answer_ = decision;
+        name = request_->client.name;
     }
     cv_.notify_all();
+    if (always && decision == mcp::EditDecision::Allow)
+        trustClient(name);
 }
 
 // ---- activity
