@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "gui.h"
 #include "gui_harness.h"
 #include "tbcad/ui/app_core.h"
 #include "tbcad/ui/ui_registry.h"
@@ -136,4 +137,69 @@ TEST_CASE("frame time with a 393k drawing selected: the shell and every panel an
     CHECK_MESSAGE(shell <= kShellBudgetMs, "the window takes " << shell << " ms per frame");
     CHECK_MESSAGE(over.empty(), over.size() << " panels or dialogs are over budget");
 #endif
+}
+
+namespace {
+
+// Time of the frames a click in the drawing takes, from the press to the next frame after the
+// release: what the person waits for before the next click counts.
+double clickMs(Harness& h, float x, float y) {
+    const auto t0 = std::chrono::steady_clock::now();
+    h.click(x, y);
+    h.frame();
+    const auto t1 = std::chrono::steady_clock::now();
+    return std::chrono::duration<double, std::milli>(t1 - t0).count();
+}
+
+}  // namespace
+
+// test.19: each LINE segment is a change to the drawing, and the Model tab's hover picture was
+// rebuilt from the whole drawing on the next frame even with no tooltip showing (109 ms a click
+// here); POLYLINE only changes the drawing at the end, so it never lagged.
+TEST_CASE("perf: LINE clicks on a 393k drawing are as quick as POLYLINE clicks") {
+    Harness h(1920, 1080);
+    bigDrawing(h);
+    h.core().selectAll();
+    h.key(ImGuiKey_Escape);
+    h.frame(150);
+    const app::ViewportRect vp = h.gui().lastViewportRect();
+    auto at = [&](int i) {
+        return std::pair{vp.x + vp.w * (0.3f + 0.05f * float(i % 6)),
+                         vp.y + vp.h * (0.4f + 0.04f * float(i % 5))};
+    };
+    auto run = [&](const char* name) {
+        h.command(name);
+        h.frame(3);
+        std::vector<double> ms;
+        for (int i = 0; i < 8; ++i) {
+            auto [x, y] = at(i);
+            ms.push_back(clickMs(h, x, y));
+        }
+        h.key(ImGuiKey_Escape);
+        h.frame(5);
+        std::sort(ms.begin(), ms.end());
+        MESSAGE(std::string(name) << " click: median " << ms[ms.size() / 2] << " ms, max " << ms.back()
+                     << " ms");
+        return ms[ms.size() / 2];
+    };
+    const double pline = run("POLYLINE");
+    const double line = run("LINE");
+#ifdef NDEBUG
+    CHECK_MESSAGE(line <= pline * 2 + 5, "LINE " << line << " ms vs POLYLINE " << pline);
+#else
+    (void)pline;
+    (void)line;
+#endif
+}
+
+TEST_CASE("the Model tab still shows its picture when the mouse rests on it") {
+    Harness h(1440, 900);
+    h.core().submitText("LINE 0,0 100,0 100,100 ");
+    h.core().pressEscape();
+    h.frame(3);
+    const imgui_items::Item* tab = h.find("Model");
+    REQUIRE(tab != nullptr);
+    h.moveMouse((tab->min.x + tab->max.x) / 2, (tab->min.y + tab->max.y) / 2);
+    h.frame(90);
+    CHECK_MESSAGE(h.windowOpen("Tooltip"), "no tooltip over the Model tab");
 }
