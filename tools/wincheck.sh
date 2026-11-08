@@ -60,6 +60,13 @@ if [[ -n "$grep_files" ]]; then
         echo "$hits" | sed 's/$/   [MSVC: M_PI is not defined; use kPi]/'
         status=1
     fi
+    # <windows.h> (rpcndr.h) defines small as char, so a
+    # variable named small fails in files that see it (apps/).
+    win_files="$(echo "$grep_files" | grep '^apps/' || true)"
+    if hits="$(echo "$win_files" | xargs -r grep -nE '[A-Za-z_0-9>*&]\s+small\s*[=;{(,)]' 2>/dev/null)"; then
+        echo "$hits" | sed 's/$/   [MSVC: windows.h defines small; rename]/'
+        status=1
+    fi
 fi
 
 python3 - "$db" "$mode" "$files" <<'EOF' || status=1
