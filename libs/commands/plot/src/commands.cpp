@@ -564,7 +564,14 @@ public:
         return "Pick the window to print, then show the Print window again";
     }
     cmd::Task run(cmd::CommandContext& ctx) override {
+        // Back to the window that asked (the Plot window sets this; Ctrl+P's Print window is the
+        // default). Both float over the drawing, so both step aside while the area is picked.
+        std::string back = ctx.host().setting("tmp.printarea.back").value_or("");
+        ctx.host().setSetting("tmp.printarea.back", "");
+        if (back != "plot")
+            back = "print";
         ctx.host().closePanel("print");
+        ctx.host().closePanel("plot");
         auto a = co_await ctx.getPoint("Specify first corner of the area to print");
         if (a.ok()) {
             cmd::PointOptions po;
@@ -579,7 +586,7 @@ public:
                 saveSettings(ctx.host(), s);
             }
         }
-        ctx.host().openPanel("print");
+        ctx.host().openPanel(back);
         co_return;
     }
 };

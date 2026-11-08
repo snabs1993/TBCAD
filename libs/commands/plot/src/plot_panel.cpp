@@ -139,6 +139,8 @@ void drawPreview(const exportlib::PlotSheet& sheet, ImVec2 size) {
     ImGui::Dummy(size);
 }
 
+void runLines(ui::PanelContext& pc, std::initializer_list<std::string> lines);
+
 void draw(ui::PanelContext& pc) {
     PanelState& st = state();
     if (!pc.doc || !pc.host)
@@ -167,6 +169,14 @@ void draw(ui::PanelContext& pc) {
     }
     PlotSettings& s = st.settings;
     bool changed = false;
+
+    // A window of its own: the options on the left, a large preview on the right (owner: "a popup,
+    // not one more tab stacked at the right"). A narrow window stacks them as before.
+    const float fullW = ImGui::GetContentRegionAvail().x;
+    const bool twoColumns = fullW >= 640.0f;
+    if (twoColumns)
+        ImGui::BeginChild("##plotopts", ImVec2(std::min(520.0f, fullW * 0.48f), 0),
+                          ImGuiChildFlags_None);
 
     // What to plot: model space, or one of the drawing's layouts (which brings its own paper).
     const std::string layoutName = plotLayout(*pc.host);
@@ -301,8 +311,13 @@ void draw(ui::PanelContext& pc) {
         changed = true;
     }
     if (s.area == PlotArea::Window) {
-        ImGui::TextDisabled(s.window.empty() ? "No window yet: run PLOT, then Area > Window."
-                                             : "Window set with the PLOT command (Area > Window).");
+        ImGui::TextDisabled(s.window.empty() ? "No window yet." : "Window picked on the drawing.");
+        ImGui::SameLine();
+        if (ImGui::Button("Pick on drawing")) {
+            pc.host->setSetting("tmp.printarea.back", "plot");
+            st.reloadWhenIdle = true;
+            runLines(pc, {"PRINTAREA"});
+        }
     }
 
     // Scale
@@ -408,21 +423,26 @@ void draw(ui::PanelContext& pc) {
         st.builtKey = key;
         st.builtRevision = pc.doc->revision();
     }
+    auto showPreview = [&](float maxH) {
+        ImVec2 avail = ImGui::GetContentRegionAvail();
+        if (!havePreview) {
+            ImGui::Dummy({avail.x, 4});
+        } else if (!st.sheetError.empty()) {
+            ImGui::TextDisabled("%s", st.sheetError.c_str());
+        } else {
+            if (st.sheet.layout.overflows)
+                ImGui::TextColored({1.0f, 0.7f, 0.2f, 1.0f},
+                                   "The drawing is larger than the paper.");
+            else
+                ImGui::TextDisabled("Scale 1:%.4g  |  %zu objects",
+                                    1.0 / st.sheet.layout.paperPerUnit, st.sheet.entityCount);
+            avail = ImGui::GetContentRegionAvail();
+            drawPreview(st.sheet, {avail.x, std::clamp(maxH, 160.0f, std::max(160.0f, avail.y))});
+        }
+    };
     ImGui::Separator();
-    ImVec2 avail = ImGui::GetContentRegionAvail();
-    float previewH = std::clamp(avail.y - 110.0f, 160.0f, 520.0f);
-    if (!havePreview) {
-        ImGui::Dummy({avail.x, 4});
-    } else if (!st.sheetError.empty()) {
-        ImGui::TextDisabled("%s", st.sheetError.c_str());
-    } else {
-        drawPreview(st.sheet, {avail.x, previewH});
-        if (st.sheet.layout.overflows)
-            ImGui::TextColored({1.0f, 0.7f, 0.2f, 1.0f}, "The drawing is larger than the paper.");
-        else
-            ImGui::TextDisabled("Scale 1:%.4g  |  %zu objects", 1.0 / st.sheet.layout.paperPerUnit,
-                                st.sheet.entityCount);
-    }
+    if (!twoColumns)
+        showPreview(ImGui::GetContentRegionAvail().y - 110.0f);
 
     // Export
     ImGui::InputText("File", &st.fileInput);
@@ -513,6 +533,13 @@ void draw(ui::PanelContext& pc) {
     }
     if (!st.message.empty())
         ImGui::TextWrapped("%s", st.message.c_str());
+    if (twoColumns) {
+        ImGui::EndChild();
+        ImGui::SameLine();
+        ImGui::BeginChild("##plotpreview", ImVec2(0, 0), ImGuiChildFlags_None);
+        showPreview(ImGui::GetContentRegionAvail().y);
+        ImGui::EndChild();
+    }
 }
 
 // Runs the lines one after another, as typed: a command and the answers to its prompts (names
@@ -922,8 +949,10 @@ void drawPrintWindow(ui::PanelContext& pc) {
         result = sendToPrinter(host, sheet, true);
     if (!ready)
         ImGui::EndDisabled();
-    if (ImGui::Button("More options (Plot panel)", ImVec2(-1, 0)))
+    if (ImGui::Button("More options (Plot window)", ImVec2(-1, 0))) {
+        host.closePanel("print");
         host.openPanel("plot");
+    }
     if (!result.empty())
         ImGui::TextWrapped("%s", result.c_str());
     ImGui::PopItemWidth();
@@ -962,6 +991,7 @@ void drawPrintWindow(ui::PanelContext& pc) {
 
 void registerPlotPanel(ui::UiRegistry& registry) {
     registry.addPanel("plot", "Plot", draw, false);
+    registry.setPanelFloating("plot", 1100, 720);  // a window over the drawing, not a side tab
     registry.addPanel("pagesetup", "Page Setup Manager", drawPageSetups, false);
     registry.addPanel("plotpreview", "Plot Preview", drawPlotPreview, false);
     registry.addPanel("print", "Print", drawPrintWindow, false);
