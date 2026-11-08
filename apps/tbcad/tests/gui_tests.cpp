@@ -3902,7 +3902,7 @@ TEST_CASE("compact layout: thin bars, a big drawing area, options in the command
     // buttons over the drawing.
     ImGuiWindow* box = ImGui::FindWindowByName("##toolbox");
     REQUIRE(box);
-    CHECK(box->Size.y < 40.0f);
+    CHECK(box->Size.y < 56.0f);  // icons with their small names under them
     CHECK_FALSE(h.windowOpen("##toolstrip"));
     CHECK_FALSE(h.windowOpen("##navbar"));
     CHECK(h.has("##tool", "##MainMenuBar"));
@@ -3928,6 +3928,41 @@ TEST_CASE("compact layout: thin bars, a big drawing area, options in the command
     REQUIRE(h.click("Line", "Command"));
     h.frame(3);
     CHECK(h.core().promptText().find("next point") != std::string::npos);
+    h.core().pressEscape();
+    h.frame(2);
+}
+
+// Owner on the compact Toolbox: "icons alone are hard to read, add small text". Each icon has its
+// short name under it in a small font; long names are cut with "..."; the View menu turns it off.
+TEST_CASE("compact layout: small names under the Toolbox icons, can be turned off") {
+    Harness h(1920, 1080);
+    h.core().setSetting("ui.toolbox.tab", "modify");
+    h.frame(3);
+    ImGuiWindow* box = ImGui::FindWindowByName("##toolbox");
+    REQUIRE(box);
+    const float withNames = box->Size.y;
+    const auto* move = h.find("##tool", "##toolbox", 0);
+    REQUIRE(move);
+    const float cellH = move->max.y - move->min.y;
+    // The name sits under a 28 px icon: the button is taller than the icon by a text line.
+    CHECK(cellH > 28.0f + 10.0f);
+    CHECK(matchesGolden(h.windowShot("##toolbox"), "toolbox_compact_names"));
+    // Off: icons only, the row is a line shorter, the drawing gets the room back.
+    const float top = ImGui::GetMainViewport()->WorkPos.y;
+    h.core().setSetting("ui.toolbox.labels", "0");
+    h.frame(3);
+    CHECK(box->Size.y < withNames - 8.0f);
+    CHECK(ImGui::GetMainViewport()->WorkPos.y < top - 8.0f);
+    const auto* bare = h.find("##tool", "##toolbox", 0);
+    REQUIRE(bare);
+    CHECK(bare->max.y - bare->min.y < cellH - 8.0f);
+    // A click on the named button still starts its command.
+    h.core().setSetting("ui.toolbox.labels", "1");
+    h.frame(3);
+    REQUIRE(h.click("##tool", "##toolbox", 0));
+    h.frame(2);
+    REQUIRE(h.core().runner().prompt());
+    CHECK(h.core().runner().lastCommand() == "MOVE");
     h.core().pressEscape();
     h.frame(2);
 }

@@ -1553,6 +1553,7 @@ void Gui::menuBar() {
             toggle("Toolbox", "ui.toolbox", true);
             toggle("Quick Rail", "ui.quickRailBar", true);
             toggle("Expert Toolbox (icons only)", "ui.toolbox.expert", false);
+            toggle("Toolbox Names (small text under icons)", "ui.toolbox.labels", true);
             toggle("Recent group in Toolbox", "ui.toolbox.showRecent", false);
             toggle("Table-style Layers and Properties", "ui.flatTables", true);
             if (ImGui::MenuItem("Classic Menus", nullptr, !flag("ui.compactMenus", true)))
@@ -1952,17 +1953,49 @@ void Gui::toolStrip(bool inMenuBar) {
 
 // One Toolbox button: icon (or initials), name under it, a small arrow when it has variants.
 // `iconOnly` is the Quick rail's slim form: no name, the tooltip carries it.
-void Gui::toolCell(const ui::ToolDef& t, float iconSize, float scale, bool iconOnly) {
+float Gui::smallNameHeight() const {
+    if (!flag("ui.toolbox.labels", true))
+        return 0.0f;
+    ImFont* f = smallFont();
+    const float size = f ? f->FontSize : ImGui::GetFontSize() * 0.75f;
+    return std::ceil(size) + 1.0f;
+}
+
+void Gui::toolCell(const ui::ToolDef& t, float iconSize, float scale, bool iconOnly,
+                   bool smallName) {
     const float line = ImGui::GetTextLineHeight();
     const float baseW = std::round(iconSize * 1.9f);
     ImGui::PushID(t.command.c_str());
     ImGui::BeginGroup();
+    // Small name under a compact icon: one line in the small font, the cell as wide as the name
+    // up to a limit (longer names end in "..."; the tooltip has the whole name).
+    ImFont* small = smallFont() ? smallFont() : ImGui::GetFont();
+    const float smallSize = smallFont() ? smallFont()->FontSize : ImGui::GetFontSize() * 0.75f;
+    const float maxSmallW = std::round(iconSize * 2.3f);
+    auto smallW = [&](const std::string& s) {
+        return small->CalcTextSizeA(smallSize, FLT_MAX, 0.0f, s.c_str()).x;
+    };
+    std::string shortName;
+    if (smallName && !iconOnly) {
+        shortName = t.label;
+        if (smallW(shortName) > maxSmallW) {
+            while (shortName.size() > 2 && smallW(shortName + "\xE2\x80\xA6") > maxSmallW)
+                shortName.pop_back();
+            while (!shortName.empty() && shortName.back() == ' ')
+                shortName.pop_back();
+            shortName += "\xE2\x80\xA6";
+        }
+    }
+    const float nameH = shortName.empty() ? 0.0f : smallNameHeight();
     const float cellW =
-        iconOnly ? iconSize + 8.0f * scale
-                 : std::max(baseW, std::ceil(ImGui::CalcTextSize(t.label.c_str()).x + 10.0f));
+        iconOnly    ? iconSize + 8.0f * scale
+        : smallName ? std::max(iconSize + 8.0f * scale, std::ceil(smallW(shortName) + 6.0f * scale))
+                    : std::max(baseW, std::ceil(ImGui::CalcTextSize(t.label.c_str()).x + 10.0f));
     const ImVec2 lo = ImGui::GetCursorScreenPos();
-    const bool hit =
-        ImGui::InvisibleButton("##tool", ImVec2(cellW, iconSize + (iconOnly ? 4.0f : line + 4)));
+    const float cellH = iconOnly ? iconSize + 4.0f
+                        : smallName ? iconSize + 4.0f + nameH
+                                    : iconSize + line + 4;
+    const bool hit = ImGui::InvisibleButton("##tool", ImVec2(cellW, cellH));
     const bool hover = ImGui::IsItemHovered();
     ImDrawList* dl = ImGui::GetWindowDrawList();
     if (hover)
@@ -1989,8 +2022,14 @@ void Gui::toolCell(const ui::ToolDef& t, float iconSize, float scale, bool iconO
         dl->AddText(ImVec2((a.x + b.x - ts.x) * 0.5f, (a.y + b.y - ts.y) * 0.5f),
                     ImGui::GetColorU32(ImGuiCol_Text), ini.c_str());
     }
+    if (!shortName.empty()) {
+        const float nw = smallW(shortName);
+        dl->AddText(small, smallSize, ImVec2(lo.x + (cellW - nw) * 0.5f, lo.y + iconSize + 2),
+                    ImGui::GetColorU32(hover ? ImGuiCol_Text : ImGuiCol_TextDisabled),
+                    shortName.c_str());
+    }
     // Name under the button, cut to the cell.
-    std::string name = iconOnly ? std::string() : t.label;
+    std::string name = (iconOnly || smallName) ? std::string() : t.label;
     while (name.size() > 3 && ImGui::CalcTextSize(name.c_str()).x > cellW - 4)
         name.pop_back();
     const float nw = ImGui::CalcTextSize(name.c_str()).x;
@@ -2135,7 +2174,11 @@ void Gui::toolbox() {
     const float tabH = ImGui::GetFrameHeight();
     // Expert mode: icons only, no names or group captions, so the bar is shorter.
     const bool expert = compact || flag("ui.toolbox.expert", false);
-    const float bodyH = compact  ? iconSize + 4.0f
+    // Compact: a small name under each icon (ui.toolbox.labels, on by default; icons alone are
+    // hard to tell apart).
+    const float nameH = compact ? smallNameHeight() : 0.0f;
+    const bool smallNames = nameH > 0.0f;
+    const float bodyH = compact  ? iconSize + 4.0f + nameH
                         : expert ? iconSize + st.ItemSpacing.y * 2.0f
                                  : iconSize + line * 2.0f + st.ItemSpacing.y * 3.0f;
     const float h = (compact ? std::max(tabH, bodyH) : tabH + (folded ? 0.0f : bodyH)) +
@@ -2216,7 +2259,7 @@ void Gui::toolbox() {
                     if (!firstTool)
                         ImGui::SameLine(0, 2);
                     firstTool = false;
-                    toolCell(t, iconSize, scale, expert);
+                    toolCell(t, iconSize, scale, expert && !smallNames, smallNames);
                 }
                 ImGui::PopID();
                 if (!expert)
