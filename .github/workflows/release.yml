@@ -55,7 +55,15 @@ jobs:
           Write-Host "Building TBCAD $v ($num)"
 
       - name: Configure
-        run: cmake --preset windows-msvc-release -DTBCAD_WARNINGS_AS_ERRORS=ON "-DTBCAD_VERSION_LABEL=${{ steps.ver.outputs.version }}"
+        # Dependency downloads from GitHub sometimes answer 504; try again before giving up.
+        run: |
+          for ($i = 1; $i -le 4; $i++) {
+            cmake --preset windows-msvc-release -DTBCAD_WARNINGS_AS_ERRORS=ON "-DTBCAD_VERSION_LABEL=${{ steps.ver.outputs.version }}"
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+            Write-Host "Configure failed (try $i), waiting before the next try"
+            Start-Sleep -Seconds (60 * $i)
+          }
+          exit 1
       - name: Build
         run: cmake --build --preset windows-msvc-release
       - name: Test
