@@ -69,6 +69,19 @@ public:
     void setLockedFade(double percent);
     double lockedOpacity() const { return lockedKeep_; }
 
+    // While a block is edited in place (BEDIT / REFEDIT) everything outside the edit is drawn in
+    // the faded grey of FADE, so the block's objects stand out. In the edit: the objects in
+    // `keep`, and every object made after `mark` (the highest id when the edit started) that is
+    // not in `skip`. nullopt: no edit, nothing faded.
+    struct EditFocus {
+        std::unordered_set<EntityId> keep{};
+        std::uint64_t mark = 0;
+        std::unordered_set<EntityId> skip{};
+        bool operator==(const EditFocus&) const = default;
+    };
+    void setEditFocus(std::optional<EditFocus> focus);
+    bool fadedByEdit(EntityId id) const;
+
     // Block-space lists built since construction (for tests).
     std::size_t blockBuilds() const { return blockCache_.builds(); }
 
@@ -137,6 +150,7 @@ private:
     bool skippedOffscreen_ = false;
     std::unordered_set<LayerId> lockedLayers_{};
     double lockedKeep_ = 0.4;
+    std::optional<EditFocus> editFocus_{};
     std::unordered_map<LayerId, std::uint8_t> layerTransparency_{};
     bool showTransparency_ = true;
     double lwDefault_ = 0.25;  // LWDEFAULT, from the drawing header

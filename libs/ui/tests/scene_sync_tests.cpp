@@ -117,6 +117,51 @@ TEST_CASE("LAYLOCKFADECTL sets how much locked layers fade, 0 shows them as they
     CHECK(alphaOf() == 25);
 }
 
+TEST_CASE("while a block is edited in place, objects outside the edit are drawn faded grey") {
+    Document doc;
+    render::Scene scene;
+    SceneSync sync(doc, scene);
+    const LayerId la = addLayer(doc, "A");
+    const LayerId lb = addLayer(doc, "B");
+    const LayerId lc = addLayer(doc, "C");
+    const EntityId a = addLine(doc, {0, 0}, {10, 0}, la);  // the drawing around the block
+    const EntityId b = addLine(doc, {0, 5}, {10, 5}, lb);  // a copy of the block being edited
+    // rgba of the (one) batch of a layer.
+    auto rgbaOf = [&](LayerId layer) -> std::uint32_t {
+        for (const auto& [key, tile] : scene.tiles())
+            for (const auto& [bk, batch] : tile.batches)
+                if (bk.layer == layer)
+                    return bk.rgba;
+        return 0;
+    };
+    auto faded = [&](LayerId layer) {
+        const std::uint32_t c = rgbaOf(layer);
+        return (c & 0xFFFFFF) == 0x808080 && (c >> 24) < 255;
+    };
+    CHECK_FALSE(faded(la));
+    SceneSync::EditFocus f;
+    f.keep = {b};
+    f.mark = b.value;
+    sync.setEditFocus(f);
+    CHECK(sync.fadedByEdit(a));
+    CHECK_FALSE(sync.fadedByEdit(b));
+    CHECK(faded(la));
+    CHECK_FALSE(faded(lb));
+    // Drawn during the edit: part of the block, normal colours.
+    const EntityId c = addLine(doc, {0, 9}, {10, 9}, lc);
+    CHECK_FALSE(faded(lc));
+    // Taken out of the edit (REFSET Remove): faded like the rest.
+    f.skip = {c};
+    sync.setEditFocus(f);
+    CHECK(faded(lc));
+    CHECK_FALSE(faded(lb));
+    // The edit ends: everything as it was.
+    sync.setEditFocus(std::nullopt);
+    CHECK_FALSE(faded(la));
+    CHECK_FALSE(faded(lc));
+    CHECK((rgbaOf(la) >> 24) == 255);
+}
+
 TEST_CASE("rebuildAll mirrors an existing document") {
     Document doc;
     addLine(doc, {0, 0}, {10, 0});

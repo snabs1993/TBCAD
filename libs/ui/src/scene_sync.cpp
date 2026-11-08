@@ -150,6 +150,7 @@ void SceneSync::upsertEntity(const Entity& e, std::optional<std::uint32_t> drawO
     ctx.attDisplay = attDisplay_;
     ctx.quickText = quickText_;
     const bool locked = doc_.effective(e.common).locked;
+    const bool outside = fadedByEdit(id);
     // An object already in the scene keeps its place in the draw order.
     const std::uint32_t order = drawOrder.value_or(orderFor(id));
     const double builtZoom = needsTessellation(e) ? 1.0 / pixelSizeMm_ : 0.0;
@@ -157,7 +158,7 @@ void SceneSync::upsertEntity(const Entity& e, std::optional<std::uint32_t> drawO
     {
         blocks::BlockDisplayScope scope(blockCache_);
         // A reference to a block is drawn from the block's shared geometry and one transform.
-        if (!locked && kind(e) == EntityKind::Insert) {
+        if (!locked && !outside && kind(e) == EntityKind::Insert) {
             blocks::InsertInstance inst;
             if (blocks::buildInsertInstance(doc_, e, ctx, inst) &&
                 scene_.upsertInstance(id, inst.blockSpace, inst.placements, &inst.extra, order,
@@ -168,6 +169,8 @@ void SceneSync::upsertEntity(const Entity& e, std::optional<std::uint32_t> drawO
     }
     if (locked)
         fade(list, lockedKeep_);
+    if (outside)
+        geom::fadeDisplay(list);
     scene_.upsert(id, list, order, builtZoom);
 }
 
@@ -196,6 +199,8 @@ void SceneSync::prepare(const Entity& e, std::uint32_t order, Prepared& out) con
     geom::buildDisplay(doc_, e, ctx, out.list);
     if (doc_.effective(e.common).locked)
         fade(out.list, lockedKeep_);
+    if (fadedByEdit(id))
+        geom::fadeDisplay(out.list);
     out.what = Prepared::What::List;
 }
 
@@ -240,7 +245,8 @@ void SceneSync::packInserts(std::vector<Prepared>& chunk, std::size_t lanes) {
         blocks::BlockDisplayScope scope(blockCache_);
         for (Prepared& p : chunk) {
             p.packed = false;
-            if (p.what != Prepared::What::Defer || doc_.effective(p.entity->common).locked)
+            if (p.what != Prepared::What::Defer || doc_.effective(p.entity->common).locked ||
+                fadedByEdit(p.entity->common.id))
                 continue;
             p.inst = {};
             if (!blocks::buildInsertInstance(doc_, *p.entity, ctx, p.inst) ||
@@ -614,6 +620,34 @@ void SceneSync::setLockedFade(double percent) {
     syncLayers();
 }
 
+namespace {
+bool outsideEdit(const std::optional<SceneSync::EditFocus>& f, EntityId id) {
+    if (!f || f->keep.count(id))
+        return false;
+    return id.value <= f->mark || f->skip.count(id) > 0;
+}
+}  // namespace
+
+bool SceneSync::fadedByEdit(EntityId id) const {
+    return outsideEdit(editFocus_, id);
+}
+
+void SceneSync::setEditFocus(std::optional<EditFocus> focus) {
+    if (focus == editFocus_)
+        return;
+    // Only the objects whose look changes are drawn again.
+    const std::optional<EditFocus> before = std::move(editFocus_);
+    std::vector<const Entity*> redraw;
+    doc_.forEachEntity([&](const Entity& e) {
+        const EntityId id = e.common.id;
+        if (!doc_.ownerBlock(id) && outsideEdit(before, id) != outsideEdit(focus, id))
+            redraw.push_back(&e);
+    });
+    editFocus_ = std::move(focus);
+    flushPending();
+    upsertMany(redraw);
+}
+
 void SceneSync::syncLayers() {
     // Visibility is a property of the scene's layer, so objects still waiting to be built need no
     // flush: they come out hidden or shown by the layer they are on.
@@ -707,6 +741,8 @@ void SceneSync::rebuildDrawOrder() {
         }
         if (doc_.effective(e->common).locked)
             fade(list, lockedKeep_);
+        if (fadedByEdit(id))
+            geom::fadeDisplay(list);
         scene_.upsert(id, list, ++rank, needsTessellation(*e) ? 1.0 / pixelSizeMm_ : 0.0);
     }
 }

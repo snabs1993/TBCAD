@@ -2632,6 +2632,38 @@ TEST_CASE("block editor: BEDIT opens Block Authoring, its buttons run the editor
     CHECK(def->dynamic->params[0].states.size() == 2);
 }
 
+TEST_CASE("block editor: objects outside the block are drawn faded grey until BCLOSE") {
+    Harness h(1920, 1080);
+    h.frame(3);
+    for (const char* s : {"LINE", "0,0", "10,0", ""})
+        h.core().submitText(s);
+    h.core().selectAll();
+    for (const char* s : {"-BLOCK", "Sym", "0,0", "C"})
+        h.core().submitText(s);
+    for (const char* s : {"LINE", "100,0", "110,0", ""})  // not part of the block
+        h.core().submitText(s);
+    h.frame(3);
+    auto greyBatches = [&] {
+        int n = 0;
+        for (const auto& [key, tile] : h.core().scene().tiles())
+            for (const auto& [bk, batch] : tile.batches)
+                if ((bk.rgba & 0xFFFFFF) == 0x808080 && (bk.rgba >> 24) < 255)
+                    ++n;
+        return n;
+    };
+    CHECK(greyBatches() == 0);
+    for (const char* s : {"BEDIT", "Name", "Sym"})
+        h.core().submitText(s);
+    h.frame(3);
+    REQUIRE(h.core().setting("tmp.bedit.block").value_or("") == "Sym");
+    CHECK(greyBatches() > 0);
+    for (const char* s : {"BCLOSE", "Discard"})
+        h.core().submitText(s);
+    h.frame(3);
+    CHECK(h.core().setting("tmp.bedit.block").value_or("").empty());
+    CHECK(greyBatches() == 0);
+}
+
 TEST_CASE(
     "blocks palette: double-click inserts with the palette's options, drag lands at the drop") {
     Harness h(1920, 1080);
