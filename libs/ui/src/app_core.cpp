@@ -2864,6 +2864,45 @@ void AppCore::syncBlockEditPicking() {
     }
 }
 
+// While a block is edited in place (BEDIT / REFEDIT), everything outside the edit is drawn
+// faded; the working copies and whatever is drawn during the edit keep their colours.
+void AppCore::syncBlockEditFade() {
+    if (!session_)
+        return;
+    const std::string block = setting("tmp.bedit.block").value_or("");
+    const bool here = !block.empty() && session_->doc.blockByName(block);
+    const std::string key = here ? block + "|" + setting("tmp.bedit.ids").value_or("") + "|" +
+                                       setting("tmp.bedit.mark").value_or("") + "|" +
+                                       setting("tmp.bedit.excl").value_or("")
+                                 : std::string();
+    if (key == editFadeKey_ && session_ == editFadeSession_)
+        return;
+    editFadeKey_ = key;
+    editFadeSession_ = session_;
+    if (!here) {
+        session_->sync->setEditFocus(std::nullopt);
+        return;
+    }
+    auto ids = [](const std::string& s) {
+        std::unordered_set<EntityId> out;
+        std::size_t at = 0;
+        while (at < s.size()) {
+            std::size_t comma = s.find(',', at);
+            if (comma == std::string::npos)
+                comma = s.size();
+            if (comma > at)
+                out.insert(EntityId{std::strtoull(s.substr(at, comma - at).c_str(), nullptr, 10)});
+            at = comma + 1;
+        }
+        return out;
+    };
+    SceneSync::EditFocus f;
+    f.keep = ids(setting("tmp.bedit.ids").value_or(""));
+    f.mark = std::strtoull(setting("tmp.bedit.mark").value_or("0").c_str(), nullptr, 10);
+    f.skip = ids(setting("tmp.bedit.excl").value_or(""));
+    session_->sync->setEditFocus(std::move(f));
+}
+
 // While a layout viewport is edited from model space, the layers frozen in it or hidden on its
 // sheet are hidden there too, as on the sheet (VPLAYER, the VP Frz column of the Layers panel,
 // SHEETLAYER).
@@ -3228,6 +3267,7 @@ void AppCore::updateFrame(std::chrono::steady_clock::time_point now) {
     followLockedViewport();
     hideViewportFrozenLayers();
     syncBlockEditPicking();
+    syncBlockEditFade();
     session_->sync->setLockedFade(settings_.getNumber("view.lockFade", 60));
     {
         profile::EditTimer t("frame: re-tile");

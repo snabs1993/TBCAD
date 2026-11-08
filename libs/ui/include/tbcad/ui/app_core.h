@@ -743,6 +743,7 @@ private:
     void hideViewportFrozenLayers();
     void hintViewportBorder(Vec2 world);
     void syncBlockEditPicking();
+    void syncBlockEditFade();
     std::string vpHiddenKey_{};  // layout:viewport:revision the hidden layers were found for
     const void* vpHiddenSession_ = nullptr;
     std::string editingLayout_;  // the viewport being edited from model space, if any
@@ -757,6 +758,8 @@ private:
     std::uint64_t annoSyncRevision_ = 0;
     std::string unpickBlock_{};  // the block whose references syncBlockEditPicking hid
     std::uint64_t unpickRevision_ = ~std::uint64_t{0};
+    std::string editFadeKey_{};  // the block edit syncBlockEditFade last applied
+    const void* editFadeSession_ = nullptr;
     underlay::ImageCache imageCache_{};
 };
 
