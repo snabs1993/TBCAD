@@ -2548,8 +2548,11 @@ void Gui::layoutTabs(const ViewportRect& rect) {
                 ImGui::PopStyleColor(2);
             if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
                 tabPreviewTip(name.empty() ? "Model" : name,
-                              name.empty() ? core_.documentPreview(core_.activeDocument())
-                                           : core_.layoutPreview(name));
+                              [&]() -> const ui::TabPreview& {
+                                  return name.empty()
+                                             ? core_.documentPreview(core_.activeDocument())
+                                             : core_.layoutPreview(name);
+                              });
             const auto place = std::find(names.begin(), names.end(), name);
             const std::size_t at = static_cast<std::size_t>(place - names.begin());
             if (!name.empty() && !readOnly) {
@@ -4112,12 +4115,16 @@ void Gui::gripMenu(const ViewportRect& rect) {
     }
 }
 
-void Gui::tabPreviewTip(const std::string& title, const ui::TabPreview& preview) {
+// The picture is built only while the tooltip shows: it walks the whole drawing, and every
+// change (each segment LINE adds) would otherwise rebuild it on the next frame.
+void Gui::tabPreviewTip(const std::string& title,
+                        const std::function<const ui::TabPreview&()>& previewOf) {
     // Typing with the mouse left on a tab: the big picture would cover the command line.
     if (core_.runner().active() || !input_.empty())
         return;
     if (!ImGui::BeginItemTooltip())
         return;
+    const ui::TabPreview& preview = previewOf();
     ImGui::TextUnformatted(title.c_str());
     const float side = 200.0f * dpiScale_;
     const ImVec2 at = ImGui::GetCursorScreenPos();
@@ -4279,7 +4286,9 @@ void Gui::docTabs() {
                     ImGui::IsMouseDragging(ImGuiMouseButton_Left, 8.0f * dpiScale_))
                     tabDragId_ = core_.documentId(i);  // may leave the window: see tabDragTick
                 if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
-                    tabPreviewTip(core_.documentTitle(i), core_.documentPreview(i));
+                    tabPreviewTip(core_.documentTitle(i), [&]() -> const ui::TabPreview& {
+                        return core_.documentPreview(i);
+                    });
                 // One popup per tab: the same id for every tab would open them all at once.
                 ImGui::PushID(static_cast<int>(core_.documentId(i)));
                 const bool menuOpen = ImGui::BeginPopupContextItem("##doctabmenu");
