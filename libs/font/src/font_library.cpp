@@ -86,6 +86,20 @@ bool isExtender(char32_t c) {
            (c >= 0xFE00 && c <= 0xFE0F);
 }
 
+// 1 for Thai letters, -1 for characters that belong to no script of their own
+// (spaces, digits, punctuation, combining marks), 0 for everything else.
+int scriptClass(char32_t c) {
+    if (isExtender(c))
+        return -1;  // a mark stays with its base letter, whatever script that is
+    if (c >= 0x0E00 && c <= 0x0E7F)
+        return 1;
+    if (c < 0x80)
+        return ((c | 0x20) >= 'a' && (c | 0x20) <= 'z') ? 0 : -1;
+    if (c == 0xA0 || (c >= 0x2000 && c <= 0x206F) || (c >= 0x3000 && c <= 0x3003))
+        return -1;
+    return 0;
+}
+
 struct OutlineKey {
     std::uint32_t glyph;
     std::uint64_t tolerance;
@@ -773,12 +787,26 @@ std::vector<ShapedRun> FontLibrary::shape(FontId font, std::string_view utf8, Di
         }
     }
 
+    // Split Thai from other scripts too. One run of "Sinkล้าง" was shaped as Latin (its first
+    // letter), so fonts like Tahoma that keep their Thai mark rules under the Thai script left the
+    // tone marks unplaced (owner saw them vanish). Spaces, digits, punctuation and marks join the
+    // run before them (or the one after, at the start of the text).
+    std::vector<signed char> thai(cps.size(), -1);  // 1 Thai, 0 other, -1 neutral
+    for (std::size_t i = 0; i < cps.size(); ++i)
+        thai[i] = static_cast<signed char>(scriptClass(cps[i].cp));
+    for (std::size_t i = 1; i < cps.size(); ++i)
+        if (thai[i] < 0)
+            thai[i] = thai[i - 1];
+    for (std::size_t i = cps.size(); i-- > 1;)
+        if (thai[i - 1] < 0)
+            thai[i - 1] = thai[i];
+
     if (!impl_->shapeBuf)
         impl_->shapeBuf = hb_buffer_create();
     hb_buffer_t* buf = impl_->shapeBuf;
     for (std::size_t i = 0; i < cps.size();) {
         std::size_t j = i + 1;
-        while (j < cps.size() && pick[j] == pick[i])
+        while (j < cps.size() && pick[j] == pick[i] && thai[j] == thai[i])
             ++j;
         const std::uint32_t begin = cps[i].offset;
         const std::uint32_t end =
@@ -795,6 +823,8 @@ std::vector<ShapedRun> FontLibrary::shape(FontId font, std::string_view utf8, Di
         hb_buffer_add_utf8(buf, utf8.data(), static_cast<int>(utf8.size()), begin, end - begin);
         hb_buffer_set_direction(buf,
                                 direction == Direction::RTL ? HB_DIRECTION_RTL : HB_DIRECTION_LTR);
+        if (thai[i] == 1)
+            hb_buffer_set_script(buf, HB_SCRIPT_THAI);
         hb_buffer_guess_segment_properties(buf);
         hb_shape(f->hbFont, buf, nullptr, 0);
 
