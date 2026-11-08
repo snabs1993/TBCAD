@@ -49,6 +49,8 @@ void buildFonts(float scale);
 // Monospace font (Liberation Mono, Thai merged from Sarabun) for the command log and the status
 // bar coordinates; nullptr when the font file is missing (use the normal font then).
 ImFont* monoFont();
+// Small Latin font (Lato, 11 px) for the names under the Toolbox icons; nullptr when missing.
+ImFont* smallFont();
 // Dear ImGui colours and metrics from the theme tokens; `scale` is the DPI scale for sizes.
 void applyTheme(const ui::Theme& theme, float scale);
 // True when Windows is set to dark app mode (always true elsewhere).
@@ -175,7 +177,10 @@ private:
     void searchBox();  // top-centre command search (English and Thai words)
     void toolStrip(bool inMenuBar = false);
     void toolbox();
-    void toolCell(const ui::ToolDef& t, float iconSize, float scale, bool iconOnly);
+    void toolCell(const ui::ToolDef& t, float iconSize, float scale, bool iconOnly,
+                  bool smallName = false);
+    // Height of the small name under a compact Toolbox icon (ui.toolbox.labels), 0 when off.
+    float smallNameHeight() const;
     void quickRail();
     std::vector<std::string> quickRailCommands() const;
     void readOnlyBanner();

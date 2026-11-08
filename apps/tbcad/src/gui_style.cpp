@@ -19,10 +19,15 @@ namespace fs = std::filesystem;
 
 namespace {
 ImFont* gMono = nullptr;
+ImFont* gSmall = nullptr;
 }  // namespace
 
 ImFont* monoFont() {
     return gMono;
+}
+
+ImFont* smallFont() {
+    return gSmall;
 }
 
 namespace {
@@ -129,6 +134,10 @@ void buildFonts(float scale) {
             io.Fonts->AddFontFromFileTTF(sarabun.c_str(), size + 1.0f * scale, &cfg, thai);
         }
     }
+    // A small Latin font for the names under the Toolbox icons.
+    gSmall = nullptr;
+    if (!lato.empty())
+        gSmall = io.Fonts->AddFontFromFileTTF(lato.c_str(), 11.0f * scale, nullptr, ranges.Data);
     if (!base && sarabun.empty())
         io.Fonts->AddFontDefault();
     io.Fonts->Build();
