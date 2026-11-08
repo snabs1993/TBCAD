@@ -48,14 +48,17 @@ The host owns the authoritative document. Every edit is a `ChangeSet`; what trav
 `libs/collabapp` puts the engine into TBCAD. File > Work Together (command `COLLAB`, or the LIVE button
 in the status bar) opens the panel:
 
-- **Share this drawing**: one click. The panel shows a 6-digit code (the session password: TLS 1.3 with a
-  key from it) and this computer's address. Port 47800, or any free port when it is taken. Other
-  computers on the network see the drawing in their list (UDP announcement, port 47801). The host can
-  turn on asking before anyone joins, admit people as view-only, remove them, and hand the host role to
-  someone else.
-- **Join**: pick the drawing in the list (or type the address), type the code, Join. The shared drawing
-  opens as a new tab. Other people's cursors show in their colour with their
-  name.
+- **Share this drawing**: one click, no code. Port 47800, or any free port when it is taken. Other
+  computers on the network see the drawing in their list (UDP announcement, port 47801).
+- **Join**: click Join next to the drawing in the list (or type the address). The host gets a
+  "wants to join" box (the panel opens by itself) with Let in, View only and Refuse. A computer let in
+  once is remembered (setting `collab.rememberedComputers`, keyed by a random id each program makes once,
+  `collab.computerId`) and joins without asking next time; Forget removes it. The host can also turn
+  asking off, remove people and hand the host role to someone else. The shared drawing opens as a new
+  tab; other people's cursors show in their colour with their name.
+- **Security**: the link is TLS 1.3 with a fixed pre-shared key plus ephemeral key exchange, so other
+  computers cannot read the traffic; who gets in is the host's decision. `share()` / `join()` with a
+  password of your own are still there for scripts and tests.
 - **Team**: keep a layer for yourself (the host refuses others' edits on it), chat.
 - **Offline**: when a guest loses the host, the drawing stays editable; Reconnect sends what was done
   meanwhile, and an edit to something another person changed meanwhile waits for Keep mine / Keep theirs.

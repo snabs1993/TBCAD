@@ -141,12 +141,52 @@ TEST_CASE("controller: a guest that lost the host keeps working and sends it on 
         until({&a, &b}, [&] { return std::get<LineData>(a.doc().find(shared)->data).b.y == 9; }));
 }
 
-TEST_CASE("controller: one-click share gives a 6-digit code that lets another program in") {
+TEST_CASE("controller: one-click share needs no code, the host lets a computer in once") {
     Program a("sa"), b("sb");
     std::string err;
     REQUIRE_MESSAGE(a.collab->shareSimple(err), err);
-    CHECK(a.collab->code().size() == 6);
     CHECK(a.collab->port() > 0);
-    REQUIRE(b.collab->join("127.0.0.1", a.collab->port(), a.collab->code(), "B", err));
+    CHECK(a.collab->askBeforeJoin());
+
+    // First time: the host is asked; refusing closes the guest's connection.
+    REQUIRE(b.collab->joinSimple("127.0.0.1", a.collab->port(), "B", err));
+    REQUIRE(until({&a, &b}, [&] { return a.collab->requests().size() == 1; }));
+    CHECK(a.collab->requests()[0].name == "B");
+    CHECK(a.collab->requests()[0].computer == b.collab->computerId());
+    a.collab->answer(a.collab->requests()[0].conn, false, collab::Role::Editor);
+    REQUIRE(until({&a, &b}, [&] { return b.collab->mode() != CollabController::Mode::Joining; }));
+    CHECK(b.collab->mode() != CollabController::Mode::Joined);
+    CHECK(a.collab->rememberedComputers().empty());
+    b.collab->stop();
+
+    // Asked again; letting in remembers the computer.
+    REQUIRE(b.collab->joinSimple("127.0.0.1", a.collab->port(), "B", err));
+    REQUIRE(until({&a, &b}, [&] { return a.collab->requests().size() == 1; }));
+    a.collab->answer(a.collab->requests()[0].conn, true, collab::Role::Editor, true);
     REQUIRE(until({&a, &b}, [&] { return b.collab->mode() == CollabController::Mode::Joined; }));
+    REQUIRE(a.collab->rememberedComputers().size() == 1);
+    CHECK(a.collab->rememberedComputers()[0].name == "B");
+    b.collab->stop();
+    REQUIRE(until({&a, &b}, [&] { return a.collab->peers().empty(); }));
+
+    // Next time: straight in, nobody is asked.
+    REQUIRE(b.collab->joinSimple("127.0.0.1", a.collab->port(), "B", err));
+    REQUIRE(until({&a, &b}, [&] { return b.collab->mode() == CollabController::Mode::Joined; }));
+    CHECK(a.collab->requests().empty());
+    b.collab->stop();
+    REQUIRE(until({&a, &b}, [&] { return a.collab->peers().empty(); }));
+
+    // Forgotten: asked again.
+    a.collab->forgetComputer(b.collab->computerId());
+    CHECK(a.collab->rememberedComputers().empty());
+    REQUIRE(b.collab->joinSimple("127.0.0.1", a.collab->port(), "B", err));
+    REQUIRE(until({&a, &b}, [&] { return a.collab->requests().size() == 1; }));
+}
+
+TEST_CASE("controller: each program keeps one computer id") {
+    Program a("ia"), b("ib");
+    const std::string id = a.collab->computerId();
+    CHECK(id.size() == 32);
+    CHECK(a.collab->computerId() == id);
+    CHECK(b.collab->computerId() != id);
 }

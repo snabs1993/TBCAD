@@ -63,16 +63,28 @@ public:
     struct Request {
         collab::ConnId conn = 0;
         std::string name{};
+        std::string computer{};  // the asking computer's id (empty from an older program)
     };
     const std::vector<Request>& requests() const { return requests_; }
-    void answer(collab::ConnId conn, bool allow, collab::Role role);
+    // `remember`: let this computer in without asking next time (rememberedComputers()).
+    void answer(collab::ConnId conn, bool allow, collab::Role role, bool remember = false);
     void setAskBeforeJoin(bool on) { askBeforeJoin_ = on; }
     bool askBeforeJoin() const { return askBeforeJoin_; }
-    // One click: shares with a fresh 6-digit code as the password, on port 47800 (any free port
-    // when that one is taken), under the computer's user name.
+    // One click: shares on the local network with no code, on port 47800 (any free port when that
+    // one is taken), under the computer's user name. The host is asked before anyone joins, except
+    // computers it let in before (rememberedComputers()).
     bool shareSimple(std::string& error);
-    // The code (password) of this session, to show to the others.
-    const std::string& code() const { return password_; }
+    // One click on a host found on the network (nearbyHosts()) or typed in: no code needed.
+    bool joinSimple(const std::string& host, int port, const std::string& name, std::string& error);
+    // Computers the host let in before: they join without asking. Forget removes one.
+    struct Computer {
+        std::string id{};
+        std::string name{};
+    };
+    std::vector<Computer> rememberedComputers() const;
+    void forgetComputer(const std::string& id);
+    // This computer's id (made once, kept in the settings), sent to the host when joining.
+    std::string computerId() const;
     // Address of this computer on the local network (for typing on the other computer).
     std::string localAddress() const;
     static std::string defaultName();
@@ -115,10 +127,14 @@ private:
         std::shared_ptr<Link> link{};
         collab::ConnId id = 0;
         bool admitted = false;
+        std::string computer{};   // id the guest sent before its Hello
         collab::PeerId peer = 0;  // known once the engine let the person in
     };
 
     void say(std::string line);
+    bool remembered(const std::string& computer) const;
+    Frame computerFrame() const;
+    void rememberComputer(const std::string& computer, const std::string& name);
     void pumpHost(std::uint64_t ms);
     bool startHosting(std::unique_ptr<Listener> listener);
     void becomeHost();
@@ -142,7 +158,7 @@ private:
     bool guestsMayEdit_ = true;
     std::vector<std::string> log_{};
     std::chrono::steady_clock::time_point t0_ = std::chrono::steady_clock::now();
-    bool askBeforeJoin_ = false;  // the code is the gate; the host can turn asking on
+    bool askBeforeJoin_ = false;  // on for shareSimple (no code: the host is the gate)
     collab::Role admitAs_ = collab::Role::Editor;
     std::vector<Request> requests_{};
     std::vector<Parked> parked_{};

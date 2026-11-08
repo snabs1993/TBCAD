@@ -26,6 +26,15 @@ inline constexpr std::uint8_t kClaimTable = 0xF3;  // [type][u32 n][(u32 layer, 
 inline constexpr std::uint8_t kBecomeHost = 0xF4;
 inline constexpr std::uint8_t kHostReady = 0xF5;
 inline constexpr std::uint8_t kMoveTo = 0xF6;
+// Sent by a guest before its Hello: [type][computer id]. The host lets remembered computers in
+// without asking.
+inline constexpr std::uint8_t kComputer = 0xF7;
+inline constexpr std::size_t kMaxComputerId = 64;
+// Sessions on the local network need no code: both sides use this fixed password. The link stays
+// encrypted (TLS 1.3 PSK with ephemeral keys), and the host decides who gets in.
+inline constexpr const char* kLanPassword = "tbcad-lan-session-1";
+inline constexpr const char* kSettingComputerId = "collab.computerId";
+inline constexpr const char* kSettingRemembered = "collab.rememberedComputers";  // "id\tname"
 inline constexpr std::size_t kMaxChatBytes = 500;
 inline constexpr std::size_t kMaxClaims = 4096;
 
