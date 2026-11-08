@@ -110,7 +110,8 @@ std::string CollabController::status() const {
             return "Sharing on port " + std::to_string(port()) + " (" +
                    std::to_string(peers().size()) + " guest(s))";
         case Mode::Joining:
-            return "Joining...";
+            return password_ == kLanPassword ? "Waiting for the host to let you in..."
+                                             : "Joining...";
         case Mode::Joined:
             return "Connected as " + hostName_;
         case Mode::Offline:
@@ -226,11 +227,15 @@ bool CollabController::join(const std::string& host, int port, const std::string
     };
     mode_ = Mode::Joining;
     say("Connecting to " + host + ":" + std::to_string(port));
+    link->send(computerFrame());
     guest_->join(hostName_);
     return true;
 }
 
-void CollabController::answer(collab::ConnId conn, bool allow, collab::Role role) {
+void CollabController::answer(collab::ConnId conn, bool allow, collab::Role role, bool remember) {
+    for (const Request& r : requests_)
+        if (r.conn == conn && allow && remember)
+            rememberComputer(r.computer, r.name);
     std::erase_if(requests_, [&](const Request& r) { return r.conn == conn; });
     for (std::size_t i = 0; i < parked_.size(); ++i) {
         if (parked_[i].conn != conn)
@@ -418,7 +423,13 @@ void CollabController::pumpHost(std::uint64_t ms) {
                     teamFrameFromGuest(c, f, ms);
                 continue;
             }
-            if (askBeforeJoin_ && ms >= autoAdmitUntil_ && f[0] == kHello && !c.admitted) {
+            if (f[0] == kComputer) {
+                if (!c.admitted && f.size() <= 1 + kMaxComputerId)
+                    c.computer.assign(f.begin() + 1, f.end());
+                continue;
+            }
+            if (askBeforeJoin_ && ms >= autoAdmitUntil_ && f[0] == kHello && !c.admitted &&
+                !remembered(c.computer)) {
                 // Keep the request until the host answers; nothing is sent to the guest meanwhile.
                 std::string name;
                 if (f.size() >= 3 && f[1] < 0x80 && f[2] < 0x80 && f.size() >= 3u + f[2])
@@ -427,9 +438,11 @@ void CollabController::pumpHost(std::uint64_t ms) {
                     c.link->close();
                     continue;
                 }
-                requests_.push_back({c.id, name});
+                requests_.push_back({c.id, name, c.computer});
                 parked_.push_back({c.id, f});
                 say(name + " asks to join");
+                core_.print(name + " asks to join your shared drawing (File > Work Together).");
+                core_.openPanel("collab");
                 continue;
             }
             if (f[0] == kHello && !c.admitted) {
@@ -600,12 +613,80 @@ std::string CollabController::defaultName() {
 }
 
 bool CollabController::shareSimple(std::string& error) {
+    bool ok = share(47800, kLanPassword, defaultName(), true, error);
+    if (!ok && mode_ == Mode::Off) {
+        error.clear();
+        ok = share(0, kLanPassword, defaultName(), true, error);
+    }
+    if (ok)
+        askBeforeJoin_ = true;
+    return ok;
+}
+
+bool CollabController::joinSimple(const std::string& host, int port, const std::string& name,
+                                  std::string& error) {
+    return join(host, port, kLanPassword, name.empty() ? defaultName() : name, error);
+}
+
+std::string CollabController::computerId() const {
+    std::string id = core_.settings().getString(kSettingComputerId);
+    if (id.size() >= 16 && id.size() <= kMaxComputerId)
+        return id;
     std::random_device rd;
-    const std::string code = std::to_string(100000 + rd() % 900000);
-    if (share(47800, code, defaultName(), true, error))
-        return true;
-    error.clear();
-    return share(0, code, defaultName(), true, error);
+    static const char* hex = "0123456789abcdef";
+    id.clear();
+    for (int i = 0; i < 32; ++i)
+        id += hex[rd() % 16];
+    core_.settings().setString(kSettingComputerId, id);
+    return id;
+}
+
+Frame CollabController::computerFrame() const {
+    const std::string id = computerId();
+    Frame f{kComputer};
+    f.insert(f.end(), id.begin(), id.end());
+    return f;
+}
+
+std::vector<CollabController::Computer> CollabController::rememberedComputers() const {
+    std::vector<Computer> out;
+    for (const std::string& line : core_.settings().getStrings(kSettingRemembered)) {
+        const std::size_t tab = line.find('\t');
+        if (tab == 0 || tab == std::string::npos)
+            continue;
+        out.push_back({line.substr(0, tab), line.substr(tab + 1)});
+    }
+    return out;
+}
+
+bool CollabController::remembered(const std::string& computer) const {
+    if (computer.empty())
+        return false;
+    for (const Computer& c : rememberedComputers())
+        if (c.id == computer)
+            return true;
+    return false;
+}
+
+void CollabController::rememberComputer(const std::string& computer, const std::string& name) {
+    if (computer.empty() || computer.find('\t') != std::string::npos)
+        return;
+    std::vector<std::string> lines;
+    for (const Computer& c : rememberedComputers())
+        if (c.id != computer)
+            lines.push_back(c.id + "\t" + c.name);
+    lines.push_back(computer + "\t" + name);
+    while (lines.size() > 100)
+        lines.erase(lines.begin());
+    core_.settings().setStrings(kSettingRemembered, lines);
+}
+
+void CollabController::forgetComputer(const std::string& id) {
+    std::vector<std::string> lines;
+    for (const Computer& c : rememberedComputers())
+        if (c.id != id)
+            lines.push_back(c.id + "\t" + c.name);
+    core_.settings().setStrings(kSettingRemembered, lines);
 }
 
 std::string CollabController::localAddress() const {
@@ -649,7 +730,8 @@ void CollabController::becomeHost() {
     doc_->clearEntityIdWindow();
     host_ = std::make_unique<collab::Host>(*doc_);
     host_->restore(std::move(versions), seq);
-    autoAdmitUntil_ = nowMs() + 60000;  // the others are on their way: let them in
+    autoAdmitUntil_ = nowMs() + 60000;           // the others are on their way: let them in
+    askBeforeJoin_ = password_ == kLanPassword;  // no code: the new host decides who joins
     (void)startHosting(std::move(listener));
     say("You are the host now");
 }

@@ -12,7 +12,6 @@ namespace tbcad::collabapp {
 namespace {
 struct Form {
     std::string name{};
-    std::string password{};
     std::string address{};
     int port = 47800;
     bool guestsMayEdit = true;
@@ -22,6 +21,25 @@ struct Form {
 Form& form() {
     static Form f;
     return f;
+}
+
+void drawRemembered(CollabController& c) {
+    const auto known = c.rememberedComputers();
+    if (known.empty())
+        return;
+    ImGui::SeparatorText("Computers that join without asking");
+    for (std::size_t i = 0; i < known.size(); ++i) {
+        ImGui::PushID(static_cast<int>(i));
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(known[i].name.c_str());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Forget")) {
+            c.forgetComputer(known[i].id);
+            ImGui::PopID();
+            break;
+        }
+        ImGui::PopID();
+    }
 }
 }  // namespace
 
@@ -37,7 +55,10 @@ void drawCollabPanel(CollabController& c, ui::PanelContext&) {
             f.error.clear();
             (void)c.shareSimple(f.error);
         }
-        ImGui::TextDisabled("You get a 6-digit code to give to the others.");
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+        ImGui::TextWrapped(
+            "Others on this network see it in their list and click Join. You let them in.");
+        ImGui::PopStyleColor();
 
         ImGui::SeparatorText("Join someone");
         const auto hosts = c.nearbyHosts();
@@ -46,27 +67,26 @@ void drawCollabPanel(CollabController& c, ui::PanelContext&) {
         for (std::size_t i = 0; i < hosts.size(); ++i) {
             const Announcement& a = hosts[i];
             ImGui::PushID(static_cast<int>(i));
-            const bool picked = f.address == a.address && f.port == a.port;
-            if (ImGui::Selectable((a.name + "'s drawing").c_str(), picked)) {
-                f.address = a.address;
-                f.port = a.port;
+            ImGui::AlignTextToFramePadding();
+            ImGui::Text("%s's drawing", a.name.c_str());
+            ImGui::SameLine(ImGui::GetContentRegionAvail().x - 50);
+            if (ImGui::Button("Join", ImVec2(60, 0))) {
+                f.error.clear();
+                (void)c.joinSimple(a.address, a.port, f.name, f.error);
             }
             ImGui::PopID();
         }
-        if (ImGui::TreeNode("Type the address instead")) {
+        if (ImGui::TreeNode("Not in the list? Type the address")) {
             ImGui::InputText("Address", &f.address);
             ImGui::InputInt("Port", &f.port);
+            ImGui::BeginDisabled(f.address.empty());
+            if (ImGui::Button("Join this address")) {
+                f.error.clear();
+                (void)c.joinSimple(f.address, f.port, f.name, f.error);
+            }
+            ImGui::EndDisabled();
             ImGui::TreePop();
         }
-        ImGui::InputText("Code", &f.password, ImGuiInputTextFlags_CharsDecimal);
-        ImGui::BeginDisabled(f.address.empty() || f.password.empty());
-        if (ImGui::Button("Join", ImVec2(-1, 0))) {
-            f.error.clear();
-            if (f.name.empty())
-                f.name = CollabController::defaultName();
-            (void)c.join(f.address, f.port, f.password, f.name, f.error);
-        }
-        ImGui::EndDisabled();
 
         if (ImGui::TreeNode("More")) {
             ImGui::InputText("Your name", &f.name);
@@ -74,42 +94,46 @@ void drawCollabPanel(CollabController& c, ui::PanelContext&) {
             ImGui::TextDisabled("Both computers must be on the same network (or the same VPN,");
             ImGui::TextDisabled(
                 "such as Tailscale). Allow TBCAD when Windows asks about the firewall.");
+            drawRemembered(c);
             ImGui::TreePop();
         }
     } else {
         if (c.mode() == CollabController::Mode::Hosting) {
-            ImGui::Text("Code:");
-            ImGui::SameLine();
-            ImGui::SetWindowFontScale(1.6f);
-            ImGui::TextUnformatted(c.code().c_str());
-            ImGui::SetWindowFontScale(1.0f);
+            const auto waiting = c.requests();
+            for (const auto& r : waiting) {
+                ImGui::PushID(static_cast<int>(r.conn));
+                ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.95f, 0.75f, 0.2f, 0.18f));
+                if (ImGui::BeginChild("##ask", ImVec2(0, 0),
+                                      ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY)) {
+                    ImGui::Text("%s wants to join", r.name.c_str());
+                    if (ImGui::Button("Let in"))
+                        c.answer(r.conn, true, collab::Role::Editor, true);
+                    ImGui::SameLine();
+                    if (ImGui::Button("View only"))
+                        c.answer(r.conn, true, collab::Role::Viewer, true);
+                    ImGui::SameLine();
+                    if (ImGui::Button("Refuse"))
+                        c.answer(r.conn, false, collab::Role::Viewer);
+                    if (!r.computer.empty())
+                        ImGui::TextDisabled("Next time this computer joins without asking.");
+                }
+                ImGui::EndChild();
+                ImGui::PopStyleColor();
+                ImGui::PopID();
+            }
             const std::string addr = c.localAddress();
             if (!addr.empty())
                 ImGui::TextDisabled("This computer: %s  port %d", addr.c_str(), c.port());
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-            ImGui::TextWrapped("Others: File > Work Together, click your drawing, type the code.");
+            ImGui::TextWrapped("Others: File > Work Together, then Join on your drawing.");
             ImGui::PopStyleColor();
             bool ask = c.askBeforeJoin();
             if (ImGui::Checkbox("Ask me before anyone joins", &ask))
                 c.setAskBeforeJoin(ask);
-            const auto waiting = c.requests();
-            for (const auto& r : waiting) {
-                ImGui::PushID(static_cast<int>(r.conn));
-                ImGui::Text("%s wants to join", r.name.c_str());
-                ImGui::SameLine();
-                if (ImGui::SmallButton("Allow to edit"))
-                    c.answer(r.conn, true, collab::Role::Editor);
-                ImGui::SameLine();
-                if (ImGui::SmallButton("View only"))
-                    c.answer(r.conn, true, collab::Role::Viewer);
-                ImGui::SameLine();
-                if (ImGui::SmallButton("Refuse"))
-                    c.answer(r.conn, false, collab::Role::Viewer);
-                ImGui::PopID();
-            }
             bool edit = c.guestsMayEdit();
             if (ImGui::Checkbox("New guests may edit", &edit))
                 c.setGuestsMayEdit(edit);
+            drawRemembered(c);
         }
         if (c.mode() == CollabController::Mode::Offline) {
             if (ImGui::Button("Reconnect")) {
