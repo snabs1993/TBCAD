@@ -105,8 +105,8 @@ void registerUi(ui::UiRegistry& ui) {
     registerBlockAuthoringPanel(ui);
     registerXrefPanel(ui);
     ui.addMenuItem("Insert/External References Palette", "EXTERNALREFERENCES", "block.xrefpanel");
-    ui.addMenuItem("Draw/Block/Make Block...", "BLOCK", "block.make", "B");
-    ui.addMenuItem("Draw/Block/Insert Block...", "INSERT", "block.insert", "I");
+    ui.addMenuItem("Draw/Block/Make Block...", "BLOCK", "block.make");
+    ui.addMenuItem("Draw/Block/Insert Block...", "INSERT", "block.insert");
     ui.addMenuItem("Insert/Blocks Palette", "BLOCKSPALETTE", "block.palette");
     ui.addMenuItem("Draw/Block/Define Attribute...", "ATTDEF", "block.attdef");
     ui.addMenuItem("Modify/Edit Block in Place", "BEDIT", "block.bedit");
@@ -125,7 +125,7 @@ void registerUi(ui::UiRegistry& ui) {
     ui.addMenuItem("Insert/Reload External References", "XRELOAD", "block.xreload");
     ui.addMenuItem("Modify/Clip Block or Xref...", "XCLIP", "modify.xclip");
     ui.addMenuItem("Tools/Block Count...", "BLOCKCOUNT", "block.count");
-    ui.addMenuItem("Modify/Explode", "EXPLODE", "modify.explode", "X");
+    ui.addMenuItem("Modify/Explode", "EXPLODE", "modify.explode");
     ui.addMenuItem("Draw/Block/Dynamic Parameter...", "BPARAM", "block.bparam");
     ui.addMenuItem("Draw/Block/Dynamic Action...", "BACTION", "block.baction");
     ui.addMenuItem("Modify/Set Dynamic Value...", "DYNSET", "modify.dynset");

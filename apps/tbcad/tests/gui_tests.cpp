@@ -4073,3 +4073,52 @@ TEST_CASE("ARRAY from the Toolbox shows the grid while it is set up, Properties 
     REQUIRE(a);
     CHECK(a->rows == 5);
 }
+
+namespace {
+// One key as a real keyboard sends it: the key goes down (with its character) and up again.
+void typeKey(Harness& h, ImGuiKey key, ImWchar ch) {
+    ImGuiIO& io = ImGui::GetIO();
+    io.AddKeyEvent(key, true);
+    if (ch)
+        io.AddInputCharacter(ch);
+    h.frame();
+    io.AddKeyEvent(key, false);
+    h.frame();
+}
+}  // namespace
+
+TEST_CASE("typing br runs BREAK: a letter key never starts a command on its own") {
+    Harness h(1600, 1000);
+    // test.20: an old keybindings.json saved "block.make": "B" (the shipped default then).
+    h.core().keybindings().set("block.make", "B");
+    h.core().keybindings().set("block.insert", "I");
+    h.core().keybindings().set("modify.explode", "X");
+    h.frame(2);
+    struct Case {
+        ImGuiKey k1, k2;
+        ImWchar c1, c2;
+        const char* command;
+    };
+    const Case cases[] = {{ImGuiKey_B, ImGuiKey_R, 'b', 'r', "BREAK"},
+                          {ImGuiKey_X, ImGuiKey_L, 'x', 'l', "XLINE"},
+                          {ImGuiKey_I, ImGuiKey_D, 'i', 'd', "ID"}};
+    for (const Case& c : cases) {
+        CAPTURE(c.command);
+        h.click(800, 500);  // the drawing has the keyboard, as after picking points
+        h.frame(2);
+        const std::size_t before = h.core().history().size();
+        typeKey(h, c.k1, c.c1);
+        CHECK_FALSE(h.core().runner().active());  // still typing
+        typeKey(h, c.k2, c.c2);
+        CHECK_FALSE(h.core().runner().active());
+        typeKey(h, ImGuiKey_Enter, 0);
+        h.frame(2);
+        CHECK(runningName(h) == c.command);
+        std::string said;
+        for (std::size_t i = before; i < h.core().history().size(); ++i)
+            said += h.core().history()[i] + "\n";
+        CHECK(said.find("Make Block") == std::string::npos);
+        h.core().pressEscape();
+        h.frame(2);
+    }
+}

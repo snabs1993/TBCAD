@@ -163,6 +163,11 @@ TEST_CASE("keybinding editor: command shortcuts") {
     KeybindingEditor ed(keys, file);
 
     CHECK_FALSE(ed.addCommand("  ", "F4").ok);
+    // A bare letter types into the command line: refused, with the reason.
+    auto bare = ed.addCommand("BLOCK", "b");
+    CHECK_FALSE(bare.ok);
+    CHECK(bare.error.find("Ctrl or Alt") != std::string::npos);
+    CHECK(keys.label("cmd:BLOCK").empty());
     CHECK(ed.addCommand(" LAYER ", "ctrl+shift+l").ok);
     CHECK(keys.label("cmd:LAYER") == "Ctrl+Shift+L");
     CHECK(keys.actionFor(*platform::parseChord("Ctrl+Shift+L")) == "cmd:LAYER");

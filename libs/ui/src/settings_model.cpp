@@ -219,6 +219,11 @@ KeybindingEditor::Outcome KeybindingEditor::set(const std::string& action,
             o.error = "\"" + chordText + "\" is not a key combination.";
             return o;
         }
+        if (platform::typesText(*chord)) {
+            o.error = chord->toString() +
+                      " types into the command line. Add Ctrl or Alt, or use an F key.";
+            return o;
+        }
         text = chord->toString();
         for (const std::string& other : keys_.actions()) {
             if (other != action && keys_.label(other) == text) {
