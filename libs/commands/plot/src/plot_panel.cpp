@@ -3,8 +3,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -34,6 +36,7 @@ struct PanelState {
     exportlib::PlotSheet sheet{};
     std::string sheetError{};
     std::uint64_t builtRevision = ~0ull;
+    std::uint64_t previewBuild = 0;
     std::string builtKey{};
     std::string styleLoaded{};
     std::string setupName{};         // text field of "Save as"
@@ -72,7 +75,24 @@ constexpr std::size_t kPreviewPrims = 30000;
 // in the window's draw list.
 constexpr int kPreviewVertices = 55000;
 
-void drawPreview(const exportlib::PlotSheet& sheet, ImVec2 size) {
+// Each sheet build gets a new number; a preview drawn again from the same build at the same size
+// copies the vertices it made last time instead of drawing every primitive again (a 393k drawing
+// cost 1.5 ms a frame while the Print window was open).
+std::uint64_t nextPreviewBuild() {
+    static std::uint64_t n = 0;
+    return ++n;
+}
+
+struct PreviewVertices {
+    std::uint64_t build = 0;
+    float w = 0, h = 0;
+    ImTextureID texture{};
+    ImVec2 p0{};
+    std::vector<ImDrawVert> vtx;
+    std::vector<ImDrawIdx> idx;
+};
+
+void drawPreview(const exportlib::PlotSheet& sheet, ImVec2 size, std::uint64_t build = 0) {
     const auto& lay = sheet.layout;
     ImVec2 origin = ImGui::GetCursorScreenPos();
     ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -94,10 +114,35 @@ void drawPreview(const exportlib::PlotSheet& sheet, ImVec2 size) {
     dl->PushClipRect({pa.x, pb.y}, {pb.x, pa.y}, true);
 
     // Same primitives as the exported file; line widths use the real paper width, at least 1 px.
+    static std::map<const exportlib::PlotSheet*, PreviewVertices> cache;
+    PreviewVertices& cached = cache[&sheet];
+    const ImTextureID texture = dl->_CmdHeader.TextureId;
+    if (build != 0 && cached.build == build && cached.w == pw && cached.h == ph &&
+        cached.texture == texture) {
+        dl->PrimReserve(int(cached.idx.size()), int(cached.vtx.size()));
+        const unsigned base = dl->_VtxCurrentIdx;
+        const ImVec2 off{p0.x - cached.p0.x, p0.y - cached.p0.y};
+        for (ImDrawVert v : cached.vtx) {
+            v.pos.x += off.x;
+            v.pos.y += off.y;
+            *dl->_VtxWritePtr++ = v;
+        }
+        for (ImDrawIdx i : cached.idx)
+            *dl->_IdxWritePtr++ = ImDrawIdx(i + base);
+        dl->_VtxCurrentIdx += unsigned(cached.vtx.size());
+        dl->PopClipRect();
+        ImGui::Dummy(size);
+        return;
+    }
+    const int vtx0 = dl->VtxBuffer.Size, idx0 = dl->IdxBuffer.Size, cmds0 = dl->CmdBuffer.Size;
+    const unsigned base0 = dl->_VtxCurrentIdx;
+
     std::vector<ImVec2> pts;
-    const std::size_t step = sheet.prims.size() > kPreviewPrims
-                                 ? (sheet.prims.size() + kPreviewPrims - 1) / kPreviewPrims
-                                 : 1;
+    // A small page cannot show more than about one primitive per 24 square pixels.
+    const std::size_t maxPrims =
+        std::clamp<std::size_t>(std::size_t(pw * ph / 24.0f), 1000, kPreviewPrims);
+    const std::size_t step =
+        sheet.prims.size() > maxPrims ? (sheet.prims.size() + maxPrims - 1) / maxPrims : 1;
     for (std::size_t pi = 0; pi < sheet.prims.size(); pi += step) {
         if (dl->VtxBuffer.Size > kPreviewVertices)
             break;
@@ -134,6 +179,18 @@ void drawPreview(const exportlib::PlotSheet& sheet, ImVec2 size) {
                 dl->AddCircleFilled(toScreen(v), std::max(1.0f, float(d->style.widthMm) * k / 2),
                                     col(d->style.color));
         }
+    }
+    cached = PreviewVertices{};
+    if (build != 0 && dl->CmdBuffer.Size == cmds0) {
+        cached.build = build;
+        cached.w = pw;
+        cached.h = ph;
+        cached.texture = texture;
+        cached.p0 = p0;
+        cached.vtx.assign(dl->VtxBuffer.Data + vtx0, dl->VtxBuffer.Data + dl->VtxBuffer.Size);
+        cached.idx.reserve(std::size_t(dl->IdxBuffer.Size - idx0));
+        for (int i = idx0; i < dl->IdxBuffer.Size; ++i)
+            cached.idx.push_back(ImDrawIdx(dl->IdxBuffer[i] - base0));
     }
     dl->PopClipRect();
     ImGui::Dummy(size);
@@ -422,6 +479,7 @@ void draw(ui::PanelContext& pc) {
         st.sheet = sheet ? std::move(sheet.value()) : exportlib::PlotSheet{};
         st.builtKey = key;
         st.builtRevision = pc.doc->revision();
+        st.previewBuild = nextPreviewBuild();
     }
     auto showPreview = [&](float maxH) {
         ImVec2 avail = ImGui::GetContentRegionAvail();
@@ -437,7 +495,8 @@ void draw(ui::PanelContext& pc) {
                 ImGui::TextDisabled("Scale 1:%.4g  |  %zu objects",
                                     1.0 / st.sheet.layout.paperPerUnit, st.sheet.entityCount);
             avail = ImGui::GetContentRegionAvail();
-            drawPreview(st.sheet, {avail.x, std::clamp(maxH, 160.0f, std::max(160.0f, avail.y))});
+            drawPreview(st.sheet, {avail.x, std::clamp(maxH, 160.0f, std::max(160.0f, avail.y))},
+                        st.previewBuild);
         }
     };
     ImGui::Separator();
@@ -728,7 +787,7 @@ void drawPlotPreview(ui::PanelContext& pc) {
     static exportlib::PlotSheet sheet;
     static std::string error;
     static std::string builtKey;
-    static std::uint64_t builtRevision = ~0ull;
+    static std::uint64_t builtRevision = ~0ull, previewBuild = 0;
     static bool refresh = false;
     if (!pc.doc || !pc.host)
         return;
@@ -758,6 +817,7 @@ void drawPlotPreview(ui::PanelContext& pc) {
         sheet = built ? std::move(built.value()) : exportlib::PlotSheet{};
         builtKey = key;
         builtRevision = pc.doc->revision();
+        previewBuild = nextPreviewBuild();
     }
     const std::string where = plotLayout(*pc.host).empty() ? "Model" : plotLayout(*pc.host);
     ImGui::Text("%s: %s %s, %s", where.c_str(), s.paperName.c_str(),
@@ -785,7 +845,7 @@ void drawPlotPreview(ui::PanelContext& pc) {
     if (sheet.layout.overflows)
         ImGui::TextColored({1.0f, 0.7f, 0.2f, 1.0f}, "The drawing is larger than the paper.");
     const ImVec2 avail = ImGui::GetContentRegionAvail();
-    drawPreview(sheet, {avail.x, std::max(120.0f, avail.y)});
+    drawPreview(sheet, {avail.x, std::max(120.0f, avail.y)}, previewBuild);
 }
 
 // ---- Print window (Ctrl+P) ----------------------------------------------------------------------
@@ -796,7 +856,7 @@ void drawPlotPreview(ui::PanelContext& pc) {
 void drawPrintWindow(ui::PanelContext& pc) {
     static exportlib::PlotSheet sheet;
     static std::string error, builtKey, frameName, result;
-    static std::uint64_t builtRevision = ~0ull;
+    static std::uint64_t builtRevision = ~0ull, previewBuild = 0;
     if (!pc.doc || !pc.host)
         return;
     cmd::IHost& host = *pc.host;
@@ -824,7 +884,6 @@ void drawPrintWindow(ui::PanelContext& pc) {
     if (layoutName.empty()) {
         ImGui::Spacing();
         ImGui::TextDisabled("Area");
-        const auto frames = layout::plotFrames(*pc.doc);
         if (s.area != PlotArea::Window)
             frameName.clear();
         std::string label = s.area == PlotArea::Extents   ? "Whole drawing"
@@ -847,7 +906,8 @@ void drawPrintWindow(ui::PanelContext& pc) {
                 frameName.clear();
                 changed = true;
             }
-            for (const auto& f : frames)
+            // Read only while the list is open: finding the frames walks the whole drawing.
+            for (const auto& f : layout::plotFrames(*pc.doc))
                 if (ImGui::Selectable(("Frame: " + f.name).c_str(), frameName == f.name)) {
                     s = layout::frameSettings(*pc.doc, s, f, styleResolver(host));
                     frameName = f.name;
@@ -970,6 +1030,7 @@ void drawPrintWindow(ui::PanelContext& pc) {
         sheet = built ? std::move(built.value()) : exportlib::PlotSheet{};
         builtKey = key;
         builtRevision = pc.doc->revision();
+        previewBuild = nextPreviewBuild();
     }
     const std::string where = layoutName.empty() ? "Model" : layoutName;
     ImGui::Text("%s  |  %s %s  |  %s", where.c_str(), s.paperName.c_str(),
@@ -982,7 +1043,7 @@ void drawPrintWindow(ui::PanelContext& pc) {
             ImGui::TextColored({1.0f, 0.7f, 0.2f, 1.0f},
                                "The drawing is larger than the paper at this scale.");
         const ImVec2 avail = ImGui::GetContentRegionAvail();
-        drawPreview(sheet, {avail.x, std::max(160.0f, avail.y)});
+        drawPreview(sheet, {avail.x, std::max(160.0f, avail.y)}, previewBuild);
     }
     ImGui::EndChild();
 }
