@@ -502,9 +502,17 @@ TEST_CASE("plot panel: options change the exported PDF") {
     h.core().pressEscape();
     h.core().submitText("PLOTPANEL");
     h.frame(3);
-    REQUIRE(h.click("Plot", "DockSpace"));  // the panel's tab in the right-hand dock
-    h.frame(3);
     REQUIRE(h.windowOpen("Plot"));
+    {
+        // A window of its own over the drawing (owner: "a popup, not stacked at the right"),
+        // with the preview beside the options.
+        const ImGuiWindow* w = ImGui::FindWindowByName("Plot");
+        REQUIRE(w != nullptr);
+        CHECK(w->DockId == 0);
+        CHECK(w->Size.x >= 900.0f);
+        CHECK(w->Pos.x > 300.0f);  // centred, not at the left or right edge
+        CHECK(w->Pos.x + w->Size.x < 1620.0f);
+    }
 
     const fs::path dir = scratchDir("plot");
     const fs::path landscape = dir / "landscape.pdf";
