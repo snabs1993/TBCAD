@@ -386,7 +386,8 @@ struct DataDumper {
 void common(Out& o, const EntityCommon& c) {
     o << "e" << c.id << " L" << c.layer << " V" << c.level << " lt" << c.linetype << " c" << c.color
       << " lw" << static_cast<int>(c.lineweight.v) << " ls" << c.linetypeScale << " vis"
-      << c.visible << (c.annotative ? " anno" : "") << (c.wipeout ? " wipeout" : "");
+      << c.visible << (c.annotative ? " anno" : "") << (c.wipeout ? " wipeout" : "")
+      << (c.faded ? " faded" : "");
     if (c.transparency != kTransparencyByLayer)
         o << " tr" << static_cast<int>(c.transparency);
     bool firstScale = true;
@@ -464,6 +465,8 @@ std::string canonicalDump(const Document& doc) {
           << r.locked << " plot" << r.plot;
         if (r.transparency)
             o << " tr" << static_cast<int>(r.transparency);
+        if (r.faded)
+            o << " faded";
         if (!r.description.empty()) {
             o << " desc ";
             o.quoted(r.description);

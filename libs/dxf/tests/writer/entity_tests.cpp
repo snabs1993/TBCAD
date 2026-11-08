@@ -2683,4 +2683,48 @@ TEST_CASE(
     }
 }
 
+TEST_CASE("faded objects and faded layers survive a DXF round trip") {
+    Document doc;
+    {
+        Transaction tx = doc.begin("t");
+        Layer old;
+        old.name = "OLD";
+        old.faded = true;
+        LayerId oldId = tx.addLayer(old).value();
+        Layer sub;
+        sub.name = "SUB";
+        sub.parent = oldId;
+        sub.faded = true;
+        REQUIRE(tx.addLayer(sub).ok());
+        BlockId b = tx.addBlock(BlockDef{.name = "CHAIR"}).value();
+        REQUIRE(tx.add(make(LineData{{0, 0}, {1, 0}}), b).ok());
+        for (int i = 0; i < 3; ++i) {
+            InsertData ins;
+            ins.block = b;
+            ins.position = {double(i) * 10, 0};
+            Entity e = make(ins);
+            e.common.faded = i == 1;  // only the middle chair
+            REQUIRE(tx.add(std::move(e)).ok());
+        }
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    const Document& back = *rt.back;
+    REQUIRE(back.layerByName("OLD"));
+    CHECK(back.layerByName("OLD")->faded);
+    CHECK_FALSE(back.layerByName("0")->faded);
+    bool subFaded = false;
+    for (const auto& [id, l] : back.layers())
+        if (l.name == "SUB") {
+            subFaded = l.faded;
+            CHECK(l.parent == back.layerByName("OLD")->id);
+        }
+    CHECK(subFaded);
+    std::vector<bool> faded;
+    for (EntityId id : back.modelSpace())
+        if (const Entity* e = back.find(id); e && entityAs<InsertData>(*e))
+            faded.push_back(e->common.faded);
+    CHECK(faded == std::vector<bool>{false, true, false});
+}
+
 }  // namespace tbcad::dxf

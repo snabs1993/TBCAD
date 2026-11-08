@@ -413,6 +413,9 @@ bool buildInsertInstance(const Document& doc, const Entity& insert, const geom::
         return false;
     if (ins->array && !ins->array->swaps.empty())
         return false;
+    // A faded reference draws on its own (geom::buildDisplay greys it), not from shared geometry.
+    if (geom::drawsFaded(doc, insert, ctx))
+        return false;
     std::vector<Transform2> items = instanceTransforms(*ins, def->base);
     if (items.empty())
         return false;

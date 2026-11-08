@@ -78,15 +78,16 @@ public:
         ctx.commitOnCancel();
         ctx.setUndoLabel("LAYER");
         cmd::KeywordOptions opts;
-        opts.keywords = {"Make",   "New",          "NewSub",      "Parent",     "Set",
-                         "On",     "Off",          "Freeze",      "Thaw",       "Lock",
-                         "Unlock", "Color",        "Linetype",    "Lineweight", "Plot",
-                         "NoPlot", "Rename",       "Delete",      "Isolate",    "ShowAll",
-                         "List",   "Transparency", "Description", "Merge"};
+        opts.keywords = {
+            "Make",         "New",         "NewSub", "Parent", "Set",     "On",       "Off",
+            "Freeze",       "Thaw",        "Lock",   "Unlock", "Color",   "Linetype", "Lineweight",
+            "Plot",         "NoPlot",      "Rename", "Delete", "Isolate", "ShowAll",  "List",
+            "Transparency", "Description", "Merge",  "Fade",   "Unfade"};
         // The short forms AutoCAD's -LAYER takes, where the first letters alone are ambiguous.
-        opts.aliases = {{"N", "New"},       {"S", "Set"},         {"M", "Make"},  {"L", "Linetype"},
-                        {"LT", "Linetype"}, {"LW", "Lineweight"}, {"LO", "Lock"}, {"O", "On"},
-                        {"P", "Plot"},      {"D", "Description"}};
+        opts.aliases = {{"N", "New"},         {"S", "Set"},       {"M", "Make"},
+                        {"L", "Linetype"},    {"LT", "Linetype"}, {"LW", "Lineweight"},
+                        {"LO", "Lock"},       {"O", "On"},        {"P", "Plot"},
+                        {"D", "Description"}, {"F", "Freeze"},    {"U", "Unlock"}};
         while (true) {
             auto k = co_await ctx.getKeyword("Layer option", opts);
             if (!k.ok())
@@ -336,6 +337,13 @@ private:
             if (!ok)
                 co_return;
             report(ctx, isolateLayers(doc, ctx.tx(), ids));
+        } else if (option == "Fade" || option == "Unfade") {
+            std::vector<LayerId> ids;
+            co_await askLayers(ctx, "Layer name(s), * for all", ids, ok);
+            if (!ok)
+                co_return;
+            for (LayerId id : ids)
+                report(ctx, setLayerFaded(doc, ctx.tx(), id, option == "Fade"));
         } else if (option == "ShowAll") {
             report(ctx, showAllLayers(doc, ctx.tx()));
         } else if (option == "List") {

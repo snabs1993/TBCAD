@@ -371,3 +371,63 @@ TEST_CASE("block objects on an off or frozen layer are not drawn - layer 0 follo
     CHECK(poly(l, 0).style.layer == shown);
     CHECK(poly(l, 1).style.layer == shown);
 }
+
+TEST_CASE("a faded insert draws grey - the other inserts of the block keep their colour") {
+    registerInsertDisplay();
+    Document doc;
+    Entity red = line(0, 0, 10, 0);
+    red.common.color = Color::index(1);
+    BlockId b = addBlock(doc, "B", {red}, {0, 0});
+    EntityId a = addEntity(doc, insertOf(b, {0, 0}));
+    Entity fadedInsert = insertOf(b, {20, 0});
+    fadedInsert.common.faded = true;
+    EntityId f = addEntity(doc, fadedInsert);
+    EntityId c = addEntity(doc, insertOf(b, {40, 0}));
+    const DisplayList la = displayOf(doc, a);
+    const DisplayList lf = displayOf(doc, f);
+    const DisplayList lc = displayOf(doc, c);
+    REQUIRE(lf.items.size() == 1);
+    const Rgba grey = poly(lf, 0).style.color;
+    CHECK(grey.r == grey.g);
+    CHECK(grey.g == grey.b);
+    CHECK(grey.a < 255);
+    CHECK(poly(lf, 0).style.faded);
+    CHECK(poly(la, 0).style.color.r == 255);
+    CHECK(poly(la, 0).style.color.g == 0);
+    CHECK(poly(lc, 0).style.color.r == 255);
+    CHECK_FALSE(poly(lc, 0).style.faded);
+    // A faded insert is not drawn from the shared block geometry.
+    BlockDisplayCache cache;
+    BlockDisplayScope scope(cache);
+    geom::DisplayContext ctx;
+    InsertInstance inst;
+    CHECK(buildInsertInstance(doc, *doc.find(a), ctx, inst));
+    CHECK_FALSE(buildInsertInstance(doc, *doc.find(f), ctx, inst));
+}
+
+TEST_CASE("everything on a faded layer draws grey, inserts on it included") {
+    registerInsertDisplay();
+    Document doc;
+    LayerId grey{};
+    {
+        Transaction tx = doc.begin("layer");
+        Layer l;
+        l.name = "Old";
+        l.color = Color::index(3);
+        l.faded = true;
+        auto id = tx.addLayer(l);
+        REQUIRE(id.ok());
+        grey = id.value();
+        tx.commit();
+    }
+    BlockId b = addBlock(doc, "B", {line(0, 0, 10, 0)}, {0, 0});
+    Entity on = insertOf(b, {0, 0});
+    on.common.layer = grey;
+    EntityId i = addEntity(doc, on);
+    Entity plain = line(0, 5, 10, 5);
+    plain.common.layer = grey;
+    EntityId l = addEntity(doc, plain);
+    CHECK(poly(displayOf(doc, i), 0).style.faded);
+    CHECK(poly(displayOf(doc, l), 0).style.faded);
+    CHECK(doc.layer(grey)->color == Color::index(3));  // the layer keeps its colour
+}

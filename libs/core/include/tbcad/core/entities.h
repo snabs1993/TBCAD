@@ -250,6 +250,9 @@ struct EntityCommon {
     // Wipeout: a closed polyline that hides the objects drawn before it, instead of showing its
     // outline.
     bool wipeout : 1 = false;
+    // Faded: drawn (and plotted) in a light see-through grey, whatever its colour. On an insert it
+    // fades everything inside that one reference; other references of the block stay as they are.
+    bool faded : 1 = false;
     // Scales (N of 1:N) the annotative object is made for. Empty: it follows the drawing's current
     // scale. Otherwise the first is the one it is drawn at in model space; a layout viewport shows
     // it only when its scale is listed, and draws it at the viewport scale.

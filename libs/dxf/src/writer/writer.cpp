@@ -647,6 +647,7 @@ void Writer::writeLayers(Out& o, std::uint64_t table) {
             eff.plot != layer.plot) {
             ++flattened;
         }
+        bool ours = false;  // the TBCAD XDATA group is open
         if (layer.parent) {
             auto parent = layerName_.find(layer.parent.value);
             if (parent != layerName_.end()) {
@@ -654,10 +655,16 @@ void Writer::writeLayers(Out& o, std::uint64_t table) {
                              (layer.linetype == kLinetypeByParent ? 2 : 0) |
                              (layer.lineweight.isByParent() ? 4 : 0);
                 o.raw(1001, "TBCAD");
+                ours = true;
                 o.str(1000, "parent=" + parent->second);
                 o.str(1000, "name=" + layer.name);
                 o.i(1070, xflags);
             }
+        }
+        if (layer.faded && !r12_) {
+            if (!ours)
+                o.raw(1001, "TBCAD");
+            o.str(1000, "faded=1");
         }
     }
     if (flattened > 0) {

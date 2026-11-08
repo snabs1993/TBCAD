@@ -1,5 +1,5 @@
 // One-step layer tools that work from picked objects: LAYOFF, LAYFRZ, LAYLCK, LAYULK, LAYISO,
-// LAYUNISO, LAYON, LAYTHW, LAYMCH, LAYMRG, LAYDEL.
+// LAYUNISO, LAYON, LAYTHW, LAYMCH, LAYMRG, LAYDEL, LAYFADE.
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -102,6 +102,39 @@ private:
     const char* name_;
     const char* description_;
     Act act_;
+};
+
+// LAYFADE: the layers of the picked objects draw and plot in a light grey. When they all are faded
+// already, their colours come back.
+class LayFadeCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "LAYFADE"; }
+    std::string_view description() const override {
+        return "Fade the layers of the selected objects to a light grey, or bring them back";
+    }
+
+    Task run(CommandContext& ctx) override {
+        auto sel = co_await ctx.getSelection("Select objects on the layers to fade or unfade");
+        if (!sel.ok() || sel.ids.empty())
+            co_return;
+        const std::vector<LayerId> ids = layersOf(ctx.doc(), sel.ids);
+        const bool fade = !std::all_of(ids.begin(), ids.end(), [&](LayerId id) {
+            const Layer* l = ctx.doc().layer(id);
+            return !l || l->faded;
+        });
+        std::vector<LayerId> done;
+        for (LayerId id : ids) {
+            Result<void> r = setLayerFaded(ctx.doc(), ctx.tx(), id, fade);
+            if (r)
+                done.push_back(id);
+            else
+                ctx.message(r.error().message);
+        }
+        ctx.setUndoLabel(fade ? "LAYFADE" : "LAYUNFADE");
+        if (!done.empty())
+            ctx.message(std::string(fade ? "Faded" : "Shown in their colours again") + ": " +
+                        names(ctx.doc(), done) + ".");
+    }
 };
 
 // LAYISO: the layers of the picked objects stay; the others are turned off, or (Settings > Lock
@@ -422,6 +455,7 @@ void registerLayerTools(cmd::Registry& registry) {
     (void)registry.add(std::make_unique<LayOnCommand>("LAYON", "Turn on all layers", false));
     (void)registry.add(std::make_unique<LayOnCommand>("LAYTHW", "Thaw all layers", true));
     (void)registry.add(std::make_unique<LayMchCommand>());
+    (void)registry.add(std::make_unique<LayFadeCommand>());
     (void)registry.add(std::make_unique<LayChangeCommand>());
     (void)registry.add(std::make_unique<LayMrgCommand>());
     (void)registry.add(std::make_unique<LayDelCommand>());

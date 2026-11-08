@@ -1145,11 +1145,13 @@ void Writer::writeTbcadFlags(const Entity& e) {
 }
 
 void Writer::writeCommonFlags(const EntityCommon& c) {
-    if (!c.annotative && !c.wipeout)
+    if (!c.annotative && !c.wipeout && !c.faded)
         return;
     openTbcadXdata();
     if (c.wipeout)
         L().o->str(1000, "wipeout=1");
+    if (c.faded)
+        L().o->str(1000, "faded=1");
     if (!c.annotative)
         return;
     L().o->str(1000, "annotative=1");

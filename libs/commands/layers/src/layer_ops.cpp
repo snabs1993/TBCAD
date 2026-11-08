@@ -492,6 +492,10 @@ Result<void> setPlot(const Document& doc, Transaction& tx, LayerId id, bool plot
     return editLayer(doc, tx, id, [&](Layer& l) { l.plot = plot; });
 }
 
+Result<void> setLayerFaded(const Document& doc, Transaction& tx, LayerId id, bool faded) {
+    return editLayer(doc, tx, id, [&](Layer& l) { l.faded = faded; });
+}
+
 Result<void> setLayerColor(const Document& doc, Transaction& tx, LayerId id, Color color) {
     return editLayer(doc, tx, id, [&](Layer& l) { l.color = color; });
 }

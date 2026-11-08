@@ -623,10 +623,12 @@ void SceneSync::syncLayers() {
     for (const auto& [id, layer] : doc_.layers())
         if (doc_.effective(id).locked)
             locked.insert(id);
-    // Entities on a layer whose transparency changed (ByLayer ones follow it).
+    // Entities on a layer whose transparency changed (ByLayer ones follow it) or that was faded
+    // (the top bit: transparency stays below 128).
     std::unordered_map<LayerId, std::uint8_t> transparency;
     for (const auto& [id, layer] : doc_.layers())
-        transparency[id] = layer.transparency;
+        transparency[id] =
+            static_cast<std::uint8_t>(layer.transparency | (doc_.effective(id).faded ? 0x80 : 0));
     std::unordered_set<LayerId> changed;
     if (transparency != layerTransparency_) {
         for (const auto& [id, t] : transparency) {

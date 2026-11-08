@@ -207,6 +207,11 @@ constexpr ThaiWord kThaiWords[] = {
     {"ซ่อนวัตถุ", "HIDE"},
     {"แยกวัตถุ", "ISOLATE"},
     {"แสดงวัตถุ", "UNISOLATE"},
+    {"ทำให้จาง", "FADE"},
+    {"จางลง", "FADE"},
+    {"สีเทา", "FADE"},
+    {"เลเยอร์จาง", "LAYFADE"},
+    {"เลเยอร์สีเทา", "LAYFADE"},
     // Layout and print
     {"พิมพ์", "PLOT"},
     {"สั่งพิมพ์", "PLOT"},

@@ -83,6 +83,7 @@ struct LayerRow {
     int lineweight = -3;
     int transparency = 0;       // percent
     std::string description{};  // AcAecLayerStandard XDATA
+    bool faded = false;         // TBCAD XDATA "faded=1"
     int line = 0;
     std::string plotStyleHandle{};  // group 390: a plot style name object (named plot styles)
     // TBCAD XDATA

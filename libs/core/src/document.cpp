@@ -1156,6 +1156,7 @@ EffectiveLayer Document::effective(LayerId id) const {
         e.plot = e.plot && l->plot;
         e.frozen = e.frozen || l->frozen;
         e.locked = e.locked || l->locked;
+        e.faded = e.faded || l->faded;
         if (!haveColor && l->color.kind != ColorKind::ByParent) {
             e.color = l->color;
             haveColor = true;

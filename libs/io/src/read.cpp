@@ -782,8 +782,9 @@ private:
             row.linetype = LinetypeId{r.u32()};
             row.lineweight = LineWeight{r.i16()};
             std::uint8_t f = r.u8();
-            if (f > 63)
+            if (f > 127)
                 bad("invalid layer flags");
+            row.faded = (f & 64) != 0;
             row.on = (f & 1) != 0;
             row.frozen = (f & 2) != 0;
             row.locked = (f & 4) != 0;

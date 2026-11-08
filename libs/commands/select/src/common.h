@@ -23,6 +23,7 @@ std::unique_ptr<cmd::Command> makeFilterDialog();
 std::unique_ptr<cmd::Command> makeFilterSave();
 std::unique_ptr<cmd::Command> makeHide();
 std::unique_ptr<cmd::Command> makeUnisolate();
+std::unique_ptr<cmd::Command> makeFade();
 
 // "BYLAYER", "BYBLOCK", an index 1..255 or "r,g,b"; nullopt when it is none of those.
 std::optional<Color> parseColor(const std::string& text);

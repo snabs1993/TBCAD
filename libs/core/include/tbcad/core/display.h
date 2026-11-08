@@ -35,6 +35,7 @@ struct DisplayStyle {
     const std::vector<LinetypeMark>* marks = nullptr;
     LayerId layer{};
     bool noPlot = false;  // shown on screen only (a wipeout frame with WIPEOUTFRAME 2)
+    bool faded = false;   // already turned to the faded grey (see geom::fadeDisplay)
 };
 
 struct DisplayPolyline {

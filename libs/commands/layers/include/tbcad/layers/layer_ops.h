@@ -72,6 +72,8 @@ Result<void> setOn(const Document& doc, Transaction& tx, LayerId id, bool on);
 Result<void> setFrozen(const Document& doc, Transaction& tx, LayerId id, bool frozen);
 Result<void> setLocked(const Document& doc, Transaction& tx, LayerId id, bool locked);
 Result<void> setPlot(const Document& doc, Transaction& tx, LayerId id, bool plot);
+// Faded: everything on the layer draws and plots in a light grey; its colour is kept.
+Result<void> setLayerFaded(const Document& doc, Transaction& tx, LayerId id, bool faded);
 // ByLayer and ByBlock are refused; ByParent only on sub-layers.
 Result<void> setLayerColor(const Document& doc, Transaction& tx, LayerId id, Color color);
 Result<void> setLayerLinetype(const Document& doc, Transaction& tx, LayerId id,

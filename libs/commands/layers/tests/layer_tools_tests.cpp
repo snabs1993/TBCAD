@@ -274,3 +274,25 @@ TEST_CASE("LAYTRANS Map renames and merges from old>new pairs in one undo step")
     CHECK(f.doc.layerByName("A") != nullptr);
     CHECK(f.doc.layerByName("B") != nullptr);
 }
+
+TEST_CASE("LAYFADE fades the layers of the picked objects and again brings them back") {
+    Fixture f;
+    f.setup();
+    CHECK(f.run("LAYFADE", {cmd::ScriptItem::select({f.ea}), cmd::ScriptItem::enter()}).finished);
+    CHECK(f.doc.layer(f.a)->faded);
+    CHECK_FALSE(f.doc.layer(f.b)->faded);
+    CHECK(f.doc.effective(f.a).faded);
+    CHECK(f.run("LAYFADE", {cmd::ScriptItem::select({f.ea}), cmd::ScriptItem::enter()}).finished);
+    CHECK_FALSE(f.doc.layer(f.a)->faded);
+}
+
+TEST_CASE("-LAYER Fade and Unfade - F and U still mean Freeze and Unlock") {
+    Fixture f;
+    f.setup();
+    f.run("-LAYER", {"Fade", "B", cmd::ScriptItem::enter()});
+    CHECK(f.doc.layer(f.b)->faded);
+    f.run("-LAYER", {"Unfade", "B", cmd::ScriptItem::enter()});
+    CHECK_FALSE(f.doc.layer(f.b)->faded);
+    f.run("-LAYER", {"F", "B", cmd::ScriptItem::enter()});
+    CHECK(f.doc.layer(f.b)->frozen);
+}
