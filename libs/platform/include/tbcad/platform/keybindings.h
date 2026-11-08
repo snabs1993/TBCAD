@@ -26,6 +26,10 @@ struct KeyChord {
 // Case-insensitive; modifiers in any order; "Control" and "Ctrl" are the same.
 std::optional<KeyChord> parseChord(std::string_view text);
 
+// A letter, digit, symbol or Space without Ctrl/Alt: a key that types into the command line.
+// Such a chord never works as a shortcut, or "b" would start BLOCK before "br" (BREAK) is typed.
+bool typesText(const KeyChord& chord);
+
 // Action id -> key chord. Whoever owns an action declares its default in code; keybindings.json
 // (an object of action id to chord text, "" = unbound) overrides it.
 class Keybindings {

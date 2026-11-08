@@ -106,6 +106,10 @@ std::optional<KeyChord> parseChord(std::string_view text) {
     return c;
 }
 
+bool typesText(const KeyChord& chord) {
+    return !chord.ctrl && !chord.alt && (chord.key.size() == 1 || chord.key == "SPACE");
+}
+
 void Keybindings::declare(std::string actionId, std::string defaultChord) {
     defaults_[std::move(actionId)] = std::move(defaultChord);
 }
@@ -184,13 +188,15 @@ Result<void> Keybindings::save(const std::filesystem::path& file) const {
 
 std::optional<KeyChord> Keybindings::chordOf(std::string_view actionId) const {
     std::string id(actionId);
-    auto o = overrides_.find(id);
-    if (o != overrides_.end())
-        return parseChord(o->second);
-    auto d = defaults_.find(id);
-    if (d != defaults_.end())
-        return parseChord(d->second);
-    return std::nullopt;
+    std::optional<KeyChord> c;
+    if (auto o = overrides_.find(id); o != overrides_.end())
+        c = parseChord(o->second);
+    else if (auto d = defaults_.find(id); d != defaults_.end())
+        c = parseChord(d->second);
+    // A plain letter (an old keybindings.json had "block.make": "B") is typing, not a shortcut.
+    if (c && typesText(*c))
+        return std::nullopt;
+    return c;
 }
 
 std::string Keybindings::actionFor(const KeyChord& chord) const {

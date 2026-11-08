@@ -73,3 +73,27 @@ TEST_CASE("a missing keybindings file is fine - a broken one is an error") {
     CHECK_FALSE(kb.load(dir / "bad.json").ok());
     CHECK(kb.label("a") == "F1");
 }
+
+TEST_CASE("a plain letter, digit or Space is typing, never a shortcut") {
+    CHECK(typesText(*parseChord("B")));
+    CHECK(typesText(*parseChord("Shift+B")));
+    CHECK(typesText(*parseChord("7")));
+    CHECK(typesText(*parseChord("Space")));
+    CHECK_FALSE(typesText(*parseChord("Ctrl+B")));
+    CHECK_FALSE(typesText(*parseChord("Alt+B")));
+    CHECK_FALSE(typesText(*parseChord("F3")));
+    CHECK_FALSE(typesText(*parseChord("Delete")));
+    CHECK_FALSE(typesText(*parseChord("Escape")));
+
+    // Owner test.20: "br" started BLOCK at the "b"; an old keybindings.json still says "B".
+    Keybindings keys;
+    keys.declare("block.make", "B");
+    keys.declare("block.insert", "");
+    keys.set("block.insert", "I");
+    keys.declare("file.save", "Ctrl+S");
+    CHECK_FALSE(keys.chordOf("block.make"));
+    CHECK_FALSE(keys.chordOf("block.insert"));
+    CHECK(keys.label("block.make").empty());
+    CHECK(keys.actionFor(*parseChord("B")).empty());
+    CHECK(keys.label("file.save") == "Ctrl+S");
+}
