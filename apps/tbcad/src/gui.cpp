@@ -1969,11 +1969,11 @@ void Gui::toolCell(const ui::ToolDef& t, float iconSize, float scale, bool iconO
     ImGui::BeginGroup();
     // Small name under a compact icon: one line in the small font, the cell as wide as the name
     // up to a limit (longer names end in "..."; the tooltip has the whole name).
-    ImFont* small = smallFont() ? smallFont() : ImGui::GetFont();
+    ImFont* labelFont = smallFont() ? smallFont() : ImGui::GetFont();
     const float smallSize = smallFont() ? smallFont()->FontSize : ImGui::GetFontSize() * 0.75f;
     const float maxSmallW = std::round(iconSize * 2.3f);
     auto smallW = [&](const std::string& s) {
-        return small->CalcTextSizeA(smallSize, FLT_MAX, 0.0f, s.c_str()).x;
+        return labelFont->CalcTextSizeA(smallSize, FLT_MAX, 0.0f, s.c_str()).x;
     };
     std::string shortName;
     if (smallName && !iconOnly) {
@@ -2024,7 +2024,7 @@ void Gui::toolCell(const ui::ToolDef& t, float iconSize, float scale, bool iconO
     }
     if (!shortName.empty()) {
         const float nw = smallW(shortName);
-        dl->AddText(small, smallSize, ImVec2(lo.x + (cellW - nw) * 0.5f, lo.y + iconSize + 2),
+        dl->AddText(labelFont, smallSize, ImVec2(lo.x + (cellW - nw) * 0.5f, lo.y + iconSize + 2),
                     ImGui::GetColorU32(hover ? ImGuiCol_Text : ImGuiCol_TextDisabled),
                     shortName.c_str());
     }
