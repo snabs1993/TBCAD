@@ -615,3 +615,35 @@ TEST_CASE("many font files are read in parallel and listed once each") {
     CHECK(lato == 12);
     fs::remove_all(dir);
 }
+
+TEST_CASE("Thai marks shape the same when the line starts with Latin letters") {
+    // Owner report: with Tahoma, "Sinkล้างของ" lost its tone mark. The whole line was shaped
+    // as Latin script (the first letter), so the font's Thai mark rules never ran.
+    Fonts f;
+    auto thaiGlyphs = [&](std::string_view text, std::uint32_t thaiStart) {
+        std::vector<ShapedGlyph> out;
+        for (const auto& g : flat(f.lib.shape(f.sarabun, text)))
+            if (g.cluster >= thaiStart) {
+                ShapedGlyph c = g;
+                c.cluster -= thaiStart;
+                out.push_back(c);
+            }
+        return out;
+    };
+    for (const char* thai : {"ล้างของ", "ขึ้นไป", "ปั่น", "น้ำ"}) {
+        CAPTURE(thai);
+        const auto alone = thaiGlyphs(thai, 0);
+        for (std::string prefix : {"Sink", "DB12 ", "A"}) {
+            CAPTURE(prefix);
+            const auto mixed =
+                thaiGlyphs(prefix + thai, static_cast<std::uint32_t>(prefix.size()));
+            REQUIRE(mixed.size() == alone.size());
+            for (std::size_t i = 0; i < alone.size(); ++i) {
+                CHECK(mixed[i].glyphId == alone[i].glyphId);
+                CHECK(mixed[i].xOffset == alone[i].xOffset);
+                CHECK(mixed[i].yOffset == alone[i].yOffset);
+                CHECK(mixed[i].xAdvance == alone[i].xAdvance);
+            }
+        }
+    }
+}
