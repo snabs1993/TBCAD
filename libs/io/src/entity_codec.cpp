@@ -22,6 +22,7 @@ constexpr std::uint8_t kExtAnnoScales = 1;  // ... a list of annotation scales f
 constexpr std::uint8_t kExtWipeout = 2;
 constexpr std::uint8_t kExtTransparency = 4;  // ... one byte: percent, or 255 ByBlock
 constexpr std::uint8_t kExtData = 8;          // ... XDATA and extension dictionary records
+constexpr std::uint8_t kExtFaded = 16;
 constexpr std::uint8_t kCfKnownMask = 255;
 
 // ---------------------------------------------------------------- writing
@@ -1366,6 +1367,8 @@ void encodeEntity(ByteWriter& w, StringTable& strings, const Entity& e, BlockId 
         ext |= kExtAnnoScales;
     if (c.wipeout)
         ext |= kExtWipeout;
+    if (c.faded)
+        ext |= kExtFaded;
     if (c.transparency != kTransparencyByLayer)
         ext |= kExtTransparency;
     if (!c.ext.empty())
@@ -1445,9 +1448,10 @@ DecodedEntity decodeEntity(ByteReader& rec, const std::vector<std::string>& stri
         out.owner = pr.id<BlockId>();
     if (flags & kCfExt) {
         const std::uint8_t ext = r.u8();
-        if (ext & ~(kExtAnnoScales | kExtWipeout | kExtTransparency | kExtData))
+        if (ext & ~(kExtAnnoScales | kExtWipeout | kExtTransparency | kExtData | kExtFaded))
             bad("unknown entity extension flags");
         c.wipeout = (ext & kExtWipeout) != 0;
+        c.faded = (ext & kExtFaded) != 0;
         if (ext & kExtTransparency) {
             const std::uint8_t t = r.u8();
             if (t == 255)

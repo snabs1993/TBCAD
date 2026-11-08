@@ -953,7 +953,10 @@ TEST_CASE("round trip: layer, object and current transparency survive") {
     }
     {
         Transaction tx = doc->begin("transparency");
-        REQUIRE(tx.modifyLayer(layer, [](Layer& l) { l.transparency = 35; }).ok());
+        REQUIRE(tx.modifyLayer(layer, [](Layer& l) {
+                      l.transparency = 35;
+                      l.faded = true;
+                  }).ok());
         REQUIRE(tx.modify(first, [](Entity& e) { e.common.transparency = 70; }).ok());
         REQUIRE(tx.modify(second, [](Entity& e) {
                       e.common.transparency = kTransparencyByBlock;
@@ -965,6 +968,7 @@ TEST_CASE("round trip: layer, object and current transparency survive") {
     auto back = readOrFail(writeOrFail(*doc));
     CHECK(canonicalDump(*back) == before);
     CHECK(back->layerByName("A-WALL")->transparency == 35);
+    CHECK(back->layerByName("A-WALL")->faded);
     CHECK(back->find(first)->common.transparency == 70);
     CHECK(back->find(second)->common.transparency == kTransparencyByBlock);
     CHECK(back->header().currentTransparency == 10);
@@ -1057,6 +1061,7 @@ Entity fuzzEntity(std::mt19937_64& rng) {
     c.visible = rng() % 4 != 0;
     c.annotative = rng() % 5 == 0;
     c.wipeout = rng() % 7 == 0;
+    c.faded = rng() % 6 == 0;
     if (c.annotative && rng() % 2)
         c.annoScales = ScaleList(std::vector<double>{static_cast<double>(1 + rng() % 200), 50.0});
     if (rng() % 4 == 0) {

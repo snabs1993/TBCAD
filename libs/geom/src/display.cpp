@@ -404,6 +404,29 @@ std::vector<AnnotationGhost> annotationGhosts(const Document& doc, std::span<con
     return out;
 }
 
+// The faded look: a mid grey that reads on both a dark screen and white paper, at a little under
+// half strength.
+constexpr std::uint8_t kFadeGrey = 128;
+constexpr double kFadeStrength = 0.45;
+
+void fadeDisplay(DisplayList& list, std::size_t from) {
+    for (std::size_t i = from; i < list.items.size(); ++i)
+        std::visit(
+            [](auto& item) {
+                DisplayStyle& s = item.style;
+                if (s.faded || isBackgroundColor(s.color))
+                    return;
+                s.color = {kFadeGrey, kFadeGrey, kFadeGrey,
+                           static_cast<std::uint8_t>(std::lround(s.color.a * kFadeStrength))};
+                s.faded = true;
+            },
+            list.items[i]);
+}
+
+bool drawsFaded(const Document& doc, const Entity& e, const DisplayContext& ctx) {
+    return e.common.faded || ctx.layer(doc, e.common.layer).faded;
+}
+
 void buildDisplay(const Document& doc, const Entity& e, const DisplayContext& ctx,
                   DisplayList& out) {
     const std::size_t from = out.items.size();
@@ -477,6 +500,8 @@ void buildDisplay(const Document& doc, const Entity& e, const DisplayContext& ct
         for (DisplayItem& item : kept)
             out.items.push_back(std::move(item));
     }
+    if (drawsFaded(doc, e, ctx))
+        fadeDisplay(out, from);
 }
 
 namespace {

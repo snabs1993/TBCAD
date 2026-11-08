@@ -81,6 +81,12 @@ public:
 void buildDisplay(const Document& doc, const Entity& e, const DisplayContext& ctx,
                   DisplayList& out);
 
+// Faded objects (EntityCommon::faded, Layer::faded): the items of `list` from `from` on turn to
+// a light see-through grey. Background-coloured masks stay; items already faded are left alone.
+void fadeDisplay(DisplayList& list, std::size_t from = 0);
+// True when the entity is drawn faded: its own switch or its layer's (as the view sees the layer).
+bool drawsFaded(const Document& doc, const Entity& e, const DisplayContext& ctx);
+
 // SELECTIONANNODISPLAY: what a selected annotative object looks like at each of its scales other
 // than the one it is drawn at, so the user sees every representation. Symbols (inserts) are sized
 // for their first scale and have none. Empty when the variable is off.

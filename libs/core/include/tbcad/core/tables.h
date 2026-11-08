@@ -25,6 +25,8 @@ struct Layer {
     bool locked = false;
     bool plot = true;
     std::uint8_t transparency = 0;  // percent, 0 to 90
+    // Everything on the layer drawn (and plotted) in a light see-through grey; its colour is kept.
+    bool faded = false;
     std::string description{};
 };
 
@@ -386,6 +388,7 @@ struct EffectiveLayer {
     bool frozen = false;
     bool locked = false;  // includes `inactive`
     bool plot = true;
+    bool faded = false;  // the layer or one of its parents is faded
     // Locked only because the document is in "active only" mode and this layer is outside the
     // current layer's branch.
     bool inactive = false;

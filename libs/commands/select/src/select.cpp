@@ -20,6 +20,7 @@ void registerCommands(cmd::Registry& registry) {
     (void)registry.add(detail::makeFilterSave());
     (void)registry.add(detail::makeHide());
     (void)registry.add(detail::makeUnisolate());
+    (void)registry.add(detail::makeFade());
 }
 
 }  // namespace tbcad::select

@@ -1998,6 +1998,8 @@ void Importer::readLayerRow(const Record& r) {
                 row.xParent = v.substr(7);
             else if (v.rfind("name=", 0) == 0)
                 row.xName = v.substr(5);
+            else if (v == "faded=1")
+                row.faded = true;
         } else if (g.code == 1070) {
             row.xFlags = static_cast<int>(g.integer());
         }
@@ -2026,6 +2028,7 @@ void Importer::applyLayerRow(Layer& l, const LayerRow& row, bool hasParent) {
     l.plot = row.plot;
     l.transparency = static_cast<std::uint8_t>(row.transparency);
     l.description = row.description;
+    l.faded = row.faded;
 
     l.linetype = kLinetypeContinuous;
     if (!row.linetype.empty()) {

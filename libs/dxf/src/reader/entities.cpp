@@ -341,6 +341,8 @@ EntityCommon Importer::commonOf(const Record& r) {
             c.annotative = true;
         else if (ours && g.code == 1000 && g.str() == "wipeout=1")
             c.wipeout = true;
+        else if (ours && g.code == 1000 && g.str() == "faded=1")
+            c.faded = true;
         else if (ours && g.code == 1000 && g.str().rfind("annoscales=", 0) == 0) {
             std::string list(g.str().substr(11));
             std::vector<double> found;

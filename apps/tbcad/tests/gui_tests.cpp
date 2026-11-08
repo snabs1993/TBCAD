@@ -1439,6 +1439,8 @@ TEST_CASE("viewport menu: selection items fit the picked object and run") {
     CHECK_FALSE(h.has("Edit Text", "Popup"));
     CHECK_FALSE(h.has("Edit Polyline", "Popup"));
     CHECK(h.has("Select Similar", "Popup"));
+    CHECK(h.has("Fade to Grey", "Popup"));
+    CHECK(h.has("Fade Layer to Grey", "Popup"));
 
     // Isolate Layer from the menu locks and fades the other layers (LAYISO's default).
     REQUIRE(h.click("Isolate Layer", "Popup"));

@@ -1,5 +1,6 @@
 tbcad_add_library(select
   SOURCES
+    src/fade.cpp
     src/filter.cpp
     src/chprop.cpp
     src/quickprops.cpp
@@ -15,6 +16,7 @@ tbcad_add_library(select
 tbcad_add_tests(select
   SOURCES
     tests/main.cpp
+    tests/fade_tests.cpp
     tests/filter_tests.cpp
     tests/chprop_tests.cpp
     tests/isolate_tests.cpp

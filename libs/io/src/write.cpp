@@ -363,7 +363,7 @@ Result<EncodedFile> encodeDocument(const Document& doc, const WriteOptions& opti
             layr.i16(r.lineweight.v);
             layr.u8(static_cast<std::uint8_t>(
                 (r.on ? 1 : 0) | (r.frozen ? 2 : 0) | (r.locked ? 4 : 0) | (r.plot ? 8 : 0) |
-                (r.transparency ? 16 : 0) | (r.description.empty() ? 0 : 32)));
+                (r.transparency ? 16 : 0) | (r.description.empty() ? 0 : 32) | (r.faded ? 64 : 0)));
             if (r.transparency)
                 layr.u8(r.transparency);
             if (!r.description.empty())

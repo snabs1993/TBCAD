@@ -5426,6 +5426,16 @@ void Gui::viewportMenu() {
                 }
                 ImGui::EndMenu();
             }
+            if (core_.registry().find("FADE")) {
+                // FADE toggles: all picked objects faded already brings their colours back.
+                bool allFaded = true;
+                for (EntityId id : core_.selection())
+                    if (const Entity* e = core_.document().find(id); e && !e->common.faded)
+                        allFaded = false;
+                item(allFaded ? "Unfade" : "Fade to Grey", "FADE");
+            }
+            if (core_.registry().find("LAYFADE") && ImGui::MenuItem("Fade Layer to Grey"))
+                run("LAYFADE");
             if (core_.selection().size() > 1)
                 item("Group", "GROUP");
             item("Ungroup", "UNGROUP");

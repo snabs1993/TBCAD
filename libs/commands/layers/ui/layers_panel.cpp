@@ -492,6 +492,13 @@ void drawNameCell(tbcad::ui::PanelContext& ctx, const Row& row, bool dimmed, boo
                 if (ImGui::MenuItem(("Turn On" + group).c_str()))
                     exec(ctx, {"-LAYER On " + selectedRefs(st)});
             }
+            if (ImGui::MenuItem(((l->faded ? "Unfade" : "Fade to Grey") + group).c_str()))
+                exec(ctx, {std::string("-LAYER ") + (l->faded ? "Unfade " : "Fade ") +
+                           selectedRefs(st)});
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip(l->faded ? "Draw and plot the layer in its own colours again"
+                                           : "Draw and plot everything on the layer in a light "
+                                             "grey;\nits colour stays as it is");
             if (ImGui::MenuItem("Show All"))
                 exec(ctx, {"-LAYER ShowAll"});
             if (st.sheetMode && !st.sheetName.empty() &&
