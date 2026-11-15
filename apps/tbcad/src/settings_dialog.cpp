@@ -647,10 +647,15 @@ void SettingsDialog::drafting(ui::AppCore& core) {
                 core.setSetting("selection.pickfirst", first ? "1" : "0");
             ImGui::TextDisabled("On: a command uses the objects already selected.");
             ImGui::Spacing();
-            bool dragWin = core.setting("selection.pickdrag").value_or("1") != "0";
-            if (ImGui::Checkbox("Drag to select with a window (PICKDRAG)", &dragWin))
-                core.setSetting("selection.pickdrag", dragWin ? "1" : "0");
-            ImGui::TextDisabled("Off: click one corner of the window, then click the other.");
+            int pickDrag = 2;
+            if (auto v = core.setting("selection.pickdrag"); v == "0" || v == "1")
+                pickDrag = *v == "0" ? 0 : 1;
+            const char* pickDragNames[] = {"Click, then click", "Drag only",
+                                           "Drag or click-click"};
+            ImGui::SetNextItemWidth(220.0f * ImGui::GetFontSize() / 13.0f);
+            if (ImGui::Combo("Selection window (PICKDRAG)", &pickDrag, pickDragNames, 3))
+                core.setSetting("selection.pickdrag", std::to_string(pickDrag));
+            ImGui::TextDisabled("How you make a selection window on empty space.");
             ImGui::Spacing();
         }
         flag("Quick properties (QPMODE)", "ui.quickProps", false,

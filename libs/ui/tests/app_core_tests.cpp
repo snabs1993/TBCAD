@@ -2215,3 +2215,20 @@ TEST_CASE("an unwritable user-data folder gives one message and the app still sa
           std::string::npos);
     core.shutdown();
 }
+
+TEST_CASE("the history names the command an alias starts, an Enter repeats and Esc cancels") {
+    Fixture f("echonames");
+    f.core->submitText("tl 0,0");
+    const auto has = [&](const std::string& s) {
+        for (const std::string& h : f.core->history())
+            if (h == s)
+                return true;
+        return false;
+    };
+    CHECK(has("Command: TESTLINE 0,0"));
+    f.core->pressEscape();
+    CHECK(f.core->history().back() == "*Cancel*");
+    f.core->submitText("");  // repeats the last command
+    CHECK(f.core->runner().active());
+    CHECK(has("Command: TESTLINE"));
+}

@@ -241,6 +241,7 @@ private:
     ViewportRect tiledViewports(const ViewportRect& area);
     void navigationBar(const ViewportRect& rect);
     void viewportMenu();
+    bool closeMenuOnKeys();  // inside an open popup: Esc or typing closed it (EndPopup done)
     void cycleListPopup();
     void snapOverrideItems();
     void dropIntoViewport(const ViewportRect& rect);

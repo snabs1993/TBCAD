@@ -2261,6 +2261,26 @@ std::string roundedNumbers(const std::string& token) {
 }
 }  // namespace
 
+// What the history shows for a line typed at "Command:": the full name of the command an alias
+// or a Thai word starts ("l 0,0" -> "LINE 0,0"), and the command an empty Enter repeats.
+std::string AppCore::commandEcho(const std::string& line) {
+    if (line.empty())
+        return std::string(runner().lastCommand());
+    const std::size_t end = line.find(' ');
+    std::string first = line.substr(0, end);
+    const std::string rest = end == std::string::npos ? std::string() : line.substr(end);
+    const bool transparent = first.size() > 1 && first[0] == '\'';
+    const std::string word = transparent ? first.substr(1) : first;
+    std::string name;
+    if (const cmd::Command* c = registry_.find(word))
+        name = std::string(c->name());
+    else if (const char* thai = commandForThaiWord(word))
+        name = thai;
+    if (name.empty())
+        return line;
+    return (transparent ? "'" : "") + name + rest;
+}
+
 // "#12" in a line a panel sent stands for a layer (or, after "Linetype", a linetype).
 std::string AppCore::friendlyEcho(const std::string& line) const {
     std::vector<std::string> words = splitWords(line);
@@ -2314,7 +2334,7 @@ void AppCore::submitText(std::string_view text) {
             readOnlyOrigin() && !modified() &&
             isViewStateCommand(splitWords(trimmed[0] == '\'' ? trimmed.substr(1) : trimmed));
     if (echoMode_ == EchoMode::Typed)
-        print(promptText() + trimmed);
+        print(promptText() + (run.active() ? trimmed : commandEcho(trimmed)));
     else if (echoMode_ == EchoMode::Names)
         print(promptText() + friendlyEcho(trimmed));
     if (run.active()) {
@@ -2388,6 +2408,8 @@ void AppCore::pressEscape() {
     }
     if (runner().active()) {
         runner().submit(cmd::Input::cancel());
+        if (!runner().active())
+            print("*Cancel*");
     } else {
         clearSelection();
         // A viewport picked by its border is not in the selection set: Esc lets go of it too.
@@ -3685,22 +3707,27 @@ void AppCore::click(const PointerState& p) {
 
 // A viewport border is not an object, so a command asking for objects cannot take it: a click
 // on one says how viewports are removed instead of doing nothing.
-void AppCore::hintViewportBorder(Vec2 world) {
+// The id of the viewport whose border on the current sheet lies under `world`, if any.
+std::optional<int> AppCore::viewportBorderAt(Vec2 world) {
     const auto lay = layout::findLayout(session_->doc, activeLayout_);
     if (!lay)
-        return;
+        return std::nullopt;
     const double reach = apertureMm() * 2.0;
     for (const layout::Viewport& vp : lay->viewports) {
         const BBox2 outer = vp.paper.inflated(reach);
         const BBox2 inner = vp.paper.inflated(-reach);
         if (outer.contains(world) &&
-            !(inner.width() > 0 && inner.height() > 0 && inner.contains(world))) {
-            print("Viewport " + std::to_string(vp.id) +
-                  " is not an object and is not selected here. To remove it, press Esc, click "
-                  "its border and press Delete, or use VPDELETE.");
-            return;
-        }
+            !(inner.width() > 0 && inner.height() > 0 && inner.contains(world)))
+            return static_cast<int>(vp.id);
     }
+    return std::nullopt;
+}
+
+void AppCore::hintViewportBorder(Vec2 world) {
+    if (const auto vp = viewportBorderAt(world))
+        print("Viewport " + std::to_string(*vp) +
+              " is not an object and is not selected here. To remove it, press Esc, click "
+              "its border and press Delete, or use VPDELETE.");
 }
 
 void AppCore::doubleClick(const PointerState& p) {
@@ -3837,11 +3864,15 @@ std::string AppCore::deleteKeyCommand() {
 }
 
 bool AppCore::dragPicksWindow() const {
-    return setting("selection.pickdrag").value_or("1") != "0";
+    return setting("selection.pickdrag").value_or("2") != "0";
+}
+
+bool AppCore::clickPicksWindow() const {
+    return setting("selection.pickdrag").value_or("2") != "1";
 }
 
 bool AppCore::windowClick(const PointerState& p) {
-    if (dragPicksWindow() || !session_) {
+    if (!clickPicksWindow() || !session_) {
         windowCorner_.reset();
         return false;
     }
@@ -3856,7 +3887,11 @@ bool AppCore::windowClick(const PointerState& p) {
     if (runner().active() && !(prompt_ && prompt_->kind == cmd::PromptInfo::Kind::Selection &&
                                !runner().selectShapePending()))
         return false;
-    if (pickEntity(session_->doc, spatialIndex(), camera_.screenToWorld(p.screen), apertureMm()))
+    const Vec2 world = camera_.screenToWorld(p.screen);
+    if (pickEntity(session_->doc, spatialIndex(), world, apertureMm()))
+        return false;
+    // A viewport border on a sheet is clicked to pick the viewport (or to hear how), not a corner.
+    if (viewportBorderAt(world))
         return false;
     windowCorner_ = p.screen;
     return true;
