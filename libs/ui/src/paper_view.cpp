@@ -28,6 +28,26 @@ Rgba keepColor(Rgba c) {
     return c;
 }
 
+}  // namespace
+
+// Pale, strongly coloured ink (yellow, cyan, light green) is hard to read on the white sheet, so
+// on screen it is drawn darker with the same hue; greys stay as they are, they are shading. A
+// plot keeps the real colours.
+Rgba sheetInkColor(Rgba c) {
+    const int hi = std::max({c.r, c.g, c.b});
+    const int lo = std::min({c.r, c.g, c.b});
+    const double luma = 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
+    if (luma > 150 && hi - lo > 60) {
+        const double k = 150 / luma;
+        c.r = static_cast<std::uint8_t>(c.r * k);
+        c.g = static_cast<std::uint8_t>(c.g * k);
+        c.b = static_cast<std::uint8_t>(c.b * k);
+    }
+    return keepColor(c);
+}
+
+namespace {
+
 // Liang-Barsky: the part of segment ab inside the box, as parameters; false when none.
 bool clipSegment(Vec2 a, Vec2 b, const BBox2& w, double& t0, double& t1) {
     t0 = 0;
@@ -127,7 +147,7 @@ public:
 private:
     DisplayStyle styleOf(const exportlib::PlotStyle& s) {
         DisplayStyle d;
-        d.color = keepColor(s.color);
+        d.color = sheetInkColor(s.color);
         d.lineweight = s.widthMm;
         if (!s.dashMm.empty()) {
             std::vector<double> dashes = s.dashMm;
@@ -260,7 +280,7 @@ private:
 
     void fill(const PlotFill& f) {
         DisplayFill out;
-        out.style.color = keepColor(f.color);
+        out.style.color = sheetInkColor(f.color);
         for (const auto& ring : f.rings) {
             if (ring.size() < 3)
                 continue;

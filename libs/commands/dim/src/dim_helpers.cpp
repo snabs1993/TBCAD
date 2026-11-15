@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <map>
 #include <set>
 
 #include "dim_internal.h"
@@ -41,6 +42,32 @@ void previewDim(cmd::CommandContext& ctx, const DimensionData& d, DisplayList& o
 
 namespace {
 
+// A drawing that came with its dimensions in other styles (a plan with 1:100 styles, opened with
+// the untouched Standard style current): a new dimension in Standard would carry 2.5 mm text next
+// to text a hundred times larger and look like nothing was drawn. The style most of the drawing's
+// dimensions use becomes current, once per drawing, and the command line says so.
+void followDrawingDimStyle(cmd::CommandContext& ctx) {
+    static std::set<std::uint64_t> done;
+    const Document& doc = ctx.doc();
+    if (!done.insert(doc.uid()).second)
+        return;
+    std::map<std::uint32_t, std::size_t> uses;
+    doc.forEachEntity([&](const Entity& e) {
+        if (const auto* d = entityAs<DimensionData>(e))
+            ++uses[(d->style ? d->style : doc.header().currentDimStyle).value];
+    });
+    if (uses.empty() || uses.count(doc.header().currentDimStyle.value))
+        return;
+    const auto most = std::max_element(
+        uses.begin(), uses.end(), [](const auto& a, const auto& b) { return a.second < b.second; });
+    const DimStyle* style = doc.dimStyle(DimStyleId{most->first});
+    if (!style || style->overallScale <= 1)
+        return;
+    (void)ctx.tx().modifyHeader([id = style->id](Header& h) { h.currentDimStyle = id; });
+    ctx.message("Dimension style \"" + style->name +
+                "\" is now current: the dimensions in this drawing use it (DIMSTYLE changes it).");
+}
+
 // The first dimension or leader in a drawing drawn at a large scale (a plan in millimetres, seen
 // from far away) would carry 2.5 mm text, too small to see at that zoom. Give it a style scaled
 // like new text is (the annotation scale, else the view and the size of the drawing), as 1-2-5
@@ -60,8 +87,10 @@ void scaleFirstDimensionToView(cmd::CommandContext& ctx) {
         const EntityKind k = kind(e);
         any = any || k == EntityKind::Dimension || k == EntityKind::Leader;
     });
-    if (any)
+    if (any) {
+        followDrawingDimStyle(ctx);
         return;
+    }
     const double n = text::suggestedAnnotationScale(
         doc, ctx.host().view().scale, static_cast<bool>(ctx.host().drawingOwner()), cur.textHeight);
     if (n <= 1)
