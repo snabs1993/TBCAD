@@ -18,8 +18,7 @@ struct Layout {
 };
 
 constexpr Layout kLayouts[] = {
-    {"thai-kedmanee", "Thai (Kedmanee)",
-     U"_ๅ/-ภถุึคตจขชๆไำพะัีรนยบลฃฟหกดเ้่าสวงผปแอิืทมใฝ",
+    {"thai-kedmanee", "Thai (Kedmanee)", U"_ๅ/-ภถุึคตจขชๆไำพะัีรนยบลฃฟหกดเ้่าสวงผปแอิืทมใฝ",
      U"%+๑๒๓๔ู฿๕๖๗๘๙๐\"ฎฑธํ๊ณฯญฐ,ฅฤฆฏโฌ็๋ษศซ.()ฉฮฺ์?ฒฬฦ"},
 };
 
@@ -80,7 +79,9 @@ void encode(char32_t c, std::string& out) {
 
 }  // namespace
 
-std::span<const CommandKeyboard> commandKeyboards() { return kChoices; }
+std::span<const CommandKeyboard> commandKeyboards() {
+    return kChoices;
+}
 
 char32_t commandKey(std::string_view id, char32_t ch, bool layoutTyping) {
     const Layout* l = find(id);

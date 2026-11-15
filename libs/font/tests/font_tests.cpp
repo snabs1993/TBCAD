@@ -635,8 +635,7 @@ TEST_CASE("Thai marks shape the same when the line starts with Latin letters") {
         const auto alone = thaiGlyphs(thai, 0);
         for (std::string prefix : {"Sink", "DB12 ", "A"}) {
             CAPTURE(prefix);
-            const auto mixed =
-                thaiGlyphs(prefix + thai, static_cast<std::uint32_t>(prefix.size()));
+            const auto mixed = thaiGlyphs(prefix + thai, static_cast<std::uint32_t>(prefix.size()));
             REQUIRE(mixed.size() == alone.size());
             for (std::size_t i = 0; i < alone.size(); ++i) {
                 CHECK(mixed[i].glyphId == alone[i].glyphId);
