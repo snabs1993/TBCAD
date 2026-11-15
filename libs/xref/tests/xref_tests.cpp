@@ -701,10 +701,10 @@ TEST_CASE("perf: attach, reload, bind and undo of an xref with 300000 entities")
     const double undoMs = ms(t0);
     std::printf("[perf] xref 300k: attach %.0f ms, reload %.0f ms, bind %.0f ms, undo %.0f ms\n",
                 attachMs, reloadMs, bindMs, undoMs);
-    CHECK(attachMs < 5000);
-    CHECK(reloadMs < 5000);
-    CHECK(bindMs < 5000);
-    CHECK(undoMs < 5000);
+    CHECK(attachMs < 5000 * TBCAD_TIME_SCALE);
+    CHECK(reloadMs < 5000 * TBCAD_TIME_SCALE);
+    CHECK(bindMs < 5000 * TBCAD_TIME_SCALE);
+    CHECK(undoMs < 5000 * TBCAD_TIME_SCALE);
 }
 
 TEST_CASE("open: an xref a DXF names is loaded from beside the drawing, a missing one stays") {

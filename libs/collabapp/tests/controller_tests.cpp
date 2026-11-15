@@ -18,7 +18,7 @@ struct Program {
     fs::path dir;
     cmd::Registry registry;
     std::unique_ptr<ui::AppCore> core;
-    std::unique_ptr<CollabController> collab;
+    std::shared_ptr<CollabController> collab;  // shared: the closing hook holds a weak_ptr
 
     explicit Program(const std::string& name) {
         dir = fs::temp_directory_path() / ("tbcad_collabapp_" + name);
@@ -27,9 +27,14 @@ struct Program {
         registerAllCommands(registry);
         core =
             std::make_unique<ui::AppCore>(registry, platform::AppPaths{dir / "cfg", dir / "data"});
-        collab = std::make_unique<CollabController>(*core, std::function<void()>{});
-        CollabController* c = collab.get();
-        core->addDocumentClosingHook([c](Document& d) { c->drawingClosing(d); });
+        collab = std::make_shared<CollabController>(*core, std::function<void()>{});
+        // Like collabapp::attach: the hook must not reach the controller after it is gone
+        // (the destructor below drops the controller first, then AppCore closes its drawings).
+        std::weak_ptr<CollabController> weak = collab;
+        core->addDocumentClosingHook([weak](Document& d) {
+            if (auto c = weak.lock())
+                c->drawingClosing(d);
+        });
     }
     ~Program() {
         collab.reset();

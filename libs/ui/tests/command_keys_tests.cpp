@@ -6,12 +6,12 @@ using namespace tbcad::ui;
 
 TEST_CASE("Thai Kedmanee letters read as the English key in the same place") {
     const char* th = "thai-kedmanee";
-    CHECK(toCommandKeys(th, "ส", false) == "l");          // LINE
-    CHECK(toCommandKeys(th, "แ", false) == "c");          // CIRCLE
+    CHECK(toCommandKeys(th, "ส", false) == "l");  // LINE
+    CHECK(toCommandKeys(th, "แ", false) == "c");  // CIRCLE
     CHECK(toCommandKeys(th, "ไำพ", false) == "wer");
-    CHECK(toCommandKeys(th, "ๅจจ", false) == "100");      // numbers on the top row
+    CHECK(toCommandKeys(th, "ๅจจ", false) == "100");        // numbers on the top row
     CHECK(toCommandKeys(th, "๑ๅจจมจ", false) == "@100,0");  // Shift+2 is @, the comma key is ม
-    CHECK(toCommandKeys(th, "ฉ", false) == "C");          // Shift gives the capital
+    CHECK(toCommandKeys(th, "ฉ", false) == "C");            // Shift gives the capital
     CHECK(toCommandKeys(th, "ใ", false) == ".");
 }
 

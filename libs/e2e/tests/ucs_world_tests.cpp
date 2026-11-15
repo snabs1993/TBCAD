@@ -239,7 +239,7 @@ Diff compare(const Rig& a, const Rig& b) {
 }
 
 struct Scenario {
-    const char* name;
+    std::string name;
     std::function<void(Rig&)> script;
 };
 
@@ -332,18 +332,18 @@ std::vector<Scenario> scenarios() {
     };
     for (const Xf& x : xfs) {
         const std::string n = x.name;
-        v.push_back({strdup(("hatch and its boundary: " + n).c_str()), [x](Rig& r) {
+        v.push_back({"hatch and its boundary: " + n, [x](Rig& r) {
                          r.run("RECTANGLE", {"10,10", "70,45"});
                          r.run("HATCH", {"20,20", ""});
                          r.select({0, 1});
                          x.apply(r);
                      }});
-        v.push_back({strdup(("linear dimension: " + n).c_str()), [x](Rig& r) {
+        v.push_back({"linear dimension: " + n, [x](Rig& r) {
                          r.run("DIMLINEAR", {"0,0", "80,30", "40,-20"});
                          r.select({0});
                          x.apply(r);
                      }});
-        v.push_back({strdup(("nested block insert: " + n).c_str()), [x](Rig& r) {
+        v.push_back({"nested block insert: " + n, [x](Rig& r) {
                          // INNER: two lines; OUTER: a line and an insert of INNER, turned 20
                          // degrees
                          {

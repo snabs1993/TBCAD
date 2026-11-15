@@ -324,9 +324,9 @@ TEST_CASE("perf: ERASE of everything stays one pass with a draw-order override a
     }
     std::printf("  erase %.0f -> %.0f ms, undo %.0f -> %.0f ms\n", plain.runMs, ordered.runMs,
                 plain.undoMs, ordered.undoMs);
-    CHECK(ordered.runMs < 3 * plain.runMs + 200);
-    CHECK(ordered.undoMs < 3 * plain.undoMs + 200);
-    CHECK(ordered.redoMs < 3 * plain.redoMs + 200);
+    CHECK(ordered.runMs < 3 * plain.runMs + 200 * TBCAD_TIME_SCALE);
+    CHECK(ordered.undoMs < 3 * plain.undoMs + 200 * TBCAD_TIME_SCALE);
+    CHECK(ordered.redoMs < 3 * plain.redoMs + 200 * TBCAD_TIME_SCALE);
 }
 
 TEST_CASE("perf: MOVE of everything alone") {

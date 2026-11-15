@@ -86,6 +86,13 @@ function(tbcad_add_tests name)
   target_compile_features(${target} PRIVATE cxx_std_20)
   tbcad_set_warnings(${target})
   target_link_libraries(${target} PRIVATE tbcad::${name} ${ARG_DEPENDS} doctest::doctest)
+  # Timing budgets in tests are written for normal builds; ASan/UBSan builds run several times
+  # slower, so tests multiply their budgets by TBCAD_TIME_SCALE.
+  if(CMAKE_CXX_FLAGS MATCHES "-fsanitize")
+    target_compile_definitions(${target} PRIVATE TBCAD_TIME_SCALE=10)
+  else()
+    target_compile_definitions(${target} PRIVATE TBCAD_TIME_SCALE=1)
+  endif()
   include(doctest)
   doctest_discover_tests(${target})
 endfunction()

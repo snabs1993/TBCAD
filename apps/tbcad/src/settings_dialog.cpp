@@ -15,10 +15,10 @@
 #include "tbcad/cmd/input.h"
 #include "tbcad/core/color.h"
 #include "tbcad/drafting/settings.h"
-#include "tbcad/ui/command_keys.h"
 #include "tbcad/platform/keybindings.h"
 #include "tbcad/platform/paths.h"
 #include "tbcad/tmpl/tmpl.h"
+#include "tbcad/ui/command_keys.h"
 #include "tbcad/ui/customize.h"
 #include "tbcad/ui/radial_wheel.h"
 #include "tbcad/ui/theme.h"
@@ -204,7 +204,8 @@ void SettingsDialog::commandKeyboard(ui::AppCore& core) {
     }
     ImGui::TextDisabled(
         "Commands, options and numbers typed with this keyboard are read as the English key in\n"
-        "the same place (Thai: \xE0\xB8\xAA = L). Text such as TEXT content or layer names stays as\n"
+        "the same place (Thai: \xE0\xB8\xAA = L). Text such as TEXT content or layer names stays "
+        "as\n"
         "typed. Thai command words do not work while this is on.");
 }
 

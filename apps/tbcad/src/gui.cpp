@@ -1992,7 +1992,7 @@ void Gui::toolCell(const ui::ToolDef& t, float iconSize, float scale, bool iconO
         : smallName ? std::max(iconSize + 8.0f * scale, std::ceil(smallW(shortName) + 6.0f * scale))
                     : std::max(baseW, std::ceil(ImGui::CalcTextSize(t.label.c_str()).x + 10.0f));
     const ImVec2 lo = ImGui::GetCursorScreenPos();
-    const float cellH = iconOnly ? iconSize + 4.0f
+    const float cellH = iconOnly    ? iconSize + 4.0f
                         : smallName ? iconSize + 4.0f + nameH
                                     : iconSize + line + 4;
     const bool hit = ImGui::InvisibleButton("##tool", ImVec2(cellW, cellH));
@@ -2547,12 +2547,10 @@ void Gui::layoutTabs(const ViewportRect& rect) {
             if (active)
                 ImGui::PopStyleColor(2);
             if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
-                tabPreviewTip(name.empty() ? "Model" : name,
-                              [&]() -> const ui::TabPreview& {
-                                  return name.empty()
-                                             ? core_.documentPreview(core_.activeDocument())
-                                             : core_.layoutPreview(name);
-                              });
+                tabPreviewTip(name.empty() ? "Model" : name, [&]() -> const ui::TabPreview& {
+                    return name.empty() ? core_.documentPreview(core_.activeDocument())
+                                        : core_.layoutPreview(name);
+                });
             const auto place = std::find(names.begin(), names.end(), name);
             const std::size_t at = static_cast<std::size_t>(place - names.begin());
             if (!name.empty() && !readOnly) {

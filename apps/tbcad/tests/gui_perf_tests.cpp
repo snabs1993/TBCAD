@@ -178,8 +178,8 @@ TEST_CASE("perf: LINE clicks on a 393k drawing are as quick as POLYLINE clicks")
         h.key(ImGuiKey_Escape);
         h.frame(5);
         std::sort(ms.begin(), ms.end());
-        MESSAGE(std::string(name) << " click: median " << ms[ms.size() / 2] << " ms, max " << ms.back()
-                     << " ms");
+        MESSAGE(std::string(name) << " click: median " << ms[ms.size() / 2] << " ms, max "
+                                  << ms.back() << " ms");
         return ms[ms.size() / 2];
     };
     const double pline = run("POLYLINE");
