@@ -1,3 +1,4 @@
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -7,6 +8,8 @@
 #include "../src/commands.h"
 #include "support.h"
 #include "tbcad/drafting/snap_geometry.h"
+#include "tbcad/dxf/reader.h"
+#include "tbcad/dxf/writer.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/io/zip.h"
 #include "tbcad/plotstyle/plotstyle.h"
@@ -733,6 +736,52 @@ TEST_CASE("REFEDIT on a .tbcad xref edits it in place and REFCLOSE saves its fil
     CHECK(onWalls == 2);
     CHECK(onNotes == 1);
     CHECK(longest == doctest::Approx(50));
+    CHECK(fs::exists(fs::path(file.string() + ".bak")));
+}
+
+TEST_CASE("REFEDIT on a .dxf xref saves the edit back into the DXF file") {
+    Dir dir;
+    // A DXF source: the format drawings are saved in.
+    fs::path tb = writeSource(dir.path, "plan.tbcad", 3);
+    fs::path file = dir.path / "plan.dxf";
+    {
+        io::IoReport rep;
+        auto d = io::readTbcad(tb, rep);
+        REQUIRE(d.ok());
+        dxf::Report wr;
+        auto out = dxf::exportDxf(*d.value(), dxf::ExportOptions{}, wr);
+        REQUIRE(out.ok());
+        std::ofstream(file, std::ios::binary)
+            .write(out.value().bytes.data(),
+                   static_cast<std::streamsize>(out.value().bytes.size()));
+    }
+    Fixture f;
+    f.host->run("XATTACH", {file.string(), "", "", "", "100,0"});
+    REQUIRE(f.modelSpace().size() == 1);
+    f.host->run("REFEDIT", {cmd::ScriptItem::pick(f.modelSpace()[0])});
+    std::vector<EntityId> lines;
+    for (EntityId id : f.modelSpace())
+        if (kind(*f.doc.find(id)) == EntityKind::Line)
+            lines.push_back(id);
+    REQUIRE(lines.size() == 3);
+    {
+        Transaction tx = f.doc.begin("edit");
+        REQUIRE(tx.erase(lines[0]).ok());
+        tx.commit();
+    }
+    f.host->clearLog();
+    f.host->run("REFCLOSE", {cmd::ScriptItem::enter()});
+    CHECK(f.host->logContains("saved to its file"));
+    CHECK(f.doc.blockByName("plan")->entities.size() == 2);
+    std::ifstream in(file, std::ios::binary);
+    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    std::vector<std::byte> bytes(text.size());
+    std::memcpy(bytes.data(), text.data(), text.size());
+    dxf::Report rr;
+    auto back = dxf::importDxf(bytes, dxf::ImportOptions{}, rr);
+    REQUIRE(back.ok());
+    CHECK(back.value().document->modelSpace().size() == 2);
+    CHECK(back.value().document->layerByName("walls"));
     CHECK(fs::exists(fs::path(file.string() + ".bak")));
 }
 

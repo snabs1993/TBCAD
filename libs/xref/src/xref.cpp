@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <functional>
 #include <iterator>
@@ -14,6 +15,7 @@
 
 #include "tbcad/blocks/blocks.h"
 #include "tbcad/dxf/reader.h"
+#include "tbcad/dxf/writer.h"
 #include "tbcad/io/tbcad.h"
 #include "tbcad/underlay/image.h"
 #include "tbcad/underlay/pdf.h"
@@ -1044,15 +1046,33 @@ Result<void> writeBack(const Document& host, BlockId block, const std::vector<En
     if (!def || def->xrefPath.empty())
         return makeError(ErrorCode::InvalidArgument, "That block is not an external reference");
     const std::filesystem::path file = resolvePath(def->xrefPath, hostFile);
-    if (lower(file.extension().string()) != ".tbcad")
+    const std::string ext = lower(file.extension().string());
+    if (ext != ".tbcad" && ext != ".dxf")
         return makeError(ErrorCode::Unsupported,
-                         "Only .tbcad references can be saved from here; open " +
+                         "Only .dxf and .tbcad references can be saved from here; open " +
                              file.filename().string() + " to change it.");
-    io::IoReport report;
-    auto read = io::readTbcad(file, report);
-    if (!read)
-        return read.error();
-    Document& src = *read.value();
+    std::unique_ptr<Document> read;
+    if (ext == ".dxf") {
+        std::ifstream in(file, std::ios::binary | std::ios::ate);
+        if (!in)
+            return makeError(ErrorCode::Io, "Cannot read " + file.filename().string());
+        const std::streamoff size = static_cast<std::streamoff>(in.tellg());
+        std::vector<std::byte> bytes(size > 0 ? static_cast<std::size_t>(size) : 0);
+        in.seekg(0, std::ios::beg);
+        in.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+        dxf::Report report;
+        auto res = dxf::importDxf(bytes, dxf::ImportOptions{}, report);
+        if (!res)
+            return makeError(ErrorCode::Parse, res.error().message);
+        read = std::move(res.value().document);
+    } else {
+        io::IoReport report;
+        auto r = io::readTbcad(file, report);
+        if (!r)
+            return r.error();
+        read = std::move(r.value());
+    }
+    Document& src = *read;
     {
         Transaction tx = src.begin("Edit reference");
         const std::vector<EntityId> old = src.modelSpace();
@@ -1068,7 +1088,25 @@ Result<void> writeBack(const Document& host, BlockId block, const std::vector<En
         }
         tx.commit();
     }
-    return io::writeTbcad(src, file);
+    if (ext != ".dxf")
+        return io::writeTbcad(src, file);
+    // A DXF source is written back as DXF, in the version it came in when that is 2007 or later
+    // (text stays UTF-8); the old file is kept as .bak.
+    dxf::ExportOptions options;
+    const auto& custom = src.header().custom;
+    if (auto it = custom.find("dxf.acadver"); it != custom.end() && it->second.size() == 6 &&
+                                              it->second.compare(0, 2, "AC") == 0 &&
+                                              std::atoi(it->second.c_str() + 2) >= 1021)
+        options.version = dxf::DxfVersion::R2007;
+    dxf::Report wr;
+    auto out = dxf::exportDxf(src, options, wr);
+    if (!out)
+        return makeError(ErrorCode::InvalidArgument, out.error().message);
+    const auto& bytes = out.value().bytes;
+    return io::saveTbcadBytes(
+        std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(bytes.data()),
+                                      bytes.size()),
+        file);
 }
 
 namespace {
