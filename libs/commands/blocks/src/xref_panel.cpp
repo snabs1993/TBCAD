@@ -457,7 +457,7 @@ void drawAttachDialogPanel(ui::PanelContext& ctx) {
     ImGui::InputText("##attname", &a.name);
     if (drawing) {
         label("Nesting");
-        if (ImGui::RadioButton("Attach", !a.overlay))
+        if (ImGui::RadioButton("Attach (nested)", !a.overlay))
             a.overlay = false;
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("It comes along when this drawing is attached somewhere else");
