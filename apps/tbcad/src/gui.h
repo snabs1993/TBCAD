@@ -193,7 +193,7 @@ private:
     void docTabs();
     // Hover popup with a line picture of a drawing or layout (QVDRAWING / QVLAYOUT).
     void tabPreviewTip(const std::string& title,
-                       const std::function<const ui::TabPreview&()>& previewOf);
+                       const std::function<const ui::TabPreview&()>& previewOf, bool above = false);
     void startPage(const ViewportRect& rect);
     std::function<unsigned(const std::filesystem::path&)> thumbnailLoader_;
     bool ucsIconShown() const;

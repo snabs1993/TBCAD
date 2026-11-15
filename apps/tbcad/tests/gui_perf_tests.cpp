@@ -203,3 +203,29 @@ TEST_CASE("the Model tab still shows its picture when the mouse rests on it") {
     h.frame(90);
     CHECK_MESSAGE(h.windowOpen("Tooltip"), "no tooltip over the Model tab");
 }
+
+TEST_CASE("a clicked layout tab does not put its picture back until the mouse has left it") {
+    Harness h(1440, 900);
+    h.core().submitText("LINE 0,0 100,0 100,100 ");
+    h.core().pressEscape();
+    h.frame(3);
+    const imgui_items::Item* tab = h.find("Layout1");
+    REQUIRE(tab != nullptr);
+    const float x = (tab->min.x + tab->max.x) / 2, y = (tab->min.y + tab->max.y) / 2;
+    const float tabTop = tab->min.y;
+    h.moveMouse(x, y);
+    h.frame(90);
+    REQUIRE(h.windowOpen("Tooltip"));
+    h.click(x, y);
+    h.frame(90);
+    CHECK(h.core().inPaperSpace());
+    CHECK_MESSAGE(!h.windowOpen("Tooltip"), "the picture came back over the clicked tab");
+    // Away and back: it shows again.
+    h.moveMouse(x, tabTop - 300);
+    h.frame(5);
+    tab = h.find("Layout1");
+    REQUIRE(tab != nullptr);
+    h.moveMouse((tab->min.x + tab->max.x) / 2, (tab->min.y + tab->max.y) / 2);
+    h.frame(90);
+    CHECK(h.windowOpen("Tooltip"));
+}

@@ -2,6 +2,7 @@
 #include <misc/cpp/imgui_stdlib.h>
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -74,6 +75,8 @@ constexpr std::size_t kPreviewPrims = 30000;
 // The renderer may use 16-bit indices: the preview stops adding primitives at this many vertices
 // in the window's draw list.
 constexpr int kPreviewVertices = 55000;
+// A fill smaller than this many pixels in the preview is drawn as one block.
+constexpr float kSmallFillPx = 5.0f;
 
 // Each sheet build gets a new number; a preview drawn again from the same build at the same size
 // copies the vertices it made last time instead of drawing every primitive again (a 393k drawing
@@ -166,11 +169,24 @@ void drawPreview(const exportlib::PlotSheet& sheet, ImVec2 size, std::uint64_t b
                 dl->PathStroke(col(a->style.color), ImDrawFlags_None, w);
             }
         } else if (const auto* f = std::get_if<exportlib::PlotFill>(&prim)) {
-            // The preview outlines fills; the file is filled even-odd.
+            // The preview outlines fills; the file is filled even-odd. A fill only a few pixels
+            // large (a letter of small text) is one small block: outlining every letter used up
+            // the vertex budget and the rest of the text was not drawn at all.
             for (const auto& ring : f->rings) {
                 pts.clear();
-                for (const Vec2& v : ring)
+                ImVec2 lo{FLT_MAX, FLT_MAX}, hi{-FLT_MAX, -FLT_MAX};
+                for (const Vec2& v : ring) {
                     pts.push_back(toScreen(v));
+                    lo = {std::min(lo.x, pts.back().x), std::min(lo.y, pts.back().y)};
+                    hi = {std::max(hi.x, pts.back().x), std::max(hi.y, pts.back().y)};
+                }
+                if (pts.empty())
+                    continue;
+                if (hi.x - lo.x < kSmallFillPx && hi.y - lo.y < kSmallFillPx) {
+                    dl->AddRectFilled(lo, {std::max(hi.x, lo.x + 1), std::max(hi.y, lo.y + 1)},
+                                      (col(f->color) & ~IM_COL32_A_MASK) | IM_COL32(0, 0, 0, 150));
+                    continue;
+                }
                 dl->AddPolyline(pts.data(), int(pts.size()), col(f->color), ImDrawFlags_Closed,
                                 1.0f);
             }
