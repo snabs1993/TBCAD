@@ -25,12 +25,18 @@ public:
 
     const std::vector<std::string>& lines() const { return lines_; }
 
-    // A solid fill looks the same wherever its pattern origin is, and DXF has no place for it.
-    void ignoreSolidHatchOrigins() {
+    // What a saved DXF does not carry and no one sees: the pattern origin of a solid fill, and
+    // the fourth definition point of a linear or aligned dimension (it uses three).
+    void ignoreUnsavedDetails() {
         static const std::regex org(R"( org\([^)]*\))");
-        for (std::string& l : lines_)
+        static const std::regex fourth(
+            R"(( DIM kind[01] rot\S+ \([^)]*\) \([^)]*\) \([^)]*\)) \([^)]*\))");
+        for (std::string& l : lines_) {
             if (l.find(" HATCH solid1 ") != std::string::npos)
                 l = std::regex_replace(l, org, "");
+            if (l.find(" DIM kind") != std::string::npos)
+                l = std::regex_replace(l, fourth, "$1");
+        }
     }
 
     // Empty when equal, else a description of the first difference. Numbers match when they are

@@ -57,11 +57,13 @@ bool endsEdge(int code) {
 }
 
 // The file's lines are the library pattern of that name (what TBCAD itself writes): nothing to
-// keep.
-bool sameAsLibrary(std::string_view name, const std::vector<HatchFileLine>& lines) {
+// keep. A hatch whose pattern origin was moved has every line moved by the same amount: `shift`
+// (pattern units, before the pattern angle) says by how much.
+bool sameAsLibrary(std::string_view name, const std::vector<HatchFileLine>& lines, Vec2& shift) {
     const hatch::Pattern* lib = hatch::PatternRegistry::find(name);
-    if (!lib || lib->solid || lib->families.size() != lines.size())
+    if (!lib || lib->solid || lib->families.size() != lines.size() || lines.empty())
         return false;
+    shift = lines[0].origin - lib->families[0].origin;
     auto close = [](double a, double b) {
         return std::abs(a - b) <= 1e-6 * std::max({1.0, std::abs(a), std::abs(b)});
     };
@@ -69,7 +71,8 @@ bool sameAsLibrary(std::string_view name, const std::vector<HatchFileLine>& line
         const hatch::PatternFamily& f = lib->families[i];
         const HatchFileLine& l = lines[i];
         const double turn = std::remainder(f.angle - l.angle, 2 * kPi);
-        if (!close(turn, 0) || !close(f.origin.x, l.origin.x) || !close(f.origin.y, l.origin.y) ||
+        if (!close(turn, 0) || !close(f.origin.x + shift.x, l.origin.x) ||
+            !close(f.origin.y + shift.y, l.origin.y) ||
             !close(f.delta.x, l.delta.x) || !close(f.delta.y, l.delta.y) ||
             f.dashes.size() != l.dashes.size())
             return false;
@@ -141,8 +144,17 @@ void Importer::readFileLines(const std::vector<Group>& g, std::size_t from, cons
             return;
         lines.push_back(std::move(l));
     }
-    if (lines.empty() || sameAsLibrary(h.pattern, lines))
+    if (lines.empty())
         return;
+    if (Vec2 shift{}; sameAsLibrary(h.pattern, lines, shift)) {
+        // The library pattern, drawn from a pattern origin of its own (HATCH Origin, or the hatch
+        // was moved): keep it the named pattern it is.
+        const double cr = std::cos(h.patternAngle), sr = std::sin(h.patternAngle);
+        const Vec2 world = Vec2{cr * shift.x - sr * shift.y, sr * shift.x + cr * shift.y} * scale;
+        if (std::abs(world.x) > 1e-9 || std::abs(world.y) > 1e-9)
+            h.patternOrigin = world;
+        return;
+    }
     h.filePattern.name = h.pattern;
     h.filePattern.lines = std::move(lines);
 }

@@ -266,6 +266,8 @@ private:
     std::unordered_map<std::uint32_t, bool> plainBlock_{};
     const gdt::FrameTable& frames();
     std::optional<gdt::FrameTable> frames_{};
+    // Inserts on sheets whose scale holds the drawing unit (units.h), read from the header.
+    std::unordered_set<std::uint64_t> sheetInserts_{};
     struct PlainItem {
         const Entity* e = nullptr;
         std::uint64_t kept = 0;   // the handle it came with, or 0

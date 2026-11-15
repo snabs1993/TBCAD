@@ -2095,8 +2095,13 @@ void Writer::writeInsert(const Props& p, const InsertData& d, std::uint64_t owne
         for (const std::string& line : detail::dynXdataLines(dynOfTag_, "dynv"))
             o.str(1000, line);
     }
-    if (L().cur)  // in the INSERT record itself, ahead of its ATTRIBs (see writeEntity)
+    if (L().cur) {  // in the INSERT record itself, ahead of its ATTRIBs (see writeEntity)
+        if (sheetInserts_.count(L().cur->id.value)) {
+            openTbcadXdata();
+            o.str(1000, "sheetunits=1");
+        }
         writeCommonFlags(*L().cur);
+    }
     if (!arrayTag_.empty()) {
         o.raw(1001, "TBCAD_ARRAY");
         for (const DataItem& it : arrayTag_)

@@ -61,6 +61,11 @@ Writer::Writer(const Document& doc, const ExportOptions& options, Report& report
         !options.onlyLevel &&
         (doc.levels().size() > 1 || (first && (first->name != "Level 1" || first->elevation != 0 ||
                                                !first->visible || first->locked)));
+    if (auto it = doc.header().custom.find(kSheetInsertsKey); it != doc.header().custom.end()) {
+        std::istringstream in(it->second);
+        for (std::uint64_t id; in >> id;)
+            sheetInserts_.insert(id);
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
