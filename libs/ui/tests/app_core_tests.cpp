@@ -2232,3 +2232,14 @@ TEST_CASE("the history names the command an alias starts, an Enter repeats and E
     CHECK(f.core->runner().active());
     CHECK(has("Command: TESTLINE"));
 }
+
+TEST_CASE("a grip click shows as Grip edit in the history, not an internal command line") {
+    Fixture f("echogrip");
+    f.core->submitText("GRIPEDIT 651674.0912345,3.25");
+    for (const std::string& h : f.core->history())
+        CHECK(h.find("651674") == std::string::npos);
+    bool shown = false;
+    for (const std::string& h : f.core->history())
+        shown = shown || h == "Command: Grip edit";
+    CHECK(shown);
+}

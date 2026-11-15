@@ -154,14 +154,19 @@ Gui::Gui(ui::AppCore& core, ui::UiRegistry& registry, GLFWwindow* window)
              !std::filesystem::is_directory(platform::pathFromUtf8(*current), ec)))
             core_.setSetting("block.library", shipped);
     }
+    // TRIM and EXTEND start in Quick mode in the app (every object cuts): a click trims at once,
+    // with no "select cutting edges, Enter" step first. Mode > Standard still asks for edges, and
+    // the choice is remembered. Scripts and tests without the app keep Standard.
+    if (!core_.setting("trim.quick"))
+        core_.setSetting("trim.quick", "1");
     cursorHud_ = flag("hud.enabled", true);
     for (const auto& p : registry_.panels())
         panelOpen_[p.id] = p.visibleByDefault;
-    // The default dock sizes changed (v5: a side column of about 280 px); a layout saved by an
-    // older build is replaced once.
-    if (core_.settings().getString("ui.dockLayout", "") != "v5") {
+    // The default dock sizes changed (v5: a side column of about 280 px; v6: a taller command
+    // area); a layout saved by an older build is replaced once.
+    if (core_.settings().getString("ui.dockLayout", "") != "v6") {
         rebuildDock_ = true;
-        core_.settings().setString("ui.dockLayout", "v5");
+        core_.settings().setString("ui.dockLayout", "v6");
     }
     // The workspace used last time. Only the panels are applied here: the docking layout comes
     // back from imgui.ini by itself.
@@ -3212,9 +3217,10 @@ void Gui::dockLayout(ImGuiID ds) {
     ImGui::DockBuilderSetNodeSize(ds, vp->WorkSize);
     ImGuiID center = ds;
     // The command area is a few rows tall (history and the input line), not a fixed share of
-    // the window, which left it mostly empty on a tall screen. The compact layout keeps two rows
-    // of history and a side column of about 280 px, so the drawing gets the rest.
-    const float rows = compact_ ? 3.0f : 4.0f;
+    // the window, which left it mostly empty on a tall screen. Three rows of history stay visible
+    // above the option chips and the input line (two rows were covered by the chips); the compact
+    // layout keeps a side column of about 280 px, so the drawing gets the rest.
+    const float rows = compact_ ? 5.0f : 6.0f;
     const float commandPx = rows * ImGui::GetFrameHeightWithSpacing() + (compact_ ? 8.0f : 24.0f);
     const float commandRatio =
         std::clamp(commandPx / std::max(vp->WorkSize.y, 1.0f), compact_ ? 0.04f : 0.07f, 0.15f);

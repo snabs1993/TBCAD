@@ -1,6 +1,7 @@
 // The command line and command flow driven like a person: clicks, keys, the menu.
 #include <doctest/doctest.h>
 #include <imgui.h>
+#include <imgui_internal.h>
 
 #include <string>
 
@@ -103,4 +104,43 @@ TEST_CASE("command flow: a mistyped command name (lnie) starts the command it is
     h.frame(3);
     const auto* p = h.core().runner().prompt();
     CHECK((p && p->command == "LINE"));
+}
+
+TEST_CASE("command flow: the command area shows three lines of history above the option chips") {
+    Harness h(1600, 1000);
+    line(h, "LINE 0,0 100,0");
+    h.frame(3);
+    h.command("LINE");
+    h.frame(2);
+    h.command("0,0");
+    h.frame(2);
+    h.command("100,0");  // now Undo and Close chips are shown
+    h.frame(3);
+    ImGuiWindow* history = nullptr;
+    for (ImGuiWindow* w : ImGui::GetCurrentContext()->Windows)
+        if (std::string(w->Name).find("##history") != std::string::npos)
+            history = w;
+    REQUIRE(history);
+    CHECK(history->Size.y >= 3 * ImGui::GetTextLineHeightWithSpacing());
+}
+
+TEST_CASE("command flow: TRIM cuts on the first click, with no edge selection and Enter first") {
+    Harness h(1600, 1000);
+    line(h, "LINE 0,0 100,0");
+    line(h, "LINE 50,-50 50,50");
+    line(h, "ZOOM W -20,-60 120,60");
+    h.frame(3);
+    h.command("TRIM");
+    h.frame(3);
+    const ImVec2 at = screenOf(h, {80, 0});
+    h.moveMouse(at.x, at.y);
+    h.frame(2);
+    h.click(at.x, at.y);
+    h.frame(3);
+    double maxX = 0;
+    h.core().document().forEachEntity([&](const Entity& e) {
+        if (const auto* l = std::get_if<LineData>(&e.data); l && l->a.y == 0 && l->b.y == 0)
+            maxX = std::max(l->a.x, l->b.x);
+    });
+    CHECK(maxX == doctest::Approx(50));
 }
