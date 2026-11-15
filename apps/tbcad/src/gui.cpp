@@ -33,6 +33,7 @@
 #include "tbcad/platform/external_link.h"
 #include "tbcad/platform/file_dialog.h"
 #include "tbcad/platform/paths.h"
+#include "tbcad/render/colors.h"
 #include "tbcad/text/text.h"
 #include "tbcad/ui/command_keys.h"
 #include "tbcad/ui/customize.h"
@@ -2408,19 +2409,30 @@ void Gui::contextualBar() {
                                    ImGuiWindowFlags_AlwaysAutoResize;
     ImGui::SetNextWindowPos(ImVec2(lastRect_.x + 8, lastRect_.y + 6));
     ImGui::SetNextWindowBgAlpha(0.92f);
+    // Folded to its name until the pointer comes over it: a full strip opened by every pick of a
+    // text covered the top-left of the drawing (owner, test.20).
     if (ImGui::Begin("##contexttab", nullptr, flags)) {
-        ImGui::TextColored(ImVec4(0.35f, 0.65f, 1.0f, 1.0f), "%s", tab->title.c_str());
-        ImGui::SameLine(0, 18);
-        ui::PanelContext pc;
-        fillPanelContext(pc);
-        ImGui::PushID(tab->id.c_str());
-        tab->draw(pc);
-        ImGui::PopID();
-        ImGui::SameLine(0, 18);
-        if (ImGui::SmallButton("Close"))
-            core_.clearSelection();
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Clear the selection (Esc)");
+        ImGui::TextColored(ImVec4(0.35f, 0.65f, 1.0f, 1.0f), "%s%s", tab->title.c_str(),
+                           contextTabOpen_ ? "" : "  >");
+        if (contextTabOpen_) {
+            ImGui::SameLine(0, 18);
+            ui::PanelContext pc;
+            fillPanelContext(pc);
+            ImGui::PushID(tab->id.c_str());
+            tab->draw(pc);
+            ImGui::PopID();
+            ImGui::SameLine(0, 18);
+            if (ImGui::SmallButton("Close"))
+                core_.clearSelection();
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Clear the selection (Esc)");
+        }
+        contextTabOpen_ =
+            ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows |
+                                   ImGuiHoveredFlags_AllowWhenBlockedByPopup |
+                                   ImGuiHoveredFlags_AllowWhenBlockedByActiveItem) ||
+            (contextTabOpen_ && ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId |
+                                                                ImGuiPopupFlags_AnyPopupLevel));
     }
     ImGui::End();
 }
@@ -3762,8 +3774,8 @@ void Gui::commandWindow() {
             if (suggestVisible_ && !suggestions_.empty() &&
                 (suggestNavigated_ || (!core_.registry().find(cmd::toUpperAscii(line)) &&
                                        !ui::commandForThaiWord(line)))) {
-                const auto& picked = suggestions_[static_cast<std::size_t>(std::clamp(
-                    suggestSel_, 0, static_cast<int>(suggestions_.size()) - 1))];
+                const auto& picked = suggestions_[static_cast<std::size_t>(
+                    std::clamp(suggestSel_, 0, static_cast<int>(suggestions_.size()) - 1))];
                 const std::string& pick = picked.name;
                 // Enter completes a typed beginning or a slip of the keys on a whole name (LNIE
                 // runs LINE); a looser match must be picked on purpose (arrow key, Tab or click),
@@ -4152,11 +4164,14 @@ void Gui::tabPreviewTip(const std::string& title,
         return;
     const ui::TabPreview& preview = previewOf();
     ImGui::TextUnformatted(title.c_str());
-    const float side = 200.0f * dpiScale_;
+    // Drawn as the drawing area shows it: its background and each object's own colour, big
+    // enough to recognise the sheet (a 200 px picture in one grey ink read as faint lines).
+    const float side = 300.0f * dpiScale_;
     const ImVec2 at = ImGui::GetCursorScreenPos();
     ImGui::Dummy(ImVec2(side, side));
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->AddRectFilled(at, ImVec2(at.x + side, at.y + side), ImGui::GetColorU32(ImGuiCol_FrameBg));
+    const Rgba bg = theme_.bgViewport;
+    dl->AddRectFilled(at, ImVec2(at.x + side, at.y + side), IM_COL32(bg.r, bg.g, bg.b, 255));
     if (preview.empty()) {
         ImGui::SetCursorScreenPos(ImVec2(at.x + 8, at.y + 8));
         ImGui::TextDisabled("Nothing to show");
@@ -4164,14 +4179,16 @@ void Gui::tabPreviewTip(const std::string& title,
         const float w = static_cast<float>(preview.width) * side;
         const float h = static_cast<float>(preview.height) * side;
         const float ox = at.x + (side - w) / 2, oy = at.y + (side + h) / 2;
-        const ImU32 ink = ImGui::GetColorU32(ImGuiCol_Text);
         std::vector<ImVec2> pts;
-        for (const auto& stroke : preview.strokes) {
+        for (std::size_t i = 0; i < preview.strokes.size(); ++i) {
             pts.clear();
-            for (Vec2 p : stroke)
+            for (Vec2 p : preview.strokes[i])
                 pts.emplace_back(ox + static_cast<float>(p.x) * side,
                                  oy - static_cast<float>(p.y) * side);
-            dl->AddPolyline(pts.data(), static_cast<int>(pts.size()), ink, ImDrawFlags_None, 1.0f);
+            const Rgba c = render::adaptToBackground(
+                i < preview.colors.size() ? preview.colors[i] : Rgba{255, 255, 255, 255}, bg);
+            dl->AddPolyline(pts.data(), static_cast<int>(pts.size()), IM_COL32(c.r, c.g, c.b, 255),
+                            ImDrawFlags_None, 1.25f * dpiScale_);
         }
     }
     ImGui::EndTooltip();

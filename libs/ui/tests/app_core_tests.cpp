@@ -9,6 +9,7 @@
 #include "tbcad/text/text.h"
 #include "tbcad/ui/app_core.h"
 #include "tbcad/ui/customize.h"
+#include "tbcad/ui/tab_preview.h"
 #include "tbcad/xref/xref.h"
 #include "test_support.h"
 
@@ -2242,4 +2243,22 @@ TEST_CASE("a grip click shows as Grip edit in the history, not an internal comma
     for (const std::string& h : f.core->history())
         shown = shown || h == "Command: Grip edit";
     CHECK(shown);
+}
+
+TEST_CASE("the tab hover picture keeps each object's colour") {
+    Document doc;
+    {
+        auto tx = doc.begin("t");
+        Entity red{{}, LineData{{0, 0}, {100, 0}}};
+        red.common.color = Color::index(1);
+        (void)tx.add(red);
+        (void)tx.add(Entity{{}, LineData{{0, 10}, {100, 10}}});
+        tx.commit();
+    }
+    const TabPreview p = previewOfModel(doc);
+    REQUIRE(p.strokes.size() == 2);
+    REQUIRE(p.colors.size() == 2);
+    const bool hasRed = (p.colors[0].r == 255 && p.colors[0].g == 0) ||
+                        (p.colors[1].r == 255 && p.colors[1].g == 0);
+    CHECK(hasRed);
 }

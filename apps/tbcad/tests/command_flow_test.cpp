@@ -3,6 +3,7 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
+#include <regex>
 #include <string>
 
 #include "gui.h"
@@ -143,4 +144,19 @@ TEST_CASE("command flow: TRIM cuts on the first click, with no edge selection an
             maxX = std::max(l->a.x, l->b.x);
     });
     CHECK(maxX == doctest::Approx(50));
+}
+
+TEST_CASE("layers panel: a long layer name keeps its start and its end") {
+    Harness h(1600, 1000);
+    const std::string name = "AAAA-START-" + std::string(60, 'x') + "-ENDZ";
+    h.core().submitText("-LAYER N " + name);
+    h.core().submitText("");
+    REQUIRE_FALSE(h.core().runner().active());
+    h.frame(3);
+    h.captureText(true);
+    h.frame(3);
+    const std::string& shown = h.shownText();
+    // The cell shows "AAAA...ENDZ" (or more of each end): its start and its end with "..." between.
+    CHECK(std::regex_search(shown, std::regex("AAAA[A-Zx-]{0,40}\\.\\.\\.[x-]{0,40}ENDZ")));
+    h.captureText(false);
 }

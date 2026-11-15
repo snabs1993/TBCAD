@@ -11,6 +11,7 @@
 #include <set>
 #include <sstream>
 #include <tuple>
+#include <vector>
 
 #include "panel_util.h"
 #include "panels.h"
@@ -325,16 +326,21 @@ VpTarget viewportTarget(const tbcad::ui::PanelContext& ctx) {
     return t;
 }
 
-// A name wider than its cell keeps its end ("...OUT$0$A-WALL"): the start is what repeats.
-std::string fitTail(const std::string& text, float width) {
+// A name wider than its cell keeps its start and its end with "..." between ("A-AN...DIMS",
+// "XREF...A-WALL"): cutting only the front left "...NNO-DIMS", hard to read (owner, test.20).
+std::string fitMiddle(const std::string& text, float width) {
     if (ImGui::CalcTextSize(text.c_str()).x <= width)
         return text;
-    std::size_t cut = 0;
-    while (cut < text.size()) {
-        ++cut;
-        while (cut < text.size() && (static_cast<unsigned char>(text[cut]) & 0xC0) == 0x80)
-            ++cut;
-        const std::string t = "..." + text.substr(cut);
+    std::vector<std::size_t> starts;  // byte offset of each code point
+    for (std::size_t i = 0; i < text.size(); ++i)
+        if ((static_cast<unsigned char>(text[i]) & 0xC0) != 0x80)
+            starts.push_back(i);
+    const std::size_t n = starts.size();
+    for (std::size_t keep = n > 0 ? n - 1 : 0; keep > 0; --keep) {
+        const std::size_t head = (keep * 2 + 4) / 5;  // about 40 % from the start
+        const std::size_t tail = keep - head;
+        const std::string t = text.substr(0, head < n ? starts[head] : text.size()) + "..." +
+                              (tail ? text.substr(starts[n - tail]) : std::string());
         if (ImGui::CalcTextSize(t.c_str()).x <= width)
             return t;
     }
@@ -389,8 +395,9 @@ void drawNameCell(tbcad::ui::PanelContext& ctx, const Row& row, bool dimmed, boo
         // ASCII.
         const std::string full = row.shortName.empty() ? l->name : row.shortName;
         const std::string mark = current ? "> " : "  ";
-        const std::string label = mark + fitTail(full, ImGui::GetContentRegionAvail().x -
-                                                           ImGui::CalcTextSize(mark.c_str()).x - 4);
+        const std::string label =
+            mark + fitMiddle(full, ImGui::GetContentRegionAvail().x -
+                                       ImGui::CalcTextSize(mark.c_str()).x - 4);
         if (dimmed)
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
         bool sel = st.selected == row.id || st.multi.count(row.id.value) > 0;

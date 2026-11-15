@@ -11,6 +11,7 @@ namespace tbcad::ui {
 // Points are scaled so the longer side is 1; x runs 0..width and y 0..height with y up.
 struct TabPreview {
     std::vector<std::vector<Vec2>> strokes{};
+    std::vector<Rgba> colors{};  // one per stroke: the object's colour (sheet edges: white)
     double width = 0;
     double height = 0;
     bool empty() const { return strokes.empty(); }

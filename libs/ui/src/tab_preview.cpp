@@ -12,14 +12,15 @@ namespace tbcad::ui {
 namespace {
 
 constexpr std::size_t kMaxPoints = 20000;
-constexpr double kPixels = 128;  // the picture is about this many pixels on its longer side
+constexpr double kPixels = 256;  // the picture is about this many pixels on its longer side
 
 struct Strokes {
     std::vector<std::vector<Vec2>> lines{};
+    std::vector<Rgba> colors{};
     std::size_t points = 0;
     BBox2 box{};
 
-    void add(std::vector<Vec2> pts, bool closed) {
+    void add(std::vector<Vec2> pts, bool closed, Rgba color = Rgba{255, 255, 255, 255}) {
         if (pts.size() < 2 || points >= kMaxPoints)
             return;
         if (closed && distance(pts.front(), pts.back()) > 0)
@@ -28,25 +29,27 @@ struct Strokes {
             box.expand(p);
         points += pts.size();
         lines.push_back(std::move(pts));
+        colors.push_back(color);
     }
 
     void add(const DisplayList& list) {
         for (const DisplayItem& item : list.items) {
             if (const auto* pl = std::get_if<DisplayPolyline>(&item)) {
-                add(pl->pts, pl->closed);
+                add(pl->pts, pl->closed, pl->style.color);
             } else if (const auto* fill = std::get_if<DisplayFill>(&item)) {
                 for (const auto& ring : fill->rings)
-                    add(ring, true);
+                    add(ring, true, fill->style.color);
             }
         }
     }
 
     // Adds `pts` mapped by `map` and cut to `clip`; each piece inside becomes a stroke.
     template <class Map>
-    void addClipped(const std::vector<Vec2>& pts, bool closed, const BBox2& clip, Map map) {
+    void addClipped(const std::vector<Vec2>& pts, bool closed, const BBox2& clip, Map map,
+                    Rgba color) {
         std::vector<Vec2> run;
         auto flush = [&] {
-            add(std::move(run), false);
+            add(std::move(run), false, color);
             run.clear();
         };
         const std::size_t n = pts.size() + (closed ? 1 : 0);
@@ -99,6 +102,7 @@ struct Strokes {
             for (Vec2& p : s)
                 p = {(p.x - box.min.x) / side, (p.y - box.min.y) / side};
         t.strokes = std::move(lines);
+        t.colors = std::move(colors);
         t.width = w / side;
         t.height = h / side;
         return t;
@@ -185,10 +189,10 @@ TabPreview previewOfLayout(const Document& doc, const std::string& layoutName) {
                 if (s.points >= kMaxPoints)
                     return;
                 if (const auto* pl = std::get_if<DisplayPolyline>(&item)) {
-                    s.addClipped(pl->pts, pl->closed, vp.paper, map);
+                    s.addClipped(pl->pts, pl->closed, vp.paper, map, pl->style.color);
                 } else if (const auto* fill = std::get_if<DisplayFill>(&item)) {
                     for (const auto& ring : fill->rings)
-                        s.addClipped(ring, true, vp.paper, map);
+                        s.addClipped(ring, true, vp.paper, map, fill->style.color);
                 }
             }
         });
