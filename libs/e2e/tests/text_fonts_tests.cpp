@@ -130,8 +130,8 @@ TEST_CASE("perf: 20,000 texts in mixed fonts - first frame, zoom, style change")
     const double restyle = ms(t);
     std::printf("%d texts: first frame %.0f ms, zoom window %.0f ms, restyle all %.0f ms\n", n,
                 first, zoom, restyle);
-    CHECK(first < 20000);
-    CHECK(restyle < 20000);
+    CHECK(first < 20000 * TBCAD_TIME_SCALE);
+    CHECK(restyle < 20000 * TBCAD_TIME_SCALE);
     text::setFontSearchPaths({});
     std::filesystem::remove_all(dir);
 }

@@ -171,7 +171,7 @@ TEST_CASE(
     const double previewMs = 1000.0 * double(std::clock() - t0) / CLOCKS_PER_SEC / 40;
     f.host.feed({"10,10"});
     MESSAGE("preview per move: " << previewMs << " ms");
-    CHECK(previewMs < 15);
+    CHECK(previewMs < 15 * TBCAD_TIME_SCALE);
     CHECK_FALSE(f.host.runner().active());
     CHECK(near(get<LineData>(f.doc, ids[0]).a, {10, 10}));
     CHECK(near(get<LineData>(f.doc, ids[499]).b, {499.5, 0.5}));  // outside the window

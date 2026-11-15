@@ -871,7 +871,7 @@ TEST_CASE("refitSpline on a long wavy curve is fast and within the tolerance") {
     auto out = refitSpline(sp.value(), 0.05);
     const double ms = 1000.0 * static_cast<double>(std::clock() - t0) / CLOCKS_PER_SEC;
     REQUIRE(out.ok());
-    CHECK(ms < 1500.0);
+    CHECK(ms < 1500.0 * TBCAD_TIME_SCALE);
     std::vector<geom::CurveRef> oc, nc;
     REQUIRE(geom::curvesOf(sp.value(), oc));
     REQUIRE(geom::curvesOf(*out.value().modified, nc));

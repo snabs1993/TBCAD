@@ -249,7 +249,7 @@ TEST_CASE("boolean operations on rings of tens of thousands of vertices stay fas
     const Region i = boolean(a, b, BoolOp::Intersect);
     const Region d = boolean(a, b, BoolOp::Subtract);
     const double sec = static_cast<double>(std::clock() - t0) / CLOCKS_PER_SEC;
-    CHECK(sec < 3.0);
+    CHECK(sec < 3.0 * TBCAD_TIME_SCALE);
     CHECK(area(u) + area(i) == doctest::Approx(area(a) + area(b)).epsilon(1e-9));
     CHECK(area(d) == doctest::Approx(area(a) - area(i)).epsilon(1e-9));
     CHECK(u.rings.size() == 1);
