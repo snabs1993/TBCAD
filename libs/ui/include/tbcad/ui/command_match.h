@@ -10,7 +10,7 @@ namespace tbcad::ui {
 
 // One row of the command bar's autocomplete list (and of the command palette).
 struct CommandMatch {
-    enum class Rank { ExactAlias, AliasPrefix, NamePrefix, Synonym, MidString, Fuzzy };
+    enum class Rank { ExactAlias, AliasPrefix, NamePrefix, Synonym, Typo, MidString, Fuzzy };
     std::string name;         // LINE
     std::string alias;        // the alias that matched, or the first alias, or empty
     std::string description;  // one line
@@ -19,8 +19,10 @@ struct CommandMatch {
 };
 
 // Commands matching `query`, best first: (1) exact alias or name, (2) alias prefix, (3) command
-// name prefix, (4) a synonym, as AutoCAD's AutoComplete knows them (ROUND finds FILLET), (5) the
-// query inside the name (LINE finds PLINE, XLINE), (6) fuzzy match on name and description. Ties
+// name prefix, (4) a synonym, as AutoCAD's AutoComplete knows them (ROUND finds FILLET), (5) a
+// slip of the keys on a whole name or alias (LNIE finds LINE: one letter wrong, missing, extra or
+// two swapped; two for names of 6+ letters), (6) the query inside the name (LINE finds PLINE,
+// XLINE), (7) fuzzy match on name and description. Ties
 // keep alphabetical order. An empty query lists every command (the palette). At most `limit` rows.
 // Matching is case-insensitive. Within one rank the commands used lately (`recent`, command names,
 // latest first) come first, then the ones without a leading "-" (the command-line forms of dialogs;

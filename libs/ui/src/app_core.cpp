@@ -2261,6 +2261,26 @@ std::string roundedNumbers(const std::string& token) {
 }
 }  // namespace
 
+// What the history shows for a line typed at "Command:": the full name of the command an alias
+// or a Thai word starts ("l 0,0" -> "LINE 0,0"), and the command an empty Enter repeats.
+std::string AppCore::commandEcho(const std::string& line) {
+    if (line.empty())
+        return std::string(runner().lastCommand());
+    const std::size_t end = line.find(' ');
+    std::string first = line.substr(0, end);
+    const std::string rest = end == std::string::npos ? std::string() : line.substr(end);
+    const bool transparent = first.size() > 1 && first[0] == '\'';
+    const std::string word = transparent ? first.substr(1) : first;
+    std::string name;
+    if (const cmd::Command* c = registry_.find(word))
+        name = std::string(c->name());
+    else if (const char* thai = commandForThaiWord(word))
+        name = thai;
+    if (name.empty())
+        return line;
+    return (transparent ? "'" : "") + name + rest;
+}
+
 // "#12" in a line a panel sent stands for a layer (or, after "Linetype", a linetype).
 std::string AppCore::friendlyEcho(const std::string& line) const {
     std::vector<std::string> words = splitWords(line);
@@ -2314,7 +2334,7 @@ void AppCore::submitText(std::string_view text) {
             readOnlyOrigin() && !modified() &&
             isViewStateCommand(splitWords(trimmed[0] == '\'' ? trimmed.substr(1) : trimmed));
     if (echoMode_ == EchoMode::Typed)
-        print(promptText() + trimmed);
+        print(promptText() + (run.active() ? trimmed : commandEcho(trimmed)));
     else if (echoMode_ == EchoMode::Names)
         print(promptText() + friendlyEcho(trimmed));
     if (run.active()) {
@@ -2388,6 +2408,8 @@ void AppCore::pressEscape() {
     }
     if (runner().active()) {
         runner().submit(cmd::Input::cancel());
+        if (!runner().active())
+            print("*Cancel*");
     } else {
         clearSelection();
         // A viewport picked by its border is not in the selection set: Esc lets go of it too.
@@ -3837,11 +3859,15 @@ std::string AppCore::deleteKeyCommand() {
 }
 
 bool AppCore::dragPicksWindow() const {
-    return setting("selection.pickdrag").value_or("1") != "0";
+    return setting("selection.pickdrag").value_or("2") != "0";
+}
+
+bool AppCore::clickPicksWindow() const {
+    return setting("selection.pickdrag").value_or("2") != "1";
 }
 
 bool AppCore::windowClick(const PointerState& p) {
-    if (dragPicksWindow() || !session_) {
+    if (!clickPicksWindow() || !session_) {
         windowCorner_.reset();
         return false;
     }

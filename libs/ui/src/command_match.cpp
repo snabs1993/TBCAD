@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <vector>
 
 #include "tbcad/ui/thai_words.h"
 
@@ -41,6 +42,33 @@ constexpr Synonym kSynonyms[] = {
 bool hasNonAscii(std::string_view s) {
     return std::any_of(s.begin(), s.end(),
                        [](char c) { return static_cast<unsigned char>(c) >= 0x80; });
+}
+
+// Optimal string alignment distance (Levenshtein plus swapping two neighbours), case already equal.
+std::size_t typoDistance(const std::string& a, const std::string& b) {
+    const std::size_t n = a.size(), m = b.size();
+    std::vector<std::vector<std::size_t>> d(n + 1, std::vector<std::size_t>(m + 1));
+    for (std::size_t i = 0; i <= n; ++i)
+        d[i][0] = i;
+    for (std::size_t j = 0; j <= m; ++j)
+        d[0][j] = j;
+    for (std::size_t i = 1; i <= n; ++i)
+        for (std::size_t j = 1; j <= m; ++j) {
+            const std::size_t cost = a[i - 1] == b[j - 1] ? 0 : 1;
+            d[i][j] = std::min({d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost});
+            if (i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1])
+                d[i][j] = std::min(d[i][j], d[i - 2][j - 2] + 1);
+        }
+    return d[n][m];
+}
+
+bool isTypoOf(const std::string& query, const std::string& word) {
+    if (query.size() < 3 || word.size() < 4)
+        return false;
+    const std::size_t allowed = word.size() >= 6 ? 2 : 1;
+    const std::size_t gap = query.size() > word.size() ? query.size() - word.size()
+                                                       : word.size() - query.size();
+    return gap <= allowed && typoDistance(query, word) <= allowed;
 }
 
 }  // namespace
@@ -136,6 +164,18 @@ std::vector<CommandMatch> matchCommands(const cmd::Registry& registry, std::stri
             m.rank = CommandMatch::Rank::MidString;
             matched = true;
         }
+        if (!matched && isTypoOf(query, name)) {
+            m.rank = CommandMatch::Rank::Typo;
+            matched = true;
+        }
+        if (!matched)
+            for (const std::string& a : aliases)
+                if (isTypoOf(query, upper(a))) {
+                    m.rank = CommandMatch::Rank::Typo;
+                    m.alias = a;
+                    matched = true;
+                    break;
+                }
         if (!matched && query.size() >= 2 &&
             (isSubsequence(query, name) || upper(m.description).find(query) != std::string::npos)) {
             m.rank = CommandMatch::Rank::Fuzzy;

@@ -382,10 +382,13 @@ public:
     // A finished rectangle drag from `a` to `b` (screen pixels). Left to right selects what is
     // completely inside (window), right to left what it touches (crossing). Shift removes.
     void dragSelect(Vec2 a, Vec2 b, const PointerState& p);
-    // PICKDRAG 0: a click on empty space starts a selection window and the next click ends it
-    // (no dragging). True when the click was taken as a window corner; otherwise call `click`.
+    // PICKDRAG 0 or 2: a click on empty space starts a selection window and the next click ends
+    // it. True when the click was taken as a window corner; otherwise call `click`.
     bool windowClick(const PointerState& p);
-    bool dragPicksWindow() const;  // PICKDRAG 1 (default): press-drag-release makes the window
+    // PICKDRAG 1 or 2 (default 2, both): press-drag-release makes the window.
+    bool dragPicksWindow() const;
+    bool clickPicksWindow() const;  // PICKDRAG 0 or 2
+    bool windowCornerPending() const { return windowCorner_.has_value(); }
     // The command line the Delete key runs now: a module's (VERTEXDELETE while polyline
     // vertices are picked), else ERASE with a selection; empty while a command runs.
     std::string deleteKeyCommand();
@@ -732,6 +735,7 @@ private:
     enum class EchoMode { Typed, Names, None };
     EchoMode echoMode_ = EchoMode::Typed;
     bool quiet_ = false;  // runSetup: nothing reaches the command line
+    std::string commandEcho(const std::string& line);
     std::string friendlyEcho(const std::string& line) const;
     std::string pendingLayout_;  // layout to show when the running command ends
     void applyPendingLayout();

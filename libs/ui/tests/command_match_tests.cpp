@@ -150,3 +150,17 @@ TEST_CASE("Thai words find commands") {
     CHECK(matchCommands(fx.reg, "มุมมน")[0].name == "FILLET");
     CHECK(matchCommands(fx.reg, "นี่ไม่มีคำนี้").empty());
 }
+
+TEST_CASE("a slip of the keys on a whole command name still finds it first") {
+    Fx fx;
+    auto m = matchCommands(fx.reg, "lnie");  // two letters swapped
+    REQUIRE_FALSE(m.empty());
+    CHECK(m[0].name == "LINE");
+    CHECK(m[0].rank == CommandMatch::Rank::Typo);
+    m = matchCommands(fx.reg, "linee");  // one letter too many
+    REQUIRE_FALSE(m.empty());
+    CHECK(m[0].name == "LINE");
+    m = matchCommands(fx.reg, "polyline");
+    CHECK(m[0].rank == CommandMatch::Rank::ExactAlias);
+    CHECK(matchCommands(fx.reg, "zzz").empty());
+}

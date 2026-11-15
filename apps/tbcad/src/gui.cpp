@@ -3756,13 +3756,14 @@ void Gui::commandWindow() {
             if (suggestVisible_ && !suggestions_.empty() &&
                 (suggestNavigated_ || (!core_.registry().find(cmd::toUpperAscii(line)) &&
                                        !ui::commandForThaiWord(line)))) {
-                const std::string& pick =
-                    suggestions_[static_cast<std::size_t>(std::clamp(
-                                     suggestSel_, 0, static_cast<int>(suggestions_.size()) - 1))]
-                        .name;
-                // Enter completes a typed beginning; a looser match must be picked on purpose
-                // (arrow key, Tab or click), never run unasked: PLINE is not BLEND.
-                if (suggestNavigated_ || pick.rfind(cmd::toUpperAscii(line), 0) == 0) {
+                const auto& picked = suggestions_[static_cast<std::size_t>(std::clamp(
+                    suggestSel_, 0, static_cast<int>(suggestions_.size()) - 1))];
+                const std::string& pick = picked.name;
+                // Enter completes a typed beginning or a slip of the keys on a whole name (LNIE
+                // runs LINE); a looser match must be picked on purpose (arrow key, Tab or click),
+                // never run unasked: PLINE is not BLEND.
+                if (suggestNavigated_ || pick.rfind(cmd::toUpperAscii(line), 0) == 0 ||
+                    picked.rank == ui::CommandMatch::Rank::Typo) {
                     line = pick;
                 } else {
                     std::string hint = "Unknown command \"" + line + "\". Did you mean";
@@ -5087,6 +5088,7 @@ void Gui::viewportInput(const ViewportRect& rect) {
     if (leftDown_) {
         if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
             if (!pointPrompt && !dragging_ && !pressTookPoint_ && core_.dragPicksWindow() &&
+                !core_.windowCornerPending() &&
                 std::hypot(mouse.x - pressPos_.x, mouse.y - pressPos_.y) > 4.0 * s)
                 dragging_ = true;
             if (dragging_ && io.KeyAlt) {
@@ -5139,7 +5141,7 @@ void Gui::viewportInput(const ViewportRect& rect) {
                 core_.doubleClick(ps);
             else if (!core_.windowClick(ps))
                 core_.click(ps);
-            if (core_.dragPicksWindow())
+            if (!core_.windowCornerPending())
                 core_.setSelectionDrag(std::nullopt);
             core_.setLassoPath({});
             lassoPath_.clear();
@@ -5337,14 +5339,33 @@ void Gui::cycleListPopup() {
     ImGui::EndPopup();
 }
 
+// A right-click menu over the drawing is a shortcut, not a dialog: Esc closes it, and typing
+// closes it and goes to the command line (the keys were lost while it stayed open).
+bool Gui::closeMenuOnKeys() {
+    ImGuiIO& io = ImGui::GetIO();
+    const bool typed = io.InputQueueCharacters.Size > 0 && !io.KeyCtrl && !io.KeyAlt;
+    if (!typed && !ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+        return false;
+    for (int i = 0; typed && i < io.InputQueueCharacters.Size; ++i) {
+        char utf8[5] = {};
+        ImTextCharToUtf8(utf8, io.InputQueueCharacters[i]);
+        typedWhileUnfocused_ += utf8;
+    }
+    io.InputQueueCharacters.resize(0);
+    ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
+    refocusInput_ = true;
+    return true;
+}
+
 void Gui::viewportMenu() {
-    if (ImGui::BeginPopup("##snapMenu")) {  // Shift + right click
+    if (ImGui::BeginPopup("##snapMenu") && !closeMenuOnKeys()) {  // Shift + right click
         anyActivity_ = true;
         ImGui::TextDisabled("Snap overrides (next point)");
         snapOverrideItems();
         ImGui::EndPopup();
     }
-    if (!ImGui::BeginPopup("##viewportMenu"))
+    if (!ImGui::BeginPopup("##viewportMenu") || closeMenuOnKeys())
         return;
     anyActivity_ = true;
     auto run = [&](const std::string& line) { core_.submitText(line); };
