@@ -4190,12 +4190,24 @@ void Gui::linkTick() {
 void Gui::tabDragTick() {
     if (!link_ || tabDragId_ == 0)
         return;
-    if (!ImGui::IsMousePosValid()) {
+    // Where the pointer is on the desktop. Outside the window ImGui may have no position (the
+    // pointer left the window and Windows said so even while the button was held), so the
+    // system is asked directly.
+    ImVec2 m = ImGui::GetMousePos();
+    bool valid = ImGui::IsMousePosValid();
+    if (window_ && (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable)) {
+        double cx = 0, cy = 0;
+        int wx = 0, wy = 0;
+        glfwGetCursorPos(window_, &cx, &cy);
+        glfwGetWindowPos(window_, &wx, &wy);
+        m = ImVec2(static_cast<float>(cx + wx), static_cast<float>(cy + wy));
+        valid = true;
+    }
+    if (!valid) {
         if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
             tabDragId_ = 0;
         return;
     }
-    const ImVec2 m = ImGui::GetMousePos();
     bool inside = false;
     for (const ImGuiViewport* v : ImGui::GetPlatformIO().Viewports) {
         if ((v->Flags & (ImGuiViewportFlags_NoInputs | ImGuiViewportFlags_IsMinimized)) != 0)
@@ -4211,6 +4223,9 @@ void Gui::tabDragTick() {
                 onOther = onOther || o.rect.contains(m.x, m.y);
             ImGui::SetTooltip("%s", onOther ? "Release to move the drawing into that window"
                                             : "Release to open the drawing in a new window");
+        } else if (m.y > ImGui::GetWindowPos().y + ImGui::GetWindowHeight() + 40.0f * dpiScale_) {
+            // Pulled down off the tabs: say where it has to go.
+            ImGui::SetTooltip("Drag out of this window (to another screen) to open it there");
         }
         return;
     }
@@ -4279,7 +4294,8 @@ void Gui::docTabs() {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4, 0));
     if (ImGui::BeginViewportSideBar("##doctabs", vp, ImGuiDir_Up, h, flags)) {
         if (ImGui::BeginTabBar("##docs", ImGuiTabBarFlags_FittingPolicyScroll |
-                                             ImGuiTabBarFlags_TabListPopupButton)) {
+                                             ImGuiTabBarFlags_TabListPopupButton |
+                                             ImGuiTabBarFlags_Reorderable)) {
             const std::size_t n = core_.documentCount();
             const std::size_t active = core_.activeDocument();
             const bool external = active != shownActive_;
