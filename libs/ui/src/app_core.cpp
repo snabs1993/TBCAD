@@ -3707,22 +3707,27 @@ void AppCore::click(const PointerState& p) {
 
 // A viewport border is not an object, so a command asking for objects cannot take it: a click
 // on one says how viewports are removed instead of doing nothing.
-void AppCore::hintViewportBorder(Vec2 world) {
+// The id of the viewport whose border on the current sheet lies under `world`, if any.
+std::optional<int> AppCore::viewportBorderAt(Vec2 world) {
     const auto lay = layout::findLayout(session_->doc, activeLayout_);
     if (!lay)
-        return;
+        return std::nullopt;
     const double reach = apertureMm() * 2.0;
     for (const layout::Viewport& vp : lay->viewports) {
         const BBox2 outer = vp.paper.inflated(reach);
         const BBox2 inner = vp.paper.inflated(-reach);
         if (outer.contains(world) &&
-            !(inner.width() > 0 && inner.height() > 0 && inner.contains(world))) {
-            print("Viewport " + std::to_string(vp.id) +
-                  " is not an object and is not selected here. To remove it, press Esc, click "
-                  "its border and press Delete, or use VPDELETE.");
-            return;
-        }
+            !(inner.width() > 0 && inner.height() > 0 && inner.contains(world)))
+            return static_cast<int>(vp.id);
     }
+    return std::nullopt;
+}
+
+void AppCore::hintViewportBorder(Vec2 world) {
+    if (const auto vp = viewportBorderAt(world))
+        print("Viewport " + std::to_string(*vp) +
+              " is not an object and is not selected here. To remove it, press Esc, click "
+              "its border and press Delete, or use VPDELETE.");
 }
 
 void AppCore::doubleClick(const PointerState& p) {
@@ -3882,7 +3887,11 @@ bool AppCore::windowClick(const PointerState& p) {
     if (runner().active() && !(prompt_ && prompt_->kind == cmd::PromptInfo::Kind::Selection &&
                                !runner().selectShapePending()))
         return false;
-    if (pickEntity(session_->doc, spatialIndex(), camera_.screenToWorld(p.screen), apertureMm()))
+    const Vec2 world = camera_.screenToWorld(p.screen);
+    if (pickEntity(session_->doc, spatialIndex(), world, apertureMm()))
+        return false;
+    // A viewport border on a sheet is clicked to pick the viewport (or to hear how), not a corner.
+    if (viewportBorderAt(world))
         return false;
     windowCorner_ = p.screen;
     return true;
