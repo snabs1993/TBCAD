@@ -239,6 +239,28 @@ static bool hiddenImageFrame(const Document& doc, const BlockDef& def) {
     return underlay::imageParams(doc.header(), def.name).frame == 0;
 }
 
+// XREFFADE: an attached drawing (not a PDF page or picture, which have their own fade) seen on
+// screen is drawn lighter by this percentage; 0 when it is not.
+static int xrefFadeFor(const Document& doc, const BlockDef& def, const geom::DisplayContext& ctx) {
+    if (!ctx.xrefFade || def.xrefPath.empty() || underlay::isPdfPath(def.xrefPath) ||
+        underlay::isImagePath(def.xrefPath))
+        return 0;
+    return xrefFadePercent(doc.header());
+}
+
+static void lighten(DisplayList& list, std::size_t from, int percent) {
+    const double keep = 1.0 - percent / 100.0;
+    for (std::size_t i = from; i < list.items.size(); ++i)
+        std::visit(
+            [keep](auto& item) {
+                DisplayStyle& s = item.style;
+                if (s.faded || isBackgroundColor(s.color))
+                    return;
+                s.color.a = static_cast<std::uint8_t>(std::lround(s.color.a * keep));
+            },
+            list.items[i]);
+}
+
 // ---- generator
 // --------------------------------------------------------------------------------------
 
@@ -396,6 +418,9 @@ void buildInsertDisplay(const Document& doc, const Entity& insert, const geom::D
     // Overlapping assemblies of one join class read as a single body.
     if (g_depth == 1 && detail::joinApplies(doc, insert, *def, *ins))
         detail::joinClip(doc, insert, *def, ctx, out, firstItem);
+    if (g_depth == 1)
+        if (const int fade = xrefFadeFor(doc, *def, ctx); fade > 0)
+            lighten(out, firstItem, fade);
 }
 
 bool buildInsertInstance(const Document& doc, const Entity& insert, const geom::DisplayContext& ctx,
@@ -410,6 +435,8 @@ bool buildInsertInstance(const Document& doc, const Entity& insert, const geom::
     if (hiddenImageFrame(doc, *def))
         return false;
     if (ins->clipOn && ins->clip.size() >= 3)
+        return false;
+    if (xrefFadeFor(doc, *def, ctx) > 0)  // drawn lighter on its own, not from shared geometry
         return false;
     if (ins->array && !ins->array->swaps.empty())
         return false;

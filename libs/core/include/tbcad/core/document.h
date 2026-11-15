@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <functional>
@@ -76,6 +77,18 @@ inline int wipeoutFrameMode(const Header& h) {
 // underlay (PDFFRAME) is drawn. 0 hidden, 1 shown and plotted, 2 shown but not plotted (the
 // default: a clipped reference shows where it is cut). Kept in Header::custom.
 inline constexpr const char* kXclipFrameKey = "tbcad.xclipframe";
+// XREFFADE: how much lighter attached drawings (xrefs) are drawn on screen, 0 to 90 percent
+// (default 30), so their lines read apart from the drawing's own. Plotting ignores it. Kept in
+// Header::custom.
+inline constexpr const char* kXrefFadeKey = "tbcad.xreffade";
+inline constexpr int kDefaultXrefFade = 30;
+inline int xrefFadePercent(const Header& h) {
+    const auto it = h.custom.find(kXrefFadeKey);
+    if (it == h.custom.end() || it->second.empty() || it->second.size() > 2 ||
+        it->second.find_first_not_of("0123456789") != std::string::npos)
+        return kDefaultXrefFade;
+    return std::min(std::stoi(it->second), 90);
+}
 inline constexpr const char* kPdfFrameKey = "tbcad.pdfframe";
 inline int clipFrameMode(const Header& h, const char* key) {
     const auto it = h.custom.find(key);

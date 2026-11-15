@@ -42,6 +42,8 @@
 #include "tbcad/ui/selection.h"
 #include "tbcad/ui/settings_model.h"
 #include "tbcad/ui/thai_words.h"
+#include "tbcad/underlay/image.h"
+#include "tbcad/underlay/pdf.h"
 #include "tbcad/xref/xref.h"
 
 namespace tbcad::ui {
@@ -3487,6 +3489,17 @@ std::string AppCore::describeEntity(EntityId id) const {
     const auto k = static_cast<std::size_t>(kind(*e));
     // As AutoCAD's rollover tooltip: the type, then colour, layer and linetype, then the size.
     std::string out = k < std::size(kNames) ? kNames[k] : "Object";
+    // A reference says what it brings in: another drawing, a PDF page or a picture.
+    if (const auto* ins = entityAs<InsertData>(*e))
+        if (const BlockDef* def = session_->doc.block(ins->block)) {
+            if (underlay::isPdfPath(def->xrefPath))
+                out = "PDF underlay";
+            else if (underlay::isImagePath(def->xrefPath))
+                out = "Picture";
+            else if (!def->xrefPath.empty())
+                out = def->xrefOverlay ? "Xref (overlay)" : "Xref";
+            out += ": " + def->name;
+        }
     const EntityCommon& c = e->common;
     std::string color;
     switch (c.color.kind) {

@@ -4,6 +4,7 @@
 #include <random>
 #include <set>
 
+#include "../src/commands.h"
 #include "support.h"
 #include "tbcad/drafting/snap_geometry.h"
 #include "tbcad/io/tbcad.h"
@@ -761,6 +762,68 @@ TEST_CASE(
     f.host->clearLog();
     f.host->run("XOPEN", {"plan"});
     CHECK(f.host->logContains("was not found"));
+}
+
+namespace {
+struct AttachWindowHost : cmd::ScriptHost {
+    using cmd::ScriptHost::ScriptHost;
+    std::vector<std::string> opened;
+    bool dialogsAvailable() const override { return true; }
+    void openPanel(std::string_view id) override { opened.emplace_back(id); }
+};
+}  // namespace
+
+TEST_CASE("XATTACH in a window asks everything in one Attach dialog") {
+    Dir dir;
+    fs::path file = writeSource(dir.path, "plan.tbcad", 10);
+    Fixture f;
+    AttachWindowHost host(f.doc, f.reg);
+    host.run("XATTACH", {file.string()});
+    CHECK(host.uiRequests().at(0) == "pickfile:drawing");  // the file picker opens by itself
+    REQUIRE(host.opened.size() == 1);
+    CHECK(host.opened[0] == "xattachdlg");
+    auto fields = decodeAttachFields(host.setting(kAttachFieldsSetting).value_or(""));
+    REQUIRE(fields);
+    CHECK(fields->kind == "drawing");
+    CHECK(fields->defaults.name == "plan");
+    AttachAnswers a = fields->defaults;
+    a.name = "site";
+    a.overlay = true;
+    a.path = 'A';
+    a.scale = 2;
+    a.rotationDeg = 90;
+    host.setSetting(kAttachResultSetting, encodeAttachResult(a));
+    auto r = host.feed({"", "100,0"});
+    CHECK(r.finished);
+    const BlockDef* def = f.doc.blockByName("site");
+    REQUIRE(def);
+    CHECK(def->xrefOverlay);
+    CHECK(fs::path(def->xrefPath).is_absolute());
+    REQUIRE(f.modelSpace().size() == 1);
+    const auto* ins = entityAs<InsertData>(*f.doc.find(f.modelSpace()[0]));
+    CHECK(ins->scale.x == doctest::Approx(2));
+    CHECK(ins->rotation == doctest::Approx(kPi / 2));
+    CHECK(near(ins->position, {100, 0}));
+}
+
+TEST_CASE("XREFFADE draws attached drawings lighter on screen only") {
+    Dir dir;
+    fs::path file = writeSource(dir.path, "plan.tbcad", 2);
+    Fixture f;
+    f.host->run("XATTACH", {file.string(), "", "", "", "0,0"});
+    const Entity& e = *f.doc.find(f.modelSpace()[0]);
+    auto alpha = [&](bool screen) {
+        DisplayList out;
+        geom::DisplayContext ctx;
+        ctx.xrefFade = screen;
+        geom::buildDisplay(f.doc, e, ctx, out);
+        REQUIRE(!out.items.empty());
+        return std::get<DisplayPolyline>(out.items[0]).style.color.a;
+    };
+    CHECK(alpha(false) == 255);
+    CHECK(alpha(true) == std::lround(255 * 0.7));  // 30 % by default
+    f.host->run("XREFFADE", {"0"});
+    CHECK(alpha(true) == 255);
 }
 
 TEST_CASE("XCLIPFRAME and PDFFRAME draw the clip boundary and PDFCLIP clips only a PDF underlay") {
