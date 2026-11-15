@@ -615,3 +615,64 @@ TEST_CASE("DIMTXSTY typed as a command sets the text style of the current dimens
     CHECK(f.host->run("DIMTXSTY", {"Current"}).finished);
     CHECK(f.doc.dimStyle(kDimStyleStandard)->textStyle == TextStyleId{});
 }
+
+TEST_CASE(
+    "a new dimension follows the style the drawing's dimensions use, not an unused Standard") {
+    Fixture f;
+    DimStyleId plan{};
+    {
+        auto tx = f.doc.begin("style");
+        DimStyle s = *f.doc.dimStyle(kDimStyleStandard);
+        s.id = {};
+        s.name = "Plan100";
+        s.overallScale = 100;
+        auto id = tx.addDimStyle(std::move(s));
+        REQUIRE(id);
+        plan = id.value();
+        (void)tx.modifyHeader([plan](Header& h) { h.currentDimStyle = plan; });
+        tx.commit();
+    }
+    f.host->run("DIMLINEAR", {"0,0", "6000,0", "3000,500"});
+    f.host->run("DIMLINEAR", {"0,1000", "6000,1000", "3000,1500"});
+    {
+        // The way such a drawing opens: its own styles on the dimensions, Standard current.
+        auto tx = f.doc.begin("current");
+        (void)tx.modifyHeader([](Header& h) { h.currentDimStyle = kDimStyleStandard; });
+        tx.commit();
+    }
+    f.host->run("DIMLINEAR", {"0,2000", "6000,2000", "3000,2500"});
+    CHECK(f.doc.header().currentDimStyle == plan);
+    CHECK(f.host->logContains("\"Plan100\" is now current"));
+    std::size_t inPlan = 0, all = 0;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* d = entityAs<DimensionData>(e)) {
+            ++all;
+            inPlan += d->style == plan;
+        }
+    });
+    CHECK(all == 3);
+    CHECK(inPlan == 3);
+    // Only once per drawing: Standard chosen again afterwards is the user's choice.
+    {
+        auto tx = f.doc.begin("current");
+        (void)tx.modifyHeader([](Header& h) { h.currentDimStyle = kDimStyleStandard; });
+        tx.commit();
+    }
+    f.host->run("DIMLINEAR", {"0,3000", "6000,3000", "3000,3500"});
+    CHECK(f.doc.header().currentDimStyle == kDimStyleStandard);
+
+    // A drawing whose dimensions already use Standard keeps it.
+    Fixture g;
+    g.host->run("DIMLINEAR", {"0,0", "100,0", "50,20"});
+    {
+        auto tx = g.doc.begin("style");
+        DimStyle s = *g.doc.dimStyle(kDimStyleStandard);
+        s.id = {};
+        s.name = "Big";
+        s.overallScale = 100;
+        REQUIRE(tx.addDimStyle(std::move(s)));
+        tx.commit();
+    }
+    g.host->run("DIMLINEAR", {"0,50", "100,50", "50,70"});
+    CHECK(g.doc.header().currentDimStyle == kDimStyleStandard);
+}

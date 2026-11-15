@@ -581,3 +581,21 @@ TEST_CASE(
     for (const std::string& line : core.history())
         CHECK(line.find("100.000000808") == std::string::npos);
 }
+
+TEST_CASE("pale colours are darkened on the white sheet, greys and dark colours are kept") {
+    const Rgba yellow = ui::sheetInkColor(Rgba{255, 255, 0, 255});
+    CHECK(0.299 * yellow.r + 0.587 * yellow.g + 0.114 * yellow.b < 155);
+    CHECK(yellow.r == yellow.g);  // the same hue
+    CHECK(yellow.b == 0);
+    const Rgba pale = ui::sheetInkColor(Rgba{255, 255, 127, 255});
+    CHECK(0.299 * pale.r + 0.587 * pale.g + 0.114 * pale.b < 155);
+    const Rgba cyan = ui::sheetInkColor(Rgba{0, 255, 255, 255});
+    CHECK(0.299 * cyan.r + 0.587 * cyan.g + 0.114 * cyan.b < 155);
+    const Rgba grey = ui::sheetInkColor(Rgba{200, 200, 200, 255});
+    CHECK(grey.r == 200);  // light grey shading stays light
+    const Rgba red = ui::sheetInkColor(Rgba{206, 11, 11, 255});
+    CHECK(red.r == 206);
+    // Ink that is exactly black or white stays black or white whatever the window theme is.
+    CHECK(ui::sheetInkColor(Rgba{0, 0, 0, 255}).r == 1);
+    CHECK(ui::sheetInkColor(Rgba{255, 255, 255, 255}).r == 254);
+}

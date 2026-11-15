@@ -9,6 +9,10 @@
 
 namespace tbcad::ui {
 
+// The colour an object is drawn with on the white sheet on screen: pale colours (yellow, cyan)
+// are darkened so they can be read; a plot keeps the real colours.
+Rgba sheetInkColor(Rgba c);
+
 // A read-only picture of one layout (paper space): the white sheet, the layout's own objects and
 // every viewport showing model space, clipped to its rectangle. Built from the same primitives
 // the plotter uses, then fed to a render::Scene so the window draws it like a drawing. The
