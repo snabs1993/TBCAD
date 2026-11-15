@@ -1598,6 +1598,75 @@ TEST_CASE("a tolerance frame is exported as TOLERANCE and comes back as the same
     CHECK(b->entities.size() == gdt::frameEntities(spec).size());
 }
 
+TEST_CASE("a tolerance frame keeps its own size, its decimal comma and its flags in a saved DXF") {
+    Document doc;
+    gdt::Spec spec;
+    spec.symbol = gdt::Symbol::Flatness;
+    spec.value = "0,05";  // a decimal comma
+    {
+        auto tx = doc.begin("frame");
+        BlockId b = tx.addBlock(BlockDef{.name = "TB_TOL_1"}).value();
+        for (Entity& e : gdt::frameEntities(spec))
+            REQUIRE(tx.add(std::move(e), b).ok());
+        REQUIRE(gdt::addFrame(tx, "TB_TOL_1", spec));
+        // Drawn 100 times the size the dimension style gives (an annotative frame at 1:100).
+        Entity e = make(InsertData{b, {30, 40}, {100, 100}, 0});
+        e.common.annotative = true;
+        e.common.faded = true;
+        REQUIRE(tx.add(std::move(e)).ok());
+        tx.commit();
+    }
+    RoundTrip rt = roundTrip(doc);
+    CHECK(rt.bytes.find("AcDbFcf") != std::string::npos);
+    const Entity* found = nullptr;
+    rt.back->forEachEntity([&](const Entity& e) {
+        if (entityAs<InsertData>(e))
+            found = &e;
+    });
+    REQUIRE(found);
+    const auto* ins = entityAs<InsertData>(*found);
+    CHECK(ins->scale.x == 100);
+    CHECK(ins->scale.y == 100);
+    CHECK(found->common.annotative);
+    CHECK(found->common.faded);
+    const BlockDef* b = rt.back->block(ins->block);
+    REQUIRE(b);
+    const gdt::FrameTable table = gdt::readFrames(rt.back->header());
+    REQUIRE(table.count(b->name) == 1);
+    CHECK(table.at(b->name).value == "0,05");
+}
+
+TEST_CASE("a faded picture and a faded PDF page are still faded in a saved DXF") {
+    for (const char* path : {"pics/logo.png", "sheets/plan.pdf#page=2"}) {
+        CAPTURE(path);
+        Document doc;
+        {
+            auto tx = doc.begin("underlay");
+            BlockId b = tx.addBlock(BlockDef{.name = "under", .base = {0, 0}}).value();
+            PolylineData frame;
+            frame.closed = true;
+            for (Vec2 v : {Vec2{0, 0}, Vec2{40, 0}, Vec2{40, 20}, Vec2{0, 20}})
+                frame.v.push_back({v, 0, 0, 0});
+            REQUIRE(tx.add(make(frame), b).ok());
+            const std::string file = path;
+            REQUIRE(tx.modifyBlock(b, [&](BlockDef& d) { d.xrefPath = file; }).ok());
+            Entity e = make(InsertData{b, {100, 200}, {2, 2}, 0});
+            e.common.faded = true;
+            REQUIRE(tx.add(std::move(e)).ok());
+            tx.commit();
+        }
+        RoundTrip rt = roundTrip(doc);
+        int inserts = 0;
+        rt.back->forEachEntity([&](const Entity& e) {
+            if (!entityAs<InsertData>(e))
+                return;
+            ++inserts;
+            CHECK(e.common.faded);
+        });
+        CHECK(inserts == 1);
+    }
+}
+
 TEST_CASE("a layer description travels as AcAecLayerStandard XDATA") {
     Document doc;
     {

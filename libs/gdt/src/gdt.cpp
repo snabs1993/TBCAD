@@ -210,9 +210,10 @@ std::vector<Entity> frameEntities(const Spec& spec) {
 namespace {
 constexpr const char* kTableKey = "tbcad.tolerances";
 
-std::string clean(std::string s) {
+// The table is lines of tab-separated fields; the datums are one field, separated by commas.
+std::string clean(std::string s, bool commas = true) {
     for (char& c : s)
-        if (c == '\t' || c == '\n' || c == '\r' || c == ',')
+        if (c == '\t' || c == '\n' || c == '\r' || (commas && c == ','))
             c = ' ';
     return s;
 }
@@ -261,7 +262,7 @@ FrameTable readFrames(const Header& header) {
 void writeFrames(Header& header, const FrameTable& table) {
     std::string text;
     for (const auto& [name, s] : table) {
-        text += clean(name) + '\t' + symbolName(s.symbol) + '\t' + clean(s.value) + '\t' +
+        text += clean(name) + '\t' + symbolName(s.symbol) + '\t' + clean(s.value, false) + '\t' +
                 (s.diameterZone ? "1" : "0") + '\t' +
                 (s.material ? std::string(1, s.material) : "") + '\t';
         for (std::size_t i = 0; i < s.datums.size(); ++i)

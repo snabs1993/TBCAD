@@ -1834,6 +1834,8 @@ bool Writer::writeImage(const Props& p, const InsertData& d, std::uint64_t owner
         o.pt2(14, px(ip.u1, ip.v0));
     }
     images_.push_back(std::move(img));
+    if (L().cur)  // faded, annotative: an image is an insert in TBCAD
+        writeCommonFlags(*L().cur);
     count("IMAGE");
     return true;
 }
@@ -1875,6 +1877,8 @@ bool Writer::writePdfUnderlay(const Props& p, const InsertData& d, std::uint64_t
     o.i(280, (spec.pdf.monochrome ? 4 : 0));
     o.i(281, spec.pdf.contrast);
     o.i(282, static_cast<long long>(std::lround(spec.pdf.fadePercent)));
+    if (L().cur)
+        writeCommonFlags(*L().cur);
     count("PDFUNDERLAY");
     return true;
 }
@@ -1896,7 +1900,9 @@ bool Writer::writeTolerance(const Props& p, const InsertData& d, std::uint64_t o
     }
     const DimStyle& ds = dim::styleOf(doc_, doc_.header().currentDimStyle);
     const double have = ds.textHeight * (ds.overallScale > 0 ? ds.overallScale : 1.0);
-    if (std::abs(have - gdt::kTextHeight * d.scale.x) > 1e-6 * std::max(1.0, have))
+    const bool ownSize = d.scale.x != d.scale.y ||
+                         std::abs(have - gdt::kTextHeight * d.scale.x) > 1e-6 * std::max(1.0, have);
+    if (ownSize)
         downgrade("TOLERANCE", "is drawn by other programs at the size of the dimension style \"" +
                                    dimStyleNameOf(doc_.header().currentDimStyle) + "\"");
     head("TOLERANCE", p, owner, "AcDbFcf");
@@ -1905,6 +1911,15 @@ bool Writer::writeTolerance(const Props& p, const InsertData& d, std::uint64_t o
     o.pt(10, d.position);
     o.str(1, gdt::dxfText(it->second));
     o.pt(11, Vec2{std::cos(d.rotation), std::sin(d.rotation)});
+    if (ownSize) {
+        // TBCAD opens its own file at the size the frame was drawn at, whatever the style says.
+        openTbcadXdata();
+        o.str(1000, "tolscale");
+        o.d(1040, d.scale.x);
+        o.d(1040, d.scale.y);
+    }
+    if (L().cur)
+        writeCommonFlags(*L().cur);
     count("TOLERANCE");
     return true;
 }
@@ -2415,8 +2430,12 @@ std::size_t Writer::writeDimension(const std::vector<EntityId>& ids, std::size_t
     o.d(42, dim::measurement(d));
     if (d.kind == DimKind::Ordinate && d.oblique != 0)
         o.d(51, d.oblique * kDeg);  // the X axis the ordinate is measured along (the UCS)
-    if (d.textRotated)
-        o.d(53, d.textRotation * kDeg);  // text turned by hand: its absolute angle
+    if (d.textRotated) {
+        // Text turned by hand: its absolute angle. No group 53 means "not turned", and many
+        // programs write 53 = 0 for that too, so text turned to exactly 0 goes out as a full turn.
+        const double deg = d.textRotation * kDeg;
+        o.d(53, deg == 0 ? 360.0 : deg);
+    }
     sub(subclass);
     switch (d.kind) {
         case DimKind::Linear:

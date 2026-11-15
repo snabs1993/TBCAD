@@ -113,11 +113,16 @@ TEST_CASE("what a command leaves in the drawing comes back from a saved DXF" *
     std::filesystem::current_path(dir);
 
     std::map<std::string, std::string> firstDiff;
-    std::mt19937 rng(20261115);
+    const char* only = std::getenv("TBCAD_DXF_SAVE_FUZZ_ONLY");
     for (const std::string& name : names) {
-        if (skippedForSave(name))
+        if (skippedForSave(name) || (only && name != only))
             continue;
         for (int round = 0; round < rounds; ++round) {
+            // One seed per command and round, so a failure replays alone.
+            unsigned seed = 20261115u + static_cast<unsigned>(round) * 7919u;
+            for (char ch : name)
+                seed = seed * 131u + static_cast<unsigned char>(ch);
+            std::mt19937 rng(seed);
             std::unique_ptr<Document> doc;
             if (round % 2 == 0) {
                 io::IoReport report;
@@ -144,8 +149,15 @@ TEST_CASE("what a command leaves in the drawing comes back from a saved DXF" *
             if (back)
                 diff = dxf::testing::SemanticDump::diff(dxf::testing::SemanticDump(*doc),
                                                         dxf::testing::SemanticDump(*back));
+            if (!diff.empty() && only && !firstDiff.count(name)) {  // DEBUG
+                dxf::Report rr;
+                auto o2 = dxf::exportDxf(*doc, dxf::ExportOptions{}, rr);
+                FILE* f = std::fopen("/tmp/fuzz_dump.dxf", "wb");
+                std::fwrite(o2.value().bytes.data(), 1, o2.value().bytes.size(), f);
+                std::fclose(f);
+            }
             if (!diff.empty() && !firstDiff.count(name))
-                firstDiff[name] = "round " + std::to_string(round) + ": " + diff.substr(0, 600);
+                firstDiff[name] = "round " + std::to_string(round) + ": " + diff.substr(0, only ? 20000 : 600);
         }
     }
     std::filesystem::current_path(startDir);

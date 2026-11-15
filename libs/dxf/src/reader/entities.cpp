@@ -2375,6 +2375,21 @@ bool Importer::convTolerance(const Record& r, std::vector<Entity>& out) {
     d.block = block;
     d.position = P(r, 10, 20);
     d.scale = {n, n};
+    {  // A frame TBCAD saved at a size of its own: TBCAD XDATA "tolscale", x, y.
+        bool ours = false, tag = false;
+        std::vector<double> own;
+        for (const Group& g : r.g) {
+            if (g.code == 1001)
+                ours = g.str() == "TBCAD", tag = false;
+            else if (ours && g.code == 1000)
+                tag = g.str() == "tolscale";
+            else if (ours && tag && g.code == 1040)
+                own.push_back(g.number());
+        }
+        if (own.size() == 2 && std::isfinite(own[0]) && std::isfinite(own[1]) && own[0] != 0 &&
+            own[1] != 0)
+            d.scale = {own[0], own[1]};
+    }
     d.rotation = (std::hypot(dir.x, dir.y) > 1e-12) ? std::atan2(dir.y, dir.x) : 0.0;
     out.push_back(makeEntity(std::move(d)));
     return true;

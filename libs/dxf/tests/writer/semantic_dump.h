@@ -25,6 +25,14 @@ public:
 
     const std::vector<std::string>& lines() const { return lines_; }
 
+    // A solid fill looks the same wherever its pattern origin is, and DXF has no place for it.
+    void ignoreSolidHatchOrigins() {
+        static const std::regex org(R"( org\([^)]*\))");
+        for (std::string& l : lines_)
+            if (l.find(" HATCH solid1 ") != std::string::npos)
+                l = std::regex_replace(l, org, "");
+    }
+
     // Empty when equal, else a description of the first difference. Numbers match when they are
     // within `relTol` (relative to their size, at least `absTol` apart in absolute terms).
     static std::string diff(const SemanticDump& a, const SemanticDump& b, double relTol = 1e-9,
