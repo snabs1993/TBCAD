@@ -2026,6 +2026,10 @@ std::string Writer::headerSection(std::uint64_t handSeed) {
     o.i(70, quickText(doc_.header()) ? 1 : 0);
     var("$FILLMODE");
     o.i(70, fillMode(doc_.header()) ? 1 : 0);
+    if (!r12_) {
+        var("$XCLIPFRAME");
+        o.i(280, clipFrameMode(doc_.header(), kXclipFrameKey));
+    }
     var("$ATTMODE");
     {
         const int m = attDisplay(doc_.header());

@@ -424,6 +424,51 @@ TEST_CASE("FILL and QTEXT changes in the header rebuild the scene") {
     CHECK(countKind(render::BatchKind::Fill) > 0);
 }
 
+TEST_CASE("XCLIPFRAME changes in the header redraw the clip boundary") {
+    blocks::registerInsertDisplay();
+    Document doc;
+    render::Scene scene;
+    SceneSync sync(doc, scene);
+    {
+        auto tx = doc.begin("clipped");
+        BlockDef def;
+        def.name = "SYM";
+        const BlockId block = tx.addBlock(def).value();
+        (void)tx.add(Entity{{}, LineData{{-30, 0}, {30, 0}}}, block);
+        InsertData ins;
+        ins.block = block;
+        ins.clip = {{-5, -5}, {5, -5}, {5, 5}, {-5, 5}};
+        (void)tx.add(Entity{{}, std::move(ins)});
+        tx.commit();
+    }
+    render::Camera2D cam;
+    cam.pixelsPerMm = 10;
+    cam.viewportW = 400;
+    cam.viewportH = 400;
+    auto strokeVerts = [&] {
+        std::size_t n = 0;
+        for (const auto& b : scene.visibleBatches(cam))
+            if (b.batch->key.kind == render::BatchKind::Stroke)
+                n += b.batch->verts.size();
+        return n;
+    };
+    const std::size_t shown = strokeVerts();  // the cut line and the frame (the default)
+    {
+        auto tx = doc.begin("frame off");
+        (void)tx.modifyHeader([](Header& h) { h.custom[kXclipFrameKey] = "0"; });
+        tx.commit();
+    }
+    const std::size_t hidden = strokeVerts();
+    CHECK(hidden > 0);
+    CHECK(hidden < shown);
+    {
+        auto tx = doc.begin("frame on");
+        (void)tx.modifyHeader([](Header& h) { h.custom[kXclipFrameKey] = "2"; });
+        tx.commit();
+    }
+    CHECK(strokeVerts() == shown);
+}
+
 // ---- building on several threads ---------------------------------------------------------------
 
 namespace {

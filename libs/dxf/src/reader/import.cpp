@@ -210,7 +210,7 @@ void Importer::parseHeader(const Record& rec) {
     bool haveUnits = false;
     double ltscale = 1, celtscale = 1;
     std::int64_t psltscale = -1, msltscale = -1, plinegen = -1, fillmode = -1, attmode = -1,
-                 qtextmode = -1, mirrtext = -1, pstylemode = -1;
+                 qtextmode = -1, mirrtext = -1, pstylemode = -1, xclipframe = -1;
     std::string clayer, ucsName;
     double ucsOx = 0, ucsOy = 0, ucsXx = 1, ucsXy = 0;
     bool haveUcs = false;
@@ -247,6 +247,8 @@ void Importer::parseHeader(const Record& rec) {
             pstylemode = g.integer();
         } else if (var == "$FILLMODE" && g.code == 70) {
             fillmode = g.integer();
+        } else if (var == "$XCLIPFRAME" && (g.code == 280 || g.code == 290 || g.code == 70)) {
+            xclipframe = g.integer();
         } else if (var == "$ATTMODE" && g.code == 70) {
             attmode = g.integer();
         } else if (var == "$PLINEGEN" && g.code == 70) {
@@ -328,6 +330,8 @@ void Importer::parseHeader(const Record& rec) {
             setColorDependentPlotStyles(h, false);
         if (fillmode == 0)
             h.custom[kFillModeKey] = "0";
+        if (xclipframe == 0 || xclipframe == 1)  // 2 is the default
+            h.custom[kXclipFrameKey] = std::to_string(xclipframe);
         if (attmode == 0)
             h.custom[kAttDispKey] = "2";
         else if (attmode == 2)
