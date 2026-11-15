@@ -310,7 +310,7 @@ private:
     std::unique_ptr<Document> doc_{};
     std::optional<Transaction> tx_{};
     ImportSummary sum_{};
-    double k_ = 1;  // file units -> mm
+    double k_ = 1;      // file units -> mm
     double unitK_ = 1;  // the same, also while a sheet is read (k_ is 1 there)
     // Hatch pattern scales are relative to the pattern file of the drawing: acadiso.pat in
     // drawing units for a metric drawing, acad.pat in inches for an imperial one ($MEASUREMENT).

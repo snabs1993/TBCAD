@@ -1636,6 +1636,43 @@ TEST_CASE("a tolerance frame keeps its own size, its decimal comma and its flags
     CHECK(table.at(b->name).value == "0,05");
 }
 
+TEST_CASE("a library hatch pattern with a moved origin is still that pattern in a saved DXF") {
+    for (const char* name : {"ANSI31", "GRID", "AR-B816"}) {
+        CAPTURE(name);
+        if (!hatch::PatternRegistry::find(name))
+            continue;
+        Document doc;
+        {
+            auto tx = doc.begin("hatch");
+            HatchData h;
+            h.solid = false;
+            h.pattern = name;
+            h.patternScale = 60;
+            h.patternAngle = kPi / 6;
+            h.patternOrigin = {120, 300};  // the hatch was moved, or HATCH Origin picked a corner
+            HatchPolylineEdge e;
+            e.closed = true;
+            e.v = {pv(0, 0), pv(4000, 0), pv(4000, 3000)};
+            HatchLoop loop;
+            loop.edges.emplace_back(e);
+            h.loops.push_back(loop);
+            REQUIRE(tx.add(make(Indirect<HatchData>(h))).ok());
+            tx.commit();
+        }
+        RoundTrip rt = roundTrip(doc);
+        const HatchData* back = nullptr;
+        rt.back->forEachEntity([&](const Entity& e) {
+            if (const auto* h = entityAs<HatchData>(e))
+                back = h;
+        });
+        REQUIRE(back);
+        CHECK(back->pattern == name);
+        CHECK(back->filePattern.lines.empty());  // not a pattern of its own
+        CHECK(back->patternOrigin.x == doctest::Approx(120));
+        CHECK(back->patternOrigin.y == doctest::Approx(300));
+    }
+}
+
 TEST_CASE("a faded picture and a faded PDF page are still faded in a saved DXF") {
     for (const char* path : {"pics/logo.png", "sheets/plan.pdf#page=2"}) {
         CAPTURE(path);

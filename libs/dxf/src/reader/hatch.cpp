@@ -72,9 +72,8 @@ bool sameAsLibrary(std::string_view name, const std::vector<HatchFileLine>& line
         const HatchFileLine& l = lines[i];
         const double turn = std::remainder(f.angle - l.angle, 2 * kPi);
         if (!close(turn, 0) || !close(f.origin.x + shift.x, l.origin.x) ||
-            !close(f.origin.y + shift.y, l.origin.y) ||
-            !close(f.delta.x, l.delta.x) || !close(f.delta.y, l.delta.y) ||
-            f.dashes.size() != l.dashes.size())
+            !close(f.origin.y + shift.y, l.origin.y) || !close(f.delta.x, l.delta.x) ||
+            !close(f.delta.y, l.delta.y) || f.dashes.size() != l.dashes.size())
             return false;
         for (std::size_t k = 0; k < l.dashes.size(); ++k)
             if (!close(f.dashes[k], l.dashes[k]))

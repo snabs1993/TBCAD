@@ -100,16 +100,19 @@ std::vector<ScriptItem> randomSaveItems(std::mt19937& rng, const std::vector<Ent
 
 }  // namespace
 
-TEST_CASE("what a command leaves in the drawing comes back from a saved DXF" *
-          doctest::skip(std::getenv("TBCAD_DXF_SAVE_FUZZ") == nullptr)) {
+// One round per command by default (about a minute); TBCAD_DXF_SAVE_FUZZ=<rounds> runs more, and
+// TBCAD_DXF_SAVE_FUZZ_ONLY=<command> replays one command with the whole difference printed.
+TEST_CASE("what a command leaves in the drawing comes back from a saved DXF") {
     cmd::Registry probe;
     registerAllCommands(probe);
     std::vector<std::string> names;
     for (cmd::Command* c : probe.list())
         names.emplace_back(c->name());
-    const int rounds = std::atoi(std::getenv("TBCAD_DXF_SAVE_FUZZ"));
+    const char* more = std::getenv("TBCAD_DXF_SAVE_FUZZ");
+    const int rounds = more ? std::max(1, std::atoi(more)) : 1;
 
-    auto dir = std::filesystem::temp_directory_path() / ("tbcad_dxffuzz_" + std::to_string(getpid()));
+    auto dir =
+        std::filesystem::temp_directory_path() / ("tbcad_dxffuzz_" + std::to_string(getpid()));
     std::filesystem::create_directories(dir);
     const auto startDir = std::filesystem::current_path();
     std::filesystem::current_path(dir);
@@ -161,7 +164,8 @@ TEST_CASE("what a command leaves in the drawing comes back from a saved DXF" *
                 diff = dxf::testing::SemanticDump::diff(before, after);
             }
             if (!diff.empty() && !firstDiff.count(name))
-                firstDiff[name] = "round " + std::to_string(round) + ": " + diff.substr(0, only ? 20000 : 600);
+                firstDiff[name] =
+                    "round " + std::to_string(round) + ": " + diff.substr(0, only ? 20000 : 600);
         }
     }
     std::filesystem::current_path(startDir);
