@@ -2742,6 +2742,15 @@ TEST_CASE("contextual tab: tools for a text selection, gone for a mixed one") {
     h.core().setSelection(text);
     h.frame(3);
     CHECK(h.windowOpen("contexttab"));
+    // Folded to its name over the drawing; it unfolds when the pointer comes over it.
+    CHECK_FALSE(h.has("Spelling", "contexttab"));
+    const auto unfold = [&] {
+        ImGuiWindow* w = ImGui::FindWindowByName("##contexttab");
+        REQUIRE(w);
+        h.moveMouse(w->Pos.x + 10, w->Pos.y + w->Size.y * 0.5f);
+        h.frame(3);
+    };
+    unfold();
     CHECK(h.has("Spelling", "contexttab"));
     h.core().setSelection(all);
     h.frame(3);
@@ -2749,6 +2758,7 @@ TEST_CASE("contextual tab: tools for a text selection, gone for a mixed one") {
     // Close clears the selection; ui.contextTabs 0 turns the strip off.
     h.core().setSelection(text);
     h.frame(3);
+    unfold();
     REQUIRE(h.click("Close", "contexttab"));
     h.frame(3);
     CHECK(h.core().selection().empty());

@@ -354,6 +354,7 @@ private:
     int textEditorFocus_ = 0;
     std::string textEditorBuf_{};
     std::string textEditorSent_{};
+    bool contextTabOpen_ = false;     // the contextual strip unfolded (pointer over it)
     textcmd::FormatBar formatBar_{};  // the MTEXT editor's formatting bar
     bool spaceAsEnter_ = false;
     bool inToolbox_ = false;  // toolCell is drawing a Toolbox row (not the Quick rail)
