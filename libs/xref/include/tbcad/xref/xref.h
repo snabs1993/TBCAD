@@ -141,7 +141,7 @@ Result<void> changePath(Transaction& tx, Document& doc, BlockId block, std::stri
 
 // REFEDIT on an xref: makes `content` (objects of the host drawing, in the xref's block space) the
 // model space of the source drawing and saves the file; the previous one is kept as .bak. Only
-// .tbcad sources can be written. Layers below the xref's layer go back to the source's own
+// .dxf and .tbcad sources can be written. Layers below the xref's layer go back to the source's own
 // layers; other layers, linetypes and styles are matched by name and added when missing; inserts
 // of "<xref>$<block>" go back to the source's block. Reload the xref afterwards.
 Result<void> writeBack(const Document& host, BlockId block, const std::vector<Entity>& content,

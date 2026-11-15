@@ -1277,6 +1277,8 @@ TEST_CASE("double-click types: blocks with attributes, external references, labe
     ins.block = xref;
     CHECK(doubleClickKey(doc, Entity{{}, ins}) == "Xref");
     CHECK(doubleClickKey(doc, Entity{{}, LineData{}}) == "Line");
+    platform::Settings defaults;
+    CHECK(doubleClickAction(defaults, doc, Entity{{}, ins}) == "REFEDIT");  // edit in place
     // Every key has a row on the Customize page.
     for (const char* k : {"Block", "AttributeBlock", "Xref", "Line", "Other"}) {
         bool listed = false;

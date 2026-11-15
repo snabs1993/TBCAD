@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <cctype>
 
+#include "tbcad/underlay/image.h"
+#include "tbcad/underlay/pdf.h"
+
 namespace tbcad::ui {
 
 const std::vector<DoubleClickType>& doubleClickTypes() {
@@ -21,7 +24,7 @@ const std::vector<DoubleClickType>& doubleClickTypes() {
         {"Hatch", "Hatch", "HATCHEDIT"},
         {"Block", "Block reference", "BEDIT"},
         {"AttributeBlock", "Block with attributes", "EATTEDIT"},
-        {"Xref", "External reference", kOpenProperties},
+        {"Xref", "External reference (drawing)", "REFEDIT"},
         {"Dimension", "Dimension", "TEXTEDIT"},
         {"Leader", "Leader", kOpenProperties},
         {"MLeader", "Multileader", "TEXTEDIT"},
@@ -60,8 +63,10 @@ std::string doubleClickKey(const Document& doc, const Entity& e) {
         case EntityKind::Insert: {
             const auto* ins = entityAs<InsertData>(e);
             const BlockDef* def = ins ? doc.block(ins->block) : nullptr;
-            if (def && !def->xrefPath.empty())
-                return "Xref";
+            if (def && !def->xrefPath.empty())  // a PDF page or picture: its properties
+                return underlay::isPdfPath(def->xrefPath) || underlay::isImagePath(def->xrefPath)
+                           ? "Other"
+                           : "Xref";
             return ins && !ins->attribs.empty() ? "AttributeBlock" : "Block";
         }
         case EntityKind::Dimension:
