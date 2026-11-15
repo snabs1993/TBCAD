@@ -102,6 +102,100 @@ double signedArea(const std::vector<Vec2>& p) {
     return s / 2;
 }
 
+bool inTriangle(Vec2 a, Vec2 b, Vec2 c, Vec2 p) {
+    return cross(b - a, p - a) >= 0 && cross(c - b, p - b) >= 0 && cross(a - c, p - c) >= 0;
+}
+
+bool isConvex(const std::vector<Vec2>& ccw) {
+    const std::size_t n = ccw.size();
+    for (std::size_t i = 0; i < n; ++i)
+        if (cross(ccw[(i + 1) % n] - ccw[i], ccw[(i + 2) % n] - ccw[(i + 1) % n]) < -1e-12)
+            return false;
+    return true;
+}
+
+// Triangles of a simple counter-clockwise polygon (ear clipping). Degenerate corners drop out.
+void triangulate(std::vector<Vec2> p, std::vector<std::vector<Vec2>>& out) {
+    std::size_t guard = p.size() * p.size() + 8;
+    while (p.size() > 3 && guard-- > 0) {
+        const std::size_t n = p.size();
+        bool cut = false;
+        for (std::size_t i = 0; i < n; ++i) {
+            const Vec2 a = p[(i + n - 1) % n], b = p[i], c = p[(i + 1) % n];
+            const double turn = cross(b - a, c - b);
+            if (std::abs(turn) <= 1e-18 * (1 + std::abs(a.x) + std::abs(a.y))) {
+                p.erase(p.begin() + static_cast<std::ptrdiff_t>(i));  // straight or doubled
+                cut = true;
+                break;
+            }
+            if (turn < 0)
+                continue;
+            bool ear = true;
+            for (std::size_t k = 0; ear && k < n; ++k) {
+                const Vec2 q = p[k];
+                if (k == i || k == (i + 1) % n || k == (i + n - 1) % n)
+                    continue;
+                if ((q.x == a.x && q.y == a.y) || (q.x == b.x && q.y == b.y) ||
+                    (q.x == c.x && q.y == c.y))
+                    continue;
+                ear = !inTriangle(a, b, c, q);
+            }
+            if (!ear)
+                continue;
+            out.push_back({a, b, c});
+            p.erase(p.begin() + static_cast<std::ptrdiff_t>(i));
+            cut = true;
+            break;
+        }
+        if (!cut)
+            break;  // not simple (crosses itself): keep what was found
+    }
+    if (p.size() == 3 && std::abs(cross(p[1] - p[0], p[2] - p[1])) > 0)
+        out.push_back(std::move(p));
+}
+
+// Convex hull (counter-clockwise) as indices into `p`.
+std::vector<std::size_t> hullIndices(const std::vector<Vec2>& p) {
+    std::vector<std::size_t> idx(p.size());
+    for (std::size_t i = 0; i < idx.size(); ++i)
+        idx[i] = i;
+    std::sort(idx.begin(), idx.end(), [&](std::size_t a, std::size_t b) {
+        return p[a].x < p[b].x || (p[a].x == p[b].x && p[a].y < p[b].y);
+    });
+    std::vector<std::size_t> h(2 * idx.size());
+    std::size_t k = 0;
+    for (std::size_t i = 0; i < idx.size(); ++i) {
+        while (k >= 2 && cross(p[h[k - 1]] - p[h[k - 2]], p[idx[i]] - p[h[k - 2]]) <= 0)
+            --k;
+        h[k++] = idx[i];
+    }
+    for (std::size_t i = idx.size() - 1, t = k + 1; i-- > 0;) {
+        while (k >= t && cross(p[h[k - 1]] - p[h[k - 2]], p[idx[i]] - p[h[k - 2]]) <= 0)
+            --k;
+        h[k++] = idx[i];
+    }
+    h.resize(k > 1 ? k - 1 : k);
+    return h;
+}
+
+// `ring` cut to one convex counter-clockwise piece.
+std::vector<Vec2> clipToConvex(std::vector<Vec2> r, const std::vector<Vec2>& piece) {
+    for (std::size_t i = 0; i < piece.size() && r.size() >= 3; ++i)
+        r = clipHalfPlane(r, piece[i], piece[(i + 1) % piece.size()]);
+    return r;
+}
+
+// Whether a ring edge crosses or touches the boundary anywhere.
+bool ringMeetsBoundary(const std::vector<Vec2>& ring, const std::vector<Vec2>& poly) {
+    std::vector<double> ts;
+    for (std::size_t i = 0; i < ring.size(); ++i) {
+        crossings(poly, ring[i], ring[(i + 1) % ring.size()], ts);
+        if (!ts.empty())
+            return true;
+    }
+    return false;
+}
+
 }  // namespace
 
 bool insidePolygon(const std::vector<Vec2>& polygon, Vec2 p) {
@@ -124,43 +218,88 @@ DisplayList clipDisplay(const DisplayList& in, const std::vector<Vec2>& polygon,
     std::vector<Vec2> ccw = polygon;
     if (signedArea(ccw) < 0)
         std::reverse(ccw.begin(), ccw.end());
+    // Fills are cut against convex pieces. Inside: the boundary itself when convex, else its
+    // triangles. Outside (invert): what lies beyond the convex hull, plus the triangles of the
+    // pockets between the hull and the boundary.
+    std::vector<std::vector<Vec2>> pieces;
+    std::vector<Vec2> outer;
+    if (!invert) {
+        if (isConvex(ccw))
+            pieces.push_back(ccw);
+        else
+            triangulate(ccw, pieces);
+    } else if (isConvex(ccw)) {
+        outer = ccw;
+    } else {
+        const std::vector<std::size_t> hull = hullIndices(ccw);
+        for (std::size_t i : hull)
+            outer.push_back(ccw[i]);
+        const std::size_t n = ccw.size();
+        for (std::size_t h = 0; h < hull.size(); ++h) {
+            const std::size_t from = hull[h], to = hull[(h + 1) % hull.size()];
+            const std::size_t steps = (to + n - from) % n;
+            if (steps < 2)
+                continue;
+            // The pocket runs back along the boundary from `to` to `from`, counter-clockwise.
+            std::vector<Vec2> pocket;
+            for (std::size_t k = 0; k <= steps; ++k)
+                pocket.push_back(ccw[(to + n - k) % n]);
+            if (std::abs(signedArea(pocket)) > 1e-12) {
+                if (signedArea(pocket) < 0)
+                    std::reverse(pocket.begin(), pocket.end());
+                triangulate(pocket, pieces);
+            }
+        }
+    }
     for (const DisplayItem& item : in.items) {
         if (const auto* pl = std::get_if<DisplayPolyline>(&item)) {
             clipPolyline(*pl, polygon, invert, out);
         } else if (const auto* fill = std::get_if<DisplayFill>(&item)) {
+            // Left whole when nothing of it reaches the boundary (real text keeps its glyph).
+            bool whole = !fill->rings.empty();
+            bool keep = true;
+            for (const auto& ring : fill->rings) {
+                if (ring.empty())
+                    continue;
+                const bool kept = insidePolygon(polygon, ring[0]) != invert;
+                if (&ring == &fill->rings.front())
+                    keep = kept;
+                if (kept != keep || ringMeetsBoundary(ring, polygon)) {
+                    whole = false;
+                    break;
+                }
+            }
+            if (whole) {
+                // ... and the boundary does not lie within it.
+                for (const auto& ring : fill->rings)
+                    if (ring.size() >= 3 && insidePolygon(ring, polygon[0]))
+                        whole = false;
+            }
+            if (whole) {
+                if (keep)
+                    out.items.push_back(item);
+                continue;
+            }
             DisplayFill f;
             f.style = fill->style;
             f.glyph = fill->glyph;
             for (const auto& ring : fill->rings) {
-                if (!invert) {
-                    std::vector<Vec2> r = ring;
-                    for (std::size_t i = 0; i < ccw.size() && r.size() >= 3; ++i)
-                        r = clipHalfPlane(r, ccw[i], ccw[(i + 1) % ccw.size()]);
-                    if (r.size() >= 3)
+                if (invert) {
+                    // Outside the hull = disjoint pieces: beyond edge i, inside edges 0..i-1.
+                    std::vector<Vec2> inside = ring;
+                    for (std::size_t i = 0; i < outer.size() && inside.size() >= 3; ++i) {
+                        const Vec2 a = outer[i], b = outer[(i + 1) % outer.size()];
+                        std::vector<Vec2> beyond = clipHalfPlane(inside, b, a);  // reversed edge
+                        if (beyond.size() >= 3 && std::abs(signedArea(beyond)) > 1e-12)
+                            f.rings.push_back(std::move(beyond));
+                        inside = clipHalfPlane(inside, a, b);
+                    }
+                }
+                for (const auto& piece : pieces) {
+                    std::vector<Vec2> r = clipToConvex(ring, piece);
+                    if (r.size() >= 3 && std::abs(signedArea(r)) > 1e-12)
                         f.rings.push_back(std::move(r));
-                    continue;
                 }
-                // Outside a convex polygon = disjoint pieces: beyond edge i, inside edges 0..i-1.
-                std::vector<Vec2> inside = ring;
-                for (std::size_t i = 0; i < ccw.size() && inside.size() >= 3; ++i) {
-                    const Vec2 a = ccw[i], b = ccw[(i + 1) % ccw.size()];
-                    std::vector<Vec2> beyond = clipHalfPlane(inside, b, a);  // reversed edge
-                    if (beyond.size() >= 3 && std::abs(signedArea(beyond)) > 1e-12)
-                        f.rings.push_back(std::move(beyond));
-                    inside = clipHalfPlane(inside, a, b);
-                }
-            }
-            // Real text can only stand for a glyph the clip left whole.
-            if (fill->glyphRef && f.rings.size() == fill->rings.size()) {
-                bool same = true;
-                for (std::size_t i = 0; same && i < f.rings.size(); ++i) {
-                    same = f.rings[i].size() == fill->rings[i].size();
-                    for (std::size_t k = 0; same && k < f.rings[i].size(); ++k)
-                        same = f.rings[i][k].x == fill->rings[i][k].x &&
-                               f.rings[i][k].y == fill->rings[i][k].y;
-                }
-                if (same)
-                    f.glyphRef = fill->glyphRef;
             }
             if (!f.rings.empty())
                 out.items.emplace_back(std::move(f));

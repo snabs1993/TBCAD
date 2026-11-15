@@ -1557,6 +1557,17 @@ TEST_CASE("layout: a paper rectangle away from the origin moves to the origin") 
     CHECK(t.find("V\t1\t7\t52\t207\t152\t") != std::string::npos);
 }
 
+TEST_CASE("$XCLIPFRAME in the header sets whether clip boundaries are drawn") {
+    Loaded l = load(
+        "  0\nSECTION\n  2\nHEADER\n  9\n$ACADVER\n  1\nAC1027\n  9\n$XCLIPFRAME\n280\n     "
+        "0\n  0\nENDSEC\n  0\nEOF\n");
+    CHECK(clipFrameMode(l.doc().header(), kXclipFrameKey) == 0);
+    Loaded none = load(
+        "  0\nSECTION\n  2\nHEADER\n  9\n$ACADVER\n  1\nAC1027\n  0\nENDSEC\n  "
+        "0\nEOF\n");
+    CHECK(clipFrameMode(none.doc().header(), kXclipFrameKey) == 2);
+}
+
 TEST_CASE("an older version than R12 is refused") {
     Report report;
     Result<ImportResult> r = importDxf(

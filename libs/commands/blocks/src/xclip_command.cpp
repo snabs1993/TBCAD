@@ -28,6 +28,7 @@ public:
     cmd::Task run(cmd::CommandContext& ctx) override {
         Document& doc = ctx.doc();
         cmd::EntityOptions eo;
+        eo.allowPreselection = true;  // the reference just placed or picked is still selected
         eo.filter = [&doc, this](const Entity& e) {
             const auto* ins = entityAs<InsertData>(e);
             const BlockDef* def = ins ? doc.block(ins->block) : nullptr;
@@ -43,19 +44,24 @@ public:
         if (!ins)
             co_return;
         const bool has = ins->clip.size() >= 3;
-        auto opt = co_await ctx.getKeyword(
-            std::string(pdf_ ? "Clip option [ON/OFF/Delete/New/Invert] <"
-                             : "Clip option [ON/OFF/Delete/New/Invert/generate Polyline] <") +
-                (has ? "ON" : "New") + ">",
-            cmd::KeywordOptions{
-                .keywords = pdf_ ? std::vector<std::string>{"ON", "OFF", "Delete", "New", "Invert"}
-                                 : std::vector<std::string>{"ON", "OFF", "Delete", "New", "Invert",
-                                                            "Polyline"},
-                .defaultKeyword = has ? "ON" : "New"});
-        if (!opt.ok())
-            co_return;
-
-        if (opt.keyword == "Polyline") {
+        // A reference with no boundary yet goes straight to drawing one.
+        std::string option = "New";
+        if (has) {
+            auto opt = co_await ctx.getKeyword(
+                std::string(pdf_ ? "Clip option [New/ON/OFF/Delete/Invert] <New>"
+                                 : "Clip option [New/ON/OFF/Delete/Invert/generate Polyline] "
+                                   "<New>"),
+                cmd::KeywordOptions{
+                    .keywords =
+                        pdf_ ? std::vector<std::string>{"New", "ON", "OFF", "Delete", "Invert"}
+                             : std::vector<std::string>{"New", "ON", "OFF", "Delete", "Invert",
+                                                        "Polyline"},
+                    .defaultKeyword = "New"});
+            if (!opt.ok())
+                co_return;
+            option = opt.keyword;
+        }
+        if (option == "Polyline") {
             // A closed polyline on the current layer along the clip boundary, in world space.
             const BlockDef* bdef = doc.block(ins->block);
             if (!has || !bdef) {
@@ -78,7 +84,7 @@ public:
             ctx.message("Polyline created along the clipping boundary");
             co_return;
         }
-        if (opt.keyword == "Invert") {
+        if (option == "Invert") {
             if (!has) {
                 ctx.message("This object has no clipping boundary");
                 co_return;
@@ -94,13 +100,13 @@ public:
                             : "Clipping restored: the outside is hidden");
             co_return;
         }
-        if (opt.keyword == "ON" || opt.keyword == "OFF" || opt.keyword == "Delete") {
+        if (option == "ON" || option == "OFF" || option == "Delete") {
             if (!has) {
                 ctx.message("This object has no clipping boundary");
                 co_return;
             }
-            const bool on = opt.keyword == "ON";
-            const bool del = opt.keyword == "Delete";
+            const bool on = option == "ON";
+            const bool del = option == "Delete";
             (void)ctx.tx().modify(id, [&](Entity& en) {
                 auto* d = entityAs<InsertData>(en);
                 if (del) {
@@ -116,77 +122,116 @@ public:
             co_return;
         }
 
-        auto shape = co_await ctx.getKeyword(
-            "Boundary [Select polyline/Rectangular/Polygonal] <Rectangular>",
-            cmd::KeywordOptions{.keywords = {"Select", "Rectangular", "Polygonal"},
-                                .defaultKeyword = "Rectangular"});
-        if (!shape.ok())
-            co_return;
+        // The boundary: click a corner for a rectangle, or choose a polygon or a drawn object.
+        // The frame being drawn follows the cursor.
         std::vector<Vec2> world;
-        if (shape.keyword == "Select") {
-            // A closed polyline, circle, ellipse or spline already drawn: its outline is the
-            // boundary (arcs become short chords).
-            cmd::EntityOptions bo;
-            bo.filter = [](const Entity& en) {
-                if (const auto* pl = entityAs<PolylineData>(en))
-                    return pl->closed && pl->v.size() >= 3;
-                if (const auto* el = entityAs<EllipseData>(en))
-                    return std::abs(el->endParam - el->startParam) >= kTwoPi - 1e-9;
-                if (const auto* sp = entityAs<SplineData>(en))
-                    return sp->closed || sp->periodic;
-                return entityAs<CircleData>(en) != nullptr;
+        bool invert = false;
+        auto outline = [](const std::vector<Vec2>& pts, bool closed, DisplayList& out) {
+            DisplayPolyline pl;
+            pl.pts = pts;
+            pl.closed = closed;
+            out.items.emplace_back(std::move(pl));
+        };
+        for (;;) {
+            cmd::PointOptions fo;
+            fo.keywords = {"Polygonal", "Select", "Invert"};
+            fo.allowNone = false;
+            auto first = co_await ctx.getPoint(
+                std::string(invert ? "Hide inside. " : "") +
+                    "Specify first corner or [Polygonal/Select boundary/Invert]",
+                std::move(fo));
+            if (first.status == cmd::Status::Keyword && first.keyword == "Invert") {
+                invert = !invert;
+                ctx.message(invert ? "The inside of the boundary will be hidden"
+                                   : "The outside of the boundary will be hidden");
+                continue;
+            }
+            if (first.status == cmd::Status::Keyword && first.keyword == "Select") {
+                // A closed polyline, circle, ellipse or spline already drawn: its outline is the
+                // boundary (arcs become short chords).
+                cmd::EntityOptions bo;
+                bo.filter = [](const Entity& en) {
+                    if (const auto* pl = entityAs<PolylineData>(en))
+                        return pl->closed && pl->v.size() >= 3;
+                    if (const auto* el = entityAs<EllipseData>(en))
+                        return std::abs(el->endParam - el->startParam) >= kTwoPi - 1e-9;
+                    if (const auto* sp = entityAs<SplineData>(en))
+                        return sp->closed || sp->periodic;
+                    return entityAs<CircleData>(en) != nullptr;
+                };
+                auto edge = co_await ctx.getEntity(
+                    "Select a closed polyline, circle, ellipse or spline as the boundary", bo);
+                if (!edge.ok())
+                    co_return;
+                const Entity* be = doc.find(edge.id);
+                std::vector<Vec2> rough;
+                if (!be || !geom::outlinePoints(*be, 1e300, rough) || rough.size() < 2) {
+                    ctx.message("That object cannot be used as a clipping boundary");
+                    co_return;
+                }
+                double x0 = rough[0].x, y0 = rough[0].y, x1 = x0, y1 = y0;
+                for (const Vec2& q : rough) {
+                    x0 = std::min(x0, q.x), x1 = std::max(x1, q.x);
+                    y0 = std::min(y0, q.y), y1 = std::max(y1, q.y);
+                }
+                const double diag = std::hypot(x1 - x0, y1 - y0);
+                if (!(diag > 1e-9) || !geom::outlinePoints(*be, diag * 1e-4, world) ||
+                    world.size() < 3) {
+                    ctx.message("That object cannot be used as a clipping boundary");
+                    co_return;
+                }
+                if (world.size() > 4096)
+                    world.resize(4096);
+                break;
+            }
+            if (first.status == cmd::Status::Keyword && first.keyword == "Polygonal") {
+                for (;;) {
+                    cmd::PointOptions po;
+                    po.base = world.empty() ? std::nullopt : std::optional<Vec2>(world.back());
+                    po.allowNone = world.size() >= 3;
+                    if (!world.empty())
+                        po.keywords = {"Undo"};
+                    po.preview = [&world, &outline](Vec2 cursor, DisplayList& out) {
+                        std::vector<Vec2> pts = world;
+                        pts.push_back(cursor);
+                        outline(pts, pts.size() >= 3, out);
+                    };
+                    const std::string prompt = world.empty() ? "Specify first point"
+                                               : world.size() < 3
+                                                   ? "Specify next point or [Undo]"
+                                                   : "Specify next point or [Undo], Enter to close";
+                    auto p = co_await ctx.getPoint(prompt, std::move(po));
+                    if (p.status == cmd::Status::None)
+                        break;
+                    if (p.status == cmd::Status::Keyword) {
+                        if (!world.empty())
+                            world.pop_back();
+                        continue;
+                    }
+                    if (!p.ok())
+                        co_return;
+                    world.push_back(p.point);
+                }
+                break;
+            }
+            if (!first.ok())
+                co_return;
+            const Vec2 a = first.point;
+            cmd::PointOptions so;
+            so.base = a;
+            so.allowNone = false;
+            so.preview = [a, &outline](Vec2 cursor, DisplayList& out) {
+                outline({a, {cursor.x, a.y}, cursor, {a.x, cursor.y}}, true, out);
             };
-            auto edge = co_await ctx.getEntity("Select a closed polyline as the boundary", bo);
-            if (!edge.ok())
-                co_return;
-            const Entity* be = doc.find(edge.id);
-            std::vector<Vec2> rough;
-            if (!be || !geom::outlinePoints(*be, 1e300, rough) || rough.size() < 2) {
-                ctx.message("That object cannot be used as a clipping boundary");
-                co_return;
-            }
-            double x0 = rough[0].x, y0 = rough[0].y, x1 = x0, y1 = y0;
-            for (const Vec2& q : rough) {
-                x0 = std::min(x0, q.x), x1 = std::max(x1, q.x);
-                y0 = std::min(y0, q.y), y1 = std::max(y1, q.y);
-            }
-            const double diag = std::hypot(x1 - x0, y1 - y0);
-            if (!(diag > 1e-9) || !geom::outlinePoints(*be, diag * 1e-4, world) ||
-                world.size() < 3) {
-                ctx.message("That object cannot be used as a clipping boundary");
-                co_return;
-            }
-            if (world.size() > 4096)
-                world.resize(4096);
-        } else if (shape.keyword == "Rectangular") {
-            auto a = co_await ctx.getPoint("Specify first corner");
-            if (!a.ok())
-                co_return;
-            auto b = co_await ctx.getPoint("Specify opposite corner",
-                                           cmd::PointOptions{.base = a.point});
+            auto b = co_await ctx.getPoint("Specify opposite corner", std::move(so));
             if (!b.ok())
                 co_return;
-            if (std::abs(a.point.x - b.point.x) < 1e-9 || std::abs(a.point.y - b.point.y) < 1e-9) {
+            if (std::abs(a.x - b.point.x) < 1e-9 || std::abs(a.y - b.point.y) < 1e-9) {
                 ctx.message("The corners must differ in both directions");
                 co_return;
             }
-            world = {a.point, {b.point.x, a.point.y}, b.point, {a.point.x, b.point.y}};
-        } else {
-            for (;;) {
-                const std::string prompt = world.size() < 3
-                                               ? "Specify point " + std::to_string(world.size() + 1)
-                                               : "Specify next point or Enter to close";
-                auto p = co_await ctx.getPoint(
-                    prompt,
-                    cmd::PointOptions{
-                        .base = world.empty() ? std::nullopt : std::optional<Vec2>(world.back()),
-                        .allowNone = world.size() >= 3});
-                if (p.status == cmd::Status::None)
-                    break;
-                if (!p.ok())
-                    co_return;
-                world.push_back(p.point);
-            }
+            world = {a, {b.point.x, a.y}, b.point, {a.x, b.point.y}};
+            break;
         }
         const BlockDef* def = doc.block(ins->block);
         auto inv = blocks::instanceTransform(*ins, def->base).inverse();
@@ -202,10 +247,15 @@ public:
             auto* d = entityAs<InsertData>(en);
             d->clip = std::move(local);
             d->clipOn = true;
-            d->clipInvert = false;
+            d->clipInvert = invert;
         });
         ctx.setUndoLabel("Clip");
-        ctx.message("Clipped to a boundary of " + std::to_string(world.size()) + " points");
+        const char* frameKey = pdf_ ? kPdfFrameKey : kXclipFrameKey;
+        ctx.message("Clipped to a boundary of " + std::to_string(world.size()) + " points" +
+                    (clipFrameMode(doc.header(), frameKey) == 0
+                         ? std::string(". The boundary is hidden: ") +
+                               (pdf_ ? "PDFFRAME" : "XCLIPFRAME") + " 2 shows it"
+                         : std::string()));
     }
 
 private:

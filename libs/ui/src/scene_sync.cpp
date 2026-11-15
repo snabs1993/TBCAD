@@ -108,9 +108,13 @@ bool SceneSync::readDisplayModes() {
     const double lt = doc_.header().ltScale;
     const bool ltView = msLtScale(doc_.header());
     const bool ltPaper = psLtScale(doc_.header());
+    // Whether clipped blocks, xrefs and PDF underlays draw their boundary.
+    const int frames = clipFrameMode(doc_.header(), kXclipFrameKey) * 3 +
+                       clipFrameMode(doc_.header(), kPdfFrameKey);
     const bool changed = fill != fillMode_ || att != attDisplay_ || qt != quickText_ ||
                          lw != lwDefault_ || lt != ltScale_ || ltView != msLtScale_ ||
-                         ltPaper != psLtScale_;
+                         ltPaper != psLtScale_ || frames != clipFrames_;
+    clipFrames_ = frames;
     ltScale_ = lt;
     msLtScale_ = ltView;
     psLtScale_ = ltPaper;

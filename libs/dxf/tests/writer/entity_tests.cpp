@@ -1972,6 +1972,25 @@ TEST_CASE("the wipeout frame mode survives a DXF round trip") {
     }
 }
 
+TEST_CASE("the clip frame mode (XCLIPFRAME) survives a DXF round trip, shown by default") {
+    {
+        Document doc;
+        RoundTrip rt = roundTrip(doc);
+        CHECK(rt.bytes.find("$XCLIPFRAME") != std::string::npos);
+        CHECK(clipFrameMode(rt.back->header(), kXclipFrameKey) == 2);
+    }
+    for (const char* mode : {"0", "1", "2"}) {
+        Document doc;
+        {
+            auto tx = doc.begin("frame");
+            REQUIRE(tx.modifyHeader([&](Header& h) { h.custom[kXclipFrameKey] = mode; }).ok());
+            tx.commit();
+        }
+        RoundTrip rt = roundTrip(doc);
+        CHECK(clipFrameMode(rt.back->header(), kXclipFrameKey) == mode[0] - '0');
+    }
+}
+
 TEST_CASE("draw order (front, back, wipeouts, inside blocks) survives a DXF round trip") {
     Document doc;
     BlockId blk{};

@@ -212,7 +212,9 @@ TEST_CASE("a PDF underlay keeps its PDF layers - a hidden one starts off - and X
     CHECK(shown() == 2);  // the walls and the line outside any layer; the furniture is off
     // Clip to x 0..30 mm: only the walls line (0..25 mm) is left of it... the third starts at 35
     // mm.
-    f.host->run("XCLIP", {cmd::ScriptItem::pick(f.modelSpace()[0]), "", "", "-1,-1", "30,30"});
+    f.host->run("XCLIP", {cmd::ScriptItem::pick(f.modelSpace()[0]), "-1,-1", "30,30"});
+    CHECK(shown() == 2);  // the walls and the clip frame
+    f.host->run("PDFFRAME", {"0"});
     CHECK(shown() == 1);
 }
 
@@ -410,7 +412,7 @@ TEST_CASE("XCLIP clips an insert in block coordinates - OFF, ON and Delete - und
     f.host->run("XATTACH", {file.string(), "", "", "", "100,0"});
     EntityId ins = f.modelSpace()[0];
     // Rectangle in world coordinates: the block sits at x=100, so this is x 0..4 of the block.
-    f.host->run("XCLIP", {cmd::ScriptItem::pick(ins), "", "", "100,0", "104,10"});
+    f.host->run("XCLIP", {cmd::ScriptItem::pick(ins), "100,0", "104,10"});
     auto* d = entityAs<InsertData>(*f.doc.find(ins));
     REQUIRE(d->clip.size() == 4);
     CHECK(near(d->clip[0], {0, 0}));
@@ -453,13 +455,35 @@ TEST_CASE("XCLIP clips an insert in block coordinates - OFF, ON and Delete - und
     CHECK(near(sel->clip[2], {6, 5}));
 }
 
+TEST_CASE("XCLIP on an unclipped reference starts at the boundary and previews it") {
+    Dir dir;
+    fs::path file = writeSource(dir.path, "plan.tbcad", 10);
+    Fixture f;
+    f.host->run("XATTACH", {file.string(), "", "", "", "100,0"});
+    EntityId ins = f.modelSpace()[0];
+    // Invert at the first prompt, then two clicks.
+    f.host->run("XCLIP", {cmd::ScriptItem::pick(ins), "Invert", "100,0", "104,10"});
+    const auto* d = entityAs<InsertData>(*f.doc.find(ins));
+    CHECK(d->clip.size() == 4);
+    CHECK(d->clipInvert);
+    // Polygonal with Undo: the wrong point is taken back.
+    f.host->run("XCLIP", {cmd::ScriptItem::pick(ins), "", "Polygonal", "100,0", "108,0", "150,150",
+                          "Undo", "100,8", ""});
+    d = entityAs<InsertData>(*f.doc.find(ins));
+    REQUIRE(d->clip.size() == 3);
+    CHECK(!d->clipInvert);  // The reference already selected is taken without picking it again.
+    f.host->setSelection({ins});
+    f.host->run("XCLIP", {"Delete"});
+    CHECK(entityAs<InsertData>(*f.doc.find(ins))->clip.empty());
+}
+
 TEST_CASE("XCLIP generate Polyline draws the clip boundary in world coordinates") {
     Dir dir;
     fs::path file = writeSource(dir.path, "plan.tbcad", 10);
     Fixture f;
     f.host->run("XATTACH", {file.string(), "", "", "", "100,0"});
     EntityId ins = f.modelSpace()[0];
-    f.host->run("XCLIP", {cmd::ScriptItem::pick(ins), "", "", "100,0", "104,10"});
+    f.host->run("XCLIP", {cmd::ScriptItem::pick(ins), "100,0", "104,10"});
     const std::size_t before = f.modelSpace().size();
     f.host->run("XCLIP", {cmd::ScriptItem::pick(ins), "Polyline"});
     REQUIRE(f.modelSpace().size() == before + 1);
@@ -520,9 +544,11 @@ TEST_CASE("XCLIP Invert toggles, shows the outside, survives the file and DXF, D
     f.host->run("XATTACH", {file.string(), "", "", "", "100,0"});
     EntityId ins = f.modelSpace()[0];
     f.host->clearLog();
-    f.host->run("XCLIP", {cmd::ScriptItem::pick(ins), "Invert"});
-    CHECK(f.host->logContains("no clipping boundary"));
-    f.host->run("XCLIP", {cmd::ScriptItem::pick(ins), "", "", "100,0", "104,10"});
+    // No boundary yet: Invert only sets how the new one will cut; Esc leaves it unclipped.
+    f.host->run("XCLIP", {cmd::ScriptItem::pick(ins), "Invert", cmd::ScriptItem::esc()});
+    CHECK(entityAs<InsertData>(*f.doc.find(ins))->clip.empty());
+    f.host->run("XCLIP", {cmd::ScriptItem::pick(ins), "100,0", "104,10"});
+    REQUIRE(entityAs<InsertData>(*f.doc.find(ins))->clip.size() == 4);
     f.host->run("XCLIP", {cmd::ScriptItem::pick(ins), "Invert"});
     CHECK(entityAs<InsertData>(*f.doc.find(ins))->clipInvert);
     // Bounds of an inverted clip are the whole block again.
@@ -759,10 +785,16 @@ TEST_CASE("XCLIPFRAME and PDFFRAME draw the clip boundary and PDFCLIP clips only
                 n += pl->closed && pl->pts.size() == 4 && !(onlyPlotted && pl->style.noPlot);
         return n;
     };
-    f.host->run("XCLIP", {cmd::ScriptItem::pick(blockIns), "", "", "100,0", "104,10"});
-    f.host->run("PDFCLIP", {cmd::ScriptItem::pick(pdfIns), "", "", "0,0", "5,5"});
+    f.host->setSelection({});  // (PDFATTACH left the PDF selected)
+    f.host->run("XCLIP", {cmd::ScriptItem::pick(blockIns), "100,0", "104,10"});
+    f.host->run("PDFCLIP", {cmd::ScriptItem::pick(pdfIns), "0,0", "5,5"});
     CHECK(entityAs<InsertData>(*f.doc.find(pdfIns))->clip.size() == 4);
-    CHECK(frames(blockIns, false) == 0);  // hidden by default
+    CHECK(frames(blockIns, false) == 1);  // shown on screen by default, not plotted
+    CHECK(frames(blockIns, true) == 0);
+    CHECK(frames(pdfIns, false) == 1);
+    f.host->run("XCLIPFRAME", {"0"});
+    f.host->run("PDFFRAME", {"0"});
+    CHECK(frames(blockIns, false) == 0);
     CHECK(frames(pdfIns, false) == 0);
 
     f.host->run("XCLIPFRAME", {"1"});

@@ -67,6 +67,54 @@ TEST_CASE("clipDisplay clips fills and points") {
     CHECK(std::get<DisplayPoints>(out.items[1]).pts.size() == 1);
 }
 
+namespace {
+double fillArea(const DisplayList& l) {
+    double a = 0;
+    for (const auto& it : l.items)
+        if (const auto* f = std::get_if<DisplayFill>(&it))
+            for (const auto& r : f->rings) {
+                double s = 0;
+                for (std::size_t i = 0; i < r.size(); ++i)
+                    s += cross(r[i], r[(i + 1) % r.size()]);
+                a += std::abs(s) / 2;
+            }
+    return a;
+}
+}  // namespace
+
+TEST_CASE("clipDisplay cuts a fill exactly with a concave boundary, inside and outside") {
+    // A "U" 30 x 10 with a 10 x 6 notch (area 240), over a fill covering 40 x 20 (area 800).
+    std::vector<Vec2> u{{0, 0}, {30, 0}, {30, 10}, {20, 10}, {20, 4}, {10, 4}, {10, 10}, {0, 10}};
+    DisplayList in;
+    DisplayFill f;
+    f.rings.push_back({{-5, -5}, {35, -5}, {35, 15}, {-5, 15}});
+    in.items.emplace_back(f);
+    CHECK(fillArea(clipDisplay(in, u)) == doctest::Approx(240));
+    CHECK(fillArea(clipDisplay(in, u, true)) == doctest::Approx(800 - 240));
+    // Clockwise boundary: the same.
+    std::vector<Vec2> cw(u.rbegin(), u.rend());
+    CHECK(fillArea(clipDisplay(in, cw)) == doctest::Approx(240));
+    CHECK(fillArea(clipDisplay(in, cw, true)) == doctest::Approx(800 - 240));
+}
+
+TEST_CASE("clipDisplay keeps a fill the boundary does not reach whole, glyph and all") {
+    std::vector<Vec2> u{{0, 0}, {30, 0}, {30, 10}, {20, 10}, {20, 4}, {10, 4}, {10, 10}, {0, 10}};
+    DisplayList in;
+    DisplayFill f;
+    f.rings.push_back({{1, 1}, {3, 1}, {3, 3}, {1, 3}});
+    f.glyphRef = GlyphRef{.glyphId = 7};
+    in.items.emplace_back(f);
+    DisplayFill notch;  // inside the notch: outside the boundary
+    notch.rings.push_back({{12, 6}, {14, 6}, {14, 8}, {12, 8}});
+    in.items.emplace_back(notch);
+    DisplayList out = clipDisplay(in, u);
+    REQUIRE(out.items.size() == 1);
+    CHECK(std::get<DisplayFill>(out.items[0]).glyphRef);
+    DisplayList inv = clipDisplay(in, u, true);
+    REQUIRE(inv.items.size() == 1);
+    CHECK(fillArea(inv) == doctest::Approx(4));
+}
+
 TEST_CASE("an insert with a clipping boundary shows only the inside, in the insert's frame") {
     registerInsertDisplay();
     Document doc;
@@ -76,8 +124,11 @@ TEST_CASE("an insert with a clipping boundary shows only the inside, in the inse
     d->clip = kBox;
     EntityId i = addEntity(doc, e);
     DisplayList l = displayOf(doc, i);
-    REQUIRE(l.items.size() == 1);
+    REQUIRE(l.items.size() == 2);  // the cut line and the boundary (shown, not plotted)
     const auto& p = std::get<DisplayPolyline>(l.items[0]);
+    const auto& frame = std::get<DisplayPolyline>(l.items[1]);
+    CHECK(frame.closed);
+    CHECK(frame.style.noPlot);
     CHECK(near(p.pts.front(), {100, 10}));
     CHECK(near(p.pts.back(), {120, 10}));
     // Switched off, the whole block shows again.
