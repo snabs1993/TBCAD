@@ -2546,11 +2546,15 @@ void Gui::layoutTabs(const ViewportRect& rect) {
             }
             if (active)
                 ImGui::PopStyleColor(2);
+            // Above the tab row, off the command line.
             if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
-                tabPreviewTip(name.empty() ? "Model" : name, [&]() -> const ui::TabPreview& {
-                    return name.empty() ? core_.documentPreview(core_.activeDocument())
-                                        : core_.layoutPreview(name);
-                });
+                tabPreviewTip(
+                    name.empty() ? "Model" : name,
+                    [&]() -> const ui::TabPreview& {
+                        return name.empty() ? core_.documentPreview(core_.activeDocument())
+                                            : core_.layoutPreview(name);
+                    },
+                    true);
             const auto place = std::find(names.begin(), names.end(), name);
             const std::size_t at = static_cast<std::size_t>(place - names.begin());
             if (!name.empty() && !readOnly) {
@@ -4116,10 +4120,27 @@ void Gui::gripMenu(const ViewportRect& rect) {
 // The picture is built only while the tooltip shows: it walks the whole drawing, and every
 // change (each segment LINE adds) would otherwise rebuild it on the next frame.
 void Gui::tabPreviewTip(const std::string& title,
-                        const std::function<const ui::TabPreview&()>& previewOf) {
+                        const std::function<const ui::TabPreview&()>& previewOf, bool above) {
     // Typing with the mouse left on a tab: the big picture would cover the command line.
     if (core_.runner().active() || !input_.empty())
         return;
+    // A click on the tab is not a question about it: the picture stays away until the mouse has
+    // left the tab (it used to come back and stay over the sheet the click had just opened).
+    static ImGuiID clicked = 0;
+    const ImGuiID id = ImGui::GetItemID();
+    const bool over = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
+    if (over && ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+        clicked = id;
+    if (clicked == id) {
+        if (over)
+            return;
+        clicked = 0;
+    }
+    if (above && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
+        const ImVec2 tab = ImGui::GetItemRectMin();
+        ImGui::SetNextWindowPos(ImVec2(tab.x, tab.y - 4.0f * dpiScale_), ImGuiCond_Always,
+                                ImVec2(0.0f, 1.0f));
+    }
     if (!ImGui::BeginItemTooltip())
         return;
     const ui::TabPreview& preview = previewOf();
