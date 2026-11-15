@@ -3951,7 +3951,8 @@ TEST_CASE("compact layout: thin bars, a big drawing area, options in the command
     ImGuiDockNode* centre = ImGui::DockBuilderGetCentralNode(0x7BC4D001u);
     REQUIRE(centre);
     CHECK(centre->Size.x > 1920.0f * 0.75f);
-    CHECK(centre->Size.y > 1080.0f * 0.78f);
+    // (0.72: the command area keeps three history lines above the option chips since test.20.)
+    CHECK(centre->Size.y > 1080.0f * 0.72f);
     CHECK(matchesGolden(h.windowShot("##toolbox"), "toolbox_compact"));
 
     // A point prompt with options: the box by the cursor holds no buttons, the command line's

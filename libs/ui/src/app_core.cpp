@@ -2333,7 +2333,12 @@ void AppCore::submitText(std::string_view text) {
         viewStatePending_ =
             readOnlyOrigin() && !modified() &&
             isViewStateCommand(splitWords(trimmed[0] == '\'' ? trimmed.substr(1) : trimmed));
-    if (echoMode_ == EchoMode::Typed)
+    // A grip click runs GRIPEDIT with the grip's full coordinates: the history says what the
+    // user did instead of showing an internal command line.
+    const bool gripLine = !run.active() && cmd::toUpperAscii(trimmed.substr(0, 9)) == "GRIPEDIT ";
+    if (gripLine && echoMode_ != EchoMode::None)
+        print(promptText() + "Grip edit");
+    else if (echoMode_ == EchoMode::Typed)
         print(promptText() + (run.active() ? trimmed : commandEcho(trimmed)));
     else if (echoMode_ == EchoMode::Names)
         print(promptText() + friendlyEcho(trimmed));
@@ -4049,8 +4054,10 @@ void AppCore::buildOverlay(render::Overlay& overlay, const UiRegistry* ui) {
         const Rgba ink = inPaperSpace() ? Rgba{20, 20, 20, 255} : Rgba{255, 255, 255, 255};
         st.color = ink;
         st.widthPx = 1.0;
-        st.dashPx = 6;
-        st.gapPx = 4;
+        // Solid: the objects being moved, copied or drawn must be easy to see (a 6/4 dash of a
+        // 1 px line all but vanished on a busy drawing).
+        st.dashPx = 0;
+        st.gapPx = 0;
         for (const auto& item : preview_.items) {
             if (const auto* pl = std::get_if<DisplayPolyline>(&item)) {
                 if (pl->pts.size() >= 2)
