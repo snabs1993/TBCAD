@@ -1725,6 +1725,9 @@ bool Importer::convInsert(const Record& r, RecordReader& rr, const Frame& f,
     // TBCAD XDATA: an insert of a dynamic block or assembly names the real block and carries its
     // values; the block the INSERT names only shows them to other programs (keep/dynblock.h).
     std::string dynOf, dynValues;
+    // "sheetunits=1": an insert on a sheet whose scale TBCAD multiplied by the unit size, because
+    // the block is in drawing units and the sheet in millimetres (writer/units.cpp).
+    bool sheetUnits = false;
     {
         bool ours = false;
         for (const Group& g : r.g) {
@@ -1732,6 +1735,8 @@ bool Importer::convInsert(const Record& r, RecordReader& rr, const Frame& f,
                 ours = g.str() == "TBCAD";
             else if (ours && g.code == 1000 && g.str().substr(0, 6) == "dynof=")
                 dynOf = std::string(g.str().substr(6));
+            else if (ours && g.code == 1000 && g.str() == "sheetunits=1")
+                sheetUnits = true;
             else if (ours && g.code == 1000)
                 (void)detail::dynXdataAppend(dynValues, dec(g.str()), "dynv");
         }
@@ -1752,6 +1757,10 @@ bool Importer::convInsert(const Record& r, RecordReader& rr, const Frame& f,
     if (!(std::abs(sx) > 0) || !(std::abs(sy) > 0) || !std::isfinite(sx) || !std::isfinite(sy)) {
         bad(r, "INSERT", "zero scale; skipped");
         return false;
+    }
+    if (sheetUnits && k_ != unitK_ && unitK_ > 0) {
+        sx /= unitK_;
+        sy /= unitK_;
     }
     double rot = r.num(50) * kDeg;
     Vec2 pos = P(r, 10, 20);
@@ -2375,6 +2384,21 @@ bool Importer::convTolerance(const Record& r, std::vector<Entity>& out) {
     d.block = block;
     d.position = P(r, 10, 20);
     d.scale = {n, n};
+    {  // A frame TBCAD saved at a size of its own: TBCAD XDATA "tolscale", x, y.
+        bool ours = false, tag = false;
+        std::vector<double> own;
+        for (const Group& g : r.g) {
+            if (g.code == 1001)
+                ours = g.str() == "TBCAD", tag = false;
+            else if (ours && g.code == 1000)
+                tag = g.str() == "tolscale";
+            else if (ours && tag && g.code == 1040)
+                own.push_back(g.number());
+        }
+        if (own.size() == 2 && std::isfinite(own[0]) && std::isfinite(own[1]) && own[0] != 0 &&
+            own[1] != 0)
+            d.scale = {own[0], own[1]};
+    }
     d.rotation = (std::hypot(dir.x, dir.y) > 1e-12) ? std::atan2(dir.y, dir.x) : 0.0;
     out.push_back(makeEntity(std::move(d)));
     return true;

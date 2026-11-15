@@ -529,7 +529,7 @@ bool Importer::convDimension(const Record& r, std::vector<Entity>& out, BlockId 
     }
     if (const double rot = r.num(53); rot != 0 && std::isfinite(rot)) {
         d.textRotated = true;
-        d.textRotation = rot * kDeg;
+        d.textRotation = (rot == 360.0 ? 0.0 : rot) * kDeg;  // a full turn: turned to 0
     }
     d.textPos = P(r, 11, 21);
     // Two-line angular dimensions keep the point on their arc in textPos (see docs/dim.md).

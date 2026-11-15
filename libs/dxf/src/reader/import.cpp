@@ -171,6 +171,7 @@ void Importer::setUnits(int insunits, bool assumed) {
     sum_.unitsAssumed = assumed;
     sum_.unitsName = assumed ? "millimeters" : kUnits[insunits].name;
     k_ = kUnits[insunits].mm;
+    unitK_ = k_;
     sum_.unitScale = k_;
     displayUnit_ = LengthUnit::Millimeter;
     if (!assumed) {

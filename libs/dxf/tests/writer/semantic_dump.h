@@ -25,6 +25,20 @@ public:
 
     const std::vector<std::string>& lines() const { return lines_; }
 
+    // What a saved DXF does not carry and no one sees: the pattern origin of a solid fill, and
+    // the fourth definition point of a linear or aligned dimension (it uses three).
+    void ignoreUnsavedDetails() {
+        static const std::regex org(R"( org\([^)]*\))");
+        static const std::regex fourth(
+            R"(( DIM kind[01] rot\S+ \([^)]*\) \([^)]*\) \([^)]*\)) \([^)]*\))");
+        for (std::string& l : lines_) {
+            if (l.find(" HATCH solid1 ") != std::string::npos)
+                l = std::regex_replace(l, org, "");
+            if (l.find(" DIM kind") != std::string::npos)
+                l = std::regex_replace(l, fourth, "$1");
+        }
+    }
+
     // Empty when equal, else a description of the first difference. Numbers match when they are
     // within `relTol` (relative to their size, at least `absTol` apart in absolute terms).
     static std::string diff(const SemanticDump& a, const SemanticDump& b, double relTol = 1e-9,

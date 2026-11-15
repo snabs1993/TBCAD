@@ -362,6 +362,34 @@ Result<std::unique_ptr<Document>> inDrawingUnits(const Document& doc) {
     if (!failed.empty())
         return makeError(ErrorCode::Generic, "cannot write the drawing in its units: " + failed);
 
+    // A block placed on a sheet (a title block): its content is now in drawing units while the
+    // sheet stays in millimetres, so the insert takes the unit size as scale. It is the same size
+    // on paper in every program, and its attributes sit where they were. The writer marks these
+    // inserts ("sheetunits=1") and the reader divides the scale again.
+    std::string sheetInserts;
+    for (BlockId sheet : sheets) {
+        const BlockDef* sd = out->block(sheet);
+        if (!sd)
+            continue;
+        for (EntityId id : std::vector<EntityId>(sd->entities)) {
+            const Entity* e = out->find(id);
+            const auto* ins = e ? entityAs<InsertData>(*e) : nullptr;
+            const BlockDef* bd = ins ? out->block(ins->block) : nullptr;
+            if (!bd || sheets.count(ins->block) || !bd->xrefPath.empty() || ins->array ||
+                !ins->clip.empty())
+                continue;
+            auto r = tx.modify(id, [&](Entity& en) {
+                auto* d = entityAs<InsertData>(en);
+                d->scale = d->scale * (1.0 / s);
+                for (AttribValue& a : d->attribs)
+                    a.offset = a.offset * s;
+            });
+            if (!r)
+                return r.error();
+            sheetInserts += std::to_string(id.value) + ' ';
+        }
+    }
+
     // Ids first: a modified row replaces the map entry being walked.
     auto keys = [](const auto& rows) {
         std::vector<typename std::decay_t<decltype(rows)>::key_type> v;
@@ -421,6 +449,8 @@ Result<std::unique_ptr<Document>> inDrawingUnits(const Document& doc) {
                     it->second = scaledUcs(it->second, s);
             if (auto it = h.custom.find("tbcad.layouts"); it != h.custom.end())
                 it->second = scaledLayouts(it->second, s);
+            if (!sheetInserts.empty())
+                h.custom[kSheetInsertsKey] = sheetInserts;
         });
         !r)
         return r.error();

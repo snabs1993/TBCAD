@@ -98,4 +98,33 @@ TEST_CASE("the sample drawing saved as DXF looks the same opened again, paper na
     CHECK(after.find("\tCustom\t") == std::string::npos);
 }
 
+// A title block on a sheet is a block in drawing units placed on paper millimetres. Saved in
+// centimetres or metres its attributes used to move a little further at every save.
+TEST_CASE("a title block on a sheet stays put when a drawing in other units is saved and opened") {
+    for (LengthUnit unit : {LengthUnit::Centimeter, LengthUnit::Meter, LengthUnit::Inch}) {
+        CAPTURE(static_cast<int>(unit));
+        std::unique_ptr<Document> doc = sample();
+        {
+            auto tx = doc->begin("units");
+            REQUIRE(tx.modifyHeader([&](Header& h) { h.units = unit; }).ok());
+            tx.commit();
+        }
+        std::unique_ptr<Document> once = saveAndOpen(*doc);
+        std::string diff =
+            testing::SemanticDump::diff(testing::SemanticDump(*doc), testing::SemanticDump(*once));
+        CHECK_MESSAGE(diff.empty(), diff);
+        std::unique_ptr<Document> twice = saveAndOpen(*once);
+        diff = testing::SemanticDump::diff(testing::SemanticDump(*once),
+                                           testing::SemanticDump(*twice));
+        CHECK_MESSAGE(diff.empty(), diff);
+
+        // Other programs see the title block at its size on paper: the insert's scale is the
+        // size of the unit, and its attributes are written where they are drawn.
+        Report r;
+        auto out = exportDxf(*doc, ExportOptions{}, r);
+        REQUIRE(out.ok());
+        CHECK(out.value().bytes.find("sheetunits=1") != std::string::npos);
+    }
+}
+
 }  // namespace tbcad::dxf

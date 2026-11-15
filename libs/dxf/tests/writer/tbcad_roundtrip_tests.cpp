@@ -606,6 +606,47 @@ TEST_CASE("a dimension's oblique extension lines and turned text survive a DXF r
     check(*load(text));
 }
 
+TEST_CASE("dimension text turned by hand to exactly 0 is still turned after a DXF round trip") {
+    const std::string src =
+        "  0\nSECTION\n  2\nENTITIES\n"
+        "  0\nDIMENSION\n  8\n0\n  2\n*D1\n 10\n20\n 20\n100\n 30\n0\n 11\n22\n 21\n50\n 31\n0\n"
+        " 70\n32\n  1\n<>\n 53\n45\n100\nAcDbAlignedDimension\n"
+        " 13\n0\n 23\n0\n 33\n0\n 14\n0\n 24\n100\n 34\n0\n 50\n90\n"
+        "100\nAcDbRotatedDimension\n"
+        "  0\nENDSEC\n  0\nEOF\n";
+    Report r;
+    Result<ImportResult> in = importDxf(std::as_bytes(std::span(src)), ImportOptions{}, r);
+    REQUIRE(in.ok());
+    std::unique_ptr<Document> doc = std::move(in.value().document);
+    EntityId id{};
+    doc->forEachEntity([&](const Entity& e) {
+        if (entityAs<DimensionData>(e))
+            id = e.common.id;
+    });
+    {
+        auto tx = doc->begin("turn");
+        REQUIRE(tx.modify(id, [](Entity& e) {
+                      entityAs<DimensionData>(e)->textRotation = 0;  // horizontal on a vertical dim
+                  }).ok());
+        tx.commit();
+    }
+    Report r2;
+    Result<ExportResult> out = exportDxf(*doc, ExportOptions{}, r2);
+    REQUIRE(out.ok());
+    Report r3;
+    Result<ImportResult> back =
+        importDxf(std::as_bytes(std::span(out.value().bytes)), ImportOptions{}, r3);
+    REQUIRE(back.ok());
+    const DimensionData* d = nullptr;
+    back.value().document->forEachEntity([&](const Entity& e) {
+        if (const auto* x = entityAs<DimensionData>(e))
+            d = x;
+    });
+    REQUIRE(d != nullptr);
+    CHECK(d->textRotated);
+    CHECK(d->textRotation == 0);
+}
+
 }  // namespace tbcad::dxf
 
 namespace tbcad::dxf {
