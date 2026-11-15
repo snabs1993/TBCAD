@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <ctime>
 #include <filesystem>
@@ -305,11 +307,15 @@ void drawXrefPanel(ui::PanelContext& ctx) {
                               ImGuiTableFlags_ScrollY | ImGuiTableFlags_Borders,
                           ImVec2(0, -footer))) {
         ImGui::TableSetupScrollFreeze(0, 1);
-        ImGui::TableSetupColumn("Reference", ImGuiTableColumnFlags_WidthFixed, 130);
-        ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 90);
-        ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, 60);
-        ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 60);
-        ImGui::TableSetupColumn("Date", ImGuiTableColumnFlags_WidthFixed, 110);
+        // Widths from the text they hold, so they fit at any font size or screen scale.
+        const float pad = ImGui::GetStyle().CellPadding.x * 2 + ImGui::GetFontSize();
+        const auto fit = [pad](const char* widest) { return ImGui::CalcTextSize(widest).x + pad; };
+        ImGui::TableSetupColumn("Reference", ImGuiTableColumnFlags_WidthFixed,
+                                std::max(fit("Reference"), ImGui::GetFontSize() * 11));
+        ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, fit("Needs reload"));
+        ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, fit("9999.9 MB"));
+        ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, fit("Overlay"));
+        ImGui::TableSetupColumn("Date", ImGuiTableColumnFlags_WidthFixed, fit("2026-12-31 23:59"));
         ImGui::TableSetupColumn("Saved path", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableHeadersRow();
         RowEnv env{ctx, doc, hostFile, st};
@@ -412,11 +418,134 @@ void drawXrefPanel(ui::PanelContext& ctx) {
 
 }  // namespace
 
+// The Attach dialog: every choice XATTACH (or PDFATTACH, IMAGEATTACH) would ask on the command
+// line, in one place. Attach hands them back and the reference follows the cursor to be placed.
+void drawAttachDialogPanel(ui::PanelContext& ctx) {
+    static std::string loadedFields;
+    static AttachFields f;
+    static AttachAnswers a;
+    static int shownFrame = -100;
+    if (!ctx.host) {
+        ImGui::TextUnformatted("No drawing open");
+        return;
+    }
+    const std::string fields = ctx.host->setting(kAttachFieldsSetting).value_or("");
+    if (fields != loadedFields) {  // a new attach: start from what the command suggests
+        loadedFields = fields;
+        if (auto d = decodeAttachFields(fields)) {
+            f = *d;
+            a = d->defaults;
+        }
+    }
+    if (ImGui::IsWindowAppearing())
+        shownFrame = ImGui::GetFrameCount();
+    if (f.kind.empty()) {
+        ImGui::TextDisabled("Run XATTACH to attach a drawing, PDF or picture.");
+        return;
+    }
+    const bool drawing = f.kind == "drawing";
+    const float labelW = ImGui::CalcTextSize("Path to save").x + ImGui::GetFontSize();
+    const auto label = [labelW](const char* text) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(text);
+        ImGui::SameLine(labelW);
+    };
+    label("File");
+    ImGui::TextUnformatted(f.file.c_str());
+    label("Name");
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputText("##attname", &a.name);
+    if (drawing) {
+        label("Nesting");
+        if (ImGui::RadioButton("Attach", !a.overlay))
+            a.overlay = false;
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("It comes along when this drawing is attached somewhere else");
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Overlay", a.overlay))
+            a.overlay = true;
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Seen only in this drawing, not where this drawing is attached");
+    }
+    label("Path to save");
+    if (ImGui::RadioButton("Relative", a.path == 'R'))
+        a.path = 'R';
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip(f.saved ? "From this drawing's folder: the pair can move together"
+                                  : "This drawing is not saved yet: the full path is stored");
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Full", a.path == 'A'))
+        a.path = 'A';
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Name only", a.path == 'N'))
+        a.path = 'N';
+    if (f.kind == "pdf" && f.pages > 1) {
+        label("Page");
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 7);
+        ImGui::InputInt("##attpage", &a.page);
+        a.page = std::clamp(a.page, 1, f.pages);
+        ImGui::SameLine();
+        ImGui::TextDisabled("of %d", f.pages);
+    }
+    if (!drawing) {
+        float fade = static_cast<float>(a.fade);
+        label("Fade");
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::SliderFloat("##attfade", &fade, 0.0f, f.kind == "pdf" ? 90.0f : 95.0f,
+                               "%.0f %%"))
+            a.fade = fade;
+    }
+    label("Scale");
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 7);
+    ImGui::InputDouble("##attscale", &a.scale, 0, 0, "%.6g");
+    ImGui::SameLine();
+    ImGui::TextUnformatted("Rotation");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(ImGui::GetFontSize() * 6);
+    ImGui::InputDouble("##attrot", &a.rotationDeg, 0, 0, "%.6g");
+    ImGui::SameLine();
+    ImGui::TextUnformatted("deg");
+    ImGui::Spacing();
+    ImGui::TextDisabled("After Attach, click in the drawing where it goes.");
+    const bool badScale = !(std::abs(a.scale) > 0);
+    if (badScale)
+        ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.2f, 1.0f), "The scale cannot be zero.");
+    // The Enter that started the command must not press Attach.
+    const bool settled = ImGui::GetFrameCount() - shownFrame > 2;
+    ImGui::BeginDisabled(badScale);
+    const bool go =
+        ImGui::Button("Attach", ImVec2(ImGui::GetFontSize() * 6, 0)) ||
+        (settled && !badScale && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+         ImGui::IsKeyPressed(ImGuiKey_Enter, false));
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel", ImVec2(ImGui::GetFontSize() * 6, 0)) ||
+        (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+         ImGui::IsKeyPressed(ImGuiKey_Escape))) {
+        ctx.host->closePanel("xattachdlg");
+        loadedFields.clear();
+        f = {};
+        if (ctx.cancelCommand)
+            ctx.cancelCommand();
+        return;
+    }
+    if (go) {
+        ctx.host->setSetting(kAttachResultSetting, encodeAttachResult(a));
+        ctx.host->closePanel("xattachdlg");
+        loadedFields.clear();
+        f = {};
+        if (ctx.runCommand)
+            ctx.runCommand("");  // Enter for the waiting command
+    }
+}
+
 #endif
 
 void registerXrefPanel(ui::UiRegistry& ui) {
 #ifdef TBCAD_BLOCK_PANEL_IMGUI
     ui.addPanel("xrefs", "External References", drawXrefPanel, false);
+    ui.addPanel("xattachdlg", "Attach Reference", drawAttachDialogPanel, false);
+    ui.setPanelFloating("xattachdlg", 460, 300);
 #else
     (void)ui;
 #endif

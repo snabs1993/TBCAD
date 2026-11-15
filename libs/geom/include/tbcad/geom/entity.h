@@ -28,6 +28,8 @@ struct DisplayContext {
     int byBlockTransparency = 0;  // percent
     // Off: everything is drawn opaque (the TPY toggle).
     bool showTransparency = true;
+    // Off (plotting): attached drawings are drawn at full strength, not lighter by XREFFADE.
+    bool xrefFade = true;
     // Off (FILL): solid fills are drawn as their outlines; wipeout masks stay.
     bool fillMode = true;
     // QTEXT: text and multiline text are drawn as a box around where they lie.

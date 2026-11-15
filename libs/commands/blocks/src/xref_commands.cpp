@@ -1,8 +1,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 
 #include "commands.h"
 #include "tbcad/blocks/tbcad_blocks.h"
@@ -86,7 +88,18 @@ public:
         std::string stored;
         std::filesystem::path resolved;
         underlay::PdfOptions pdfOptions;
+        // In a window: the file picker opens at once, then one Attach dialog holds the options
+        // the command line would ask one by one (-XREF and scripts keep the questions).
+        const bool useDialog = forced_ == 0 && ctx.host().dialogsAvailable();
+        int pdfPages = 1;
+        bool firstAsk = true;
         for (;;) {
+            if (useDialog && firstAsk)
+                ctx.host().requestUi(std::string("pickfile:") + (pdf_ ? "pdf"
+                                                                 : kind_ == Kind::Image
+                                                                     ? "image"
+                                                                     : "drawing"));
+            firstAsk = false;
             auto f = co_await ctx.getString(
                 std::string(
                     pdf_ ? "Enter the .pdf file to attach"
@@ -115,7 +128,8 @@ public:
                     continue;
                 }
                 underlay::PdfOptions options = spec.pdf;
-                if (!spec.hasSpec) {
+                pdfPages = pages.value();
+                if (!spec.hasSpec && !useDialog) {
                     if (pages.value() > 1) {
                         auto pg = co_await ctx.getInteger(
                             "Enter the page number (1-" + std::to_string(pages.value()) + ") <1>",
@@ -140,8 +154,11 @@ public:
                 continue;
             }
             resolved = xref::resolvePath(stored, hostFile);
-            if (!pdf_ && underlay::isPdfPath(stored))
+            if (!pdf_ && underlay::isPdfPath(stored)) {
                 pdfOptions = underlay::parseSpec(stored).pdf;
+                if (auto pages = underlay::pdfPageCount(resolved))
+                    pdfPages = pages.value();
+            }
             auto loaded = xref::loadStored(stored, hostFile);
             if (loaded.ok()) {
                 source = std::move(loaded.value());
@@ -149,8 +166,54 @@ public:
             }
             ctx.message(loaded.error().message);
         }
+        // The Attach dialog: what it sends back replaces the questions below.
+        const bool underlayKind = pdf_ || kind_ == Kind::Image;
+        const bool isPdf = pdf_ || underlay::isPdfPath(stored);
+        std::optional<AttachAnswers> answers;
+        if (useDialog) {
+            AttachAnswers defaults;
+            defaults.name = xref::defaultName(resolved);
+            defaults.fade = isPdf                  ? pdfOptions.fadePercent
+                            : kind_ == Kind::Image ? underlay::kDefaultImageFade
+                                                   : 0.0;
+            ctx.host().setSetting(
+                kAttachFieldsSetting,
+                encodeAttachFields(kind_ == Kind::Image ? "image"
+                                   : isPdf              ? "pdf"
+                                                        : "drawing",
+                                   std::filesystem::path(resolved).filename().u8string(), pdfPages,
+                                   defaults, !hostFile.empty()));
+            ctx.host().setSetting(kAttachResultSetting, "");
+            ctx.host().openPanel("xattachdlg");
+            auto r = co_await ctx.getString(
+                "Set the options in the Attach dialog and press Attach (Enter: the defaults)",
+                cmd::StringOptions{.allowEmpty = true});
+            ctx.host().closePanel("xattachdlg");
+            if (!r.ok())
+                co_return;
+            answers = decodeAttachResult(ctx.host().setting(kAttachResultSetting).value_or(""))
+                          .value_or(defaults);
+            ctx.host().setSetting(kAttachResultSetting, "");
+            if (isPdf) {
+                const int page = std::clamp(answers->page, 1, pdfPages);
+                const bool reload = page != pdfOptions.page;
+                pdfOptions.page = page;
+                pdfOptions.fadePercent = std::clamp(answers->fade, 0.0, 90.0);
+                stored = underlay::makeSpec(underlay::parseSpec(stored).file, pdfOptions);
+                if (reload) {
+                    auto again = xref::loadStored(stored, hostFile);
+                    if (!again.ok()) {
+                        ctx.message(again.error().message);
+                        co_return;
+                    }
+                    source = std::move(again.value());
+                }
+            }
+        }
         double imageFade = 0;
-        if (kind_ == Kind::Image) {
+        if (kind_ == Kind::Image && answers) {
+            imageFade = std::clamp(answers->fade, 0.0, underlay::kMaxImageFade);
+        } else if (kind_ == Kind::Image) {
             auto fd =
                 co_await ctx.getReal("Enter the fade, 0 to 95 percent <30>",
                                      cmd::RealOptions{.defaultValue = underlay::kDefaultImageFade});
@@ -159,9 +222,10 @@ public:
             imageFade = std::clamp(fd.value, 0.0, underlay::kMaxImageFade);
         }
 
-        const bool underlayKind = pdf_ || kind_ == Kind::Image;
         bool overlay = false;
-        if (!underlayKind && forced_ != 0) {
+        if (answers) {
+            overlay = !underlayKind && answers->overlay;
+        } else if (!underlayKind && forced_ != 0) {
             overlay = forced_ == 2;
         } else if (!underlayKind) {  // a picture or PDF page is never an overlay
             auto kind = co_await ctx.getKeyword(
@@ -171,15 +235,22 @@ public:
                 co_return;
             overlay = kind.keyword == "Overlay";
         }
-        auto pathKind = co_await ctx.getKeyword(
-            "Path type [Relative/Absolute/None] <Relative>",
-            cmd::KeywordOptions{.keywords = {"Relative", "Absolute", "None"},
-                                .defaultKeyword = "Relative"});
-        if (!pathKind.ok())
-            co_return;
-        xref::PathType pathType = pathKind.keyword == "Absolute" ? xref::PathType::Absolute
-                                  : pathKind.keyword == "None"   ? xref::PathType::None
-                                                                 : xref::PathType::Relative;
+        xref::PathType pathType = xref::PathType::Relative;
+        if (answers) {
+            pathType = answers->path == 'A'   ? xref::PathType::Absolute
+                       : answers->path == 'N' ? xref::PathType::None
+                                              : xref::PathType::Relative;
+        } else {
+            auto pathKind = co_await ctx.getKeyword(
+                "Path type [Relative/Absolute/None] <Relative>",
+                cmd::KeywordOptions{.keywords = {"Relative", "Absolute", "None"},
+                                    .defaultKeyword = "Relative"});
+            if (!pathKind.ok())
+                co_return;
+            pathType = pathKind.keyword == "Absolute" ? xref::PathType::Absolute
+                       : pathKind.keyword == "None"   ? xref::PathType::None
+                                                      : xref::PathType::Relative;
+        }
         if (pathType == xref::PathType::Relative && hostFile.empty())
             ctx.message("The drawing is not saved yet: the full path is stored.");
         stored = xref::storedPath(resolved, hostFile, pathType);
@@ -188,7 +259,15 @@ public:
 
         std::string blockName;
         const std::string suggested = xref::defaultName(xref::resolvePath(stored, hostFile));
-        for (;;) {
+        // A name from the dialog is taken when it is good; otherwise it is asked for.
+        if (answers && !cmd::trim(answers->name).empty()) {
+            auto ok = blocks::validateBlockName(doc, cmd::trim(answers->name));
+            if (ok.ok())
+                blockName = cmd::trim(answers->name);
+            else
+                ctx.message(ok.error().message);
+        }
+        while (blockName.empty()) {
             cmd::StringOptions so;
             so.defaultValue = suggested;
             auto n =
@@ -219,6 +298,11 @@ public:
             }
         }
         InsertData data{attached.value(), {}, {1, 1}, 0};
+        if (answers) {
+            if (answers->scale != 0 && std::isfinite(answers->scale))
+                data.scale = {answers->scale, answers->scale};
+            data.rotation = normalizeAngle(answers->rotationDeg * kPi / 180.0);
+        }
         for (;;) {
             cmd::PointOptions po;
             po.keywords = {"Scale", "Rotate"};
@@ -1131,6 +1215,73 @@ public:
 };
 
 }  // namespace
+
+namespace {
+std::vector<std::string> splitUnits(const std::string& text) {
+    std::vector<std::string> out;
+    std::size_t at = 0;
+    for (;;) {
+        const std::size_t end = text.find('\x1f', at);
+        out.push_back(text.substr(at, end == std::string::npos ? std::string::npos : end - at));
+        if (end == std::string::npos)
+            return out;
+        at = end + 1;
+    }
+}
+std::string num(double v) {
+    char buf[48];
+    std::snprintf(buf, sizeof buf, "%.12g", v);
+    return buf;
+}
+}  // namespace
+
+std::string encodeAttachResult(const AttachAnswers& a) {
+    return a.name + "\x1f" + (a.overlay ? "1" : "0") + "\x1f" + std::string(1, a.path) + "\x1f" +
+           std::to_string(a.page) + "\x1f" + num(a.fade) + "\x1f" + num(a.scale) + "\x1f" +
+           num(a.rotationDeg);
+}
+
+std::optional<AttachAnswers> decodeAttachResult(const std::string& text) {
+    const auto f = splitUnits(text);
+    if (f.size() != 7 || f[2].size() != 1)
+        return std::nullopt;
+    AttachAnswers a;
+    a.name = f[0];
+    a.overlay = f[1] == "1";
+    a.path = f[2][0] == 'A' || f[2][0] == 'N' ? f[2][0] : 'R';
+    a.page = std::max(1, std::atoi(f[3].c_str()));
+    a.fade = std::strtod(f[4].c_str(), nullptr);
+    a.scale = std::strtod(f[5].c_str(), nullptr);
+    a.rotationDeg = std::strtod(f[6].c_str(), nullptr);
+    if (!std::isfinite(a.fade) || !std::isfinite(a.scale) || !std::isfinite(a.rotationDeg))
+        return std::nullopt;
+    return a;
+}
+
+std::string encodeAttachFields(const std::string& kind, const std::u8string& file, int pages,
+                               const AttachAnswers& defaults, bool saved) {
+    return kind + "\x1f" + std::string(file.begin(), file.end()) + "\x1f" + std::to_string(pages) +
+           "\x1f" + (saved ? "1" : "0") + "\x1f" + encodeAttachResult(defaults);
+}
+
+std::optional<AttachFields> decodeAttachFields(const std::string& text) {
+    const auto f = splitUnits(text);
+    if (f.size() != 11)
+        return std::nullopt;
+    AttachFields out;
+    out.kind = f[0];
+    out.file = f[1];
+    out.pages = std::max(1, std::atoi(f[2].c_str()));
+    out.saved = f[3] == "1";
+    std::string rest;
+    for (std::size_t i = 4; i < f.size(); ++i)
+        rest += (i > 4 ? "\x1f" : "") + f[i];
+    auto d = decodeAttachResult(rest);
+    if (!d)
+        return std::nullopt;
+    out.defaults = *d;
+    return out;
+}
 
 std::unique_ptr<cmd::Command> makePdfOsnapCommand() {
     return std::make_unique<PdfOsnapCommand>();

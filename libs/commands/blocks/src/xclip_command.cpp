@@ -297,7 +297,37 @@ private:
     bool pdf_;
 };
 
+// XREFFADE: how much lighter attached drawings look on screen (0 to 90 percent), so the lines
+// of a reference read apart from the drawing's own. A setting of the drawing; plots ignore it.
+class XrefFadeCommand final : public cmd::Command {
+public:
+    std::string_view name() const override { return "XREFFADE"; }
+    std::string_view description() const override {
+        return "Set how much lighter attached drawings are shown on screen";
+    }
+
+    cmd::Task run(cmd::CommandContext& ctx) override {
+        const int now = xrefFadePercent(ctx.doc().header());
+        cmd::IntOptions io;
+        io.defaultValue = now;
+        io.min = 0;
+        io.max = 90;
+        auto v = co_await ctx.getInteger(
+            "Lighten attached drawings by, 0 to 90 percent <" + std::to_string(now) + ">", io);
+        if (!v.ok())
+            co_return;
+        const std::string value = std::to_string(std::clamp<long long>(v.value, 0, 90));
+        (void)ctx.tx().modifyHeader([&](Header& h) { h.custom[kXrefFadeKey] = value; });
+        ctx.setUndoLabel("XREFFADE");
+        ctx.message("XREFFADE = " + value);
+    }
+};
+
 }  // namespace
+
+std::unique_ptr<cmd::Command> makeXrefFadeCommand() {
+    return std::make_unique<XrefFadeCommand>();
+}
 
 std::unique_ptr<cmd::Command> makeClipFrameCommand(bool pdf) {
     return std::make_unique<ClipFrameCommand>(pdf);

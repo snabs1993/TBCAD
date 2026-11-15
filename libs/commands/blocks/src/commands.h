@@ -12,6 +12,33 @@
 
 namespace tbcad::block_cmds {
 
+// The Attach dialog (XATTACH, PDFATTACH, IMAGEATTACH in a window). The command fills
+// kAttachFieldsSetting, opens panel "xattachdlg" and waits; Attach stores the choices in
+// kAttachResultSetting and presses Enter.
+inline constexpr const char* kAttachFieldsSetting = "tmp.xattach.fields";
+inline constexpr const char* kAttachResultSetting = "tmp.xattach.result";
+struct AttachAnswers {
+    std::string name{};
+    bool overlay = false;
+    char path = 'R';  // R relative, A absolute, N file name only
+    int page = 1;     // PDF page
+    double fade = 0;  // percent, PDF pages and pictures
+    double scale = 1;
+    double rotationDeg = 0;
+};
+struct AttachFields {
+    std::string kind{};  // "drawing", "pdf" or "image"
+    std::string file{};  // the file name shown
+    int pages = 1;
+    bool saved = true;  // the drawing has a file (a relative path can be stored)
+    AttachAnswers defaults{};
+};
+std::string encodeAttachFields(const std::string& kind, const std::u8string& file, int pages,
+                               const AttachAnswers& defaults, bool saved);
+std::optional<AttachFields> decodeAttachFields(const std::string& text);
+std::string encodeAttachResult(const AttachAnswers& a);
+std::optional<AttachAnswers> decodeAttachResult(const std::string& text);
+
 std::unique_ptr<cmd::Command> makeBlockCommand();
 std::unique_ptr<cmd::Command> makeBlockLineCommand();
 std::unique_ptr<cmd::Command> makeAttredefCommand();
@@ -74,6 +101,7 @@ std::unique_ptr<cmd::Command> makeXrefLineCommand();
 std::unique_ptr<cmd::Command> makeXBindCommand();
 std::unique_ptr<cmd::Command> makeXClipCommand();
 std::unique_ptr<cmd::Command> makeClipFrameCommand(bool pdf);
+std::unique_ptr<cmd::Command> makeXrefFadeCommand();
 std::unique_ptr<cmd::Command> makePdfClipCommand();
 std::unique_ptr<cmd::Command> makeXUnloadCommand();
 std::unique_ptr<cmd::Command> makeXListCommand();

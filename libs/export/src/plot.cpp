@@ -520,6 +520,7 @@ void appendEntities(PlotSheet& sheet, const Document& doc, const std::vector<Ent
     ctx.defaultLineweightMm = defaultLineweightMm(doc.header());
     ctx.byBlockLineweightMm = 0.25;
     ctx.showTransparency = s.transparency;
+    ctx.xrefFade = false;
     ctx.fillMode = fillMode(doc.header());
     ctx.quickText = quickText(doc.header());
     ctx.attDisplay = attDisplay(doc.header());

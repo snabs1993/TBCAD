@@ -347,6 +347,12 @@ std::string fitMiddle(const std::string& text, float width) {
     return "...";
 }
 
+// How far a row's name moves right. The layers of an external reference only step in a little:
+// their names are long ("Walls-Section-Cut") and the header above already says whose they are.
+float indentOf(const Row& row) {
+    return row.shortName.empty() ? row.depth * 14.0f : 4.0f;
+}
+
 void drawNameCell(tbcad::ui::PanelContext& ctx, const Row& row, bool dimmed, bool& openToggled) {
     PanelState& st = state();
     const Document& doc = *ctx.doc;
@@ -354,7 +360,7 @@ void drawNameCell(tbcad::ui::PanelContext& ctx, const Row& row, bool dimmed, boo
     ImGui::PushID(static_cast<int>(row.id.value));
     // Indent(0) would indent by the style's default, so top-level rows skip it.
     if (row.depth > 0)
-        ImGui::Indent(row.depth * 14.0f);
+        ImGui::Indent(indentOf(row));
     if (row.hasKids) {
         if (ImGui::ArrowButton("##open", row.open ? ImGuiDir_Down : ImGuiDir_Right))
             openToggled = true;
@@ -546,7 +552,7 @@ void drawNameCell(tbcad::ui::PanelContext& ctx, const Row& row, bool dimmed, boo
         }
     }
     if (row.depth > 0)
-        ImGui::Unindent(row.depth * 14.0f);
+        ImGui::Unindent(indentOf(row));
     ImGui::PopID();
 }
 
