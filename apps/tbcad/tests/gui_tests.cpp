@@ -395,16 +395,22 @@ TEST_CASE("external references panel: attach, unload, reload, detach") {
     REQUIRE(h.core().saveAs(source).ok());
     h.core().newDocument();
     h.frame(3);
+    // In the window XATTACH asks its options in one Attach dialog, then for the point.
     h.core().submitText("XATTACH");
     h.core().submitText(source.string());
-    h.core().submitText("Attach");
-    h.core().submitText("Absolute");
-    h.core().submitText("source");
+    h.frame(3);
+    REQUIRE(h.windowOpen("Attach Reference"));
+    REQUIRE(h.click("Full", "Attach Reference"));
+    h.frame(2);
+    REQUIRE(h.click("Attach", "Attach Reference"));
+    h.frame(3);
+    CHECK_FALSE(h.windowOpen("Attach Reference"));
     h.core().submitText("0,0");
     h.core().pressEscape();
     h.frame(3);
     const auto refs = [&] { return xref::xrefs(h.core().document()); };
     REQUIRE(refs().size() == 1);
+    CHECK(fs::path(h.core().document().block(refs()[0])->xrefPath).is_absolute());
     const BlockId id = refs()[0];
     const auto state = [&] { return xref::state(h.core().document(), id, {}); };
     CHECK(state() == xref::State::UpToDate);
