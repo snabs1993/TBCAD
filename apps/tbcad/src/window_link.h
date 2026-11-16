@@ -32,6 +32,7 @@ public:
     WindowLink& operator=(const WindowLink&) = delete;
 
     long pid() const { return pid_; }
+    const std::filesystem::path& dir() const { return dir_; }
     static long currentProcessId();
 
     // Tells the other windows where this one is. Writes at most every 0.4 s unless `force`.

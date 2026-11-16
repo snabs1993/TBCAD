@@ -162,6 +162,11 @@ public:
     // cannot take the drawing back past what they made.
     void runSetup(const std::vector<std::string>& scriptLines);
     Result<void> openFile(const std::filesystem::path& path);
+    // Moving a drawing to another window of the program, saved or not: writeHandover writes its
+    // content as it is now to `out` (a .tbcadmove file, with its own file name beside it in
+    // `out`.orig); openFile on that file opens it under its own name, with unsaved changes kept
+    // as unsaved, and removes the handover files.
+    Result<void> writeHandover(std::size_t index, const std::filesystem::path& out) const;
     // Opens a drawing built in memory (one received from another program, for example) as a new
     // tab; it has no file until the user saves it.
     void adoptDocument(std::unique_ptr<Document> doc);
@@ -538,6 +543,7 @@ public:
     void commandEnded(std::string_view name, bool cancelled) override;
 
 private:
+    Result<void> openHandover(const std::filesystem::path& path);
     struct Session;
     struct DocSlot;
     class AppObserver;
