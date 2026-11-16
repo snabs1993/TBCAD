@@ -3401,7 +3401,9 @@ TEST_CASE("drawing tab dragged onto another window moves the drawing there") {
     CHECK_FALSE(fs::exists(handover));
     CHECK_FALSE(fs::exists(fs::path(handover.string() + ".orig")));
     CHECK(h.imguiErrors().empty());
-    fs::remove_all(dir);
+    h.core().closeDocument(i);  // Windows: the open drawing's lock keeps the folder in use
+    std::error_code ec;
+    fs::remove_all(dir, ec);
 }
 
 TEST_CASE("an Untitled drawing tab dragged out of the window goes with its objects") {

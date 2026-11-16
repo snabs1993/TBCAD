@@ -30,7 +30,8 @@ struct Rig {
     explicit Rig(const std::string& name) {
         platform::setNativeDialogsEnabled(false);  // a system window would wait for a click
         dir = fs::temp_directory_path() / ("tbcad_menu_smoke_" + name);
-        fs::remove_all(dir);
+        std::error_code ec;  // MSVC threw "path not found" here when the folder was not there
+        fs::remove_all(dir, ec);
         registerAllCommands(registry);
         core =
             std::make_unique<ui::AppCore>(registry, platform::AppPaths{dir / "cfg", dir / "data"});
