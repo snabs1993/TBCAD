@@ -232,6 +232,11 @@ void Page::arcTo(double cx, double cy, double radius, double startRad, double en
     }
 }
 
+void Page::arc(double cx, double cy, double radius, double startRad, double endRad, bool ccw) {
+    hasCurrentPoint_ = false;
+    arcTo(cx, cy, radius, startRad, endRad, ccw);
+}
+
 void Page::stroke() {
     op("S");
     hasCurrentPoint_ = false;

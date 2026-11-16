@@ -165,6 +165,119 @@ Result<EntityEdit> breakRay(const Entity& e, const RayData& r, Vec2 p1, std::opt
     return pieces(e, std::move(data));
 }
 
+// ---- Multilines (MLINE walls) -------------------------------------------------------------------
+// A multiline is broken along its path: a pick on any of its lines finds the nearest place on the
+// path. Gaps already in it (MLEDIT cuts) follow their pieces.
+
+std::size_t mlineSegCount(const MlineData& d) {
+    if (d.v.size() < 2)
+        return 0;
+    return d.closed ? d.v.size() : d.v.size() - 1;
+}
+
+Vec2 mlineVertex(const MlineData& d, std::size_t i) {
+    return d.v[i % d.v.size()];
+}
+
+// Global path parameter (segment index + fraction) of the place nearest p.
+double mlineParam(const MlineData& d, Vec2 p) {
+    const std::size_t n = mlineSegCount(d);
+    double best = 0, bestDist = std::numeric_limits<double>::infinity();
+    for (std::size_t i = 0; i < n; ++i) {
+        const Vec2 a = mlineVertex(d, i), b = mlineVertex(d, i + 1);
+        const Vec2 ab = b - a;
+        const double len2 = dot(ab, ab);
+        const double t = len2 > 0 ? std::clamp(dot(p - a, ab) / len2, 0.0, 1.0) : 0.0;
+        const double dist = distance(p, a + ab * t);
+        if (dist < bestDist) {
+            bestDist = dist;
+            best = static_cast<double>(i) + t;
+        }
+    }
+    return best;
+}
+
+Vec2 mlinePoint(const MlineData& d, double u) {
+    const std::size_t n = mlineSegCount(d);
+    std::size_t i = static_cast<std::size_t>(std::floor(u));
+    if (i >= n && !d.closed)
+        return d.v.back();
+    const double t = u - std::floor(u);
+    const Vec2 a = mlineVertex(d, i), b = mlineVertex(d, i + 1);
+    return a + (b - a) * t;
+}
+
+// The part of the path from a to b (a < b; on a closed multiline b may pass the end and wrap).
+MlineData mlineSlice(const MlineData& d, double a, double b) {
+    constexpr double eps = 1e-9;
+    const std::size_t n = mlineSegCount(d);
+    MlineData out = d;
+    out.closed = false;
+    out.v.clear();
+    out.cuts.clear();
+    out.v.push_back(mlinePoint(d, a));
+    const auto first = static_cast<std::int64_t>(std::floor(a + eps));
+    for (std::int64_t k = first; static_cast<double>(k) < b + 1; ++k) {
+        // Original segment k (mod n) covers [k, k+1]; its kept part is [lo, hi].
+        const double lo = std::max(a, static_cast<double>(k));
+        const double hi = std::min(b, static_cast<double>(k) + 1);
+        if (hi - lo <= eps)
+            continue;
+        const auto seg = static_cast<std::uint32_t>(static_cast<std::size_t>(k) % n);
+        const double t0 = lo - static_cast<double>(k), t1 = hi - static_cast<double>(k);
+        for (const MlineCut& c : d.cuts) {
+            if (c.seg != seg)
+                continue;
+            const double c0 = std::max(c.t0, t0), c1 = std::min(c.t1, t1);
+            if (c1 - c0 <= eps)
+                continue;
+            MlineCut nc = c;
+            nc.seg = static_cast<std::uint32_t>(out.v.size() - 1);
+            nc.t0 = (c0 - t0) / (t1 - t0);
+            nc.t1 = (c1 - t0) / (t1 - t0);
+            out.cuts.push_back(nc);
+        }
+        out.v.push_back(
+            hi >= static_cast<double>(k) + 1 - eps
+                ? mlineVertex(d, static_cast<std::size_t>(k) + 1)
+                : mlinePoint(d, hi - static_cast<double>(k) + static_cast<double>(seg)));
+    }
+    return out;
+}
+
+Result<EntityEdit> breakMline(const Entity& e, const MlineData& d, Vec2 p1,
+                              std::optional<Vec2> p2) {
+    const std::size_t count = mlineSegCount(d);
+    if (count == 0)
+        return err("The multiline has no length.");
+    const double n = static_cast<double>(count);
+    double s1 = mlineParam(d, p1);
+    double s2 = p2 ? mlineParam(d, *p2) : s1;
+    if (s1 > s2)
+        std::swap(s1, s2);
+    if (p2 && s2 - s1 <= 1e-9)
+        return err("The two break points are the same.");
+    std::vector<MlineData> parts;
+    if (d.closed) {
+        parts.push_back(mlineSlice(d, s2, s1 + n));
+    } else if (p2) {
+        if (s1 > 1e-9)
+            parts.push_back(mlineSlice(d, 0, s1));
+        if (s2 < n - 1e-9)
+            parts.push_back(mlineSlice(d, s2, n));
+    } else {
+        if (s1 <= 1e-9 || s1 >= n - 1e-9)
+            return err("The point is at an end of the multiline.");
+        parts.push_back(mlineSlice(d, 0, s1));
+        parts.push_back(mlineSlice(d, s1, n));
+    }
+    std::vector<EntityData> data;
+    for (auto& p : parts)
+        if (p.v.size() >= 2)
+            data.push_back(Indirect<MlineData>(std::move(p)));
+    return pieces(e, std::move(data));
+}
+
 Result<EntityEdit> breakAny(const Entity& e, Vec2 p1, std::optional<Vec2> p2) {
     switch (kind(e)) {
         case EntityKind::Ray:
@@ -177,6 +290,8 @@ Result<EntityEdit> breakAny(const Entity& e, Vec2 p1, std::optional<Vec2> p2) {
             return breakCurve(e, p1, p2);
         case EntityKind::Polyline:
             return breakPolyline(e, *entityAs<PolylineData>(e), p1, p2);
+        case EntityKind::MLine:
+            return breakMline(e, *entityAs<MlineData>(e), p1, p2);
         default:
             return err("This kind of object cannot be broken.");
     }

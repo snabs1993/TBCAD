@@ -29,7 +29,7 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         Document& doc = ctx.doc();
-        auto base = detail::editableFilter(doc);
+        auto base = detail::editableFilter(doc, ctx.host().drawingOwner());
         auto sel = co_await ctx.getSelection(
             "Select objects to explode",
             cmd::SelectionOptions{.filter = [base, burst = burst_](const Entity& e) {

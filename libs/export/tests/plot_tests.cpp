@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <numbers>
 #include <regex>
 #include <sstream>
 
@@ -137,6 +138,31 @@ TEST_CASE("A3 landscape 1:100: a 10,000 mm line is 100.00 mm on the page") {
     CHECK(seg.y0 == doctest::Approx(148.5).epsilon(0.001));
     CHECK(pdf.value().find("/MediaBox") != std::string::npos);
     checkWithQpdf(sheet.value(), "a3_1_100");
+}
+
+TEST_CASE("An arc after a line starts its own subpath in the PDF (no stray line, test.21)") {
+    // Owner's steps: LINE 0,0 to 2000,0, then ARC C 4000,2000 / 5000,2000 / 4000,3000, PLOT.
+    Document doc;
+    addEntity(doc, line({0, 0}, {2000, 0}));
+    Entity arc;
+    arc.data = ArcData{{4000, 2000}, 1000, 0, std::numbers::pi / 2};
+    addEntity(doc, arc);
+    PlotSettings s;
+    s.paperName = "A3";
+    s.fitToPaper = false;
+    s.scaleN = 50;
+    auto sheet = buildSheet(doc, s);
+    REQUIRE(sheet.ok());
+    auto pdf = pdfBytes(sheet.value());
+    REQUIRE(pdf.ok());
+    const std::string& text = pdf.value();
+    auto count = [&](const char* op) {
+        const std::regex re(std::string("[-0-9.]+ [-0-9.]+ ") + op + "\\b");
+        return std::distance(std::sregex_iterator(text.begin(), text.end(), re),
+                             std::sregex_iterator());
+    };
+    CHECK(count("m") == 2);  // one move for the line, one for the arc
+    CHECK(count("l") == 1);  // only the line itself: nothing joins the line's end to the arc
 }
 
 TEST_CASE("rotateSheet180 turns the page: the 100 mm line ends where it started, reversed") {

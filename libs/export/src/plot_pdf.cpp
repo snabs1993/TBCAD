@@ -62,12 +62,13 @@ public:
 
     void arc(const PlotArc& a) {
         begin(a.style);
+        // Each arc is its own subpath: with arcTo the arc would start with a line from the end
+        // of the line or arc before it in the same painted path (test.21 feedback).
         if (a.full) {
-            page_.moveTo(a.center.x + a.radius, a.center.y);
-            page_.arcTo(a.center.x, a.center.y, a.radius, 0, kTwoPi, true);
+            page_.arc(a.center.x, a.center.y, a.radius, 0, kTwoPi, true);
             page_.closePath();
         } else {
-            page_.arcTo(a.center.x, a.center.y, a.radius, a.start, a.end, true);
+            page_.arc(a.center.x, a.center.y, a.radius, a.start, a.end, true);
         }
         ++pending_;
     }

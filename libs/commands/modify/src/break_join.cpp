@@ -29,7 +29,10 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::EntityOptions eo;
-        eo.filter = [&doc = ctx.doc()](const Entity& e) { return isTrimTarget(doc, e); };
+        eo.filter = [&doc = ctx.doc()](const Entity& e) {
+            return isTrimTarget(doc, e) ||
+                   (kind(e) == EntityKind::MLine && isModifiable(doc, e));  // MLINE walls
+        };
         auto pick = co_await ctx.getEntity("Select object to break", eo);
         if (!pick.ok())
             co_return;
@@ -73,7 +76,10 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         cmd::EntityOptions eo;
-        eo.filter = [&doc = ctx.doc()](const Entity& e) { return isTrimTarget(doc, e); };
+        eo.filter = [&doc = ctx.doc()](const Entity& e) {
+            return isTrimTarget(doc, e) ||
+                   (kind(e) == EntityKind::MLine && isModifiable(doc, e));  // MLINE walls
+        };
         auto pick = co_await ctx.getEntity("Select object to break", eo);
         if (!pick.ok())
             co_return;
