@@ -162,9 +162,9 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         Document& doc = ctx.doc();
-        auto sel =
-            co_await ctx.getSelection("Select objects to array",
-                                      cmd::SelectionOptions{.filter = detail::editableFilter(doc)});
+        auto sel = co_await ctx.getSelection(
+            "Select objects to array", cmd::SelectionOptions{.filter = detail::editableFilter(
+                                                                 doc, ctx.host().drawingOwner())});
         if (!sel.ok() || sel.ids.empty())
             co_return;
         std::vector<Entity> source;
@@ -620,9 +620,9 @@ public:
 
     cmd::Task run(cmd::CommandContext& ctx) override {
         Document& doc = ctx.doc();
-        auto sel =
-            co_await ctx.getSelection("Select objects to array",
-                                      cmd::SelectionOptions{.filter = detail::editableFilter(doc)});
+        auto sel = co_await ctx.getSelection(
+            "Select objects to array", cmd::SelectionOptions{.filter = detail::editableFilter(
+                                                                 doc, ctx.host().drawingOwner())});
         if (!sel.ok() || sel.ids.empty())
             co_return;
         std::vector<Entity> source;
@@ -981,8 +981,9 @@ public:
             if (k == "REPlace") {
                 auto sel = co_await ctx.getSelection(
                     "Select replacement objects",
-                    cmd::SelectionOptions{.filter = detail::editableFilter(doc),
-                                          .allowPreselection = false});
+                    cmd::SelectionOptions{
+                        .filter = detail::editableFilter(doc, ctx.host().drawingOwner()),
+                        .allowPreselection = false});
                 if (!sel.ok())
                     co_return;
                 std::vector<Entity> objs;

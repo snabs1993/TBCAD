@@ -127,8 +127,9 @@ std::vector<EntityId> inDrawOrder(const Document& doc, const std::vector<EntityI
 // Layers that are off, frozen or locked cannot be edited by these commands.
 bool editable(const Document& doc, const Entity& e);
 
-// Selection filter shared by the commands: model-space entities on editable layers.
-cmd::EntityFilterFn editableFilter(const Document& doc);
+// Editable objects in `owner`, the space being drawn in (model space, or a layout sheet's own
+// objects), so BLOCK, ARRAY and EXPLODE work on a sheet too.
+cmd::EntityFilterFn editableFilter(const Document& doc, BlockId owner);
 
 // Union of the geometry bounds of the entities.
 BBox2 boundsOf(const Document& doc, const std::vector<Entity>& entities);

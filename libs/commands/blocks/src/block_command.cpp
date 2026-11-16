@@ -47,7 +47,8 @@ public:
             }
             if (pick == "objects") {
                 auto sel = co_await ctx.getSelection(
-                    "Select objects", cmd::SelectionOptions{.filter = detail::editableFilter(doc)});
+                    "Select objects", cmd::SelectionOptions{.filter = detail::editableFilter(
+                                                                doc, ctx.host().drawingOwner())});
                 if (sel.status != cmd::Status::Cancel && !sel.ids.empty())
                     host.setSelection(sel.ids);
                 host.openPanel("makeblock");
@@ -115,12 +116,14 @@ public:
         cmd::SelectionResult sel;
         if (dialog) {
             for (EntityId id : host.selection())
-                if (const Entity* e = doc.find(id); e && detail::editableFilter(doc)(*e))
+                if (const Entity* e = doc.find(id);
+                    e && detail::editableFilter(doc, ctx.host().drawingOwner())(*e))
                     sel.ids.push_back(id);
             sel.status = cmd::Status::Ok;
         } else {
             sel = co_await ctx.getSelection(
-                "Select objects", cmd::SelectionOptions{.filter = detail::editableFilter(doc)});
+                "Select objects", cmd::SelectionOptions{.filter = detail::editableFilter(
+                                                            doc, ctx.host().drawingOwner())});
         }
         if (sel.status == cmd::Status::Cancel)
             co_return;

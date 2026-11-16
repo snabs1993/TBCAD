@@ -455,6 +455,52 @@ TEST_CASE("BREAK and BREAKATPOINT") {
     CHECK(g.count(EntityKind::Line) == 2);
 }
 
+TEST_CASE("BREAK and BREAKATPOINT split an MLINE wall") {
+    Fixture f;
+    auto ml = f.host.run("MLINE", {"S", "100", "0,-6000", "6000,-6000", ScriptItem::enter()});
+    CHECK(ml.finished);
+    EntityId id{};
+    f.doc.forEachEntity([&](const Entity& e) { id = e.common.id; });
+    REQUIRE(f.count(EntityKind::MLine) == 1);
+    auto r = f.host.run("BREAK", {ScriptItem::pick(id, {3000, -6000}), "4000,-6000"});
+    CHECK(r.finished);
+    REQUIRE(f.count(EntityKind::MLine) == 2);
+    double total = 0;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* d = entityAs<MlineData>(e)) {
+            CHECK(d->v.size() == 2);
+            CHECK(d->scale == doctest::Approx(100));
+            total += distance(d->v.front(), d->v.back());
+        }
+    });
+    CHECK(total == doctest::Approx(5000));  // 1000 removed between x=3000 and x=4000
+    f.host.undo();
+    CHECK(f.count(EntityKind::MLine) == 1);
+    f.host.run("BAP", {ScriptItem::pick(id, {2000, -6000}), "2000,-6000"});
+    CHECK(f.count(EntityKind::MLine) == 2);
+}
+
+TEST_CASE("BREAK on an MLINE keeps MLEDIT gaps with their piece") {
+    Fixture f;
+    MlineData d;
+    d.v = {{0, 0}, {100, 0}, {100, 100}};
+    d.cuts.push_back(MlineCut{1, 0.5, 0.75, 0, 255});  // gap at y 50..75 of the second leg
+    EntityId id = f.add(d);
+    f.host.run("BREAK", {ScriptItem::pick(id, {40, 0}), "60,0"});
+    REQUIRE(f.count(EntityKind::MLine) == 2);
+    const MlineData* second = nullptr;
+    f.doc.forEachEntity([&](const Entity& e) {
+        if (const auto* m = entityAs<MlineData>(e); m && m->v.size() == 3)
+            second = m;
+    });
+    REQUIRE(second);
+    CHECK(near(second->v.front(), {60, 0}));
+    REQUIRE(second->cuts.size() == 1);
+    CHECK(second->cuts[0].seg == 1);
+    CHECK(second->cuts[0].t0 == doctest::Approx(0.5));
+    CHECK(second->cuts[0].t1 == doctest::Approx(0.75));
+}
+
 TEST_CASE("JOIN merges and erases the sources in one undo step") {
     Fixture f;
     EntityId a = f.add(LineData{{0, 0}, {4, 0}});

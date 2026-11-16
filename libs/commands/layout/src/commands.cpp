@@ -542,8 +542,28 @@ void addDefaultViewport(cmd::CommandContext& ctx, const std::string& name) {
         centre = {(box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2};
         n = roundScaleUp(std::max(box.width() / rect.width(), box.height() / rect.height()));
     }
-    if (auto id = layout::addViewport(ctx.tx(), name, rect, centre, n); !id)
+    auto id = layout::addViewport(ctx.tx(), name, rect, centre, n);
+    if (!id) {
         ctx.message(id.error().message);
+        return;
+    }
+    // The viewport made for the user (not drawn by them) goes on the "Viewports" layer, which is
+    // set not to plot, so its frame shows on screen but not on paper. Made if missing.
+    LayerId vpLayer{};
+    for (const auto& [lid, l] : ctx.doc().layers())
+        if (lower(l.name) == "viewports" && !vpLayer.value)
+            vpLayer = lid;
+    if (!vpLayer.value) {
+        Layer l;
+        l.name = "Viewports";
+        l.color = Color::index(7);
+        l.plot = false;
+        auto added = ctx.tx().addLayer(std::move(l));
+        if (!added)
+            return;
+        vpLayer = added.value();
+    }
+    (void)layout::setViewportBorderLayer(ctx.tx(), name, id.value(), vpLayer);
 }
 
 // A viewport reaching past the edge of the sheet is plotted cut off: say so, with the sheet's
@@ -898,24 +918,54 @@ public:
             "Viewport layer [Freeze/Thaw/NewFreeze/NewThaw] (New: for viewports made later)", ko);
         if (!action.ok())
             co_return;
-        auto layerName = co_await ctx.getString("Layer name");
+        auto layerName = co_await ctx.getString("Layer name(s), comma between names");
         if (!layerName.ok())
             co_return;
-        const Layer* layer = nullptr;
-        for (const auto& [id, l] : ctx.doc().layers())
-            if (lower(l.name) == lower(layerName.text) && !layer)
-                layer = &l;
-        if (!layer) {
-            ctx.message("No layer named \"" + layerName.text +
-                        "\" (sub-layers: use the layer panel).");
-            co_return;
+        // "Hatch,Grid" names several layers, like AutoCAD.
+        std::vector<const Layer*> layers;
+        std::string missing;
+        {
+            std::string_view rest = layerName.text;
+            while (true) {
+                const auto comma = rest.find(',');
+                std::string part(rest.substr(0, comma));
+                while (!part.empty() && part.front() == ' ')
+                    part.erase(part.begin());
+                while (!part.empty() && part.back() == ' ')
+                    part.pop_back();
+                if (!part.empty()) {
+                    const Layer* found = nullptr;
+                    for (const auto& [id, l] : ctx.doc().layers())
+                        if (lower(l.name) == lower(part) && !found)
+                            found = &l;
+                    if (!found)
+                        missing += (missing.empty() ? "" : ", ") + ("\"" + part + "\"");
+                    else if (std::find(layers.begin(), layers.end(), found) == layers.end())
+                        layers.push_back(found);
+                }
+                if (comma == std::string_view::npos)
+                    break;
+                rest.remove_prefix(comma + 1);
+            }
         }
+        if (!missing.empty())
+            ctx.message("No layer named " + missing + " (sub-layers: use the layer panel).");
+        if (layers.empty())
+            co_return;
+        std::string names;
+        for (const Layer* l : layers)
+            names += (names.empty() ? "" : ", ") + l->name;
         if (action.keyword == "NewFreeze" || action.keyword == "NewThaw") {
             const bool freeze = action.keyword == "NewFreeze";
-            report(ctx,
-                   layout::setLayerFrozenInNewViewports(ctx.doc(), ctx.tx(), layer->id, freeze),
-                   layer->name + (freeze ? " will be frozen" : " will not be frozen") +
-                       " in new viewports.");
+            for (const Layer* l : layers) {
+                auto r = layout::setLayerFrozenInNewViewports(ctx.doc(), ctx.tx(), l->id, freeze);
+                if (!r) {
+                    ctx.message(r.error().message);
+                    co_return;
+                }
+            }
+            ctx.message(names + (freeze ? " will be frozen" : " will not be frozen") +
+                        " in new viewports.");
             co_return;
         }
         int vpId = 0;
@@ -923,11 +973,16 @@ public:
         co_await askViewport(ctx, target, vpId, picked);
         if (!picked)
             co_return;
-        report(ctx,
-               layout::setViewportLayerFrozen(ctx.tx(), target, vpId, layer->id,
-                                              action.keyword == "Freeze"),
-               action.keyword + (action.keyword == "Freeze" ? "n " : "d ") + layer->name +
-                   " in viewport " + std::to_string(vpId) + ".");
+        const bool freeze = action.keyword == "Freeze";
+        for (const Layer* l : layers) {
+            auto r = layout::setViewportLayerFrozen(ctx.tx(), target, vpId, l->id, freeze);
+            if (!r) {
+                ctx.message(r.error().message);
+                co_return;
+            }
+        }
+        ctx.message(std::string(freeze ? "Frozen " : "Thawed ") + names + " in viewport " +
+                    std::to_string(vpId) + ".");
     }
 };
 

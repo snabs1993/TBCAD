@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <map>
+#include <set>
 #include <unordered_set>
 
 #include "tbcad/blocks/tbcad_blocks.h"
@@ -156,7 +158,18 @@ void registerUi(ui::UiRegistry& ui) {
 namespace detail {
 
 std::vector<EntityId> inDrawOrder(const Document& doc, const std::vector<EntityId>& ids) {
-    return doc.inDrawOrder(ids);
+    std::vector<EntityId> out = doc.inDrawOrder(ids);  // model space only
+    // Objects of a layout sheet (or another block): in the order their block holds them.
+    std::map<BlockId, std::set<EntityId>> owned;
+    for (EntityId id : ids)
+        if (const BlockId owner = doc.ownerBlock(id))
+            owned[owner].insert(id);
+    for (const auto& [owner, set] : owned)
+        if (const BlockDef* def = doc.block(owner))
+            for (EntityId id : def->entities)
+                if (set.contains(id))
+                    out.push_back(id);
+    return out;
 }
 
 bool editable(const Document& doc, const Entity& e) {
@@ -164,8 +177,10 @@ bool editable(const Document& doc, const Entity& e) {
     return l.visible() && !l.locked;
 }
 
-cmd::EntityFilterFn editableFilter(const Document& doc) {
-    return [&doc](const Entity& e) { return !doc.ownerBlock(e.common.id) && editable(doc, e); };
+cmd::EntityFilterFn editableFilter(const Document& doc, BlockId owner) {
+    return [&doc, owner](const Entity& e) {
+        return doc.ownerBlock(e.common.id) == owner && editable(doc, e);
+    };
 }
 
 BBox2 boundsOf(const Document& doc, const std::vector<Entity>& entities) {

@@ -78,6 +78,9 @@ public:
     // begins a new subpath.
     void arcTo(double cx, double cy, double radius, double startRad, double endRad,
                bool ccw = true);
+    // The same arc as its own subpath: it starts with a move to the arc start, never a line from
+    // the end of the previous path.
+    void arc(double cx, double cy, double radius, double startRad, double endRad, bool ccw = true);
 
     // Painting.
     void stroke();

@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -96,6 +97,58 @@ TEST_CASE("MVIEW, VPSCALE and VPLAYER edit the current layout") {
     CHECK(layout::findLayout(f.doc, "Plan")->viewports[0].frozen.empty());
     f.host->run("VPLAYER", {"Freeze", "Nope", cmd::ScriptItem::esc()});
     CHECK(f.host->logContains("No layer named"));
+}
+
+TEST_CASE("VPLAYER takes several layers separated by commas and says Frozen (test.21)") {
+    Fixture f;
+    LayerId hatch, grid;
+    {
+        auto tx = f.doc.begin("layer");
+        Layer h;
+        h.name = "Hatch";
+        hatch = tx.addLayer(h).value();
+        Layer g;
+        g.name = "Grid";
+        grid = tx.addLayer(g).value();
+        tx.commit();
+    }
+    f.host->run("LAYOUT", {"New", "Plan", "A3", ""});
+    f.host->run("MVIEW", {"10,10", "410,287", "1:50", "0,0"});
+    f.host->run("VPLAYER", {"Freeze", "Hatch,Grid", "1"});
+    CHECK_FALSE(f.host->logContains("No layer named"));
+    auto frozen = layout::findLayout(f.doc, "Plan")->viewports[0].frozen;
+    std::sort(frozen.begin(), frozen.end());
+    std::vector<LayerId> want{hatch, grid};
+    std::sort(want.begin(), want.end());
+    CHECK(frozen == want);
+    CHECK(f.host->logContains("Frozen Hatch, Grid in viewport 1."));
+    CHECK_FALSE(f.host->logContains("Freezen"));
+    // Spaces after the commas are fine; one bad name is reported, the good one still thaws.
+    f.host->run("VPLAYER", {"Thaw", "hatch, Nope", "1"});
+    CHECK(f.host->logContains("No layer named \"Nope\""));
+    CHECK(f.host->logContains("Thawed Hatch in viewport 1."));
+    CHECK(layout::findLayout(f.doc, "Plan")->viewports[0].frozen == std::vector<LayerId>{grid});
+}
+
+TEST_CASE("LAYOUT New puts its viewport on the Viewports layer, which does not plot (test.21)") {
+    Fixture f;
+    f.host->setSetting("layout.newViewport", "1");
+    f.host->run("LAYOUT", {"New", "Plan", "A3", ""});
+    auto l = layout::findLayout(f.doc, "Plan");
+    REQUIRE(l);
+    REQUIRE(l->viewports.size() == 1);
+    const Layer* border = f.doc.layer(l->viewports[0].borderLayer);
+    REQUIRE(border);
+    CHECK(border->name == "Viewports");
+    CHECK_FALSE(border->plot);
+    // A second sheet uses the same layer, not a new one.
+    f.host->run("LAYOUT", {"New", "Plan2", "A3", ""});
+    CHECK(layout::findLayout(f.doc, "Plan2")->viewports[0].borderLayer ==
+          l->viewports[0].borderLayer);
+    // Drawing a viewport by hand (MVIEW) still uses the current layer.
+    f.host->run("MVIEW", {"10,10", "100,100", "1:50", "0,0"});
+    CHECK(layout::findLayout(f.doc, "Plan2")->viewports[1].borderLayer ==
+          f.doc.header().currentLayer);
 }
 
 TEST_CASE("VPLAYER NewFreeze freezes a layer in every viewport made later") {
