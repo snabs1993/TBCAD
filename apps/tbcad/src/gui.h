@@ -166,6 +166,14 @@ private:
         ImVec2 at{};  // where the tab was let go, screen points
     };
     std::optional<TearOff> tearOff_{};  // a tab let go outside this window: moved next frame
+    // Drawings handed to another window (handover file, time given): taken back if no window has
+    // taken them in time, so a window that never opened cannot lose a drawing.
+    struct SentAway {
+        std::string path;
+        double at = 0;
+    };
+    std::vector<SentAway> sentAway_{};
+    bool leftoverHandoversChecked_ = false;
     void linkTick();
     void tabDragTick();
     void runTearOff();

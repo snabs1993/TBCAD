@@ -3370,25 +3370,14 @@ TEST_CASE("drawing tab dragged onto another window moves the drawing there") {
     h.frame(3);
     const std::string title = h.core().documentTitle(0);
 
-    // A modified drawing stays: it would have to be saved first.
+    // Owner on test.21: a drawing with unsaved changes would not go ("save first" for 3 s).
+    // Now it goes as it is, and stays unsaved in the other window.
     h.core().submitText("LINE");
     h.core().submitText("0,0");
     h.core().submitText("10,0");
     h.core().pressEscape();
     h.frame(2);
     REQUIRE(h.core().documentModified(0));
-    {
-        const auto* tab = h.find(title);
-        REQUIRE(tab);
-        const imgui_items::Item t = *tab;
-        h.drag((t.min.x + t.max.x) * 0.5f, (t.min.y + t.max.y) * 0.5f, 4300, 300);
-        h.frame(3);
-        CHECK(h.core().documentFile(0) == file);
-        CHECK(other.takeIncoming().empty());
-    }
-    REQUIRE(h.core().saveAs(file));
-    h.frame(3);
-    REQUIRE_FALSE(h.core().documentModified(0));
     h.moveMouse(700, 400);
     h.frame(2);
     const auto* tab = h.find(title);
@@ -3399,8 +3388,81 @@ TEST_CASE("drawing tab dragged onto another window moves the drawing there") {
     CHECK(h.core().documentFile(0).empty());  // closed here: an empty Untitled is left
     const auto got = other.takeIncoming();
     REQUIRE(got.size() == 1);
-    CHECK(fs::path(got[0]) == file);
+    const fs::path handover = fs::path(got[0]);
+    CHECK(handover.extension() == ".tbcadmove");
+
+    // What the other window does with it: the drawing under its own name, the line still there,
+    // still unsaved; the handover files are gone.
+    REQUIRE(h.core().openFile(handover));
+    const std::size_t i = h.core().activeDocument();
+    CHECK(h.core().documentFile(i) == file);
+    CHECK(h.core().documentModified(i));
+    CHECK(h.core().document().entityCount() == 1);
+    CHECK_FALSE(fs::exists(handover));
+    CHECK_FALSE(fs::exists(fs::path(handover.string() + ".orig")));
     CHECK(h.imguiErrors().empty());
+    fs::remove_all(dir);
+}
+
+TEST_CASE("an Untitled drawing tab dragged out of the window goes with its objects") {
+    const fs::path dir = fs::temp_directory_path() / "tbcad-tab-move-untitled";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    Harness h(1600, 900);
+    app::WindowLink me(dir / "link", 5011), other(dir / "link", 5012);
+    other.publish({4000, 0, 800, 600}, true);
+    h.gui().setWindowLink(&me);
+    h.core().submitText("CIRCLE");
+    h.core().submitText("0,0");
+    h.core().submitText("5");
+    h.frame(3);
+    const std::string title = h.core().documentTitle(0);
+    h.moveMouse(700, 400);
+    h.frame(2);
+    const auto* tab = h.find(title);
+    REQUIRE(tab);
+    const imgui_items::Item t = *tab;
+    h.drag((t.min.x + t.max.x) * 0.5f, (t.min.y + t.max.y) * 0.5f, 4300, 300);
+    h.frame(3);
+    const auto got = other.takeIncoming();
+    REQUIRE(got.size() == 1);
+    REQUIRE(h.core().openFile(fs::path(got[0])));
+    const std::size_t i = h.core().activeDocument();
+    CHECK(h.core().documentFile(i).empty());
+    CHECK(h.core().documentModified(i));
+    CHECK(h.core().document().entityCount() == 1);
+    fs::remove_all(dir);
+}
+
+TEST_CASE("a drawing sent to a window that never takes it comes back") {
+    const fs::path dir = fs::temp_directory_path() / "tbcad-tab-move-back";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    Harness h(1600, 900);
+    app::WindowLink me(dir / "link", 5021), other(dir / "link", 5022);
+    other.publish({4000, 0, 800, 600}, true);
+    h.gui().setWindowLink(&me);
+    h.core().submitText("CIRCLE");
+    h.core().submitText("0,0");
+    h.core().submitText("5");
+    h.frame(3);
+    const std::string title = h.core().documentTitle(0);
+    h.moveMouse(700, 400);
+    h.frame(2);
+    const auto* tab = h.find(title);
+    REQUIRE(tab);
+    const imgui_items::Item t = *tab;
+    h.drag((t.min.x + t.max.x) * 0.5f, (t.min.y + t.max.y) * 0.5f, 4300, 300);
+    h.frame(3);
+    CHECK(h.core().document().entityCount() == 0);  // gone from here...
+    // ...but the other window never looks at it (it hung or was closed).
+    const double until = ImGui::GetTime() + 21.0;
+    while (ImGui::GetTime() < until)
+        h.frame(10);
+    h.frame(3);
+    CHECK(h.core().document().entityCount() == 1);  // back, unsaved
+    CHECK(h.core().documentModified(h.core().activeDocument()));
+    CHECK(other.takeIncoming().size() == 1);  // what the other window would see now
     fs::remove_all(dir);
 }
 

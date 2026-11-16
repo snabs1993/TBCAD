@@ -846,6 +846,14 @@ void Gui::doOpenPath(const std::string& path) {
         toast("Another file is still opening.");
         return;
     }
+    if (platform::pathFromUtf8(path).extension() == ".tbcadmove") {
+        // A drawing another window of the program handed over: opened at once, under its own name.
+        if (auto r = core_.openFile(platform::pathFromUtf8(path)); !r)
+            lastError_ = r.error().message;
+        else
+            repairAfterOpen();
+        return;
+    }
     // A big file blocks the window for seconds: show "Opening ..." for one frame first so the
     // program does not look frozen.
     std::error_code ec;
@@ -4195,6 +4203,10 @@ void Gui::tabPreviewTip(const std::string& title,
 }
 
 // Tells the other TBCAD windows where this one is and opens the drawings they sent here.
+namespace {
+constexpr double kHandoverWait = 20.0;  // seconds a new window may take to start and open it
+}  // namespace
+
 void Gui::linkTick() {
     if (!link_)
         return;
@@ -4203,6 +4215,30 @@ void Gui::linkTick() {
     const std::vector<std::string> incoming = link_->takeIncoming();
     for (const std::string& path : incoming)
         queueDroppedFile(path);
+    // Left over from a window that closed before the drawing it sent away was taken: opened here
+    // once, at start, so it is never lost.
+    if (!leftoverHandoversChecked_) {
+        leftoverHandoversChecked_ = true;
+        std::error_code ec;
+        const auto cutoff = std::filesystem::file_time_type::clock::now() - std::chrono::minutes(2);
+        for (std::filesystem::directory_iterator it(link_->dir(), ec), end; !ec && it != end;
+             it.increment(ec))
+            if (it->path().extension() == ".tbcadmove" && it->last_write_time(ec) < cutoff)
+                queueDroppedFile(platform::pathToUtf8(it->path()));
+    }
+    // A drawing sent away that no window took (the new window did not start, or the other one
+    // closed): it comes back here.
+    const double now = ImGui::GetTime();
+    std::erase_if(sentAway_, [&](const SentAway& s) {
+        std::error_code ec;
+        if (!std::filesystem::exists(platform::pathFromUtf8(s.path), ec))
+            return true;  // taken
+        if (now - s.at < kHandoverWait)
+            return false;
+        queueDroppedFile(s.path);
+        toast("The other window did not open, so the drawing is back here.");
+        return true;
+    });
     if (!incoming.empty()) {
         anyActivity_ = true;
         glfwRequestWindowAttention(window_);
@@ -4260,7 +4296,8 @@ void Gui::tabDragTick() {
 }
 
 // A tab was let go outside this window: the drawing leaves this window for the TBCAD window under
-// the pointer, or for a new one. It is saved already (the other window opens it from the file).
+// the pointer, or for a new one. Saved or not: its content as it is now goes over in a handover
+// file, and unsaved changes stay unsaved there.
 void Gui::runTearOff() {
     const TearOff t = *tearOff_;
     tearOff_.reset();
@@ -4273,13 +4310,8 @@ void Gui::runTearOff() {
             idx = i;
     if (idx >= n)
         return;
-    const std::filesystem::path file = core_.documentFile(idx);
-    if (file.empty() || core_.documentModified(idx)) {
-        toast("Save the drawing first (Ctrl+S), then drag its tab out.");
-        return;
-    }
     if (idx == core_.activeDocument() && core_.runner().active()) {
-        toast("Finish the current command first.");
+        toast("Finish the current command first (Esc), then drag the tab out.");
         return;
     }
     std::optional<OtherWindow> target;
@@ -4287,19 +4319,30 @@ void Gui::runTearOff() {
         if (o.rect.contains(t.at.x, t.at.y))
             target = o;
     const ImGuiViewport* vp = ImGui::GetMainViewport();
-    const std::string path = platform::pathToUtf8(file);
-    // Closed first: the other window must be able to take the file's lock.
+    platform::ensureDirectory(link_->dir());
+    const std::filesystem::path handover =
+        link_->dir() /
+        ("move-" + std::to_string(link_->pid()) + "-" + std::to_string(t.id) + "-" +
+         std::to_string(static_cast<long long>(ImGui::GetTime() * 1000)) + ".tbcadmove");
+    if (auto w = core_.writeHandover(idx, handover); !w) {
+        toast("Could not move the drawing: " + w.error().message);
+        return;
+    }
+    // Closed first: the other window must be able to take the file's lock. Nothing is lost: the
+    // handover file holds the drawing as it is now.
     core_.closeDocument(idx);
     shownActive_ = static_cast<std::size_t>(-1);
+    const std::string path = platform::pathToUtf8(handover);
     const bool ok =
-        target ? link_->send(target->pid, file)
+        target ? link_->send(target->pid, handover)
                : WindowLink::spawn(path, static_cast<int>(t.at.x), static_cast<int>(t.at.y),
                                    static_cast<int>(vp->Size.x), static_cast<int>(vp->Size.y));
     if (!ok) {
         doOpenPath(path);  // back where it was
         toast("Could not open another window.");
     } else {
-        toast(target ? "Moved to the other window." : "Opened in a new window.");
+        sentAway_.push_back({path, ImGui::GetTime()});
+        toast(target ? "Moved to the other window." : "Opening in a new window...");
     }
 }
 

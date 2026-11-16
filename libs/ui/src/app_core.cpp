@@ -1759,7 +1759,72 @@ std::optional<AppCore::OpeningInfo> AppCore::opening() const {
             .count()};
 }
 
+Result<void> AppCore::writeHandover(std::size_t index, const fs::path& out) const {
+    if (index >= slots_.size())
+        return makeError(ErrorCode::InvalidArgument, "no such drawing");
+    const Session& ses = *slots_[index].session;
+    io::WriteOptions opt;
+    opt.keepBackup = false;
+    if (auto r = io::writeTbcad(*ses.doc.snapshot(), out, opt); !r)
+        return r;
+    // Line 1: the drawing's own file (empty when never saved); line 2: "modified" when it has
+    // changes that are not on disk.
+    fs::path orig = out;
+    orig += ".orig";
+    std::ofstream f(orig, std::ios::binary | std::ios::trunc);
+    f << platform::pathToUtf8(ses.file) << "\n"
+      << (ses.doc.revision() != ses.savedRevision ? "modified" : "saved") << "\n";
+    f.close();
+    if (!f) {
+        std::error_code ec;
+        fs::remove(out, ec);
+        return makeError(ErrorCode::Io, "cannot write " + orig.string());
+    }
+    return {};
+}
+
+Result<void> AppCore::openHandover(const fs::path& path) {
+    fs::path orig = path;
+    orig += ".orig";
+    std::string file, state;
+    {
+        std::ifstream f(orig, std::ios::binary);
+        std::getline(f, file);
+        std::getline(f, state);
+    }
+    // Taken by renaming first: the window that sent it may take it back if nobody else did, and
+    // only one of the two gets it.
+    fs::path taken = path;
+    taken += ".taking";
+    std::error_code ec;
+    fs::rename(path, taken, ec);
+    if (ec) {
+        print("The drawing was already taken by another window.");
+        return makeError(ErrorCode::Conflict, "already taken");
+    }
+    io::IoReport report;
+    auto doc = io::readTbcad(taken, report);
+    fs::remove(taken, ec);
+    fs::remove(orig, ec);
+    if (!doc) {
+        printOpenFailure("Cannot take the drawing from the other window: " + doc.error().message);
+        return doc.error();
+    }
+    const fs::path own = platform::pathFromUtf8(file);
+    if (!own.empty())
+        if (auto open = slotOfFile(own)) {
+            activateDocument(*open);
+            return {};
+        }
+    addSession(std::move(doc.value()), own);
+    if (own.empty() || state != "saved")
+        session_->savedRevision = ~std::uint64_t{0};  // the changes are not on disk
+    return {};
+}
+
 Result<void> AppCore::openFile(const fs::path& path) {
+    if (lowerExtension(path) == ".tbcadmove")
+        return openHandover(path);
     if (auto open = slotOfFile(path)) {
         activateDocument(*open);
         return {};
